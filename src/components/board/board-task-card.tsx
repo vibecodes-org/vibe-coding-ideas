@@ -483,7 +483,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                       : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (now - new Date(task.working_started_at).getTime()) >= STALE_THRESHOLD_MS
                         ? "border-l-2 border-l-amber-500 border-border"
                         : "border-border"
-        } ${isDragging ? "opacity-50" : ""} ${isArchived ? "opacity-50" : ""}`}
+        } ${isDragging ? "opacity-50" : ""} ${isArchived ? "border-dashed bg-muted/30" : ""}`}
         onClick={() => {
           setInitialTab(undefined);
           handleOpenChange(true);
@@ -506,7 +506,11 @@ export const BoardTaskCard = memo(function BoardTaskCard({
               setCoverPreviewOpen(true);
             }}
           >
-            <img src={coverUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={coverUrl}
+              alt=""
+              className={`h-full w-full object-cover ${isArchived ? "opacity-60 grayscale" : ""}`}
+            />
           </div>
         )}
         <div className="flex items-start gap-2 p-3">
@@ -543,7 +547,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
               </div>
             )}
 
-            <p className="text-sm font-medium leading-snug">
+            <p className={`text-sm font-medium leading-snug ${isArchived ? "text-muted-foreground" : ""}`}>
               {highlightQuery ? <HighlightedText text={task.title} query={highlightQuery} /> : task.title}
             </p>
 
@@ -557,7 +561,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
             <div className="mt-2 flex items-center gap-2">
               <div className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
                 {isArchived && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                     <Archive className="h-3 w-3" />
                     Archived
                   </span>

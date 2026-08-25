@@ -35,6 +35,14 @@ export interface TrustedTaskState {
    * lagging replica can briefly re-show the card. `columnId`/`position` unused.
    */
   removed?: boolean;
+  /**
+   * Local `archived` flag override (e.g. an unarchive) that must win over a
+   * lagging server snapshot's stale value — same idea as columnId/position
+   * winning over a stale column/position, but for row content instead of
+   * placement. Unused when `removed` is set. Resolved once the server's row
+   * agrees or the window lapses.
+   */
+  archived?: boolean;
   /** Epoch ms after which the entry is no longer trusted. */
   trustedUntil: number;
 }
@@ -42,6 +50,7 @@ export interface TrustedTaskState {
 interface MinTask {
   id: string;
   position: number;
+  archived?: boolean;
 }
 interface MinColumn<T extends MinTask> {
   id: string;
@@ -65,11 +74,11 @@ export function mergeTrustedState<T extends MinTask, C extends MinColumn<T>>(
   if (trusted.size === 0) return { columns: serverColumns, resolved };
 
   // Where the server currently places each task.
-  const serverLoc = new Map<string, { columnId: string; position: number }>();
+  const serverLoc = new Map<string, { columnId: string; position: number; archived?: boolean }>();
   const taskById = new Map<string, T>();
   for (const col of serverColumns) {
     for (const t of col.tasks) {
-      serverLoc.set(t.id, { columnId: col.id, position: t.position });
+      serverLoc.set(t.id, { columnId: col.id, position: t.position, archived: t.archived });
       taskById.set(t.id, t);
     }
   }
@@ -97,7 +106,9 @@ export function mergeTrustedState<T extends MinTask, C extends MinColumn<T>>(
       resolved.push(taskId); // task no longer exists (archived/deleted)
       continue;
     }
-    if (loc.columnId === ts.columnId && loc.position === ts.position) {
+    const positionMatches = loc.columnId === ts.columnId && loc.position === ts.position;
+    const archivedMatches = ts.archived === undefined || loc.archived === ts.archived;
+    if (positionMatches && archivedMatches) {
       resolved.push(taskId); // server has caught up
       continue;
     }
@@ -112,12 +123,19 @@ export function mergeTrustedState<T extends MinTask, C extends MinColumn<T>>(
   const columns = serverColumns.map((col) => {
     // Drop overridden-move tasks AND trusted-removed tasks from where the server put them.
     let tasks = col.tasks.filter((t) => !overriddenIds.has(t.id) && !removedIds.has(t.id));
-    // Add overridden tasks whose trusted column is this one, at their position.
+    // Add overridden tasks whose trusted column is this one, at their position
+    // (and with their archived flag forced, when a trusted override is set).
     const incoming: T[] = [];
     for (const [taskId, ts] of moveOverrides) {
       if (ts.columnId !== col.id) continue;
       const original = taskById.get(taskId);
-      if (original) incoming.push({ ...original, position: ts.position });
+      if (original) {
+        incoming.push({
+          ...original,
+          position: ts.position,
+          ...(ts.archived !== undefined ? { archived: ts.archived } : {}),
+        });
+      }
     }
     if (incoming.length === 0) {
       // Only changed if we removed something from this column.

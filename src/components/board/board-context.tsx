@@ -12,6 +12,8 @@ export interface BoardOptimisticOps {
   deleteTask: (taskId: string, columnId: string) => () => void;
   /** Mark a single task as archived. Returns rollback function. */
   archiveTask: (taskId: string, columnId: string) => () => void;
+  /** Mark a single task as unarchived (restored). Returns rollback function. */
+  unarchiveTask: (taskId: string, columnId: string) => () => void;
   /**
    * Reorder a task to the top/bottom of its current column, assigning it
    * `newPosition`. Returns rollback function.
@@ -33,9 +35,13 @@ export interface BoardOptimisticOps {
   /**
    * Trust a local move (column + position) over lagging Realtime snapshots for
    * the standard trust window — same guard drag-drop uses to avoid bounce-back.
-   * Pass `null` to drop the entry (e.g. a rejected move).
+   * Pass `null` to drop the entry (e.g. a rejected move). An optional `archived`
+   * flag additionally trusts the row's archived state (e.g. an unarchive) over
+   * a lagging snapshot's stale value, independent of whether the column/position
+   * also changed — pass the task's *current* (unchanged) columnId/position when
+   * only the archived flag is flipping.
    */
-  trustMove: (taskId: string, columnId: string, position: number | null) => void;
+  trustMove: (taskId: string, columnId: string, position: number | null, archived?: boolean) => void;
   /**
    * Trust a local removal (archive/delete) over lagging Realtime snapshots for
    * the standard trust window, so a stale read replica can't briefly re-show the

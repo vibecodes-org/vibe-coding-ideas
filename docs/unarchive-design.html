@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unarchive Tasks</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #f4f4f5; --card: #ffffff; --border: #e4e4e7;
+    --fg: #18181b; --muted: #71717a; --accent: #6366f1;
+    --emerald: #059669; --red: #dc2626; --amber: #b45309;
+    --code-fg: #6d28d9; --file-fg: #0369a1;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #09090b; --panel: #18181b; --card: #0c0c0e; --border: #27272a;
+      --fg: #fafafa; --muted: #a1a1aa; --accent: #818cf8;
+      --emerald: #34d399; --red: #f87171; --amber: #fbbf24;
+      --code-fg: #c4b5fd; --file-fg: #7dd3fc;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #09090b; --panel: #18181b; --card: #0c0c0e; --border: #27272a;
+    --fg: #fafafa; --muted: #a1a1aa; --accent: #818cf8;
+    --emerald: #34d399; --red: #f87171; --amber: #fbbf24;
+    --code-fg: #c4b5fd; --file-fg: #7dd3fc;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); padding: 2.5rem 1.25rem 5rem; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; letter-spacing: -0.02em; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0.5rem 0 2.4rem; max-width: 65ch; }
+  .verdict { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0 0 2.6rem; padding: 0.55rem 1rem; border-radius: 8px; background: color-mix(in srgb, var(--emerald) 12%, transparent); border: 1px solid color-mix(in srgb, var(--emerald) 35%, transparent); color: var(--emerald); font-weight: 600; font-size: 0.9rem; }
+  .verdict svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  h2 { font-size: 1.1rem; margin: 2.6rem 0 0.9rem; padding-top: 1.5rem; border-top: 1px solid var(--border); letter-spacing: -0.01em; }
+  h2 .num { color: var(--muted); font-weight: 500; margin-right: 0.5em; }
+  h3 { font-size: 0.92rem; margin: 1.5rem 0 0.6rem; color: var(--fg); font-weight: 600; }
+  p, li { color: var(--muted); max-width: 68ch; }
+  li { margin: 0.35rem 0; }
+  strong { color: var(--fg); font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.82em; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0.1em 0.4em; color: var(--code-fg); white-space: nowrap; }
+  .file { color: var(--file-fg); }
+  .tablewrap { overflow-x: auto; margin: 0.9rem 0; border-radius: 8px; border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.87rem; min-width: 560px; }
+  th, td { border-bottom: 1px solid var(--border); padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th { background: var(--panel); color: var(--fg); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { color: var(--muted); }
+  td:first-child, th:first-child { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: stretch; margin: 1rem 0; }
+  .step { flex: 1 1 150px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem 0.9rem; font-size: 0.82rem; color: var(--muted); }
+  .step b { display: block; color: var(--fg); margin-bottom: 0.3rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+  .step.err { border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
+  .step.ok { border-color: color-mix(in srgb, var(--emerald) 40%, var(--border)); }
+  .note { border-left: 3px solid var(--accent); background: var(--panel); padding: 0.8rem 1.1rem; border-radius: 0 8px 8px 0; margin: 1.1rem 0; font-size: 0.88rem; color: var(--muted); max-width: 68ch; }
+  .note strong { display: block; margin-bottom: 0.2rem; }
+  .warn { border-left-color: var(--amber); }
+  .mock { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 1.8rem; align-items: flex-start; }
+  .menu { width: 220px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.16); font-size: 0.85rem; }
+  .mi { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 5px; color: var(--fg); }
+  .mi.new { background: color-mix(in srgb, var(--accent) 14%, transparent); outline: 1px dashed var(--accent); }
+  .mi.destructive { color: var(--red); }
+  .mi svg { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .sep { height: 1px; background: var(--border); margin: 4px 0; }
+  .caption { font-size: 0.78rem; color: var(--muted); margin-top: 0.6rem; max-width: 230px; }
+  .kcard { width: 240px; border-radius: 6px; padding: 12px; background: var(--card); border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,0.06); font-size: 0.82rem; position: relative; }
+  .kcard .title { font-weight: 500; color: var(--fg); line-height: 1.35; }
+  .kcard .desc { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+  .kcard.archived { border-style: dashed; background: color-mix(in srgb, var(--border) 45%, transparent); }
+  .kcard.archived .title { color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); padding: 2px 8px; font-size: 0.62rem; font-weight: 500; color: var(--muted); margin-top: 8px; }
+  .pill svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .toast { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.85rem; box-shadow: 0 8px 24px rgba(0,0,0,0.16); }
+  .toast .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }
+  ul, ol { padding-left: 1.3rem; }
+  .check li::marker { color: var(--emerald); }
+  a { color: var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    main { animation: rise 0.4s ease-out; }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Unarchive Tasks</h1>
+  <p class="sub">UX design for the board's "Allow the unarchiving of tasks" card. Builds on the Product Owner requirements; grounded in the live components: <code class="file">src/components/board/task-card-menu.tsx</code>, <code class="file">board-task-card.tsx</code>, <code class="file">board-toolbar.tsx</code>, <code class="file">task-detail-dialog.tsx</code>, <code class="file">board-context.tsx</code></p>
+
+  <div class="verdict"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Reviewed and approved as-is by Product Owner — see §6</div>
+
+  <h2><span class="num">1</span>What the code does today</h2>
+  <ul>
+    <li><strong>Card menu</strong> (<code>task-card-menu.tsx</code>): ⋯ trigger → Move to top / Move to bottom / (Launch Claude Code) / Convert to conversation / Archive / Delete. Both Convert and Archive are gated behind <code>!task.archived</code>, so an <em>archived</em> card's menu degrades to Move ×2 + Launch + Delete — the requirements' "almost empty menu". Archive uses lucide's <code>Archive</code> icon and runs the optimistic recipe: <code>ops.archiveTask()</code> rollback fn → <code>ops.trustRemoval()</code> → <code>updateBoardTask(…, { archived: true })</code> → <code>logTaskActivity("archived")</code>, with rollback + <code>toast.error</code> on failure.</li>
+    <li><strong>Archived card look</strong> (<code>board-task-card.tsx</code>): whole card gets <code>opacity-50</code> (line 486) plus a small inline <code>Archive</code>-icon + "Archived" text in the metadata row (line 559). Drag is disabled (<code>disabled: !!isArchived</code>) and the drag handle is hidden.</li>
+    <li><strong>Toolbar toggle</strong> (<code>board-toolbar.tsx:245</code>): "Show/Hide archived (n)" button, rendered only when <code>archivedCount &gt; 0</code>. Unchanged by this design.</li>
+    <li><strong>Detail dialog</strong> (<code>task-detail-dialog.tsx:932</code>): existing toggle already uses <code>ArchiveRestore</code> + "Unarchive" and logs the <code>"unarchived"</code> activity type. Unchanged — and it fixes our icon/label vocabulary.</li>
+    <li><strong>Board context</strong> (<code>board-context.tsx</code>): has <code>archiveTask(taskId, columnId)</code> returning a rollback fn; there is <em>no</em> unarchive op yet — the engineer adds a mirror-image <code>unarchiveTask</code>.</li>
+  </ul>
+
+  <h2><span class="num">2</span>Interaction flow</h2>
+  <p>Precondition worth stating: the card menu is only reachable when the archived card is <em>visible</em>, i.e. "Show archived" is already on. So there is no "where did it go?" moment — the card restores <strong>in place, in the same column and position</strong>, and simply sheds its archived styling. That visible restyle <em>is</em> the success feedback; no success toast (Archive doesn't toast either — the card's disappearance is its feedback, and symmetry keeps the mental model clean).</p>
+  <div class="flow">
+    <div class="step"><b>Trigger</b>Toolbar "Show archived (n)" is on; archived card visible with dashed/dimmed treatment (§4).</div>
+    <div class="step"><b>Menu</b>User taps ⋯ on the card. Menu now leads with Unarchive (§3).</div>
+    <div class="step"><b>Click</b>One click, no dialog. Optimistic: card restyles to live instantly; <code>updateBoardTask(id, ideaId, { archived: false })</code> fires.</div>
+    <div class="step ok"><b>Success</b>Card is live, draggable again, same position. <code>logTaskActivity("unarchived")</code>. If it was the last archived task, the toolbar toggle disappears (existing <code>archivedCount &gt; 0</code> gate) — expected, nothing left to show.</div>
+  </div>
+  <div class="flow">
+    <div class="step err"><b>Failure</b>Server action rejects → rollback fn restores archived styling in place.</div>
+    <div class="step err"><b>Recovery</b><span class="toast"><span class="dot"></span>Couldn't unarchive task</span><br/><span style="font-size:0.75rem">Same voice as the existing "Couldn't archive task". Card is still visible and archived — the user retries from the same menu. No dead end, no trapped state.</span></div>
+  </div>
+  <div class="note warn"><strong>Realtime echo guard</strong>Unarchive is a state change, not a removal, so <code>trustRemoval</code> is the wrong guard. The new <code>ops.unarchiveTask</code> must make the local flip win over a lagging Realtime snapshot the same way <code>trustMove</code> protects moves — otherwise a stale echo re-dims the card for a beat and the interaction feels broken.</div>
+
+  <h2><span class="num">3</span>Card menu with Unarchive</h2>
+  <div class="mock">
+    <div>
+      <div class="menu" role="menu" aria-label="Task actions (archived task)">
+        <div class="mi new" role="menuitem">
+          <svg viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
+          Unarchive
+        </div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Launch Claude Code
+        </div>
+        <div class="sep"></div>
+        <div class="mi destructive" role="menuitem">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Delete
+        </div>
+      </div>
+      <p class="caption">Menu for an <strong>archived</strong> card. Unarchive is first — it is the only reason anyone opens this menu on an archived card (recognition over recall; Fitts: primary action lands where the pointer already is, at the top nearest the trigger).</p>
+    </div>
+    <div style="max-width: 380px">
+      <h3>Spec</h3>
+      <ul>
+        <li><strong>Label:</strong> "Unarchive" — matches the detail dialog exactly. Specific verb, clear information scent; not "Restore" (collides with delete-recovery semantics we don't have).</li>
+        <li><strong>Icon:</strong> lucide <code>ArchiveRestore</code> (already imported in <code>task-detail-dialog.tsx</code>) — same box silhouette as <code>Archive</code> with an up-arrow, so the pair reads as semantic opposites at a glance. Size/spacing identical to siblings: <code>className="mr-2 h-4 w-4"</code>.</li>
+        <li><strong>Position:</strong> first item, gated <code>task.archived</code> — the exact structural mirror of the existing <code>!task.archived</code> Archive block. Archive and Unarchive are never visible together.</li>
+        <li><strong>Behaviour:</strong> one click via <code>onSelect</code>, no confirmation dialog (constructive, instantly reversible — Archive itself has none; a dialog here would be pure friction).</li>
+        <li><strong>Hide "Move to top / Move to bottom" when <code>task.archived</code>.</strong> Dragging is already disabled for archived cards; offering position moves on a card that's hidden from teammates with the toggle off is an incoherent affordance and pure Hick's-Law noise. Fewer items = faster to the one that matters.</li>
+        <li><strong>Item padding:</strong> reuse the existing responsive <code>py-2.5 sm:py-1.5</code> — mobile rows stay comfortably tappable.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="num">4</span>Archived card visual treatment</h2>
+  <p>Today's <code>opacity-50</code> on the whole card is the accessibility problem: it halves the alpha of already-muted text (contrast collapses to roughly 2:1) and dims the ⋯ menu button — the very control we're now pointing users at. Replace whole-card opacity with <strong>structural</strong> cues that keep text and controls at full contrast:</p>
+  <div class="mock">
+    <div>
+      <div class="kcard">
+        <div class="title">Fix relay reconnect after laptop sleep</div>
+        <div class="desc">Bridge drops the socket and never re-pairs…</div>
+      </div>
+      <p class="caption">Live card (current styling, unchanged).</p>
+    </div>
+    <div>
+      <div class="kcard archived">
+        <div class="title">Fix relay reconnect after laptop sleep</div>
+        <div class="desc">Bridge drops the socket and never re-pairs…</div>
+        <span class="pill">
+          <svg viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="M10 12h4"/></svg>
+          Archived
+        </span>
+      </div>
+      <p class="caption">Archived card: dashed border + tinted fill + full-contrast pill badge. Menu button (not shown) keeps normal opacity.</p>
+    </div>
+  </div>
+  <h3>Engineer-ready spec (replaces <code>opacity-50</code> at <code>board-task-card.tsx:486</code>)</h3>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Element</th><th>Classes / change</th><th>Why</th></tr>
+    <tr><td>Card container</td><td>drop <code>opacity-50</code>; add <code>border-dashed bg-muted/30</code></td><td>Dashed border is a shape cue (works for colour-blind users and both themes); the faint <code>muted</code> wash recedes the card without touching text alpha.</td></tr>
+    <tr><td>Title</td><td><code>text-muted-foreground</code> instead of default foreground</td><td>De-emphasised but still ≥4.5:1 in the zinc palette (dark: #a1a1aa on ~#09090b ≈ 8.7:1; light: #71717a on white ≈ 4.7:1). No strikethrough — archived ≠ done.</td></tr>
+    <tr><td>Cover image (if any)</td><td><code>opacity-60 grayscale</code> on the <code>&lt;img&gt;</code></td><td>Imagery may dim — it carries no text.</td></tr>
+    <tr><td>"Archived" badge</td><td>Upgrade the bare inline text at line 559 to a pill: <code>inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground</code>, keeping <code>&lt;Archive className="h-3 w-3" /&gt;</code> + "Archived"</td><td>Matches the card's existing pill vocabulary (workflow/suggestion badges) — Similarity principle; icon + text, never colour alone.</td></tr>
+    <tr><td>⋯ menu button</td><td>No change — must <em>not</em> inherit any dimming</td><td>It's the unarchive entry point; keep its <code>hover/focus/open</code> states at full strength.</td></tr>
+  </table>
+  </div>
+
+  <h2><span class="num">5</span>Accessibility &amp; mobile confirmation</h2>
+  <ul class="check">
+    <li><strong>Contrast (AA):</strong> removing whole-card opacity is the fix, not a side effect — all archived-card text lands on <code>text-muted-foreground</code>, which passes 4.5:1 in both zinc themes (figures above); the dashed border is a ≥3:1 non-text cue by shape, not colour.</li>
+    <li><strong>No colour-only signalling:</strong> archived state = dashed border + icon-and-text badge + menu wording; failure = toast text, not just red.</li>
+    <li><strong>Keyboard:</strong> Radix DropdownMenu already gives full arrow-key/Enter/Escape support; Unarchive is a plain <code>DropdownMenuItem</code>, so it inherits it. The ⋯ trigger already has <code>focus-visible:opacity-100</code> + ring.</li>
+    <li><strong>No hover-only affordance:</strong> the ⋯ trigger is always visible on mobile (<code>sm:opacity-0</code> applies only ≥sm) — unchanged.</li>
+    <li><strong>Touch targets:</strong> trigger is <code>h-11 w-11</code> (44px) on mobile; menu items keep <code>py-2.5</code> mobile padding. Unarchive adds nothing smaller.</li>
+    <li><strong>Screen readers:</strong> "Unarchive" as the accessible name is self-describing; the badge already reads "Archived" inline in the card's text flow.</li>
+  </ul>
+
+  <h2><span class="num">6</span>Product Owner review</h2>
+  <p><strong>Verdict: approve as-is.</strong> Every requirement and acceptance criterion is met: one-click unarchive from the card menu, restore in place with no data loss, archived cards visually distinct, optimistic update with rollback + toast + activity log entry, existing entry points (toolbar toggle, detail-dialog button) untouched.</p>
+  <p>Two things worth naming rather than hiding: the Realtime echo guard in §2 is the one place a subtle bug could slip in, so the engineer should follow that note exactly; and the light-theme contrast figure in §4 (4.7:1) is close enough to the 4.5:1 floor to be worth a quick visual spot-check during build.</p>
+  <p>One small addition beyond the brief: hiding "Move to top / bottom" on archived cards (§3) wasn't asked for, but removes an affordance that no longer makes sense once dragging is disabled. Flagging it here so it isn't a surprise in testing — not scope creep, just a loose end this design also tidies up.</p>
+
+  <h2><span class="num">7</span>Implementation notes for the engineer</h2>
+  <ol>
+    <li><code>board-context.tsx</code>: add <code>unarchiveTask(taskId, columnId)</code> mirroring <code>archiveTask</code> (returns rollback), with a Realtime-echo guard equivalent to <code>trustMove</code> — <em>not</em> <code>trustRemoval</code> (see §2 note).</li>
+    <li><code>task-card-menu.tsx</code>: add <code>handleUnarchive()</code> cloning <code>handleArchive()</code>'s optimistic recipe with <code>{ archived: false }</code>, activity type <code>"unarchived"</code>, toast "Couldn't unarchive task"; render the Unarchive item under <code>task.archived</code>, and gate the two Move items behind <code>!task.archived</code>.</li>
+    <li><code>board-task-card.tsx</code>: apply the §4 table (container classes at line 486, badge at line 559, cover img).</li>
+    <li>No server/API change — <code>updateBoardTask</code> already accepts <code>{ archived: false }</code> (the detail dialog uses it today). Toolbar and detail dialog untouched.</li>
+    <li>Tests: unit-test the menu's conditional items for archived vs live tasks; e2e happy path = toggle on → menu → Unarchive → card restyles in place and toggle count decrements.</li>
+  </ol>
+</main>
+</body>
+</html>

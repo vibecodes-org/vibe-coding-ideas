@@ -7,6 +7,7 @@ import {
   ArrowUpToLine,
   ArrowDownToLine,
   Archive,
+  ArchiveRestore,
   Trash2,
   MessagesSquare,
   AlertTriangle,
@@ -118,6 +119,28 @@ export function TaskCardMenu({
       });
   }
 
+  function handleUnarchive() {
+    const rollback = ops.unarchiveTask(task.id, columnId);
+    ops.incrementPendingOps();
+    // Restoring in place is a content flip, not a removal — trust it the same
+    // way a move is trusted, so a lagging Realtime snapshot can't re-dim the
+    // card for a beat. Column/position are unchanged; only archived flips.
+    ops.trustMove(task.id, columnId, task.position, false);
+
+    updateBoardTask(task.id, ideaId, { archived: false })
+      .then(() => {
+        logTaskActivity(task.id, ideaId, currentUserId, "unarchived");
+      })
+      .catch(() => {
+        rollback();
+        ops.trustMove(task.id, columnId, null); // don't trust a rejected unarchive
+        toast.error("Couldn't unarchive task");
+      })
+      .finally(() => {
+        ops.decrementPendingOps();
+      });
+  }
+
   function handleDelete() {
     setConfirmDeleteOpen(false);
     const rollback = ops.deleteTask(task.id, columnId);
@@ -191,22 +214,35 @@ export function TaskCardMenu({
           onClick={(e) => e.stopPropagation()}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <DropdownMenuItem
-            disabled={!canTop}
-            onSelect={() => handleMove("top")}
-            className="py-2.5 sm:py-1.5"
-          >
-            <ArrowUpToLine className="mr-2 h-4 w-4" />
-            Move to top
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!canBottom}
-            onSelect={() => handleMove("bottom")}
-            className="py-2.5 sm:py-1.5"
-          >
-            <ArrowDownToLine className="mr-2 h-4 w-4" />
-            Move to bottom
-          </DropdownMenuItem>
+          {task.archived && (
+            <DropdownMenuItem
+              onSelect={handleUnarchive}
+              className="py-2.5 sm:py-1.5"
+            >
+              <ArchiveRestore className="mr-2 h-4 w-4" />
+              Unarchive
+            </DropdownMenuItem>
+          )}
+          {!task.archived && (
+            <>
+              <DropdownMenuItem
+                disabled={!canTop}
+                onSelect={() => handleMove("top")}
+                className="py-2.5 sm:py-1.5"
+              >
+                <ArrowUpToLine className="mr-2 h-4 w-4" />
+                Move to top
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canBottom}
+                onSelect={() => handleMove("bottom")}
+                className="py-2.5 sm:py-1.5"
+              >
+                <ArrowDownToLine className="mr-2 h-4 w-4" />
+                Move to bottom
+              </DropdownMenuItem>
+            </>
+          )}
           {launch && (
             <>
               <DropdownMenuSeparator />
