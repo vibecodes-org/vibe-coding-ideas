@@ -162,7 +162,7 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
 // Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
 // `permissionMode` param, already parse-time whitelisted by the shared
-// module's isPermissionModeSafe (only the literal "acceptEdits" ever
+// module's isPermissionModeSafe (only the literal "auto" ever
 // survives parsing — see deep-link.mjs). Only ever applied by
 // resolveClaudeLaunch on a genuinely fresh session (branch 4) — resume/
 // resumeId/explicitCmd never read it, same as MODEL above.

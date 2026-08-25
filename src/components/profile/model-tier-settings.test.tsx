@@ -178,14 +178,14 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
 
   it("renders as a switch (role=switch), never a select or text input", () => {
     renderDialog();
-    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    const toggle = screen.getByRole("switch", { name: "Start in auto mode" });
     expect(toggle).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
   it("defaults to off, with the fresh-launches-only help text", () => {
     renderDialog({ terminalAutoAccept: false });
-    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Start in auto mode" })).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -194,16 +194,16 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
 
   it("reflects an on preference and shows the amber consequence copy", () => {
     renderDialog({ terminalAutoAccept: true });
-    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Start in auto mode" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getByText(/without confirming each change/)).toBeInTheDocument();
+    expect(screen.getByText(/without confirming each one/)).toBeInTheDocument();
   });
 
   it("clicking the switch stages the change and enables Save", () => {
     renderDialog({ terminalAutoAccept: false });
-    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    const toggle = screen.getByRole("switch", { name: "Start in auto mode" });
     const saveButton = screen.getByRole("button", { name: /Save/ });
     expect(saveButton).toBeDisabled();
 
@@ -221,14 +221,14 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
     render(<ModelTierSettings map={null} terminalModel={null} terminalAutoAccept={false} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
-    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    const toggle = screen.getByRole("switch", { name: "Start in auto mode" });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-checked", "true");
 
     fireEvent.keyDown(toggle, { key: "Escape" });
 
     fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
-    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Start in auto mode" })).toHaveAttribute(
       "aria-checked",
       "false",
     );

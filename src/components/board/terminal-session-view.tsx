@@ -829,6 +829,8 @@ export function dockStatusMeta(
       return { label: FIRST_RUN_COPY.pill.notConnected, Icon: CircleDashed, className: "border-zinc-600 bg-zinc-800/60 text-zinc-300" };
     case "setup":
       return { label: FIRST_RUN_COPY.pill.setup, Icon: Circle, className: "border-zinc-700 bg-zinc-800/60 text-zinc-400" };
+    case "ready":
+      return { label: FIRST_RUN_COPY.pill.ready, Icon: Circle, className: "border-zinc-700 bg-zinc-800/60 text-zinc-400" };
     case "coming-soon":
       return { label: FIRST_RUN_COPY.pill.comingSoon, Icon: Clock, className: "border-zinc-700 bg-zinc-800/60 text-zinc-400" };
     case "disconnected":
@@ -908,6 +910,8 @@ function StateOverlay({
       {view === "coming-soon" && <ComingSoonPanel />}
 
       {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} />}
+
+      {view === "ready" && <ReadyPanel onConnect={onConnect} onBrowseSessions={onBrowseSessions} />}
 
       {(view === "connecting" || view === "connecting-returning") && (
         <ConnectingPanel returning={view === "connecting-returning"} />
@@ -1044,6 +1048,32 @@ function StateOverlay({
 }
 
 // ── install-first panels ──────────────────────────────────────────────────────
+
+// Resting screen for a PAIRED Mac sitting idle — reached only after the user
+// ended their last session (the dock suppresses the paired auto-connect so an
+// explicit End never relaunches a session). Before this existed the idle
+// branch fell through to the install wizard below, telling an already-set-up
+// Mac to download the helper (Nick, 2026-08-25).
+function ReadyPanel({ onConnect, onBrowseSessions }: { onConnect: () => void; onBrowseSessions?: () => void }) {
+  return (
+    <div className="flex max-w-md flex-col items-center gap-3" data-testid="ready-panel">
+      <p className="text-sm font-semibold text-zinc-100">{FIRST_RUN_COPY.ready.title}</p>
+      <p className="text-xs text-zinc-400">{FIRST_RUN_COPY.ready.body}</p>
+      <button
+        type="button"
+        onClick={onConnect}
+        className="mt-1 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+      >
+        {FIRST_RUN_COPY.ready.cta}
+      </button>
+      {onBrowseSessions && (
+        <button type="button" onClick={onBrowseSessions} className="text-xs text-zinc-400 underline hover:text-zinc-200">
+          {FIRST_RUN_COPY.ready.browse}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // Screen ① — the numbered one-time setup (unpaired). No deep link has fired here.
 function SetupPanel({ platform, onConnect }: { platform: TerminalPlatform; onConnect: () => void }) {

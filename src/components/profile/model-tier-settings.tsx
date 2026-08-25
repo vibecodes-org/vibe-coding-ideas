@@ -369,12 +369,12 @@ export function ModelTierSettings({
 
           {/* Auto-accept toggle (task d3de150c "Terminal mode") — a two-state
               Switch, never a dropdown or free text: the only value this can
-              ever produce is the literal "acceptEdits" or nothing (AC-6).
+              ever produce is the literal "auto" or nothing (AC-6).
               No platform-wide default exists for this — per-user only. */}
           <div className="space-y-1.5">
             <div className="flex items-start justify-between gap-3">
               <Label htmlFor="terminal-auto-accept" className="text-sm font-normal">
-                Start in auto-accept mode
+                Start in auto mode
               </Label>
               <Switch
                 id="terminal-auto-accept"

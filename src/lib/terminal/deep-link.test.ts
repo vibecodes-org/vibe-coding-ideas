@@ -213,9 +213,9 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
 
 describe("buildLaunchDeepLink with permissionMode (task d3de150c, terminal auto-accept mode)", () => {
   it("includes permissionMode, positioned before prompt, and round-trips", () => {
-    const withMode = { ...SAMPLE, permissionMode: "acceptEdits", prompt: "hello" };
+    const withMode = { ...SAMPLE, permissionMode: "auto", prompt: "hello" };
     const url = buildLaunchDeepLink(withMode);
-    expect(url).toContain("permissionMode=acceptEdits");
+    expect(url).toContain("permissionMode=auto");
     expect(url.indexOf("permissionMode=")).toBeLessThan(url.indexOf("prompt="));
     expect(parseLaunchDeepLink(url)).toEqual(withMode);
   });
@@ -226,7 +226,7 @@ describe("buildLaunchDeepLink with permissionMode (task d3de150c, terminal auto-
     expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
   });
 
-  it("never fires any value other than the literal 'acceptEdits' — hard whitelist, builder side", () => {
+  it("never fires any value other than the literal 'auto' — hard whitelist, builder side", () => {
     const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "bypassPermissions" });
     expect(url).not.toContain("permissionMode=");
   });
@@ -239,9 +239,9 @@ describe("buildLaunchDeepLink with permissionMode (task d3de150c, terminal auto-
   });
 
   it("is left untouched by redactDeepLinkToken — not a secret or free-form user content", () => {
-    const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "acceptEdits" });
+    const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "auto" });
     const redacted = redactDeepLinkToken(url);
-    expect(redacted).toContain("permissionMode=acceptEdits");
+    expect(redacted).toContain("permissionMode=auto");
   });
 });
 

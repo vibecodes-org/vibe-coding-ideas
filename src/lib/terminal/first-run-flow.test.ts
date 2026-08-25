@@ -16,6 +16,13 @@ describe("resolveDockView — install-first entry", () => {
     expect(resolveDockView("idle", "idle", true, false)).toBe("setup");
   });
 
+  // Nick, 2026-08-25: after ending his last session (dock suppresses the
+  // paired auto-connect), re-expanding showed the install wizard to an
+  // already-paired Mac — idle+paired used to fall through to "setup".
+  it("idle + supported + PAIRED → ready (resting screen, never the install wizard)", () => {
+    expect(resolveDockView("idle", "idle", true, true)).toBe("ready");
+  });
+
   it("connecting maps to the returning variant when paired", () => {
     expect(resolveDockView("connecting", "opening", true, false)).toBe("connecting");
     expect(resolveDockView("connecting", "opening", true, true)).toBe("connecting-returning");

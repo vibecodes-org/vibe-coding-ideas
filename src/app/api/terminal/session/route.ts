@@ -46,7 +46,7 @@ import {
 } from "@/lib/terminal/relay-budget";
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
 import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
-import { ACCEPT_EDITS_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
+import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -390,9 +390,9 @@ export async function POST(req: Request) {
     });
     // Task d3de150c: no platform-wide default exists for this by design —
     // the ONLY input is the user's own row. Resolves to the literal
-    // "acceptEdits" or undefined (never any other string) so the deep link
+    // "auto" or undefined (never any other string) so the deep link
     // and the mint response can never carry a forbidden value.
-    const effectivePermissionMode = userAutoAccept ? ACCEPT_EDITS_PERMISSION_MODE : undefined;
+    const effectivePermissionMode = userAutoAccept ? AUTO_PERMISSION_MODE : undefined;
 
     // ── (d) MINT + register. ────────────────────────────────────────────────
     // The bridge/browser pair (per-launch, random sid) and the helper's OWN

@@ -18,6 +18,7 @@ export type LaunchPhase = "idle" | "opening" | "helper-timeout";
 export type DockView =
   | "coming-soon"
   | "setup"
+  | "ready"
   | "connecting"
   | "connecting-returning"
   | "legacy-waiting"
@@ -33,12 +34,16 @@ export type DockView =
  *
  *  - idle + unsupported            → "coming-soon"  (no deep link)
  *  - idle + supported + unpaired   → "setup"        (numbered setup; no deep link yet)
+ *  - idle + supported + paired     → "ready"        (resting screen: this Mac is set up — start a session)
  *  - connecting/opening            → "connecting"[-returning]
  *  - waiting + helper-timeout      → "timeout-new" | "timeout-returning" (~8s fallback)
  *  - waiting + idle launch phase   → "legacy-waiting" (manual cross-machine pairing)
  *
- * A paired browser auto-connects out of idle immediately, so it never lingers on the
- * "setup" view.
+* A paired browser normally auto-connects out of idle immediately; the one time
+ * it rests there is after the user ends their last session (terminal-dock.tsx
+ * suppresses the auto-connect so ending a session never relaunches one — see
+ * `autoConnectSuppressed`). That resting state used to fall through to "setup"
+ * and show the install wizard to an already-paired Mac (Nick, 2026-08-25).
  */
 export function resolveDockView(
   status: TerminalStatus,
@@ -64,7 +69,7 @@ export function resolveDockView(
     case "idle":
     default:
       if (!supported) return "coming-soon";
-      return "setup";
+      return paired ? "ready" : "setup";
   }
 }
 
