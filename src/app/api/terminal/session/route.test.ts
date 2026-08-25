@@ -258,3 +258,57 @@ describe("POST /api/terminal/session — effective auto-accept resolution (task 
     expect(body).not.toHaveProperty("permissionMode");
   });
 });
+
+// Card 0301fe8e (Nick, 2026-08-25): the SAME claude conversation resumed
+// twice at once. The mint route is the server backstop — a resume whose
+// conversation this user already has a LIVE row on is refused, and a
+// permitted resume stamps its conversation id onto the new row at insert
+// time (closing the window in which the row carried null until the bridge
+// announced it).
+describe("POST /api/terminal/session — duplicate-conversation guard (card 0301fe8e)", () => {
+  const CONV = "5a22fd93-0aad-4872-a28f-61c90ff7f25b";
+
+  it("refuses a resume whose conversation is already live — 409 conversation_live, naming the live session, and mints NOTHING", async () => {
+    tableResults.terminal_sessions = { data: { sid: "live-1", idea_id: IDEA_1 }, error: null, count: 0 };
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: CONV }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("conversation_live");
+    expect(body.liveSid).toBe("live-1");
+    expect(body.liveIdeaId).toBe(IDEA_1);
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Terminal session mint refused: conversation already live",
+      expect.objectContaining({ resumeId: CONV, liveSid: "live-1" }),
+    );
+  });
+
+  it("mints when no live row matches, stamping claude_session_id from resumeId at insert time", async () => {
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: CONV }));
+    expect(res.status).toBe(200);
+    expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ claude_session_id: CONV }));
+  });
+
+  it("a fresh (non-resume) mint never runs the guard — a live row is irrelevant — and inserts claude_session_id null", async () => {
+    tableResults.terminal_sessions = { data: { sid: "live-1", idea_id: IDEA_1 }, error: null, count: 0 };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    expect(res.status).toBe(200);
+    expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ claude_session_id: null }));
+  });
+
+  it("rejects a malformed resumeId at the schema (400) rather than passing it towards the shell", async () => {
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: "not-a-uuid; rm -rf /" }));
+    expect(res.status).toBe(400);
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails open (mints anyway, logs an error) when the live-conversation lookup itself errors", async () => {
+    tableResults.terminal_sessions = { data: null, error: { message: "boom" }, count: 0 };
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: CONV }));
+    expect(res.status).toBe(200);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Terminal session mint: live-conversation lookup failed",
+      expect.objectContaining({ error: "boom", resumeId: CONV }),
+    );
+  });
+});

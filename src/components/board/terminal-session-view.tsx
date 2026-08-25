@@ -135,6 +135,8 @@ interface TerminalSessionViewProps {
   onAnnounce: (text: string) => void;
   /** Opens the dock's "My sessions" panel on a cap refusal (E1, design §7b). */
   onCapExceeded?: () => void;
+  /** Card 0301fe8e: reconnects to the live session already running a conversation this tab tried to Resume (the mint route's `conversation_live` refusal). */
+  onConversationLive?: (liveSid: string, liveIdeaId: string) => void;
   /**
    * Multi-session stage 4 (D1-D7): true once the dock has popped this tab's
    * session out into its own window. Renders the "Popped out" placeholder
@@ -269,6 +271,7 @@ export function TerminalSessionView({
   onRegisterActions,
   onAnnounce,
   onCapExceeded,
+  onConversationLive,
   poppedOut = false,
   onPopOut,
   onBringBack,
@@ -291,6 +294,7 @@ export function TerminalSessionView({
     taskTitle: entry.taskTitle,
     displayName: entry.displayName,
     onCapExceeded,
+    onConversationLive,
     // Session entry chooser (card cbe60db5): a Reconnect/instant-continue
     // entry carries a ready-minted `attach` pair instead of a launch to
     // deliver — the hook's own attach-once-per-sid effect handles it below,

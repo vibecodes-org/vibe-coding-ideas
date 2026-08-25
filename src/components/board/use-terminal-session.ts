@@ -46,6 +46,8 @@ import {
   getTerminalSessionCap,
   RATE_LIMIT_MESSAGE,
   DAILY_RELAY_BUDGET_MESSAGE,
+  CONVERSATION_LIVE_CODE,
+  CONVERSATION_LIVE_MESSAGE,
 } from "@/lib/terminal/session-cap";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
@@ -128,6 +130,9 @@ interface MintErrorBody {
   error?: string;
   code?: string;
   cap?: number;
+  /** Card 0301fe8e — set on a `conversation_live` refusal: the live session already running the conversation, and its board. */
+  liveSid?: string;
+  liveIdeaId?: string;
 }
 
 /**
@@ -143,12 +148,27 @@ function reportMintFailure(
   body: MintErrorBody | null,
   posthog: { capture: (event: string, props?: Record<string, unknown>) => void } | undefined,
   onCapExceeded: (() => void) | undefined,
+  onConversationLive: ((liveSid: string, liveIdeaId: string) => void) | undefined,
 ) {
   logger.error("Terminal session mint refused (client)", {
     status,
     code: body?.code,
     error: body?.error,
   });
+  if (body?.code === CONVERSATION_LIVE_CODE) {
+    // Card 0301fe8e — the server's duplicate-conversation backstop: the
+    // conversation this Resume targeted is ALREADY running in one of the
+    // user's live sessions. Offer the one action that's actually right —
+    // reconnecting to that session — instead of leaving them to hunt for it.
+    const { liveSid, liveIdeaId } = body;
+    toast.error(body.error || CONVERSATION_LIVE_MESSAGE, {
+      action:
+        onConversationLive && liveSid && liveIdeaId
+          ? { label: "Reconnect", onClick: () => onConversationLive(liveSid, liveIdeaId) }
+          : undefined,
+    });
+    return;
+  }
   if (body?.code === "cap_exceeded") {
     const cap = typeof body.cap === "number" ? body.cap : getTerminalSessionCap();
     posthog?.capture("terminal_cap_hit", { cap });
@@ -263,6 +283,14 @@ export interface UseTerminalSessionOptions {
    * toast with no action button.
    */
   onCapExceeded?: () => void;
+  /**
+   * Card 0301fe8e: called when a mint is refused because the conversation a
+   * Resume targeted is already running in one of this user's live sessions
+   * (`conversation_live`). The dock reconnects to that session — in place on
+   * this board, or via `?reconnect=<sid>` on its own. Optional, like
+   * `onCapExceeded`: unwired, the toast simply has no Reconnect action.
+   */
+  onConversationLive?: (liveSid: string, liveIdeaId: string) => void;
   /**
    * Multi-session stage 4 (D1/D2): attach directly to an ALREADY-MINTED
    * session's browser leg — no mint, no first-run/launch flow. Set by the
@@ -532,6 +560,7 @@ export function useTerminalSession(
     taskTitle,
     displayName,
     onCapExceeded,
+    onConversationLive,
     attachExisting = null,
     grabFocus = true,
     dragActiveRef,
@@ -540,8 +569,10 @@ export function useTerminalSession(
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
   const onCapExceededRef = useRef(onCapExceeded);
+  const onConversationLiveRef = useRef(onConversationLive);
   posthogRef.current = posthog;
   onCapExceededRef.current = onCapExceeded;
+  onConversationLiveRef.current = onConversationLive;
   // Split-view focus-sync defect fix: read fresh inside the stable
   // focus/blur listeners the xterm-init effect attaches below, so a new
   // `onKeyboardFocusChange` identity every render never forces that
@@ -1809,6 +1840,14 @@ export function useTerminalSession(
           ...(taskId ? { taskId } : {}),
           ...(taskTitle ? { taskTitle } : {}),
           ...(displayName ? { displayName } : {}),
+          // Card 0301fe8e: tell the mint route WHICH conversation an
+          // exact-conversation Resume is about to reopen, so it can refuse
+          // one that's already live and stamp the new row's id up front.
+          // `promptPartsRef` is the carried launch intent (set by
+          // launchFromBus before this connect() runs) — a fresh launch or
+          // the legacy `--continue` resume has no `resumeId` and sends
+          // nothing here.
+          ...(promptPartsRef.current?.resumeId ? { resumeId: promptPartsRef.current.resumeId } : {}),
         }),
       });
       if (!res.ok) {
@@ -1817,7 +1856,13 @@ export function useTerminalSession(
         // (a stale refusal toast for an attempt nobody's waiting on anymore).
         if (isConnectSuperseded(gen, connectGenRef.current)) return;
         dispatch({ type: "session-mint-failed" });
-        reportMintFailure(res.status, body, posthogRef.current, onCapExceededRef.current);
+        reportMintFailure(
+          res.status,
+          body,
+          posthogRef.current,
+          onCapExceededRef.current,
+          onConversationLiveRef.current,
+        );
         return;
       }
       data = await res.json();

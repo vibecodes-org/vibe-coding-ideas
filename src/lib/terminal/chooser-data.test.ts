@@ -6,6 +6,7 @@ import {
   chooserHeaderCounts,
   findLiveSessionForTask,
   findTaskSessionMatch,
+  findLiveSessionForConversation,
   liveSessionsElsewhereOnThisBoard,
   visibleRecentRows,
   type ChooserRegistryRow,
@@ -756,5 +757,54 @@ describe("liveSessionsElsewhereOnThisBoard", () => {
     ];
     const sections = deriveChooserSections(rows, IDEA_A, NOW, ["own-sid-1", "own-sid-2"]);
     expect(liveSessionsElsewhereOnThisBoard(sections)).toEqual([]);
+  });
+});
+
+// Card 0301fe8e (Nick, 2026-08-25): the SAME claude conversation resumed
+// twice at once — two `claude --resume <id>` processes fighting over one
+// transcript. Recent must drop a row whose conversation is currently live,
+// and the dock's Resume paths must be able to find that live session.
+describe("live-conversation guard (card 0301fe8e)", () => {
+  const CONV = "5a22fd93-0aad-4872-a28f-61c90ff7f25b";
+  const OTHER_CONV = "709cbe62-b9a0-439d-a816-ed7c44d4d677";
+  const endedAt = new Date(NOW - 60_000).toISOString();
+
+  it("hides a Recent row whose conversation is running in a live session — on ANY board", () => {
+    const rows = [
+      row({ sid: "ended-resumed", status: "ended", cwd: "~/p", endedAt, claudeSessionId: CONV }),
+      row({ sid: "live-elsewhere", ideaId: IDEA_B, status: "active", claudeSessionId: CONV }),
+      row({ sid: "ended-other", status: "ended", cwd: "~/p", endedAt, claudeSessionId: OTHER_CONV }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(sections.recent.map((r) => r.sid)).toEqual(["ended-other"]);
+    // The live row itself is untouched — it's the ONE place the conversation is now reachable.
+    expect(sections.liveElsewhere.map((r) => r.sid)).toEqual(["live-elsewhere"]);
+  });
+
+  it("keeps a Recent row whose conversation is NOT live, and every id-less row (nothing to match on)", () => {
+    const rows = [
+      row({ sid: "live-unrelated", status: "active", claudeSessionId: OTHER_CONV }),
+      row({ sid: "live-unannounced", status: "active", claudeSessionId: null }),
+      row({ sid: "ended-tracked", status: "ended", cwd: "~/p", endedAt, claudeSessionId: CONV }),
+      row({ sid: "ended-idless", status: "ended", cwd: "~/q", endedAt, claudeSessionId: null }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent.map((r) => r.sid);
+    expect(recent).toEqual(["ended-tracked", "ended-idless"]);
+  });
+
+  it("findLiveSessionForConversation returns the live row on any board, never an ended one", () => {
+    const rows = [
+      row({ sid: "ended-same-conv", status: "ended", cwd: "~/p", endedAt, claudeSessionId: CONV }),
+      row({ sid: "live-b", ideaId: IDEA_B, status: "active", claudeSessionId: CONV }),
+    ];
+    expect(findLiveSessionForConversation(rows, CONV)?.sid).toBe("live-b");
+    expect(findLiveSessionForConversation(rows, OTHER_CONV)).toBeNull();
+  });
+
+  it("findLiveSessionForConversation never matches a null/undefined id, even against an unannounced live row", () => {
+    const rows = [row({ sid: "live-unannounced", status: "active", claudeSessionId: null })];
+    expect(findLiveSessionForConversation(rows, null)).toBeNull();
+    expect(findLiveSessionForConversation(rows, undefined)).toBeNull();
+    expect(findLiveSessionForConversation([], CONV)).toBeNull();
   });
 });

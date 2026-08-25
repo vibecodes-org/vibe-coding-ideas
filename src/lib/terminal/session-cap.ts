@@ -133,6 +133,11 @@ export const RATE_LIMIT_CODE = "rate_limited" as const;
  *  Distinct from both refusals above: this is ACCOUNT-WIDE, not per-user, and
  *  existing sessions are never affected — only NEW mints are refused. */
 export const DAILY_RELAY_BUDGET_CODE = "daily_relay_budget" as const;
+/** Card 0301fe8e — a Resume targeting a claude conversation this user ALREADY
+ *  has a live session on (see the mint route's duplicate-conversation guard).
+ *  Distinct from every refusal above: nothing is "full" or "too fast" — the
+ *  right action is to reconnect to the session that's already running it. */
+export const CONVERSATION_LIVE_CODE = "conversation_live" as const;
 
 /** The mint route's 409 refusal copy (design §7b, cap number always templated). */
 export function capRefusalMessage(cap: number = getServerTerminalSessionCap()): string {
@@ -142,6 +147,10 @@ export function capRefusalMessage(cap: number = getServerTerminalSessionCap()): 
 /** The mint route's 429 refusal copy — distinct state, never suggests ending a session. */
 export const RATE_LIMIT_MESSAGE =
   "You're starting terminals too fast — wait a moment and try again.";
+
+/** Card 0301fe8e — the mint route's 409 refusal copy for `CONVERSATION_LIVE_CODE`. */
+export const CONVERSATION_LIVE_MESSAGE =
+  "That conversation is already open in a live terminal — reconnect to it instead of starting another copy.";
 
 /**
  * MITIGATION 3 — the mint route's 429 refusal copy when the ACCOUNT-WIDE daily
