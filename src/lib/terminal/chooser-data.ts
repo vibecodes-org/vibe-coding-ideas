@@ -198,10 +198,23 @@ export function deriveChooserSections(
   const live = rows.filter((r) => r.status === "active");
   const liveHere = live.filter((r) => r.ideaId === currentIdeaId).map(toLiveRow);
   const liveElsewhere = live.filter((r) => r.ideaId !== currentIdeaId).map(toLiveRow);
+  // Card 0301fe8e (Nick, 2026-08-25 — the SAME conversation resumed twice at
+  // once, two `claude --resume <id>` processes fighting over one transcript):
+  // once a Resume has spawned a live session on a conversation, that
+  // conversation is reachable ONLY via the live row's Reconnect. The ended
+  // row that described it must drop out of Recent, or a second click (or a
+  // second tab) resumes it again. Keyed on `claudeSessionId` across EVERY
+  // board — a live session is unambiguously reachable regardless of where
+  // it was started (same reasoning as the never-filtered "Running now"
+  // sections above).
+  const liveConversationIds = new Set(
+    live.map((r) => r.claudeSessionId).filter((id): id is string => !!id),
+  );
 
   const recentCandidates = rows
     .filter((r): r is ChooserRegistryRow & { endedAt: string } => {
       if (r.status !== "ended") return false;
+      if (r.claudeSessionId && liveConversationIds.has(r.claudeSessionId)) return false;
       // Null-cwd fix (bug 9fb9fced): no cwd check here any more — a row with
       // no recorded folder still belongs in Recent, just without Resume. See
       // this module's header comment.
@@ -319,6 +332,24 @@ export function findLiveSessionForTask(
     sections.liveElsewhere.find((r) => r.taskId === taskId) ??
     null
   );
+}
+
+/**
+ * Card 0301fe8e — the live session (on ANY board) currently running the given
+ * claude conversation, or null. Every Resume entry point in terminal-dock.tsx
+ * asks this before minting: a hit means "reconnect to that session" (here, or
+ * via `?reconnect=<sid>` on its own board), never a second `claude --resume`.
+ * Takes the RAW registry rows rather than `ChooserSections` because only that
+ * layer carries a live row's `claudeSessionId` (the chooser's live rows don't
+ * need it for display). Ended rows never match — an ended session isn't
+ * running anything — and a null/undefined id never matches anything.
+ */
+export function findLiveSessionForConversation(
+  rows: readonly ChooserRegistryRow[],
+  claudeSessionId: string | null | undefined,
+): ChooserRegistryRow | null {
+  if (!claudeSessionId) return null;
+  return rows.find((r) => r.status === "active" && r.claudeSessionId === claudeSessionId) ?? null;
 }
 
 /**

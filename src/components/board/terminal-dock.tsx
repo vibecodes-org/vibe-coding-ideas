@@ -102,6 +102,7 @@ import {
   deriveChooserSections,
   chooserHeaderCounts,
   findTaskSessionMatch,
+  findLiveSessionForConversation,
   liveSessionsElsewhereOnThisBoard,
   type ChooserSections,
   type ChooserRegistryRow,
@@ -754,6 +755,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   useEffect(() => {
     chooserSectionsRef.current = chooserSections;
   }, [chooserSections]);
+  // Card 0301fe8e: the Resume handlers below need the RAW registry rows (not
+  // `chooserSections` — only the raw layer carries a live row's
+  // `claudeSessionId`) to ask "is this conversation already running?", read
+  // synchronously inside stable callbacks for the same reason as
+  // `chooserSectionsRef` above.
+  const registryRowsRef = useRef(registryRows);
+  useEffect(() => {
+    registryRowsRef.current = registryRows;
+  }, [registryRows]);
 
   // Close every open pop-out hand-off channel if the dock itself unmounts
   // (board navigation away) — the popped windows keep running independently
@@ -1962,6 +1972,35 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // under the wrong one. Declared up here (ahead of the `?resume=` effect
   // that also uses it) so both that effect and the click handlers below
   // share one payload-building rule.
+  //
+  // ── Card 0301fe8e — never resume a conversation that's already live ──────
+  // Nick, 2026-08-25: the SAME claude conversation ended up resumed TWICE at
+  // once (two `claude --resume <id>` processes on one transcript — a plausible
+  // cause of the frozen, un-typeable terminal he hit). Every Resume path in
+  // this file (chooser row, task-choice recent arm, the ended tab's own
+  // button, the `?resume=` landing effect) now asks
+  // `reconnectIfConversationLive` FIRST, and a hit reconnects to the session
+  // already running it — in place on this board, or via `?reconnect=<sid>`
+  // on its own — instead of minting a second copy. `reconnectToLiveSession`
+  // is the shared "go to that live session" step, also handed to the hook as
+  // `onConversationLive` for the server backstop's Reconnect toast action.
+  const reconnectToLiveSession = useCallback(
+    (liveSid: string, liveIdeaId: string) => {
+      if (liveIdeaId === ideaId) void performReattach(liveSid, { focus: true });
+      else router.push(`/ideas/${liveIdeaId}/board?reconnect=${encodeURIComponent(liveSid)}`);
+    },
+    [ideaId, performReattach, router],
+  );
+  const reconnectIfConversationLive = useCallback(
+    (claudeSessionId: string | null | undefined): boolean => {
+      const live = findLiveSessionForConversation(registryRowsRef.current ?? [], claudeSessionId);
+      if (!live) return false;
+      toast.info("That conversation is already running — reconnecting to it instead of starting another copy.");
+      reconnectToLiveSession(live.sid, live.ideaId);
+      return true;
+    },
+    [reconnectToLiveSession],
+  );
   const buildResumePayload = useCallback(
     (row: ChooserRecentRow): BrowserLaunchPayload => ({
       // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
@@ -2031,8 +2070,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       toast.error("Couldn't find that session to resume — it may have expired.");
       return;
     }
+    if (reconnectIfConversationLive(row.claudeSessionId)) return;
     mintAndDeliver(buildResumePayload(row), row.sid);
-  }, [resumeParam, registryRows, pathname, mintAndDeliver, buildResumePayload]);
+  }, [resumeParam, registryRows, pathname, mintAndDeliver, buildResumePayload, reconnectIfConversationLive]);
 
   // ── chooser action handlers ─────────────────────────────────────────────────
   // Shared by BOTH the sessions.length === 0 body-swap chooser and the
@@ -2087,6 +2127,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       setPendingLaunch(null);
       setChooserOriginKey(null);
       setChooserMode(null);
+      // Card 0301fe8e: checked BEFORE the cross-board navigation below — a
+      // live session on this conversation is reconnected to wherever it is,
+      // never resumed a second time on its "home" board.
+      if (reconnectIfConversationLive(row.claudeSessionId)) return;
       if (row.ideaId !== ideaId) {
         router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
         return;
@@ -2103,7 +2147,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // `?resume=` landing effect can build the identical payload.
       mintAndDeliver(buildResumePayload(row), row.sid);
     },
-    [mintAndDeliver, buildResumePayload, ideaId, router],
+    [mintAndDeliver, buildResumePayload, ideaId, router, reconnectIfConversationLive],
   );
 
   // The ended panel's "View my other sessions" link (Nick's field report
@@ -2142,6 +2186,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // task-launch button was clicked from (chooser-data.ts's Recent isn't
       // idea-scoped), so this arm must navigate-then-mint too, not mint here.
       const row = match.row;
+      if (reconnectIfConversationLive(row.claudeSessionId)) return; // card 0301fe8e
       if (row.ideaId !== ideaId) {
         router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
         return;
@@ -2154,7 +2199,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     } else {
       router.push(`/ideas/${match.row.ideaId}/board?reconnect=${encodeURIComponent(match.row.sid)}`);
     }
-  }, [pendingLaunch, mintAndDeliver, buildResumePayload, ideaId, performReattach, router]);
+  }, [pendingLaunch, mintAndDeliver, buildResumePayload, ideaId, performReattach, router, reconnectIfConversationLive]);
 
   const handleTaskChoiceStartFresh = useCallback(() => {
     const payload = pendingLaunch;
@@ -2180,6 +2225,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // existed; see this card's return value for that limitation.
   const handleResumeEndedSession = useCallback(
     (payload: BrowserLaunchPayload, sid: string | null) => {
+      // Card 0301fe8e: the ended tab's own Resume button is the path Nick's
+      // duplicate most likely came through — a tab that ended (or looked
+      // ended) while its conversation was already re-opened elsewhere.
+      if (reconnectIfConversationLive(payload.resumeId)) return;
       if (payload.ideaId && payload.ideaId !== ideaId && sid) {
         router.push(`/ideas/${payload.ideaId}/board?resume=${encodeURIComponent(sid)}`);
         return;
@@ -2190,7 +2239,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // and takes over THIS tab rather than opening a new one next to it.
       mintAndDeliver(payload, sid);
     },
-    [ideaId, mintAndDeliver, router],
+    [ideaId, mintAndDeliver, router, reconnectIfConversationLive],
   );
 
   // Back out of the task-scoped choice without launching anything — see the
@@ -2989,6 +3038,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRegisterActions={registerActions}
             onAnnounce={announce}
             onCapExceeded={openMySessions}
+            onConversationLive={reconnectToLiveSession}
             onBrowseSessions={() => openChooserToBrowse(entry.key)}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}

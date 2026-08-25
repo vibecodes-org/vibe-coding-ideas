@@ -25,6 +25,8 @@ import {
   RATE_LIMIT_CODE,
   DAILY_RELAY_BUDGET_CODE,
   DAILY_RELAY_BUDGET_MESSAGE,
+  CONVERSATION_LIVE_CODE,
+  CONVERSATION_LIVE_MESSAGE,
 } from "@/lib/terminal/session-cap";
 import {
   computeSessionExpiresAt,
@@ -73,6 +75,14 @@ const BodySchema = z.object({
   // string's UTF-16 length without doubling its code-point count) —
   // `normalizeDisplayNameInput` enforces the actual limit below.
   displayName: z.string().max(1000).optional(),
+  // Card 0301fe8e (duplicate-conversation guard): the claude conversation an
+  // exact-conversation Resume is about to `claude --resume`. Sent ONLY by the
+  // resume flow (use-terminal-session.ts forwards the carried payload's
+  // `resumeId`); a fresh launch and the legacy `--continue` resume carry
+  // nothing. Used twice below: to refuse a resume whose conversation this
+  // user already has LIVE, and to stamp the new row's `claude_session_id` at
+  // insert time instead of waiting for the bridge to announce it.
+  resumeId: z.string().uuid().optional(),
 });
 
 export async function POST(req: Request) {
@@ -133,7 +143,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId, taskId, taskTitle, displayName } = parsed.data;
+    const { ideaId, taskId, taskTitle, displayName, resumeId } = parsed.data;
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -250,6 +260,52 @@ export async function POST(req: Request) {
     );
     const activeCount = activeBefore - reapedIds.length;
 
+    // ── (a.5) DUPLICATE-CONVERSATION GUARD (card 0301fe8e) ──────────────────
+    // A Resume targeting a claude conversation this user ALREADY has a live
+    // session on must never spawn a second `claude --resume <id>` — two
+    // Claude Code processes on one transcript is the wedge Nick hit on
+    // 2026-08-25. The chooser hides such rows client-side (chooser-data.ts);
+    // this is the server backstop for a second tab, a stale list, or a click
+    // that beat the registry refresh. Runs AFTER the reap so an expired row
+    // never blocks a legitimate resume, and reads `claude_session_id` — which
+    // the insert below now stamps from `resumeId` at mint time, closing the
+    // window in which a freshly-resumed row carried null until the bridge
+    // announced its id. Best-effort read: an error fails OPEN (logged), the
+    // same posture as the task-lookup / cap / budget reads around it.
+    if (resumeId) {
+      const { data: liveRow, error: liveErr } = await supabase
+        .from("terminal_sessions")
+        .select("sid, idea_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .eq("claude_session_id", resumeId)
+        .limit(1)
+        .maybeSingle();
+      if (liveErr) {
+        logger.error("Terminal session mint: live-conversation lookup failed", {
+          error: liveErr.message,
+          userId: user.id,
+          resumeId,
+        });
+      } else if (liveRow) {
+        logger.warn("Terminal session mint refused: conversation already live", {
+          userId: user.id,
+          ideaId,
+          resumeId,
+          liveSid: liveRow.sid,
+        });
+        return NextResponse.json(
+          {
+            error: CONVERSATION_LIVE_MESSAGE,
+            code: CONVERSATION_LIVE_CODE,
+            liveSid: liveRow.sid,
+            liveIdeaId: liveRow.idea_id,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // ── (b) CAP (E1) — refuse before minting anything. ──────────────────────
     const cap = getServerTerminalSessionCap();
     const capDecision = decideCap(activeCount, cap);
@@ -356,6 +412,14 @@ export async function POST(req: Request) {
       task_id: taskId ?? null,
       task_title: taskTitle ?? null,
       display_name: displayName !== undefined ? normalizeDisplayNameInput(displayName) : null,
+      // Card 0301fe8e: an exact-conversation Resume knows its conversation id
+      // from the very first instant — stamp it now so the duplicate guard
+      // above (and the chooser's live-conversation filter) see it immediately,
+      // rather than only once the bridge's announcement PATCH lands seconds
+      // later. The bridge's later announcement writes the same id back over
+      // it (see session/[sid]/route.ts) — harmless, and still authoritative
+      // for the fresh-launch case, where this stays null.
+      claude_session_id: resumeId ?? null,
       status: "active",
       expires_at: computeSessionExpiresAt(nowMs),
     });
