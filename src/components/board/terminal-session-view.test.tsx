@@ -788,3 +788,79 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
     expect(onBrowseSessions).toHaveBeenCalledTimes(1);
   });
 });
+
+// Nick, 2026-08-25: "The download link should behave the same as the Update
+// now button, which also ends the sessions. The download link just downloads
+// the helper but doesn't end the sessions so the helper can never be
+// installed." Every download affordance in this view now runs the shared
+// stand-down-first flow (helper-update-flow.ts) instead of being a bare link.
+describe("TerminalSessionView — helper download affordances run the Update-now flow", () => {
+  function renderWithLiveCount(liveSessionCount: number) {
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        liveSessionCount={liveSessionCount}
+      />,
+    );
+  }
+
+  it("the in-session nudge offers 'Update now' (the shared button), never a bare download link", () => {
+    installMockSession(); // connected, helperVersion: null → nudge shows
+    renderWithLiveCount(2);
+    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Download" })).not.toBeInTheDocument();
+  });
+
+  it("with sessions running, the nudge's button asks to end them first — and 'Not now' backs out", () => {
+    installMockSession();
+    renderWithLiveCount(2);
+    fireEvent.click(screen.getByRole("button", { name: "Update now" }));
+    expect(screen.getByTestId("helper-update-confirm")).toBeInTheDocument();
+    expect(screen.getByText(/Your 2 running sessions will end first/)).toBeInTheDocument();
+    // The nudge itself steps aside while the flow is in progress.
+    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(screen.queryByTestId("helper-update-confirm")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+  });
+
+  it("the one-time-setup wizard's download is a button on the same flow, not a bare link", () => {
+    const actions = mockActions();
+    mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+      const containerRef = useRef<HTMLDivElement | null>(null);
+      lastContainerRef = containerRef;
+      return {
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null },
+        launchPhase: "idle",
+        peerDegraded: false,
+        helperVersion: null,
+        pair: null,
+        cwd: null,
+        claudeSessionId: null,
+        readOnly: false,
+        autoAccept: false,
+        inputEnabled: false,
+        platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download for Mac", downloadUrl: null },
+        paired: false,
+        xtermReady: true,
+        containerRef,
+        pairingTimedOut: false,
+        actions,
+      };
+    });
+    renderWithLiveCount(1);
+    const download = screen.getByRole("button", { name: /Download for Mac/ });
+    expect(screen.queryByRole("link", { name: /Download for Mac/ })).not.toBeInTheDocument();
+    fireEvent.click(download);
+    expect(screen.getByText(/Your 1 running session will end first/)).toBeInTheDocument();
+  });
+});

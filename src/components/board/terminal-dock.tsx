@@ -2351,6 +2351,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     poppedOutKeys.has(key) ? "popped-out" : (summaries[key]?.status ?? "idle");
 
   const statusChips = multi ? summarizeSessionStatuses(sessions.map((s) => displayStatusFor(s.key))) : [];
+  // Helper-update flow (terminal-session-view.tsx): how many sessions its
+  // "End sessions & update" confirm will actually end.
+  const liveSessionCount = sessions.filter((s) => {
+    const st = summaries[s.key]?.status;
+    return st === "connected" || st === "connecting" || st === "waiting-to-pair" || st === "disconnected";
+  }).length;
   const singleView = activeSummary
     ? resolveDockView(activeSummary.status, activeSummary.launchPhase, activeSummary.platformSupported, activeSummary.paired)
     : "setup";
@@ -2990,6 +2996,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onAnnounce={announce}
             onCapExceeded={openMySessions}
             onBrowseSessions={() => openChooserToBrowse(entry.key)}
+            liveSessionCount={liveSessionCount}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}
