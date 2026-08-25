@@ -597,6 +597,28 @@ export function KanbanBoard({
     };
   }, []);
 
+  const optimisticUnarchiveTask = useCallback((taskId: string, columnId: string) => {
+    const prev = columnsRef.current;
+    setColumns((cols) => {
+      const next = cols.map((col) =>
+        col.id === columnId
+          ? {
+              ...col,
+              tasks: col.tasks.map((t) =>
+                t.id === taskId && t.archived ? { ...t, archived: false } : t
+              ),
+            }
+          : col
+      );
+      columnsRef.current = next;
+      return next;
+    });
+    return () => {
+      setColumns(prev);
+      columnsRef.current = prev;
+    };
+  }, []);
+
   const optimisticMoveTaskWithinColumn = useCallback(
     (taskId: string, columnId: string, end: "top" | "bottom", newPosition: number) => {
       const prev = columnsRef.current;
@@ -681,7 +703,7 @@ export function KanbanBoard({
   }, []);
 
   const trustMove = useCallback(
-    (taskId: string, columnId: string, position: number | null) => {
+    (taskId: string, columnId: string, position: number | null, archived?: boolean) => {
       if (position === null) {
         trustedTasksRef.current.delete(taskId);
         return;
@@ -689,6 +711,7 @@ export function KanbanBoard({
       trustedTasksRef.current.set(taskId, {
         columnId,
         position,
+        ...(archived !== undefined ? { archived } : {}),
         trustedUntil: Date.now() + TRUST_WINDOW_MS,
       });
     },
@@ -723,6 +746,7 @@ export function KanbanBoard({
       createTaskAtTop: optimisticCreateTaskAtTop,
       deleteTask: optimisticDeleteTask,
       archiveTask: optimisticArchiveTask,
+      unarchiveTask: optimisticUnarchiveTask,
       moveTaskWithinColumn: optimisticMoveTaskWithinColumn,
       createColumn: optimisticCreateColumn,
       deleteColumn: optimisticDeleteColumn,
@@ -738,6 +762,7 @@ export function KanbanBoard({
       optimisticCreateTaskAtTop,
       optimisticDeleteTask,
       optimisticArchiveTask,
+      optimisticUnarchiveTask,
       optimisticMoveTaskWithinColumn,
       optimisticCreateColumn,
       optimisticDeleteColumn,

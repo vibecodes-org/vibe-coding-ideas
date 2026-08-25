@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mergeTrustedState, TRUST_WINDOW_MS, type TrustedTaskState } from "./trusted-state";
 
-type Task = { id: string; position: number };
+type Task = { id: string; position: number; archived?: boolean };
 type Col = { id: string; tasks: Task[] };
 
 const cols = (...defs: [string, Task[]][]): Col[] => defs.map(([id, tasks]) => ({ id, tasks }));
@@ -161,6 +161,55 @@ describe("mergeTrustedState", () => {
     const snapshot = JSON.stringify(server);
     mergeTrustedState(server, trust({ t1: { columnId: "b", position: 0, ...live } }), NOW);
     expect(JSON.stringify(server)).toBe(snapshot);
+  });
+
+  it("overrides a stale server row's archived:true with a trusted archived:false (unarchive)", () => {
+    // Server (lagging replica) still shows t1 as archived; we just unarchived it locally.
+    const server = cols(["a", [{ id: "t1", position: 0, archived: true }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "a", position: 0, archived: false, ...live } }),
+      NOW
+    );
+    const t1 = res.columns.find((c) => c.id === "a")!.tasks.find((t) => t.id === "t1")!;
+    expect(t1.archived).toBe(false);
+    expect(res.resolved).toEqual([]);
+  });
+
+  it("resolves the archived override once the server snapshot catches up", () => {
+    const server = cols(["a", [{ id: "t1", position: 0, archived: false }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "a", position: 0, archived: false, ...live } }),
+      NOW
+    );
+    expect(res.columns).toBe(server); // server agrees → no override, identity preserved
+    expect(res.resolved).toEqual(["t1"]);
+  });
+
+  it("drops an archived override when the trust window expires, letting the stale server value win", () => {
+    const server = cols(["a", [{ id: "t1", position: 0, archived: true }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({
+        t1: { columnId: "a", position: 0, archived: false, trustedUntil: NOW - 1 },
+      }),
+      NOW
+    );
+    expect(res.columns).toBe(server); // expired → server's (stale) archived:true stands
+    expect(res.resolved).toEqual(["t1"]);
+  });
+
+  it("overrides a stale server row's archived:false with a trusted archived:true (archive)", () => {
+    const server = cols(["a", [{ id: "t1", position: 0, archived: false }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "a", position: 0, archived: true, ...live } }),
+      NOW
+    );
+    const t1 = res.columns.find((c) => c.id === "a")!.tasks.find((t) => t.id === "t1")!;
+    expect(t1.archived).toBe(true);
+    expect(res.resolved).toEqual([]);
   });
 
   it("preserves other task fields when overriding (spreads the original)", () => {
