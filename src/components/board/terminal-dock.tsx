@@ -1427,6 +1427,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         if (idx === -1) return prev;
         const next = prev.filter((s) => s.key !== key);
         if (next.length === 0) {
+          // Temporary diagnostic (Nick's field report 2026-08-25: closing a
+          // non-last tab collapses the panel) — every dock.tsx code path was
+          // traced and none should be able to reach this branch with more
+          // than one tab open. Logging the exact snapshot the moment it
+          // happens, so the next repro tells us what `prev` actually held
+          // instead of us guessing again.
+          logger.warn("Terminal panel collapsing on tab close", {
+            closedKey: key,
+            prevKeys: prev.map((s) => s.key),
+            prevStatuses: prev.map((s) => ({ key: s.key, status: summariesRef.current[s.key]?.status ?? "idle" })),
+          });
           // Last tab closed → back to the true P1 idle/resting state (B8), not a
           // lingering empty strip. `suppressAutoConnect: true` — the user just
           // explicitly ended this session, so an expanded dock must NOT

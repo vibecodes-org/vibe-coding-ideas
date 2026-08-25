@@ -2062,6 +2062,112 @@ describe("TerminalDock — ending the last tab does not auto-relaunch a fresh se
   });
 });
 
+// Field report (Nick, 2026-08-25): with two tabs open, closing the SECOND
+// (non-last) one collapsed the whole panel — even though the first tab's
+// session was still alive. Reopening the panel showed the first session
+// intact, so nothing was actually torn down server-side; this is purely the
+// dock's local `expanded` state being wrongly cleared on a close that isn't
+// the last tab.
+describe("TerminalDock — closing a non-last tab must not collapse the panel (field report 2026-08-25)", () => {
+  async function mintTwoSessions(): Promise<[string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    const secondKey = keys.find((k) => k !== firstKey) as string;
+    return [firstKey, secondKey];
+  }
+
+  function tabContainer(key: string): HTMLElement {
+    const el = document.getElementById(`terminal-tab-${key}`);
+    if (!el) throw new Error(`tab element not found for key ${key}`);
+    return el;
+  }
+
+  it("closing the newer of two tabs leaves the panel expanded on the remaining (original) tab", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [firstKey, secondKey] = await mintTwoSessions();
+
+    expect(screen.getByRole("button", { name: /Collapse terminal panel/ })).toHaveAttribute("aria-expanded", "true");
+
+    // Bring the second tab live so × arms the confirm, matching a real
+    // connected session (mirrors the "ending the last tab" test above).
+    fireEvent.click(screen.getByTestId(`report-connected-${secondKey}`));
+    fireEvent.click(
+      within(tabContainer(secondKey)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }),
+    );
+    fireEvent.click(within(tabContainer(secondKey)).getByRole("button", { name: /^Confirm end session:/ }));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    expect(screen.getByTestId("session-view").dataset.key).toBe(firstKey);
+
+    expect(screen.getByRole("button", { name: /(Expand|Collapse) terminal panel/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("closing an already-ENDED second tab (single click, no confirm) leaves the panel expanded on the remaining tab", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [firstKey, secondKey] = await mintTwoSessions();
+
+    fireEvent.click(screen.getByTestId(`report-ended-${secondKey}`));
+    fireEvent.click(
+      within(tabContainer(secondKey)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }),
+    );
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    expect(screen.getByTestId("session-view").dataset.key).toBe(firstKey);
+
+    expect(screen.getByRole("button", { name: /(Expand|Collapse) terminal panel/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("real page-load order: auto-seeded first tab (connected) + a '+'-opened second tab — closing the second leaves the first's panel open", async () => {
+    // Empty registry — the FIRST tab comes from the page-load auto-seed
+    // (empty-launch), exactly like Nick's real session, not the chooser.
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+    fireEvent.click(screen.getByTestId(`report-connected-${firstKey}`));
+    fireEvent.click(tabContainer(firstKey)); // expand, as clicking the tab does for real
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const secondKey = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string).find((k) => k !== firstKey) as string;
+
+    expect(screen.getByRole("button", { name: /Collapse terminal panel/ })).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByTestId(`report-connected-${secondKey}`));
+    fireEvent.click(
+      within(tabContainer(secondKey)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }),
+    );
+    fireEvent.click(within(tabContainer(secondKey)).getByRole("button", { name: /^Confirm end session:/ }));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    expect(screen.getByTestId("session-view").dataset.key).toBe(firstKey);
+    expect(screen.getByRole("button", { name: /(Expand|Collapse) terminal panel/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+});
+
 // Multi-terminal reload restore (Nick's field report 2026-08-22): two dock
 // tabs open → hard refresh → only one came back, and the orphaned live
 // session was then mislabelled "open in another tab". The tab now remembers

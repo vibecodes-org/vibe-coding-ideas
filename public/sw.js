@@ -76,6 +76,8 @@ self.addEventListener("fetch", (event) => {
 
   // Network-first for everything else
   event.respondWith(
-    fetch(request).catch(() => caches.match(request))
+    fetch(request).catch(() =>
+      caches.match(request).then((cached) => cached || new Response(null, { status: 504, statusText: "Network error" }))
+    )
   );
 });
