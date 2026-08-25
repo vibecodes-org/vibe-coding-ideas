@@ -963,11 +963,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Keep `activeKey` (and so `aria-selected`) pointed at the focused pane's
   // session while split is the standing preference — even if not currently
   // RENDERED as split (width floor / mobile / count, §10.1).
+  //
+  // Bug (Nick's field report 2026-08-25, "closing the 2nd tab collapses the
+  // panel"): the panel wasn't collapsing — `expanded` stayed true — its body
+  // went BLANK. Closing the focused pane of a 2-up split left `paneKeys`
+  // still holding the closed key for one commit (the count-driven effect
+  // above only clears it to [] after this same commit), so this effect
+  // re-pointed `activeKey` at the just-closed session, overriding
+  // `removeEntry`'s neighbor pick. With one tab left, nothing matched
+  // `activeKey` in the body (`isEntryVisible`), the status chip fell back to
+  // idle ("One-time setup"), and the next run of this effect bailed on the
+  // now-empty `paneKeys` — so it never self-healed (3→2 did, by accident, on
+  // the second pass). Only ever follow a pane whose session still exists.
   useEffect(() => {
     if (splitPreferred !== true || paneKeys.length === 0) return;
     const target = paneKeys[focusedPaneIndex] ?? paneKeys[0];
-    if (target && target !== activeKey) setActiveKey(target);
-  }, [splitPreferred, paneKeys, focusedPaneIndex, activeKey]);
+    if (!target || target === activeKey) return;
+    // Closed pane — leave `removeEntry`'s neighbor pick alone.
+    if (!sessions.some((s) => s.key === target)) return;
+    setActiveKey(target);
+  }, [splitPreferred, paneKeys, focusedPaneIndex, activeKey, sessions]);
 
   // Width-shrink fallback WHILE already rendering at the current pane
   // count (as opposed to the count-transition effect above, which handles
@@ -1427,17 +1442,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         if (idx === -1) return prev;
         const next = prev.filter((s) => s.key !== key);
         if (next.length === 0) {
-          // Temporary diagnostic (Nick's field report 2026-08-25: closing a
-          // non-last tab collapses the panel) — every dock.tsx code path was
-          // traced and none should be able to reach this branch with more
-          // than one tab open. Logging the exact snapshot the moment it
-          // happens, so the next repro tells us what `prev` actually held
-          // instead of us guessing again.
-          logger.warn("Terminal panel collapsing on tab close", {
-            closedKey: key,
-            prevKeys: prev.map((s) => s.key),
-            prevStatuses: prev.map((s) => ({ key: s.key, status: summariesRef.current[s.key]?.status ?? "idle" })),
-          });
           // Last tab closed → back to the true P1 idle/resting state (B8), not a
           // lingering empty strip. `suppressAutoConnect: true` — the user just
           // explicitly ended this session, so an expanded dock must NOT
