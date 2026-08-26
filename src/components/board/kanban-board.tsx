@@ -1204,6 +1204,7 @@ export function KanbanBoard({
           <div className="relative min-h-0 flex-1">
             <div
               ref={scrollContainerRef}
+              data-testid="board-scroll-container"
               onScroll={handleScrollCheck}
               className={`flex h-full items-start gap-4 overflow-x-auto pb-4 ${
                 activeTask || activeColumn ? "!snap-none" : "snap-x snap-mandatory sm:snap-none"

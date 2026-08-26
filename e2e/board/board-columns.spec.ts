@@ -40,4 +40,27 @@ test.describe("Board Columns", () => {
 
   // TODO: column options menu test needs a data-testid on the "..." button
   // The current SVG-based selector is unreliable
+
+  // Regression test for the missing-horizontal-scrollbar bug: a missing
+  // `min-h-0` on an ancestor flex wrapper let the column row stretch to its
+  // full content height instead of the viewport, pushing its horizontal
+  // scrollbar off-screen. Asserting the scroll container stays viewport-bound
+  // catches that class of regression even though the scrollbar itself isn't
+  // something Playwright can "see".
+  test("column scroll container stays bounded to the viewport height", async ({ userAPage: page }) => {
+    await page.goto(boardUrl);
+    const main = page.getByRole("main");
+    const scrollContainer = main.getByTestId("board-scroll-container");
+    await expect(scrollContainer).toBeVisible({ timeout: EXPECT_TIMEOUT });
+
+    const viewportSize = page.viewportSize();
+    expect(viewportSize).not.toBeNull();
+
+    const box = await scrollContainer.boundingBox();
+    expect(box).not.toBeNull();
+
+    // Allow a small tolerance for chrome (navbar/footer share the viewport),
+    // but the container must never be allowed to grow past it.
+    expect(box!.height).toBeLessThanOrEqual(viewportSize!.height);
+  });
 });
