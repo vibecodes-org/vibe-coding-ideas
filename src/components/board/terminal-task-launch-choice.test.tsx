@@ -252,6 +252,29 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(footer?.className).toMatch(/px-4/);
   });
 
+  // Nick, 27 Aug 2026 (live screenshot after the first fix shipped): the
+  // text AND footer still hung off the right edge. DialogContent is a CSS
+  // grid; grid items default to `min-width: auto`, so the nowrap (truncate)
+  // task title forced the single column wider than the card and everything
+  // in it overflowed. Both grid children must opt out with min-w-0 or
+  // flex-wrap/truncate never get the chance to do their job.
+  it("lets both grid children shrink to the card (min-w-0) so a long title can't widen the dialog", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle='Task-launch "recent session" dialog: footer buttons overhang the card edge, Resume button styled inconsistently'
+        match={LIVE_HERE_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const footer = screen.getByRole("button", { name: "Cancel" }).parentElement;
+    expect(footer?.className).toMatch(/min-w-0/);
+    const header = screen.getByText("This task already has a terminal running").parentElement;
+    expect(header?.className).toMatch(/min-w-0/);
+  });
+
   it("disables both actions while busy", () => {
     render(
       <TerminalTaskLaunchChoice

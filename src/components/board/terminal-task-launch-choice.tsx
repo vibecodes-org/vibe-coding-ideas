@@ -88,7 +88,13 @@ export function TerminalTaskLaunchChoice({
         className="max-w-sm gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200"
         data-testid="terminal-task-launch-choice"
       >
-        <div className="px-4 pt-4 pr-8 pb-3">
+        {/* min-w-0 on both grid children (Nick, 27 Aug 2026): DialogContent is
+            a CSS grid, and a grid item's default `min-width: auto` lets the
+            nowrap (truncate) task title force the whole column wider than the
+            card. Everything in that column — the text AND the footer — then
+            hangs off the card's right edge. min-w-0 lets the column shrink to
+            the card, so truncate actually truncates and the footer wraps. */}
+        <div className="min-w-0 px-4 pt-4 pr-8 pb-3">
           <DialogTitle className="text-[13px] font-semibold text-zinc-100">
             {isLive ? "This task already has a terminal running" : "This task has a recent session"}
           </DialogTitle>
@@ -112,7 +118,7 @@ export function TerminalTaskLaunchChoice({
             <p className="mt-1 text-[11px] text-zinc-500">Only starting fresh applies auto-accept.</p>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>
