@@ -164,6 +164,29 @@ describe("LaunchPathDialog — existing-mode Save writes to the server, not loca
     expect(screen.getByRole("alert")).toHaveTextContent(/fully-expanded absolute path/i);
   });
 
+  // Regression: `/` passes the "is it absolute" check, but recording it would
+  // poison every future launch on this machine — the dialog must block it too.
+  it("blocks Save (never calls the server) for the filesystem root `/`", () => {
+    render(
+      <LaunchPathDialog
+        open
+        onOpenChange={() => {}}
+        ideaId="idea-1"
+        ideaGithubUrl={null}
+        initial={null}
+        onSaved={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Absolute path on your computer"), {
+      target: { value: "/" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mockSaveManualProjectPath).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/not a project folder/i);
+  });
+
   // Create-new mode is untouched by this fix — still localStorage, never the server.
   it("create-new mode never calls saveManualProjectPath", () => {
     const onSaved = vi.fn();

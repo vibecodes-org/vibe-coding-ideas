@@ -23,6 +23,7 @@ import {
   validateFolderName,
   looksAbsolutePath,
   isValidAbsolutePath,
+  isPlausibleProjectPath,
   parseRepoFromGithubUrl,
   writeLaunchPath,
   DEFAULT_NEW_PROJECT_PARENT,
@@ -114,6 +115,17 @@ export function LaunchPathDialog({
         pathRef.current?.focus();
         return;
       }
+      // Absolute but still not a real project folder — the root of the disk,
+      // a home directory, or another top-level folder. Recording one of these
+      // would poison every future launch on this machine (self-heal becomes
+      // self-poison), so block it the same way as a non-absolute path.
+      if (!isPlausibleProjectPath(trimmed)) {
+        setError(
+          "That's the root of the disk, a home folder, or a top-level folder — not a project folder. Enter the folder that actually holds this project (run pwd inside it).",
+        );
+        pathRef.current?.focus();
+        return;
+      }
       // Existing-mode folders are now recorded server-side (idea_project_paths)
       // instead of localStorage — this is what makes the pin persist across
       // browsers, and what retires the two-independent-stores bug the pin used
@@ -167,6 +179,8 @@ export function LaunchPathDialog({
   // otherwise) — `~`/`$HOME`/relative don't expand in the launch cwd. The parent
   // folder for a NEW project is only warned on (the agent expands it on create).
   const existingNotAbsolute = mode === "existing" && path.trim() !== "" && !isValidAbsolutePath(path);
+  const existingNotProject =
+    mode === "existing" && path.trim() !== "" && !existingNotAbsolute && !isPlausibleProjectPath(path);
   const parentNotAbsolute = mode === "new" && parent.trim() !== "" && !looksAbsolutePath(parent);
 
   const saveLabel = saving
@@ -243,7 +257,7 @@ export function LaunchPathDialog({
               placeholder="/Users/you/projects/my-idea"
               className="font-mono text-sm"
               aria-describedby="launch-path-help"
-              aria-invalid={existingNotAbsolute || undefined}
+              aria-invalid={existingNotAbsolute || existingNotProject || undefined}
             />
             <p id="launch-path-help" className="text-xs text-muted-foreground">
               Tip: in your terminal, <code className="font-mono">cd</code> to the folder and run{" "}
@@ -254,6 +268,13 @@ export function LaunchPathDialog({
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Enter a fully-expanded absolute path (starting with / or a drive letter). ~ and $HOME
                 aren&apos;t supported — run <code className="font-mono">pwd</code> in the folder to get it.
+              </p>
+            )}
+            {existingNotProject && (
+              <p className="flex items-start gap-1.5 text-xs text-amber-400">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                That&apos;s the root of the disk, a home folder, or a top-level folder — not a project
+                folder. Enter the folder that actually holds this project.
               </p>
             )}
           </div>

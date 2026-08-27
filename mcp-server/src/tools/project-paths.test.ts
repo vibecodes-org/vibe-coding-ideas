@@ -102,6 +102,27 @@ describe("recordProjectPath — validation (error path)", () => {
     ).rejects.toThrow();
     expect(captured.upserted).toBeNull();
   });
+
+  // Regression: `/` passes strict absolute-path validation, so a session that
+  // opens at the filesystem root used to record it — poisoning every future
+  // launch on that machine ("self-heal becomes self-poison").
+  it("rejects the filesystem root `/`, and does not touch the database", async () => {
+    const { chain, captured } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+    await expect(
+      recordProjectPath(ctx, { idea_id: IDEA_ID, hostname: "host", absolute_path: "/" })
+    ).rejects.toThrow(/not a project folder/i);
+    expect(captured.upserted).toBeNull();
+  });
+
+  it("rejects a home directory `/Users/nick`, and does not touch the database", async () => {
+    const { chain, captured } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+    await expect(
+      recordProjectPath(ctx, { idea_id: IDEA_ID, hostname: "host", absolute_path: "/Users/nick" })
+    ).rejects.toThrow(/not a project folder/i);
+    expect(captured.upserted).toBeNull();
+  });
 });
 
 describe("recordProjectPath — upsert (happy path)", () => {

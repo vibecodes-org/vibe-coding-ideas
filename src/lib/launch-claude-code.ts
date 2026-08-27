@@ -303,6 +303,52 @@ export function isValidAbsolutePath(path: string): boolean {
   return isPosix || isWinDrive || isUnc;
 }
 
+/**
+ * Is `path` not just a syntactically valid absolute path, but plausibly a
+ * PROJECT folder — i.e. not a "landing zone" like `/`, `/Users`, or a home
+ * directory? `isValidAbsolutePath("/")` is true, and a launch session that
+ * opens at `/` will happily record it via `record_project_path`; every later
+ * launch on that machine then reopens at `/` too ("self-heal becomes
+ * self-poison"). This check closes that loop on every write path, while
+ * leaving `isValidAbsolutePath` itself unchanged.
+ */
+export function isPlausibleProjectPath(path: string): boolean {
+  if (!isValidAbsolutePath(path)) return false;
+  // Strip trailing slashes/backslashes (not leading) after trimming.
+  const p = path.trim().replace(/[\\/]+$/, "");
+
+  if (p.startsWith("/")) {
+    const segments = p.split("/").filter(Boolean);
+    // `/`, `/tmp`, `/Users`, `/opt`, `/root` (root's home is 1 segment)
+    if (segments.length < 2) return false;
+    const [first] = segments;
+    if (segments.length === 2 && (first === "Users" || first === "home")) {
+      return false; // `/Users/<name>` or `/home/<name>` — a home directory
+    }
+    return true;
+  }
+
+  if (/^\\\\[^\\]+\\[^\\]+/.test(p)) {
+    // UNC: \\server\share[\rest...] — reject if nothing after the share.
+    const rest = p.replace(/^\\\\[^\\]+\\[^\\]+/, "");
+    return rest.replace(/^[\\/]+/, "").length > 0;
+  }
+
+  // Windows drive letter: C:\... or C:/...
+  const driveMatch = /^[A-Za-z]:[\\/]/.exec(p);
+  if (driveMatch) {
+    const remainder = p.slice(driveMatch[0].length);
+    const segments = remainder.split(/[\\/]/).filter(Boolean);
+    if (segments.length === 0) return false; // drive root
+    if (segments.length === 2 && segments[0].toLowerCase() === "users") {
+      return false; // C:\Users\<name>
+    }
+    return true;
+  }
+
+  return false;
+}
+
 /** Compose `parent/name` into a single path, normalising the joining slash. */
 export function composeNewProjectPath(parent: string, name: string): string {
   const base = parent.trim().replace(/\/+$/, "");
@@ -479,15 +525,17 @@ export function decidePinMigration(
  *     inject a path we can't tie to the machine actually running the launch —
  *     opening Claude Code in someone else's checkout is worse than asking.
  *
- * A row is only usable if its absolute_path passes strict validation; bad rows
- * are ignored throughout, including under rule 1, so a single corrupt record
- * can neither poison the choice nor block a good row from resolving.
+ * A row is only usable if its absolute_path is a plausible project folder
+ * (strict validation, plus not `/`, a home directory, or another top-level
+ * landing zone); bad rows are ignored throughout, including under rule 1, so
+ * a single corrupt or poisoned record can neither poison the choice nor block
+ * a good row from resolving.
  */
 export function chooseLaunchCwd(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined,
   realHostname: string | null = null
 ): string | undefined {
-  const usable = (records ?? []).filter((r) => isValidAbsolutePath(r.absolute_path));
+  const usable = (records ?? []).filter((r) => isPlausibleProjectPath(r.absolute_path));
   if (realHostname) {
     const own = usable.find((r) => r.hostname === realHostname);
     if (own) return own.absolute_path.trim();
@@ -674,9 +722,9 @@ function newProjectSteps(
   • ⚠️ This applies EVEN IF the first task is planning, research, design, or "board-only" work with no files yet. Do NOT stay in your home directory on the reasoning that "no files are needed yet" or "the repo will be created later" — that mis-files this idea's history and config under home. EVERY session for this idea runs from its project folder. No exceptions.
 Then confirm and record exactly where you are (this lets future launches open straight in this folder):
   • Run \`pwd\` and capture the absolute path it prints — this is the authoritative location on this machine, not a guess.
-  • ⚠️ If \`pwd\` still shows your home directory, STOP — you have not changed into the project folder. cd into it before doing anything else.
+  • ⚠️ If \`pwd\` shows \`/\` (the filesystem root) or your home directory, STOP — you are not in the project folder; cd into it before doing anything else, and NEVER record that path.
   • Get the machine name: run \`hostname\` (or \`uname -n\`).
-  • As SOON as the vibecodes board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
+  • As SOON as the vibecodes board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) — but only ever from inside the project folder; recording \`/\` or home would send every future launch to the wrong place.
 ${setupStep}
 Only AFTER you are confirmed inside the project folder (pwd is NOT home) should you write any files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project, never in your home directory.`;
 }
@@ -974,7 +1022,7 @@ function buildCompactStepPieces({
 
   const essentialSteps = [
     `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`,
-    `Re-confirm the folder: call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here — safe to repeat on every launch.`,
+    `Re-confirm the folder (never \`/\` or home — cd in first): call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here.`,
   ];
 
   const work = taskId

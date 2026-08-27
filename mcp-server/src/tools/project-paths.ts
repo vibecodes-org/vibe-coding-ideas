@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
-import { isValidAbsolutePath } from "../../../src/lib/launch-claude-code";
+import { isValidAbsolutePath, isPlausibleProjectPath } from "../../../src/lib/launch-claude-code";
 import type { McpContext } from "../context";
 
 // --- Record Project Path ---
@@ -44,6 +44,16 @@ export async function recordProjectPath(
     throw new Error(
       "absolute_path must be an expanded absolute path (e.g. /Users/you/projects/my-idea) — " +
         "not empty, relative, or starting with `~`. Run `pwd` and pass its exact output."
+    );
+  }
+
+  // Reject the filesystem root, a home directory, or any other top-level
+  // "landing zone" — a session that starts there and records it poisons every
+  // future launch on this machine (self-heal becomes self-poison).
+  if (!isPlausibleProjectPath(absolutePath)) {
+    throw new Error(
+      `absolute_path "${absolutePath}" is the filesystem root, a home directory, or a top-level folder — not a project folder. ` +
+        "You are not inside the project: cd into the idea's checkout (the git repo) first, run `pwd` again, and record THAT. Nothing was saved."
     );
   }
 
