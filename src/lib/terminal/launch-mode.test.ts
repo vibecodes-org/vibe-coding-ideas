@@ -37,15 +37,15 @@ describe("launch bus payload (bootstrap-prompt transport)", () => {
     unsubscribe();
   });
 
-  it("the essentials' protocol candidate rides the payload too (BUG5 follow-through — atomic omit on the browser launch)", () => {
+  it("the essentials' isolate flag rides the payload too (so the dock can fire the launch with --worktree)", () => {
     const handler = vi.fn<(payload?: BrowserLaunchPayload) => void>();
     const unsubscribe = subscribeBrowserLaunch(handler);
     const payload: BrowserLaunchPayload = {
-      essentials: { head: "h", tail: "t", protocol: "WORKTREE_PROTOCOL" },
+      essentials: { head: "h", tail: "t", isolate: true },
       cwd: "/Users/me/projects/my-idea",
     };
     requestBrowserLaunch(payload);
-    expect(handler.mock.calls[0][0]?.essentials?.protocol).toBe("WORKTREE_PROTOCOL");
+    expect(handler.mock.calls[0][0]?.essentials?.isolate).toBe(true);
     unsubscribe();
   });
 

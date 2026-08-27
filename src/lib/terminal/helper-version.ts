@@ -37,8 +37,12 @@
  *  the auto-accept toggle now launches Claude Code's `auto` permission
  *  mode — what Nick actually asked for on card d3de150c — instead of the
  *  narrower `acceptEdits`; the bridge/shared whitelist accepts both for
- *  deploy skew. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.6";
+ *  deploy skew. 0.3.7 (task e2420590): first helper that ships the
+ *  bridge's `--worktree` flag (real, Claude-Code-enforced concurrent-
+ *  session isolation) — an older helper silently ignores the new
+ *  `worktree` deep-link param, same as every prior unshipped bridge
+ *  change, so this bump is what actually nudges users to it. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.7";
 
 export type HelperVersionParts = readonly [number, number, number];
 

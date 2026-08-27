@@ -48,16 +48,17 @@ const LAUNCH_EVENT = "vibecodes:terminal-browser-launch";
  * ESSENTIALS (buildCompactPromptEssentials — BUG 5 follow-through, 4th rework
  * cycle) rather than the unconditional head/tail parts
  * (buildCompactBootstrapPromptParts) this payload used to carry: the
- * unconditional builder bakes the worktree-isolation protocol into the
- * never-trimmed head whenever it's in scope, so a long cwd could push the
- * vibecodes:// URL over its budget with no clean way to drop the protocol
- * afterwards (the dock's bare enforcePromptLength clamp had already baked it
- * in). Carrying the essentials (path-length-independent head + trimmable tail
- * + the protocol candidate kept SEPARATE) lets the dock — which alone knows
- * the final URL's session/token overhead — hand off to
- * fitCompactWorktreeProtocol, the SAME atomic protocol-omit helper the
- * claude-cli:// deep link uses, so the two launch destinations degrade
- * identically (never overflow, never a half-truncated protocol fragment).
+ * unconditional builder bakes the raw cwd echo into the never-trimmed head,
+ * so a long cwd could push the vibecodes:// URL over its budget with no clean
+ * way to shrink it afterwards (the dock's bare enforcePromptLength clamp had
+ * already baked it in). Carrying the essentials (path-length-independent head
+ * + trimmable tail) lets the dock — which alone knows the final URL's
+ * session/token overhead — hand off to fitCompactEssentials, the SAME atomic
+ * degrade helper the claude-cli:// deep link uses, so the two launch
+ * destinations degrade identically (never overflow, never a half-truncated
+ * fragment). `essentials.isolate` also rides along, telling the dock whether
+ * this launch should fire with `worktree: true` (concurrent-terminal
+ * isolation via Claude Code's native `--worktree` flag).
  */
 export interface BrowserLaunchPayload {
   /**

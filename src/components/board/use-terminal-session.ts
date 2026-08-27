@@ -1127,9 +1127,11 @@ export function useTerminalSession(
   // terminal-window deep link's for the same state, and never duplicated. BUG5
   // follow-through (4th rework cycle): built as ESSENTIALS (buildCompactPromptEssentials),
   // not the unconditional buildCompactBootstrapPromptParts this used to call —
-  // that builder bakes the worktree-isolation protocol into a never-trimmed
-  // head, so fireLaunchDeepLink's own budget clamp had no clean way to drop it
-  // on overflow. Bug cbe60db5-followup-2: `effectiveTarget` mirrors the launch
+  // that builder bakes the raw cwd echo into a never-trimmed head, so
+  // fireLaunchDeepLink's own budget clamp had no clean way to drop it on
+  // overflow. Also carries `isolate` (concurrent-terminal isolation — see
+  // fireLaunchDeepLink's `worktree` param below). Bug cbe60db5-followup-2:
+  // `effectiveTarget` mirrors the launch
   // button's own resolveEffectiveLaunchTarget call — the hook now DOES have
   // recordedProjectPaths (threaded via the descriptor), so a hook-initiated
   // launch picks up a recorded DB folder exactly like the button does, instead
@@ -1380,16 +1382,13 @@ export function useTerminalSession(
         hasCwd = !!cwd;
         // Budget the prompt against the vibecodes:// URL ceiling via
         // buildBoundedDeepLink (FIX A, QA BUG A) — the SAME shared helper the
-        // claude-cli:// deep link uses. BUG5 follow-through (4th rework
-        // cycle): it routes through fitCompactWorktreeProtocol so the
-        // worktree-isolation protocol rides the head only when it fits whole
-        // (never a half-truncated fragment, essentials always prioritised
-        // over the best-effort protocol). New this cycle: it ALSO guarantees
-        // the fired URL is never over-cap when `cwd` ITSELF (not just the
-        // prompt) is long enough to blow the cap alone — the vibecodes://
-        // `prompt=` param key is only present once the prompt is non-empty,
-        // so `promptKeyOverhead` reserves room for it up front (mirrors the
-        // manual `- "&prompt=".length` this replaces).
+        // claude-cli:// deep link uses. It routes through fitCompactEssentials
+        // so the essentials degrade cleanly against the budget, and ALSO
+        // guarantees the fired URL is never over-cap when `cwd` ITSELF (not
+        // just the prompt) is long enough to blow the cap alone — the
+        // vibecodes:// `prompt=` param key is only present once the prompt is
+        // non-empty, so `promptKeyOverhead` reserves room for it up front
+        // (mirrors the manual `- "&prompt=".length` this replaces).
         const result = buildBoundedDeepLink({
           essentials,
           cwd,
@@ -1410,6 +1409,16 @@ export function useTerminalSession(
               model: opts?.model,
               // Task d3de150c: same fresh-launch-only posture as `model`.
               permissionMode: opts?.permissionMode,
+              // Concurrent-terminal isolation (QA-flagged fix): this destination
+              // IS our own bridge (unlike the claude-cli:// scheme), so it can
+              // actually act on `essentials.isolate` — firing the launch with
+              // `worktree: true` makes the bridge append Claude Code's native
+              // `--worktree <name>` flag (terminal/bridge/src/resume-cmd.js)
+              // instead of the old advisory prompt text. Same fresh-launch-only
+              // posture as model/permissionMode above — a resume never reaches
+              // this call, and Claude Code's own `--resume` already reopens
+              // whatever worktree the session originally spawned in.
+              worktree: essentials.isolate,
             }),
         });
         if (!result.ok) {

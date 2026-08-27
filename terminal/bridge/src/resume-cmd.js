@@ -62,12 +62,34 @@
 // validated by the same whitelist (see index.js's LAUNCH_URL parse via the
 // shared deep-link module's isPermissionModeSafe); this is defense in depth,
 // not the only gate.
+//
+// `worktree` (concurrent-terminal isolation — the QA-flagged fix: this used
+// to be an ADVISORY TEXT PROTOCOL baked into the bootstrap prompt, which an
+// agent could ignore and a URL length budget could silently drop with no
+// enforcement fallback. Claude Code has a REAL, enforced native flag for
+// exactly this — `--worktree <name>` (https://code.claude.com/docs/en/worktrees)
+// — which the launched `claude` process itself refuses to let escape (edits/
+// commands against the main checkout are blocked, not just discouraged), auto-
+// creates the worktree under `.claude/worktrees/<name>/`, and auto-cleans up
+// on exit) is appended as `--worktree <conv>` ONLY on branch 4, same
+// fresh-launch-only posture as `model`/`permissionMode` — reusing the SAME id
+// just minted for `--session-id` as the worktree name, so no separate name
+// needs to travel over the wire (see deep-link.mjs's `worktree` boolean —
+// it's a pure "isolate or not" flag, not a name carrier).
+//
+// Deliberately NEVER applied on branches 2/3 (`--resume <id>` / `--continue`):
+// per the docs' "Resume a worktree session", resuming a session with
+// `--resume`/`--continue` automatically reopens the SAME worktree it was
+// originally launched in — no `--worktree` needed, and passing it again would
+// risk fighting that native tracking rather than helping it. This mirrors
+// `model`/`permissionMode`'s own "a resumed conversation keeps what it
+// already had" rule exactly.
 
 /**
- * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, mintId: () => string }} opts
+ * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, mintId }) {
+export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId }) {
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
   if (resumeId) return { cmd: `claude --resume ${resumeId}`, conv: resumeId };
   if (resume) return { cmd: "claude --continue", conv: null };
@@ -76,5 +98,9 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
   // Defense-in-depth re-check: only the exact literal is ever appended, no
   // matter what arrives here — see the header comment.
   const permissionModeFlag = permissionMode === "auto" || permissionMode === "acceptEdits" ? ` --permission-mode ${permissionMode}` : "";
-  return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}`, conv };
+  // `conv` is a bridge-minted UUID (crypto.randomUUID()) — always a safe,
+  // whitespace-free single argv token, same posture as the `--session-id`
+  // flag it already rides alongside.
+  const worktreeFlag = worktree ? ` --worktree ${conv}` : "";
+  return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`, conv };
 }

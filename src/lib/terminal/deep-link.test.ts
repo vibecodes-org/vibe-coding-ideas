@@ -245,6 +245,37 @@ describe("buildLaunchDeepLink with permissionMode (task d3de150c, terminal auto-
   });
 });
 
+describe("buildLaunchDeepLink with worktree (concurrent-terminal isolation, native --worktree flag)", () => {
+  it("includes worktree=1, positioned before prompt, and round-trips", () => {
+    const withWorktree = { ...SAMPLE, worktree: true, prompt: "hello" };
+    const url = buildLaunchDeepLink(withWorktree);
+    expect(url).toContain("worktree=1");
+    expect(url.indexOf("worktree=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withWorktree);
+  });
+
+  it("omits worktree entirely when absent/false — no version-skew risk for an old bridge/helper", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("worktree=");
+    expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
+    const falseUrl = buildLaunchDeepLink({ ...SAMPLE, worktree: false });
+    expect(falseUrl).not.toContain("worktree=");
+  });
+
+  it("a bogus value on the wire is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&worktree=true`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("worktree");
+  });
+
+  it("is left untouched by redactDeepLinkToken — not a secret or free-form user content", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, worktree: true });
+    const redacted = redactDeepLinkToken(url);
+    expect(redacted).toContain("worktree=1");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);

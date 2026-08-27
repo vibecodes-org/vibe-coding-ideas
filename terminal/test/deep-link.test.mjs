@@ -254,3 +254,34 @@ test("redactDeepLinkToken elides the prompt (user content) as well as the token"
   assert.ok(!redacted.includes(encodeURIComponent(HOSTILE_PROMPT)), "encoded prompt must not appear");
   assert.ok(redacted.includes(`session=${SAMPLE.session}`), "non-secret params survive");
 });
+
+// ── concurrent-terminal isolation (native --worktree flag) ─────────────────
+
+test("build ⇄ parse round-trips worktree, positioned before prompt", () => {
+  const withWorktree = { ...SAMPLE, worktree: true, prompt: "hello" };
+  const url = buildLaunchDeepLink(withWorktree);
+  assert.ok(url.includes("worktree=1"));
+  assert.ok(url.indexOf("worktree=") < url.indexOf("prompt="), "worktree precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withWorktree);
+});
+
+test("omits worktree entirely when absent/false — no version-skew risk for an old bridge/helper", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("worktree="));
+  assert.ok(!("worktree" in parseLaunchDeepLink(url)));
+  const falseUrl = buildLaunchDeepLink({ ...SAMPLE, worktree: false });
+  assert.ok(!falseUrl.includes("worktree="));
+});
+
+test("a bogus worktree value on the wire is rejected outright — never forwarded", () => {
+  const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&worktree=true`;
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(parsed !== null);
+  assert.ok(!("worktree" in parsed));
+});
+
+test("redactDeepLinkToken leaves worktree untouched — not a secret or free-form user content", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, worktree: true });
+  const redacted = redactDeepLinkToken(url);
+  assert.ok(redacted.includes("worktree=1"));
+});
