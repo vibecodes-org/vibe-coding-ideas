@@ -30,6 +30,7 @@ import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardHorizontalScrollbar } from "./board-horizontal-scrollbar";
+import { boardArrowScrollDelta, ARROW_KEY_OWNER_SELECTOR } from "@/lib/board-keyboard-scroll";
 import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyStateContent, BoardEmptyStateReadOnly } from "./board-empty-state";
 import { PlaceholderColumns } from "./placeholder-columns";
@@ -420,6 +421,33 @@ export function KanbanBoard({
   // Continuous edge scroll — works for both mouse and touch drags
   const isDragging = !!(activeTask || activeColumn);
   useEdgeScroll(scrollContainerRef, isDragging);
+
+  // Keyboard-only sideways scrolling: Left/Right move the column row one
+  // column at a time from anywhere on the page. Natively the keys only scroll
+  // the box around the focused element, which on the board is never the
+  // column row — so they did nothing for a keyboard user. Text boxes, tabs,
+  // menus, dialogs and an in-flight keyboard drag keep their own arrow keys
+  // (see board-keyboard-scroll.ts).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const delta = boardArrowScrollDelta({
+        key: e.key,
+        hasModifier: e.altKey || e.ctrlKey || e.metaKey || e.shiftKey,
+        targetOwnsArrows: !!target?.closest(ARROW_KEY_OWNER_SELECTOR),
+        isDragging,
+        canScrollSideways: el.scrollWidth > el.clientWidth + 1,
+      });
+      if (delta === 0) return;
+      e.preventDefault();
+      el.scrollBy({ left: delta, behavior: "smooth" });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isDragging]);
 
   // Update columns when server data changes (via realtime refresh).
   // workflow_active_step_title / workflow_active_agent_name are intentionally
