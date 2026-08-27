@@ -27,14 +27,14 @@ vi.mock("@/components/board/terminal-dock", () => ({
     // sessionView spies: fires once per GENUINE mount/unmount, not per
     // re-render, so a test can assert the dock instance itself never gets
     // torn down across a board switch.
+    // Intentionally empty deps below: this must fire ONLY on a genuine
+    // mount/unmount, never on a prop change, or it can't distinguish "same
+    // instance, new props" from "torn down and rebuilt" — exactly the
+    // distinction this test exists to make.
     useEffect(() => {
       dockMountSpy(ideaId);
       return () => dockUnmountSpy(ideaId);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally
-      // empty: this must fire ONLY on a genuine mount/unmount, never on a
-      // prop change, or it can't distinguish "same instance, new props" from
-      // "torn down and rebuilt" — exactly the distinction this test exists
-      // to make.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
       <div data-testid="fake-dock">
@@ -97,20 +97,24 @@ describe("TerminalDockShell", () => {
   });
 
   it("hides the dock when navigating away from any board page, without unmounting it", () => {
-    function Scene({ path }: { path: string }) {
-      mockPathname.current = path;
-      return (
-        <TerminalDockShell>
-          <AnnounceBoardIdea ideaId="idea-a" ideaTitle="Board A" ideaGithubUrl={null} recordedProjectPaths={[]} />
-        </TerminalDockShell>
-      );
-    }
-
-    const { rerender } = render(<Scene path="/ideas/idea-a/board" />);
+    // mockPathname is set imperatively BEFORE each render/rerender, never
+    // inside a component's render body — mutating an outer-scope variable
+    // during render is disallowed (react-hooks/immutability) and would also
+    // be a lie here: `usePathname()` reflects the route, not a side effect
+    // of rendering.
+    mockPathname.current = "/ideas/idea-a/board";
+    const { rerender } = render(
+      <TerminalDockShell>
+        <AnnounceBoardIdea ideaId="idea-a" ideaTitle="Board A" ideaGithubUrl={null} recordedProjectPaths={[]} />
+      </TerminalDockShell>,
+    );
     expect(screen.getByTestId("fake-dock")).toBeInTheDocument();
 
-    // Left the board entirely (e.g. to /dashboard) — announcer no longer
-    // renders from this page, only the shell re-renders with a new pathname.
+    // Left the board entirely (e.g. to /dashboard): the route no longer
+    // matches any /ideas/*/board path, and the announcer no longer renders
+    // from this page either — both conditions the shell's visibility check
+    // relies on change together, exactly as they would in the real app.
+    mockPathname.current = "/dashboard";
     rerender(
       <TerminalDockShell>
         <div />
