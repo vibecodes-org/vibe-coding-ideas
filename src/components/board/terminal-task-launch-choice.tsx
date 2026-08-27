@@ -88,7 +88,7 @@ export function TerminalTaskLaunchChoice({
         className="max-w-sm gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200"
         data-testid="terminal-task-launch-choice"
       >
-        <div className="px-4 pt-4 pb-3">
+        <div className="px-4 pt-4 pr-8 pb-3">
           <DialogTitle className="text-[13px] font-semibold text-zinc-100">
             {isLive ? "This task already has a terminal running" : "This task has a recent session"}
           </DialogTitle>
@@ -112,7 +112,7 @@ export function TerminalTaskLaunchChoice({
             <p className="mt-1 text-[11px] text-zinc-500">Only starting fresh applies auto-accept.</p>
           )}
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>
@@ -122,7 +122,14 @@ export function TerminalTaskLaunchChoice({
           {canReconnect && (
             <Button
               size="xs"
-              className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+              // Resume (recent match) mints a brand-new process that picks up an
+              // old conversation — a "start something new" action, not an attach —
+              // so it takes the same emerald styling as TerminalSessionChooser's
+              // "start new" buttons. Reconnect (live match) keeps the sky
+              // "attach to what's already running" color used everywhere else.
+              className={
+                isLive ? "bg-sky-500 text-sky-950 hover:bg-sky-400" : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+              }
               disabled={busy}
               onClick={onReconnect}
               autoFocus

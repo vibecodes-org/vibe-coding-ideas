@@ -200,6 +200,58 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(onStartFresh).toHaveBeenCalledOnce();
   });
 
+  // Bug: footer buttons overhung the card edge, and Resume was styled with
+  // the same blue used for "Reconnect" (attach-to-live) even though it
+  // actually starts a brand-new process — should read as a "start new"
+  // action like TerminalSessionChooser's emerald buttons, not a reconnect.
+  it("styles a live match's Reconnect button sky (attach-to-live), not emerald", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Reconnect" });
+    expect(button.className).toMatch(/bg-sky-500/);
+    expect(button.className).not.toMatch(/bg-emerald-500/);
+  });
+
+  it("styles a recent match's Resume button emerald (start-new), not the sky reconnect color", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={RECENT_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Resume" });
+    expect(button.className).toMatch(/bg-emerald-500/);
+    expect(button.className).not.toMatch(/bg-sky-500/);
+  });
+
+  it("lets the footer button row wrap instead of overflowing the card", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={RECENT_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const footer = screen.getByRole("button", { name: "Cancel" }).parentElement;
+    expect(footer?.className).toMatch(/flex-wrap/);
+    expect(footer?.className).toMatch(/px-4/);
+  });
+
   it("disables both actions while busy", () => {
     render(
       <TerminalTaskLaunchChoice
