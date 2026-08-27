@@ -2939,12 +2939,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                             legacy/never-launched entries render exactly as
                             before, zero new chrome. */}
                         {boardIdentity.isOtherBoard && (
+                          // Field fix, 27 Aug 2026: the original text pill
+                          // ("other board") ate most of a 110px tab's width,
+                          // crushing the label it sits next to down to one
+                          // truncated character — the exact opposite of the
+                          // point. Icon-only (with the full sentence still on
+                          // hover/focus via `title`, and for screen readers
+                          // via the sr-only span) keeps the same "mark the
+                          // one that's different" signal at ~16px instead of
+                          // ~70px, leaving the label its space back.
                           <span
-                            className="inline-flex flex-none items-center gap-1 rounded-full border border-amber-500/45 bg-amber-500/[0.13] px-2 py-px text-[10px] font-bold tracking-wide text-amber-300"
+                            className="flex h-4 w-4 flex-none items-center justify-center rounded-full border border-amber-500/45 bg-amber-500/[0.13]"
                             title={`This terminal belongs to ${boardIdentity.ideaTitle ?? "another board"}, not the board you're viewing`}
                           >
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                            other board
+                            <span className="sr-only">
+                              On another board: {boardIdentity.ideaTitle ?? "unknown"}
+                            </span>
                           </span>
                         )}
                         {/* Pencil renders on the ACTIVE tab only (design §2's
