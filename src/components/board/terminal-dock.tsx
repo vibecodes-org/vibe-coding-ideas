@@ -2801,7 +2801,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       else setActiveKey(entry.key);
                     }}
                     className={cn(
-                      "flex min-w-[110px] max-w-[190px] flex-none cursor-pointer items-center gap-1.5 border-r border-t-2 border-zinc-800 border-t-transparent px-2.5 py-0 text-[12.5px] text-zinc-400",
+                      "flex flex-none cursor-pointer items-center gap-1.5 border-r border-t-2 border-zinc-800 border-t-transparent px-2.5 py-0 text-[12.5px] text-zinc-400",
+                      // Card b70bcbeb (Nick, 27 Aug 2026, option 1): a tab
+                      // carrying the approved "other board" text pill gets
+                      // ~80px more room in BOTH bounds so the pill and the
+                      // session name fit side by side — without this the
+                      // name truncated to a single character. This is NOT
+                      // the mid-interaction reflow the comment below forbids:
+                      // `isOtherBoard` only changes on a board navigation,
+                      // never between an arm click and its confirm click.
+                      boardIdentity.isOtherBoard ? "min-w-[190px] max-w-[270px]" : "min-w-[110px] max-w-[190px]",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
                       // Deliberately NO width change while renaming/confirming.
@@ -2939,23 +2948,20 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                             legacy/never-launched entries render exactly as
                             before, zero new chrome. */}
                         {boardIdentity.isOtherBoard && (
-                          // Field fix, 27 Aug 2026: the original text pill
-                          // ("other board") ate most of a 110px tab's width,
-                          // crushing the label it sits next to down to one
-                          // truncated character — the exact opposite of the
-                          // point. Icon-only (with the full sentence still on
-                          // hover/focus via `title`, and for screen readers
-                          // via the sr-only span) keeps the same "mark the
-                          // one that's different" signal at ~16px instead of
-                          // ~70px, leaving the label its space back.
+                          // The approved design (v3) — the amber "other board"
+                          // text pill. A shipped attempt to shrink this to an
+                          // icon-only dot (because it crushed the tab name on
+                          // a 110px tab) was rejected by Nick as an unapproved
+                          // design change; the width problem is solved by the
+                          // tab's own wider bounds above instead, so the pill
+                          // and the name both fit. Do not change what this
+                          // looks like without his sign-off.
                           <span
-                            className="flex h-4 w-4 flex-none items-center justify-center rounded-full border border-amber-500/45 bg-amber-500/[0.13]"
+                            className="inline-flex flex-none items-center gap-1 rounded-full border border-amber-500/45 bg-amber-500/[0.13] px-2 py-px text-[10px] font-bold tracking-wide text-amber-300"
                             title={`This terminal belongs to ${boardIdentity.ideaTitle ?? "another board"}, not the board you're viewing`}
                           >
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                            <span className="sr-only">
-                              On another board: {boardIdentity.ideaTitle ?? "unknown"}
-                            </span>
+                            other board
                           </span>
                         )}
                         {/* Pencil renders on the ACTIVE tab only (design §2's
