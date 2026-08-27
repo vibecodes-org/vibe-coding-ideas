@@ -261,7 +261,15 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     // The dock publishes its live height into that variable (terminal-dock-inset.ts);
     // with no dock mounted it is absent and the `0px` default restores the
     // original layout exactly.
-    <div className="flex h-full flex-col overflow-hidden px-4 pb-[var(--vc-term-dock-inset,0px)] sm:px-6 lg:px-8">
+    //
+    // No `overflow-hidden` here: the board's pinned sideways scrollbar
+    // (board-horizontal-scrollbar.tsx) is `position: sticky`, which pins to
+    // the nearest *scrolling* ancestor — `main`. Any overflow other than
+    // `visible` on this root would make it the sticky container instead, and
+    // the bar would sit uselessly at the bottom of the full-height board.
+    // Columns are full height and the page scrolls vertically by design; do
+    // not bound this root to the viewport (that was a2035c9, reverted).
+    <div className="flex h-full flex-col px-4 pb-[var(--vc-term-dock-inset,0px)] sm:px-6 lg:px-8">
       <BoardRealtime ideaId={id} taskIds={(rawTasks ?? []).map((t) => t.id)} />
 
       {/* Breadcrumb header */}

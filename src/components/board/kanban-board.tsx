@@ -29,6 +29,7 @@ import { BoardLaunchProvider } from "./board-launch-context";
 import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
+import { BoardHorizontalScrollbar } from "./board-horizontal-scrollbar";
 import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyStateContent, BoardEmptyStateReadOnly } from "./board-empty-state";
 import { PlaceholderColumns } from "./placeholder-columns";
@@ -1245,6 +1246,10 @@ export function KanbanBoard({
             {canScrollRight && (
               <div className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
             )}
+            {/* Sideways scrollbar pinned to the bottom of the window — the row's own
+                scrollbar sits under the full-height columns, off-screen. Columns and
+                the page's vertical scroll are deliberately untouched. */}
+            <BoardHorizontalScrollbar scrollContainerRef={scrollContainerRef} />
           </div>
           {!isReadOnly && (
             <DragOverlay dropAnimation={null}>
