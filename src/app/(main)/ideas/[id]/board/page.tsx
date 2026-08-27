@@ -261,20 +261,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     // The dock publishes its live height into that variable (terminal-dock-inset.ts);
     // with no dock mounted it is absent and the `0px` default restores the
     // original layout exactly.
-    //
-    // `h-[calc(100dvh-4rem)]` (not `h-full`): the shared `(main)` layout's
-    // children wrapper (`src/app/(main)/layout.tsx`) deliberately has NO
-    // `min-h-0` — every other page under it (dashboard, feed, idea pages…)
-    // needs to grow past one screen and scroll via `main`'s `overflow-y-auto`,
-    // with the Footer sibling following below. That means the wrapper has no
-    // definite height for `h-full` to resolve against here, so the board's own
-    // `min-h-0`/`flex-1` chain (BoardPageTabs → KanbanBoard → the
-    // `board-scroll-container` div) never got a bounded height to shrink
-    // into, and its horizontal scrollbar landed off the bottom of the
-    // viewport. Sizing directly off the viewport instead of the ancestor
-    // chain gives the board a definite height without touching the shared
-    // layout (4rem = the Navbar's `h-16`; keep in sync if that changes).
-    <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden px-4 pb-[var(--vc-term-dock-inset,0px)] sm:px-6 lg:px-8">
+    <div className="flex h-full flex-col overflow-hidden px-4 pb-[var(--vc-term-dock-inset,0px)] sm:px-6 lg:px-8">
       <BoardRealtime ideaId={id} taskIds={(rawTasks ?? []).map((t) => t.id)} />
 
       {/* Breadcrumb header */}
