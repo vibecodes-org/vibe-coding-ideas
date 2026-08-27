@@ -713,6 +713,10 @@ describe("isPlausibleProjectPath", () => {
     expect(isPlausibleProjectPath("C:\\")).toBe(false);
     expect(isPlausibleProjectPath("C:/")).toBe(false);
     expect(isPlausibleProjectPath("C:\\Users\\nick")).toBe(false);
+    expect(isPlausibleProjectPath("C:\\Users")).toBe(false);
+    expect(isPlausibleProjectPath("C:/Users")).toBe(false);
+    expect(isPlausibleProjectPath("C:\\Users\\")).toBe(false);
+    expect(isPlausibleProjectPath("c:\\users")).toBe(false);
   });
 
   it("rejects a UNC share with nothing after it", () => {

@@ -340,6 +340,9 @@ export function isPlausibleProjectPath(path: string): boolean {
     const remainder = p.slice(driveMatch[0].length);
     const segments = remainder.split(/[\\/]/).filter(Boolean);
     if (segments.length === 0) return false; // drive root
+    if (segments.length === 1 && segments[0].toLowerCase() === "users") {
+      return false; // C:\Users — the folder holding everyone's homes
+    }
     if (segments.length === 2 && segments[0].toLowerCase() === "users") {
       return false; // C:\Users\<name>
     }
