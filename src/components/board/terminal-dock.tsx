@@ -2374,6 +2374,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
+  // Card b70bcbeb (design v3): the "other board" marker only lived in the
+  // expanded tab strip — the collapsed bar (the state people actually browse
+  // other boards in) had no signal at all that the active session belongs
+  // elsewhere. Same rule, same helper, just surfaced where it's visible.
+  const activeEntry = sessions.find((s) => s.key === activeKey) ?? null;
+  const activeBoardIdentity = activeEntry ? resolveTabBoardIdentity(activeEntry, ideaId, ideaTitle) : null;
   const activeIsPoppedOut = poppedOutKeys.has(activeKey);
   const soleIsPoppedOut = !multi && !!sessions[0] && poppedOutKeys.has(sessions[0].key);
   // Session entry chooser (card cbe60db5): the dock's resting state for this
@@ -2522,6 +2528,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               {otherLiveHere.length === 1
                 ? "Another tab is open here"
                 : `${otherLiveHere.length} other tabs are open here`}
+            </span>
+          )}
+          {/* Card b70bcbeb: same amber "other board" marker as the tab strip,
+              surfaced in the collapsed bar too — this is the state most
+              people are actually looking at while they've navigated to a
+              different board than the one a session was launched on. */}
+          {sessions.length > 0 && activeBoardIdentity?.isOtherBoard && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300"
+              title={`This terminal runs on ${activeBoardIdentity.ideaTitle ?? "another board"} — not the board you're viewing`}
+            >
+              <span aria-hidden="true">●</span>
+              {activeBoardIdentity.ideaTitle ?? "Other board"}
             </span>
           )}
           {/* Mockup A1: header count pills, only while the chooser is the
