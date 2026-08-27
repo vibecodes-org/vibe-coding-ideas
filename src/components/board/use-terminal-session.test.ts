@@ -1646,6 +1646,81 @@ describe("useTerminalSession", () => {
     });
   });
 
+  // Regression net for the dropped-cwd/worktree bug found in the "Reproduce &
+  // Investigate" step: a second concurrent session on the same recorded
+  // folder sets `essentials.isolate` (so the launch fires `--worktree`), but
+  // when the recorded path is too long for the vibecodes:// URL budget,
+  // buildBoundedDeepLink drops the `cwd` param entirely (folding a `cd`
+  // line into the prompt instead — inert prose the bridge never executes).
+  // Firing `--worktree` with no `cwd` param left the bridge falling back to
+  // `process.cwd()` (`/` for a helper-forked process), and Claude Code
+  // refuses to start there. The fix: `worktree` is gated on the launch link
+  // actually carrying a `cwd` param, not on `essentials.isolate` alone.
+  describe("concurrent-session isolation vs. a dropped cwd (worktree regression)", () => {
+    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH=2048) to force
+    // buildBoundedDeepLink past tier 1, regardless of the rest of the link's
+    // fixed overhead.
+    const veryLongPath = `/Users/nick/projects/${"x".repeat(2200)}`;
+
+    it("does NOT fire --worktree when the recorded folder is too long to fit the launch link's cwd param", async () => {
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: veryLongPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      // The recorded folder is still resolved as this session's cwd (that
+      // resolution is independent of the URL budget) — isolate would have
+      // been requested for it.
+      expect(result.current.cwd).toBe(veryLongPath);
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      // Degraded launch: no real cwd param made it into the URL, so
+      // `--worktree` must NOT be fired (would spawn against `/`, a non-repo).
+      expect(src).not.toContain("worktree=1");
+      expect(src).not.toContain(encodeURIComponent(veryLongPath));
+    });
+
+    it("still fires --worktree for the ordinary case: a short recorded folder that fits the cwd param", async () => {
+      const shortPath = "/Users/nick/projects/recipe-saver";
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: shortPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      expect(result.current.cwd).toBe(shortPath);
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain(`cwd=${encodeURIComponent(shortPath)}`);
+      expect(src).toContain("worktree=1");
+    });
+  });
+
   // Task c4ca2d95 ("Terminal starting model") — the mint response's resolved
   // `model` field must reach the fresh-launch deep link, positioned before
   // `prompt`, and must NEVER reach a resume-shaped link.

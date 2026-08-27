@@ -1418,7 +1418,26 @@ export function useTerminalSession(
               // posture as model/permissionMode above — a resume never reaches
               // this call, and Claude Code's own `--resume` already reopens
               // whatever worktree the session originally spawned in.
-              worktree: essentials.isolate,
+              //
+              // BUG FIX (isolation-vs-dropped-cwd): gated on `!!linkCwd`, NOT
+              // just `essentials.isolate`, because buildBoundedDeepLink (see
+              // its doc) calls THIS closure once per degrade tier, and only the
+              // tier-1 call ever passes a `linkCwd` — tiers 2/3 drop `cwd` from
+              // the URL param entirely (folding it into the prompt as a `cd`
+              // line instead, or dropping it altogether), which the bridge
+              // (terminal/bridge/src/index.js) reads via the `cwd` QUERY PARAM
+              // ONLY — that folded `cd` line is inert prose to it, never
+              // shell-executed. Firing `--worktree` with no real `cwd` left the
+              // bridge falling back to `process.cwd()` (`/` for a
+              // helper-forked process), and Claude Code refuses to start
+              // there ("Can only use --worktree in a git repository, but / is
+              // not a git repository"). Checking `linkCwd` (this call's own
+              // param, always in sync with whichever tier actually won)
+              // is equivalent to checking the final `result.droppedCwd` but
+              // needs no second pass: a wrong-but-running non-isolated
+              // session in the original folder beats a launch that refuses
+              // to start at all.
+              worktree: essentials.isolate && !!linkCwd,
             }),
         });
         if (!result.ok) {
