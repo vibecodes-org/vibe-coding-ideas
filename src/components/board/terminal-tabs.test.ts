@@ -10,6 +10,7 @@ import {
   summarizeSessionStatuses,
   shouldAnnounceAttention,
   formatAttentionAnnouncement,
+  resolveTabBoardIdentity,
   type DedupeCandidate,
   type PristineCandidate,
   type ReclaimCandidate,
@@ -134,6 +135,73 @@ describe("deriveTabLabel (B3)", () => {
     expect(
       deriveTabLabel({ displayName: "   ", taskTitle: "Fix login redirect loop", ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1" }),
     ).toBe("Fix login redirect loop");
+  });
+
+  // ── task b70bcbeb: board-switch UX fix ──────────────────────────────────
+  it("falls back to 'Board not recorded · <sid4>' when boardKnown is false, even with an ideaTitle present", () => {
+    expect(
+      deriveTabLabel({ taskTitle: undefined, ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1", boardKnown: false }),
+    ).toBe("Board not recorded · a3f9");
+  });
+
+  it("a user name or task title still outranks the boardKnown-false fallback", () => {
+    expect(
+      deriveTabLabel({ displayName: "Auth spike", ideaTitle: null, sessionId: "a3f9c2e1", boardKnown: false }),
+    ).toBe("Auth spike");
+    expect(
+      deriveTabLabel({ taskTitle: "Fix login", ideaTitle: null, sessionId: "a3f9c2e1", boardKnown: false }),
+    ).toBe("Fix login");
+  });
+});
+
+describe("resolveTabBoardIdentity (task b70bcbeb — board-switch UX fix)", () => {
+  const CURRENT_IDEA_ID = "board-a";
+  const CURRENT_IDEA_TITLE = "Board A";
+
+  it("reads the entry's OWN board — not the currently-viewed board — for a launched, same-board entry", () => {
+    const identity = resolveTabBoardIdentity(
+      { ideaId: "board-a", ideaTitle: "Board A", launchSeq: 1 },
+      CURRENT_IDEA_ID,
+      CURRENT_IDEA_TITLE,
+    );
+    expect(identity).toEqual({ ideaTitle: "Board A", boardKnown: true, isOtherBoard: false });
+  });
+
+  it("flags isOtherBoard once a launched entry's own board differs from the one being viewed — even though the dock's own ideaTitle prop has since changed to 'Board B'", () => {
+    const identity = resolveTabBoardIdentity(
+      { ideaId: "board-a", ideaTitle: "Board A", launchSeq: 1 },
+      "board-b",
+      "Board B",
+    );
+    expect(identity).toEqual({ ideaTitle: "Board A", boardKnown: true, isOtherBoard: true });
+  });
+
+  it("flags isOtherBoard for a reconnect-origin entry (launchSeq 0, attach set) too", () => {
+    const identity = resolveTabBoardIdentity(
+      { ideaId: "board-a", ideaTitle: "Board A", launchSeq: 0, attach: { sessionId: "s1" } },
+      "board-b",
+      "Board B",
+    );
+    expect(identity.isOtherBoard).toBe(true);
+  });
+
+  it("never flags a legacy entry with no recorded ideaId — no false alarms (design item 5)", () => {
+    const identity = resolveTabBoardIdentity({ launchSeq: 1 }, CURRENT_IDEA_ID, CURRENT_IDEA_TITLE);
+    expect(identity).toEqual({ ideaTitle: null, boardKnown: false, isOtherBoard: false });
+  });
+
+  it("a genuinely pristine (never-launched) slot follows whichever board is currently being viewed — design item 6", () => {
+    const identity = resolveTabBoardIdentity({ launchSeq: 0 }, CURRENT_IDEA_ID, CURRENT_IDEA_TITLE);
+    expect(identity).toEqual({ ideaTitle: "Board A", boardKnown: true, isOtherBoard: false });
+  });
+
+  it("a pristine slot keeps following the view even if it happens to carry a stale ideaId (defensive — shouldn't normally happen)", () => {
+    const identity = resolveTabBoardIdentity(
+      { ideaId: "board-a", ideaTitle: "Board A", launchSeq: 0 },
+      "board-b",
+      "Board B",
+    );
+    expect(identity).toEqual({ ideaTitle: "Board B", boardKnown: true, isOtherBoard: false });
   });
 });
 

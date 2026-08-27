@@ -32,6 +32,16 @@ export interface ResolveSessionNameInput {
   ideaTitle?: string | null;
   /** The session id, once known — its first 4 characters are the fallback's disambiguator. */
   sessionId?: string | null;
+  /**
+   * Cross-board switch UX (task b70bcbeb, terminal-tabs.ts's
+   * `resolveTabBoardIdentity`): false only for a session whose own board is
+   * genuinely unrecorded (a legacy row that predates `SessionEntry.ideaId`)
+   * — the fallback tier then reads "Board not recorded · <sid4>" rather than
+   * building `<ideaTitle> · <sid4>` from a title that was never actually
+   * confirmed as this session's own. Defaults to true — every ordinary
+   * caller already has (or can trivially resolve) a concrete board.
+   */
+  boardKnown?: boolean;
 }
 
 export function resolveSessionName(input: ResolveSessionNameInput): string {
@@ -41,8 +51,10 @@ export function resolveSessionName(input: ResolveSessionNameInput): string {
   const taskTitle = input.taskTitle?.trim();
   if (taskTitle) return taskTitle;
 
-  const ideaTitle = input.ideaTitle?.trim();
   const sid = shortSessionId(input.sessionId);
+  if (input.boardKnown === false) return `Board not recorded · ${sid}`;
+
+  const ideaTitle = input.ideaTitle?.trim();
   return ideaTitle ? `${ideaTitle} · ${sid}` : `Session · ${sid}`;
 }
 

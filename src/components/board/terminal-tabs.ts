@@ -56,15 +56,31 @@ export interface SessionEntry {
    * actually belongs to, resolved once at creation (`payload?.ideaId ??
    * <the dock's own ideaId prop>` — see terminal-dock.tsx's `mintAndDeliver`).
    * Always resolves to a concrete value for anything minted after this fix
-   * shipped, so it's the one place terminal-session-view.tsx's ended-panel
-   * Resume can read "which board does clicking Resume on THIS tab actually
-   * belong to" without re-deriving it — see that file's `handleResume` and
-   * terminal-dock.tsx's `handleResumeEndedSession`. Undefined only for a
-   * `reconnect`-origin entry (reattach always happens already on the row's
-   * own board — see `performReattach` — so there's nothing to disambiguate)
-   * or an entry that predates this field.
+   * shipped (including a `reconnect`-origin entry — `performReattach` sets it
+   * to the dock's own `ideaId`, since a reattach always happens already on
+   * the row's own board), so it's the one place terminal-session-view.tsx's
+   * ended-panel Resume can read "which board does clicking Resume on THIS tab
+   * actually belong to" without re-deriving it — see that file's
+   * `handleResume` and terminal-dock.tsx's `handleResumeEndedSession`.
+   * Undefined only for a genuinely pristine (never-launched) slot — see
+   * `resolveTabBoardIdentity` below, the ONE place that reads this field
+   * together with `ideaTitle`/`launchSeq`/`attach` — or an entry that
+   * predates this field.
    */
   ideaId?: string;
+  /**
+   * Board-switch UX fix (task b70bcbeb): the TITLE that goes with `ideaId`
+   * above, captured at the exact same moments (`mintAndDeliver`,
+   * `performReattach`) so a tab's label/identity can be resolved from its OWN
+   * board without re-reading the dock's current `ideaTitle` prop — which is
+   * exactly the bug this field fixes: the dock instance (and its `sessions`
+   * array) survives a client-side navigation to a DIFFERENT board (same route
+   * shape, `/ideas/[id]/board`, so React reuses the component across the
+   * prop change), so `ideaTitle` alone would silently relabel a live tab to
+   * whatever board is now being viewed. Read together with `ideaId` via
+   * `resolveTabBoardIdentity` — never on its own.
+   */
+  ideaTitle?: string;
   createdAt: number;
   launchSeq: number;
   launchPayload: BrowserLaunchPayload | null;
@@ -191,14 +207,25 @@ export interface TabLabelInput {
   ideaTitle?: string | null;
   /** The minted session id, once known (null before mint completes). */
   sessionId: string | null;
+  /**
+   * Cross-board switch UX (task b70bcbeb): false only for an entry whose own
+   * board is genuinely unrecorded (a legacy row that predates
+   * `SessionEntry.ideaId`) — the fallback tier then reads "Board not
+   * recorded · <sid4>" instead of guessing from a title that isn't actually
+   * this session's own. Defaults to true (every ordinary caller has a
+   * concrete `ideaId`); see `resolveTabBoardIdentity` for how callers derive
+   * this alongside `ideaTitle` itself.
+   */
+  boardKnown?: boolean;
 }
 
 /**
  * Resolves a tab's label via the one shared naming rule (B3, design §1):
  * user name → task title → `<idea title> · <sid4>` (or `Session · <sid4>`
- * with no idea title). Callers truncate the rendered label with CSS
- * ellipsis and use the full string (or this same string, for board-level
- * tabs) as the tooltip/title attribute.
+ * with no idea title, or `Board not recorded · <sid4>` when `boardKnown` is
+ * false). Callers truncate the rendered label with CSS ellipsis and use the
+ * full string (or this same string, for board-level tabs) as the
+ * tooltip/title attribute.
  */
 export function deriveTabLabel(input: TabLabelInput): string {
   return resolveSessionName({
@@ -206,7 +233,73 @@ export function deriveTabLabel(input: TabLabelInput): string {
     taskTitle: input.taskTitle,
     ideaTitle: input.ideaTitle,
     sessionId: input.sessionId,
+    boardKnown: input.boardKnown,
   });
+}
+
+// ── cross-board switch UX (task b70bcbeb) ───────────────────────────────────
+//
+// The bug: a tab's label/identity used to be derived from whichever board is
+// CURRENTLY being viewed (the dock's own `ideaId`/`ideaTitle` props), not
+// from the board the session was actually launched against. Because
+// `TerminalDock` sits at the same position under the shared `/ideas/[id]/
+// board` route, React reuses the SAME component instance (and its in-memory
+// `sessions` array) across a client-side navigation to a different board —
+// only the props change — so a live tab would silently relabel to the wrong
+// project the moment you navigated elsewhere. `SessionEntry.ideaId`/
+// `ideaTitle` fix the DATA (captured once, at launch/reattach time); this
+// function is the one place that data is turned into a display decision, so
+// every label/identity/badge call site agrees.
+
+export interface BoardIdentityCandidate {
+  ideaId?: string;
+  ideaTitle?: string;
+  launchSeq: number;
+  attach?: unknown;
+}
+
+export interface TabBoardIdentity {
+  /** The idea title to use for this tab — its OWN board's title once it's actually launched/attached, or (a never-launched placeholder) whatever board is currently being viewed. */
+  ideaTitle: string | null;
+  /** False only for an already-launched/attached entry with no recorded `ideaId` (a legacy row predating that field) — an honest "we don't know", never a guess. */
+  boardKnown: boolean;
+  /** True only when this tab's OWN (launched/attached) session belongs to a DIFFERENT board than the one being viewed right now — the sole trigger for the tab-strip's amber "other board" badge (design item 2 — no other surface repeats this marker). */
+  isOtherBoard: boolean;
+}
+
+/**
+ * A genuinely pristine, never-launched entry (`findPristineSlot`'s own test:
+ * `launchSeq === 0 && !attach`) is a pure launch surface with no session yet
+ * — there is nothing of its own to protect, so it correctly keeps following
+ * whichever board is currently being viewed (design item 6) rather than
+ * reading as "Board not recorded" or tripping the mismatch badge.
+ */
+function isPristineTab(entry: BoardIdentityCandidate): boolean {
+  return entry.launchSeq === 0 && !entry.attach;
+}
+
+/**
+ * The single source of truth every label/identity/badge call site reads
+ * from (terminal-dock.tsx's tab strip, drag ghost, pop-out stamp, rename
+ * toast; terminal-session-view.tsx's pane header) — see this section's
+ * header comment for the bug it fixes.
+ */
+export function resolveTabBoardIdentity(
+  entry: BoardIdentityCandidate,
+  currentIdeaId: string,
+  currentIdeaTitle: string,
+): TabBoardIdentity {
+  if (isPristineTab(entry)) {
+    return { ideaTitle: currentIdeaTitle, boardKnown: true, isOtherBoard: false };
+  }
+  if (!entry.ideaId) {
+    return { ideaTitle: null, boardKnown: false, isOtherBoard: false };
+  }
+  return {
+    ideaTitle: entry.ideaTitle ?? null,
+    boardKnown: true,
+    isOtherBoard: entry.ideaId !== currentIdeaId,
+  };
 }
 
 // ── first-launch reuse: the pristine slot ───────────────────────────────────

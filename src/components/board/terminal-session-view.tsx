@@ -69,6 +69,7 @@ import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal
 import {
   formatAttentionAnnouncement,
   shouldAnnounceAttention,
+  resolveTabBoardIdentity,
   type SessionEntry,
 } from "./terminal-tabs";
 import {
@@ -421,6 +422,16 @@ export function TerminalSessionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poppedOut, actions.refreshView]);
 
+  // Board-switch UX fix (task b70bcbeb): the pane header's identity line
+  // shows this tab's OWN board — truthful, in plain text — never the
+  // dock-wide `descriptor.ideaTitle`, which reflects whichever board is
+  // CURRENTLY being viewed. Deliberately no badge here (design item 3): Nick
+  // explicitly rejected a second amber marker in this header as redundant
+  // with the tab strip's own — the tab strip is the ONE place that badge may
+  // appear, this header just tells the truth in words.
+  const boardIdentity = resolveTabBoardIdentity(entry, descriptor.ideaId, descriptor.ideaTitle);
+  const ownBoardLabel = boardIdentity.ideaTitle ?? "Board not recorded";
+
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
   // Card cbe60db5 rework 6 (Nick's field-test item 4): the "error"/4001 state
   // legitimately stays the underlying mechanism (unchanged, same as the
@@ -628,7 +639,13 @@ export function TerminalSessionView({
             </span>
           )}
           <span className="hidden font-mono text-xs text-zinc-500 sm:inline">
-            {descriptor.ideaTitle}
+            {ownBoardLabel}
+            {/* Legacy fallback (design item 5): a session with no recorded
+                board shows its folder alongside "Board not recorded" so
+                there's still SOME way to place it — sessionCwd (the hook's
+                own tracked working folder) is the best source of truth for
+                that, better than a stale launch payload. */}
+            {sessionCwd && <span className="text-zinc-600"> · {sessionCwd}</span>}
             {pair && <span className="text-zinc-600"> · session {pair.sessionId.slice(0, 8)}</span>}
           </span>
           <span className="ml-auto inline-flex items-center gap-1.5">
