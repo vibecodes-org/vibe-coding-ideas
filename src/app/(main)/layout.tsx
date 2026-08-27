@@ -2,6 +2,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { ScrollToTop } from "@/components/layout/scroll-to-top";
 import { MainFocus } from "@/components/layout/main-focus";
+import { TerminalDockShell } from "@/components/board/terminal-dock-shell";
 
 export default function MainLayout({
   children,
@@ -22,8 +23,15 @@ export default function MainLayout({
         tabIndex={0}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden outline-none"
       >
-        <div className="flex-1">{children}</div>
-        <Footer />
+        {/* Card b70bcbeb follow-up: TerminalDockShell hosts the one live
+            TerminalDock instance above the `[id]` route segment so it
+            survives switching boards instead of being torn down and
+            remounted by App Router on every navigation — see the shell's
+            own comment for the full story. */}
+        <TerminalDockShell>
+          <div className="flex-1">{children}</div>
+          <Footer />
+        </TerminalDockShell>
       </main>
     </div>
   );

@@ -12,7 +12,7 @@ import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { KitAppliedToast } from "@/components/board/kit-applied-toast";
-import { TerminalDock } from "@/components/board/terminal-dock";
+import { AnnounceBoardIdea } from "@/components/board/terminal-dock-shell";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
@@ -346,9 +346,12 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       <KitAppliedToast />
 
       {/* In-app local Claude Code terminal — OFF by default (NEXT_PUBLIC_TERMINAL_ENABLED),
-          team-members only. Renders nothing when the flag is off → board unchanged. */}
+          team-members only. Renders nothing when the flag is off → board unchanged.
+          Card b70bcbeb follow-up: the dock itself now lives in the shared
+          (main) layout (TerminalDockShell) so it survives a board switch —
+          this just announces this page as its current target. */}
       {isTerminalEnabled() && isTeamMember && (
-        <TerminalDock
+        <AnnounceBoardIdea
           ideaId={id}
           ideaTitle={idea.title}
           ideaGithubUrl={idea.github_url}
