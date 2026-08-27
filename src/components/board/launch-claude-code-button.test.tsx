@@ -190,3 +190,58 @@ describe("LaunchClaudeCodeButton — board variant dropdown path line", () => {
     expect(screen.queryByText(/This machine/)).toBeNull();
   });
 });
+
+// ── claude-cli:// isolation advisory wiring (board task 48eb844b) ──────────
+//
+// claude-cli:// (this button's terminal-window launch, via window.location.assign)
+// is a third-party handler with no --worktree-flag plumbing, so the advisory
+// note has to ride the prompt TEXT it fires. vibecodes:// (the "in the
+// browser" item, via requestBrowserLaunch) already gets a REAL --worktree
+// flag from the dock reading `essentials.isolate` — it must NOT also get the
+// redundant text.
+describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:// destination", () => {
+  const recordedProjectPaths = [
+    { hostname: "nick-mbp", absolute_path: "/Users/nick/projects/widgets" },
+  ];
+
+  function decodeQ(url: string): string {
+    const match = url.match(/[?&]q=([^&]*)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+
+  it("terminal-window launch (claude-cli://) fires a link whose prompt contains the isolation note", () => {
+    const location = stubLocationAssign();
+    renderBoardButton({
+      ideaGithubUrl: "https://github.com/acme/widgets",
+      recordedProjectPaths,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Launch Claude Code/i }));
+
+    expect(location.assign).toHaveBeenCalledTimes(1);
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(decodeQ(url)).toContain("git worktree add");
+
+    location.restore();
+  });
+
+  it("in-browser launch (vibecodes://) payload carries isolate:true but NO isolation note text (the dock fires the real --worktree flag instead)", () => {
+    renderBoardButton({
+      ideaGithubUrl: "https://github.com/acme/widgets",
+      recordedProjectPaths,
+    });
+
+    const trigger = screen.getByRole("button", { name: "Launch options" });
+    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: /In the browser/i }));
+
+    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as {
+      essentials: { head: string; tail: string; isolate?: boolean };
+    };
+    expect(payload.essentials.isolate).toBe(true);
+    const promptText = `${payload.essentials.head}\n${payload.essentials.tail}`;
+    expect(promptText).not.toContain("git worktree add");
+  });
+});

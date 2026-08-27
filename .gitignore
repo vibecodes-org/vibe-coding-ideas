@@ -70,3 +70,10 @@ test-results/
 
 # Desktop helper build artifacts
 *.dmg
+
+# Claude Code native worktree-isolation folders (created by `claude --worktree`
+# in a repo-backed idea's working copy when the in-app terminal isolates a
+# concurrent session — see terminal/bridge/src/resume-cmd.js). These live
+# inside whatever project repo the user's `claude` is run from, not this repo,
+# but the pattern is harmless/defensive to carry here too.
+.claude/worktrees/

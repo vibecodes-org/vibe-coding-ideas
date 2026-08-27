@@ -169,12 +169,22 @@ const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
 // `BRIDGE_PERMISSION_MODE` env mirrors BRIDGE_MODEL's own dev/test
 // convenience fallback.
 const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSION_MODE || null;
+// Concurrent-terminal isolation (QA-flagged fix): the deep link's `worktree`
+// boolean (see shared/deep-link.mjs), set by the app whenever this launch
+// needs isolation (existing-mode with a known/possibly-shared folder — see
+// src/lib/launch-claude-code.ts's CompactPromptEssentials.isolate). Only ever
+// applied by resolveClaudeLaunch on a genuinely fresh session (branch 4) —
+// resume/resumeId/explicitCmd never read it, same as MODEL/PERMISSION_MODE
+// above. `BRIDGE_WORKTREE` env mirrors their own dev/test convenience
+// fallback.
+const WORKTREE = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE === "1"));
 const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
   explicitCmd,
   resumeId: RESUME_ID,
   resume: RESUME,
   model: MODEL,
   permissionMode: PERMISSION_MODE,
+  worktree: WORKTREE,
   mintId: () => crypto.randomUUID(),
 });
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();

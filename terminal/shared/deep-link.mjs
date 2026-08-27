@@ -88,6 +88,28 @@
 //             copy of this module simply never reads `permissionMode` off
 //             the URL — no version-skew risk, no error surface, silently
 //             ignored, same as every other param here.
+//   worktree — concurrent-terminal isolation (formerly an advisory text
+//             protocol baked into `prompt`, now Claude Code's own NATIVE
+//             `--worktree <name>` CLI flag — see
+//             https://code.claude.com/docs/en/worktrees). Set ONLY when the
+//             app decided this launch needs isolation (existing-mode with a
+//             known/possibly-shared folder — see
+//             src/lib/launch-claude-code.ts's `CompactPromptEssentials.isolate`)
+//             AND resolved server-side/app-side as a plain boolean, same
+//             posture as `resume`'s "1" flag. The ONLY legal value on the
+//             wire is the literal "1" (isWorktreeFlagSafe below) — same hard
+//             whitelist posture as `permissionMode`, since it's about to
+//             gate an argv flag. The bridge appends `--worktree <id>` to the
+//             fresh-spawn CMD ONLY (terminal/bridge/src/resume-cmd.js),
+//             reusing the SAME id it mints for `--session-id` as the
+//             worktree name — NEVER on a resume/resumeId launch: Claude
+//             Code's own `--resume`/`--continue` already reopens the
+//             worktree a session was originally spawned in (see the docs'
+//             "Resume a worktree session"), so there is nothing to pass
+//             again there, and passing it would risk fighting that native
+//             behaviour. An old helper's bundled copy of this module simply
+//             never reads `worktree` off the URL — no version-skew risk,
+//             same as every other param here.
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three; `model` is
@@ -147,8 +169,19 @@ function isPermissionModeSafe(v) {
   return v === "auto" || v === "acceptEdits";
 }
 
+/** Concurrent-terminal isolation — the ONLY legal wire value is the literal
+ *  "1", mirroring `resume`'s own flag posture (isWorktreeFlagSafe is really
+ *  just documentation here since the builder only ever emits "1" itself; kept
+ *  as an explicit predicate, same style as isPermissionModeSafe, for the
+ *  parse-side re-check).
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isWorktreeFlagSafe(v) {
+  return v === "1";
+}
+
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&prompt=…]`
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&prompt=…]`
  * deep link.
  *
  * Uses encodeURIComponent so reserved characters in the relay URL / token /
@@ -157,10 +190,10 @@ function isPermissionModeSafe(v) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode, worktree } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -193,6 +226,10 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   if (permissionMode && isPermissionModeSafe(permissionMode)) {
     parts.push(`permissionMode=${encodeURIComponent(permissionMode)}`);
   }
+  // Concurrent-terminal isolation: same insertion point as model/
+  // permissionMode — before `prompt`. Only ever the literal "1"; a falsy
+  // value is omitted entirely (no version-skew risk for an old bridge).
+  if (worktree) parts.push(`worktree=1`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -207,7 +244,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -261,6 +298,12 @@ export function parseLaunchDeepLink(url) {
   const rawPermissionMode = parsed.searchParams.get("permissionMode");
   const permissionMode =
     rawPermissionMode && isPermissionModeSafe(rawPermissionMode) ? rawPermissionMode : undefined;
+  // Concurrent-terminal isolation: re-validated here exactly like
+  // permissionMode above — anything except the exact literal "1" is dropped
+  // silently. An old helper's bundled copy of this parser simply never reads
+  // "worktree" at all — no version-skew risk.
+  const rawWorktree = parsed.searchParams.get("worktree");
+  const worktree = rawWorktree !== null && isWorktreeFlagSafe(rawWorktree) ? true : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -274,6 +317,7 @@ export function parseLaunchDeepLink(url) {
   }
   if (model) out.model = model;
   if (permissionMode) out.permissionMode = permissionMode;
+  if (worktree) out.worktree = worktree;
   if (prompt) out.prompt = prompt;
   return out;
 }

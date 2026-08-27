@@ -644,89 +644,6 @@ Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth fl
 }
 
 /**
- * Concurrent-terminal auto-worktree isolation — the agent-side protocol a
- * launched local session runs at startup, BEFORE reading the board or picking
- * up any task. Builds on:
- *  - Requirements (ProdOwner): Scope C, auto-isolate each additional concurrent
- *    session into its own `git worktree`; first session unchanged (FR-1);
- *    dirty/unpushed worktrees are never deleted (FR-6); degrade, never block
- *    (FR-8).
- *  - UX Design (Compass, docs/concurrent-terminal-worktrees-design.html §3):
- *    the exact banner copy/glyphs below (● Primary checkout / ⧉ Isolated
- *    worktree / ⚠ Shared folder / ✓ Worktree removed).
- *  - Design Review (Nick, BINDING): mechanism (A) agent-side; worktree home
- *    sibling `<repo>.vibe/wt-N` on branch `vibe/wt-N`; PID-liveness lock
- *    (`kill -0`, not a heartbeat TTL); the lock lives OUTSIDE the repo at
- *    `~/.vibecodes/locks/<hash-of-abs-path>` so it never pollutes `git
- *    status`; lock content is THIS session's PID + the absolute path (so a
- *    recycled PID for a different process/path reads as stale); leftover
- *    worktrees are reconciled (clean ones auto-pruned, dirty/unpushed always
- *    kept) on the NEXT primary-claiming launch, since agents rarely fire exit
- *    hooks; a worktree session must never push to or merge the primary
- *    branch — only `vibe/wt-N`.
- *
- * Used for existing-mode launches that already have a known folder (a
- * recorded/pinned cwd) — repo-backed or not (see directoryBlock and
- * buildCompactStepPieces). It used to be scoped to no-repo launches only, on
- * the theory that a repo-backed idea's `repo` slug deterministically resolves
- * the working copy so there is no concurrent-terminal ambiguity — but a
- * repo-backed idea with a known folder ALSO opens a real local shell in that
- * (possibly-shared) folder via the deep link's cwd, same as no-repo, so the
- * ambiguity is identical and the fix widened this to cover it. Only a
- * repo-backed idea with NO known folder yet (fresh clone) is genuinely out of
- * scope, since that path is a brand-new/just-cloned folder, not a possibly-
- * shared existing one.
- *
- * `variant: "compact"` returns a terse, budget-conscious rewrite of the same
- * steps for the URL-capped deep-link / in-browser-terminal prompt (see
- * MAX_DEEP_LINK_URL_LENGTH / MAX_LAUNCH_URL_LENGTH) — the full numbered
- * version below would blow those OS ceilings. Both variants keep every
- * load-bearing mechanic (lock path, `kill -0`, sibling + branch naming, the
- * never-push-primary directive, reconcile/auto-prune, degrade-don't-block);
- * the compact one drops only the prose explanations and the recovery-card
- * formatting.
- */
-export function buildWorktreeIsolationProtocol(variant: "full" | "compact" = "full"): string {
-  if (variant === "compact") {
-    return `Not a git repo? Skip, warn shared folder, continue. LOCK=~/.vibecodes/locks/<pwd-hash>; kill -0 PID AND path==$PWD -> lowest free N, worktree add ../<repo>.vibe/wt-N -b vibe/wt-N, never push primary, only wt-N. Else: dirty=git status --porcelain nonempty; unpushed=git log @{u}.. nonempty or no @{u}+commits; prune only if clean+pushed; else keep dirty/unpushed, never git worktree remove --force during auto-prune (even on retry), claim here.`;
-  }
-
-  return `WORKTREE ISOLATION - run before any board work.
-
-0. Not a git repo? Print, stay here:
-     ⚠ Shared folder - isolation unavailable (not a git repository)
-       Concurrent edits may clash. Continuing anyway.
-
-1. LOCK=~/.vibecodes/locks/$(printf '%s' "$PWD"|shasum -a 256|cut -c1-16)
-
-2. Live PID in $LOCK (kill -0) AND its recorded path == $PWD -> step 3 (a
-   recycled PID for a different process/path is NOT live — treat as stale).
-   Else stale -> step 4; overwrite.
-
-3. ISOLATE: REPO=$(basename "$(git rev-parse --show-toplevel)"); pick the
-   LOWEST FREE N (../$REPO.vibe/wt-1, wt-2, … — the first that doesn't already
-   exist, so a bare wt-N never collides with a kept dirty worktree); git
-   worktree add ../$REPO.vibe/wt-N -b vibe/wt-N. Fails: warn, stay. Else: cd in,
-   relock, print:
-     ⧉ Isolated worktree - <path> - branch vibe/wt-N
-   Push only vibe/wt-N when done; never the primary branch.
-
-4. CLAIM PRIMARY: for each leftover ../<repo>.vibe/wt-*, check dirty
-   (\`git status --porcelain\` non-empty) and unpushed (git log @{u}..
-   --oneline non-empty, or no @{u} with commits ahead of primary). Clean AND
-   fully pushed -> prune, print "✓ Worktree removed"; else keep dirty/unpushed
-   (never delete), print:
-     ⧉ Worktree kept - <path>, branch vibe/wt-N
-       Resume cd <path>; publish git push -u origin vibe/wt-N + PR; discard
-       git worktree remove <path> --force.
-   Never run \`git worktree remove --force\` during auto-prune (even on retry)
-   — dirty/unpushed always means KEEP; --force above is for a HUMAN's
-   deliberate discard only.
-   Write the lock, print:
-     ● Primary checkout - <path> - branch <branch> - only session on this folder`;
-}
-
-/**
  * The create-new (no-repo / repo-into-new-folder) bootstrap steps. Idempotent
  * intent. Numbered to follow the MCP-setup head (step 1), so it reads as one
  * sequence. Order is load-bearing: cd/create FIRST → pwd → record_project_path
@@ -786,10 +703,12 @@ export function slugifyIdeaTitle(title: string): string {
  *  - existing mode WITH a repo → open the local clone, or clone it if missing
  *    (repo-backed; OUT OF SCOPE for worktree isolation — the repo slug already
  *    resolves the folder deterministically, no concurrent-terminal ambiguity);
- *  - existing mode WITHOUT a repo → rely on the deep link's cwd, if any, and run
- *    the worktree-isolation protocol (buildWorktreeIsolationProtocol) — this is
- *    the "launches that inject a cwd" case the concurrent-terminal design
+ *  - existing mode WITHOUT a repo → rely on the deep link's cwd, if any — this
+ *    is the "launches that inject a cwd" case the concurrent-terminal design
  *    targets: a real local shell about to sit in a possibly-shared folder.
+ *    (This verbose/copy-command prompt has no isolation mechanism of its own
+ *    — see the compact path's `isolate` flag for where `--worktree` is
+ *    actually wired in.)
  * Home-relative (`~/…`) suggestions are fine — the agent expands them in the shell.
  */
 function directoryBlock({
@@ -808,13 +727,18 @@ function directoryBlock({
   • If not, clone it first (suggested location ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}):
      git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}`;
   }
-  // Worktree isolation is scoped to existing-mode/no-repo only (the deep
-  // link's cwd, if any). A "new" mode call that reaches here (e.g. a caller
-  // that never supplied `newProject`) falls back to the prior no-op — it's
-  // about to create a brand-new folder, not sit in a possibly-shared one.
-  if (mode === "existing") {
-    return buildWorktreeIsolationProtocol();
-  }
+  // Concurrent-session isolation for existing-mode/no-repo launches (the deep
+  // link's cwd, if any — a real local shell about to sit in a possibly-shared
+  // folder) used to be advisory prose injected here (buildWorktreeIsolationProtocol,
+  // removed). It is now handled by the launched `claude` process's OWN native
+  // `--worktree <name>` flag (see terminal/bridge/src/resume-cmd.js), which is
+  // enforced by Claude Code itself rather than a text instruction an agent could
+  // ignore or a URL budget could silently drop — so there is nothing left to say
+  // here. This verbose (copy-command) prompt path has no bridge/CLI-flag
+  // plumbing of its own (the user runs the printed command in their OWN
+  // terminal), so it stays a no-op; see the compact/deep-link path
+  // (buildCompactStepPieces's `isolate` flag) for where the flag is actually
+  // threaded through to a real `claude --worktree` invocation.
   return "";
 }
 
@@ -899,6 +823,25 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
    * or the clone/cd step (repo-backed with no known folder yet).
    */
   existingPath?: string;
+  /**
+   * Fold an advisory worktree-isolation NOTE into the prompt TEXT when
+   * `isolate` ends up true (existing-mode/known-folder launches — see
+   * `isolate`'s doc). Scoped to the `claude-cli://` deep-link callers only
+   * (`openInClaudeCode` in launch-claude-code-button.tsx): that scheme is
+   * consumed by a third-party handler VibeCodes doesn't control, so unlike
+   * the `vibecodes://` destination (which threads `isolate` into a REAL,
+   * enforced `claude --worktree` flag — see terminal/bridge/src/resume-cmd.js)
+   * there is no CLI-flag plumbing to lean on; the prompt text VibeCodes fully
+   * owns is the only lever left. This is safe as advisory prose (unlike the
+   * OLD worktree-isolation protocol removed from the in-app terminal, which
+   * had no human review step and could silently no-op) because this scheme
+   * always shows the user the prefilled prompt before Claude Code runs it —
+   * a human reviews it, so an instruction that gets ignored is a visible,
+   * honest gap, not a silent one. Defaults to false so the `vibecodes://`
+   * destination (which builds essentials from the same shared pieces but
+   * never sets this) never gets the note duplicated alongside its real flag.
+   */
+  includeIsolationAdvisory?: boolean;
 }
 
 /**
@@ -916,13 +859,13 @@ export interface CompactPromptParts {
 
 /**
  * The raw ingredients of the compact prompt, shared by BOTH
- * buildCompactBootstrapPromptParts (unconditional — always folds the worktree
- * protocol in when in scope; used by the no-budget/content-inspection builder
- * and by callers with no URL ceiling of their own) and
- * buildCompactPromptEssentials (BUG1 fix — keeps the raw-cwd echo AND the
- * protocol OUT of the protected head so a URL-capped caller can decide
- * inclusion against its own budget). Single source of the step text so the
- * two builders can never drift apart.
+ * buildCompactBootstrapPromptParts (used by the no-budget/content-inspection
+ * builder and by callers with no URL ceiling of their own) and
+ * buildCompactPromptEssentials (BUG1 fix — keeps the raw-cwd echo OUT of the
+ * protected head so a URL-capped caller can decide inclusion against its own
+ * budget). Single source of the step text so the two builders can never
+ * drift apart. `isolate` (whether this launch should carry `--worktree`) is
+ * consumed by neither builder's TEXT — only by the deep-link-building caller.
  */
 interface CompactStepPieces {
   header: string;
@@ -941,13 +884,26 @@ interface CompactStepPieces {
    */
   directoryEcho?: string;
   /**
-   * Compact worktree-isolation protocol candidate — same existing-mode/
-   * known-folder scope as directoryEcho, same reason it's kept separate: it
-   * must be included or omitted as one atomic block (BUG1 — see
-   * fitCompactWorktreeProtocol), never embedded where a length guard could
-   * half-truncate it.
+   * Whether this launch should get concurrent-session isolation via the
+   * launched `claude`'s own native `--worktree <name>` flag (see
+   * terminal/bridge/src/resume-cmd.js) — same existing-mode/known-folder
+   * scope as directoryEcho (repo-backed or not: the deep link's cwd is what
+   * puts either kind of idea in a possibly-shared folder). This used to be an
+   * advisory text protocol folded into the prompt (buildWorktreeIsolationProtocol,
+   * removed); now it is a plain boolean the deep-link-building caller reads
+   * to decide whether to fire the link with `worktree: true` — nothing rides
+   * in the prompt itself.
    */
-  protocol?: string;
+  isolate?: boolean;
+  /**
+   * The claude-cli:// advisory text companion to `isolate` (see
+   * `CompactBootstrapArgs.includeIsolationAdvisory`) — present only when both
+   * `isolate` is true AND the caller opted in. Placed in the TRIMMABLE tail
+   * (like `directoryEcho`, which it always accompanies): it's genuinely
+   * disposable advisory prose, not something an agent needs to self-heal
+   * anything, so it's fine for a tight URL budget to drop it first.
+   */
+  isolationNote?: string;
   /** Always-present, path-length-independent: MCP connect + record_project_path. */
   essentialSteps: string[];
   work: string;
@@ -961,12 +917,14 @@ function buildCompactStepPieces({
   newProject,
   existingPath,
   taskId,
+  includeIsolationAdvisory,
 }: CompactBootstrapArgs): CompactStepPieces {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
   const leadingSteps: string[] = [];
   let directoryEcho: string | undefined;
-  let protocol: string | undefined;
+  let isolate: boolean | undefined;
+  let isolationNote: string | undefined;
 
   // Directory step. In create-new mode → mkdir/init the folder. Existing WITH a
   // known folder (recorded/pinned path the deep link's cwd already opens in) →
@@ -990,15 +948,24 @@ function buildCompactStepPieces({
       ? ` It should already be a clone of ${repo} — confirm with \`git remote -v\`; don't re-clone.`
       : "";
     directoryEcho = `You should already be in ${existingPath} (recorded from a previous session).${repoNote} Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`;
-    // Concurrent-terminal isolation — the deep link's cwd is what puts this
+    // Concurrent-session isolation — the deep link's cwd is what puts this
     // session in a possibly-shared folder, whether or not the idea is
     // repo-backed (a repo-backed idea with NO known folder resolves via the
-    // `repo` slug in the branch below instead and never reaches here). The
-    // "compact" variant is a budget-conscious rewrite of the same steps
-    // buildWorktreeIsolationProtocol("full") gives the copy-command prompt —
-    // this one keeps every load-bearing invariant but drops the prose so the
-    // URL-capped deep link / in-browser terminal stay under their ceiling.
-    protocol = buildWorktreeIsolationProtocol("compact");
+    // `repo` slug in the branch below instead and never reaches here). Signal
+    // it via the boolean flag the deep-link builder reads (see `isolate`'s
+    // doc) so the caller fires the launch with `claude --worktree <name>`
+    // (terminal/bridge/src/resume-cmd.js) rather than folding a text protocol
+    // into the prompt.
+    isolate = true;
+    // claude-cli:// only (see includeIsolationAdvisory's doc): that scheme
+    // can't carry the real --worktree flag, so the prompt text VibeCodes
+    // fully owns is the only lever left. Advisory, not enforced — the user
+    // reviews this prompt before Claude Code runs it, so an ignored note is
+    // a visible gap, not a silent one.
+    if (includeIsolationAdvisory) {
+      isolationNote =
+        "Heads up: another session may already be working in this folder. Before making changes, consider running `git worktree add ../<name> -b <branch>` and working there instead, to avoid colliding with it.";
+    }
   } else if (repo) {
     leadingSteps.push(
       `Get into the repo ${repo} first: cd your local clone, or \`git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}\` and cd in. Never work in your home directory.`
@@ -1018,7 +985,7 @@ function buildCompactStepPieces({
     ? `Set up VibeCodes and work a board task for "${title}".`
     : `Set up VibeCodes and pick up board work for "${title}".`;
 
-  return { header, leadingSteps, directoryEcho, protocol, essentialSteps, work };
+  return { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work };
 }
 
 /**
@@ -1030,23 +997,19 @@ function buildCompactStepPieces({
  * TAIL's work step; on (rare) truncation the agent recovers them from the board
  * over MCP — the head's connect step is what makes that possible.
  *
- * UNCONDITIONAL: the worktree-isolation protocol (when in scope) always rides
- * the head here, exactly as before — this builder has no URL budget of its
- * own to weigh it against. Callers that DO have a hard URL ceiling (the
- * claude-cli:// deep link, the in-browser terminal) must NOT clamp this
- * output directly — the protocol is load-bearing-shaped text embedded in
- * `head`, and enforcePromptLength's "never sacrifice the head" fallback would
- * let an oversized head overflow the cap instead of degrading (BUG1). Those
- * callers use buildCompactPromptEssentials + fitCompactWorktreeProtocol
- * instead, which keep the protocol OUT of the protected head and decide its
- * inclusion against the actual budget.
+ * The concurrent-session isolation decision (`isolate`, when in scope) itself
+ * rides as the plain `isolate` boolean the deep-link-building caller reads to
+ * fire `claude --worktree` (see terminal/bridge/src/resume-cmd.js) — nothing
+ * in this text depends on it directly. `isolationNote`, the claude-cli:// text
+ * companion to that flag (see `CompactBootstrapArgs.includeIsolationAdvisory`),
+ * IS folded in here when present, same as `buildCompactPromptEssentials`.
  */
 export function buildCompactBootstrapPromptParts(args: CompactBootstrapArgs): CompactPromptParts {
-  const { header, leadingSteps, directoryEcho, protocol, essentialSteps, work } =
+  const { header, leadingSteps, directoryEcho, isolationNote, essentialSteps, work } =
     buildCompactStepPieces(args);
   const steps = [...leadingSteps];
   if (directoryEcho) steps.push(directoryEcho);
-  if (protocol) steps.push(protocol);
+  if (isolationNote) steps.push(isolationNote);
   steps.push(...essentialSteps);
 
   const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
@@ -1067,27 +1030,43 @@ export interface CompactPromptEssentials {
    * This is the UNCONDITIONAL join of `headSteps` under `header` — kept for
    * parity/back-compat callers with a roomy (or no) budget of their own, and
    * for the `head`-vs-`CompactPromptParts.head` divergence test. Budget-aware
-   * callers (fitCompactWorktreeProtocol) do NOT consume this string directly
-   * — see `header`/`headSteps` below.
+   * callers (fitCompactEssentials) do NOT consume this string directly — see
+   * `header`/`headSteps` below.
    */
   head: string;
   /**
    * Back-compat, UNCONDITIONAL join of `directoryEcho` (if any) + `work` —
    * kept for callers with no atomic step breakdown (see `work`/`directoryEcho`
-   * below), which `fitCompactWorktreeProtocol` still char-trims via
+   * below), which `fitCompactEssentials` still char-trims via
    * enforcePromptLength exactly as before. Real callers (via
    * `buildCompactPromptEssentials`, which always also supplies `work`) are no
    * longer read through this field for assembly — see `work` for why.
    */
   tail: string;
   /**
-   * Compact worktree-isolation protocol candidate (existing-mode with a known
-   * cwd only — repo-backed or not); undefined when out of scope (no known
-   * folder yet: new-project / first-launch, or repo-backed with nothing
-   * recorded). Best-effort on the URL-capped path — see
-   * fitCompactWorktreeProtocol, which decides whether it rides the head.
+   * Whether this launch should get concurrent-session isolation via the
+   * launched `claude`'s own native `--worktree <name>` flag (existing-mode
+   * with a known cwd only — repo-backed or not); undefined when out of scope
+   * (no known folder yet: new-project / first-launch, or repo-backed with
+   * nothing recorded). Consumed by the deep-link-building caller (see
+   * terminal/shared/deep-link.mjs's `worktree` param and
+   * terminal/bridge/src/resume-cmd.js), NOT by anything in the prompt text —
+   * unlike the old advisory protocol this replaced, there is nothing here for
+   * fitCompactEssentials to budget against.
    */
-  protocol?: string;
+  isolate?: boolean;
+  /**
+   * The claude-cli:// advisory companion to `isolate` — see
+   * `CompactBootstrapArgs.includeIsolationAdvisory` and
+   * `CompactStepPieces.isolationNote`. Present only when both `isolate` is
+   * true and the builder was asked for it; undefined for the `vibecodes://`
+   * destination (which never asks, since it has the real `--worktree` flag
+   * instead). Given the SAME atomic, whole-step-or-omit treatment as
+   * `directoryEcho` in the trimmable tail — see `assembleAtomicTail`'s degrade
+   * ladder — dropped before `work` but after `directoryEcho` (the actual
+   * mitigation text outranks the merely-redundant cwd echo).
+   */
+  isolationNote?: string;
   /**
    * BUG C fix (6th rework cycle, QA-confirmed): the "find work" / "work this
    * task" step, carrying the `idea_id`/`task_id` the agent needs to actually
@@ -1095,9 +1074,9 @@ export interface CompactPromptEssentials {
    * path if it's lost (unlike the head steps, which the agent can self-heal
    * via the board once connected). ALWAYS present (`buildCompactPromptEssentials`
    * always supplies it). Given the SAME atomic, whole-step-or-omit protection
-   * as `headSteps`: `fitCompactWorktreeProtocol` never character-truncates it
-   * — it either rides intact or (only when even `head` + this alone can't fit
-   * the budget) is cleanly omitted, never a mid-sentence/mid-UUID fragment.
+   * as `headSteps`: `fitCompactEssentials` never character-truncates it — it
+   * either rides intact or (only when even `head` + this alone can't fit the
+   * budget) is cleanly omitted, never a mid-sentence/mid-UUID fragment.
    * Optional only for back-compat with a caller that supplies no step
    * breakdown at all, in which case `tail`'s old char-trim behaviour applies.
    */
@@ -1105,18 +1084,17 @@ export interface CompactPromptEssentials {
   /**
    * The existing-folder confirm-echo tail step (duplicates the deep link's
    * `cwd` param, so it's genuinely disposable — unlike `work`). LOWEST
-   * priority of everything in the trimmable tail: `fitCompactWorktreeProtocol`
-   * drops the protocol before this, and drops this before ever touching
-   * `work`. Whole-or-omitted, same as the other atomic pieces — never a
-   * character fragment.
+   * priority of everything in the trimmable tail: `fitCompactEssentials`
+   * drops this before ever touching `work`. Whole-or-omitted, same as the
+   * other atomic pieces — never a character fragment.
    */
   directoryEcho?: string;
   /**
    * BUG B fix (5th rework cycle): the title-header line, ALONE (no steps).
    * Optional — omitted (with `headSteps`) by any caller that doesn't have a
-   * natural step breakdown, in which case `fitCompactWorktreeProtocol` falls
-   * back to treating `head` as one indivisible unit (its pre-BUG-B
-   * behaviour). `buildCompactPromptEssentials` always supplies both.
+   * natural step breakdown, in which case `fitCompactEssentials` falls back
+   * to treating `head` as one indivisible unit (its pre-BUG-B behaviour).
+   * `buildCompactPromptEssentials` always supplies both.
    */
   header?: string;
   /**
@@ -1125,8 +1103,8 @@ export interface CompactPromptEssentials {
    * (index 0 = highest priority — for the real prompt this is MCP-connect,
    * since an agent that can't reach the board can't self-heal anything else;
    * record_project_path follows). When the full head doesn't fit a budget,
-   * `fitCompactWorktreeProtocol` greedily includes whole steps from this list
-   * in order and OMITS any step that doesn't fit in its entirety — it NEVER
+   * `fitCompactEssentials` greedily includes whole steps from this list in
+   * order and OMITS any step that doesn't fit in its entirety — it NEVER
    * emits a mid-sentence fragment of a step, unlike the old raw-char
    * `enforcePromptLength` head-trim this replaces for the compact-essentials
    * path (that char-trim remains the tail's belt-and-suspenders — see
@@ -1139,15 +1117,12 @@ export interface CompactPromptEssentials {
  * BUG1 fix — the essentials-only counterpart to buildCompactBootstrapPromptParts
  * for launch paths with a hard URL ceiling (the claude-cli:// deep link, the
  * in-browser terminal). Keeps the protected `head` constant-size regardless of
- * cwd length (no raw-path echo) and surfaces the worktree-isolation protocol
- * candidate SEPARATELY so `fitCompactWorktreeProtocol` can include it only
- * when it actually fits the remaining budget — an omission is always clean
- * (the whole protocol, never a fragment) and the final prompt can never push
- * the URL past the cap (FR-8 degrade: no isolation beats a silently-dropped
- * launch).
+ * cwd length (no raw-path echo). Concurrent-session isolation rides as the
+ * plain `isolate` boolean (see its doc) rather than prompt text, so there is
+ * nothing for fitCompactEssentials to budget against there any more.
  */
 export function buildCompactPromptEssentials(args: CompactBootstrapArgs): CompactPromptEssentials {
-  const { header, leadingSteps, directoryEcho, protocol, essentialSteps, work } =
+  const { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work } =
     buildCompactStepPieces(args);
 
   // Priority order for the BUG B atomic degrade: leadingSteps (mkdir/clone —
@@ -1160,6 +1135,7 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
 
   const tailSteps: string[] = [];
   if (directoryEcho) tailSteps.push(directoryEcho);
+  if (isolationNote) tailSteps.push(isolationNote);
   tailSteps.push(work);
   const numberedTail = tailSteps
     .map((s, i) => `${headSteps.length + i + 1}. ${s}`)
@@ -1170,55 +1146,25 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
     headSteps,
     head: `${header}\n\n${numbered}\n`,
     tail: numberedTail,
-    protocol,
+    isolate,
     work,
     directoryEcho,
+    isolationNote,
   };
 }
 
 /**
- * BUG1 fix (FR-8 degrade applied to the URL budget) — the pure, shared
- * decision of whether the compact worktree-isolation protocol rides a
- * URL-capped launch's prompt. Used by BOTH `openInClaudeCode`
+ * The pure, shared assembly of the compact essentials prompt against a
+ * URL-capped launch's `budget`. Used by BOTH `openInClaudeCode`
  * (launch-claude-code-button.tsx) and `useLaunchClaudeCode`'s `launch()`
  * (use-launch-claude-code.ts) so the two entry points can never diverge.
  *
- * The protocol is all-or-nothing: it is folded into the (never-trimmed) head
- * ONLY when head+protocol actually fits `budget` on its own (before the tail
- * even gets a chance to shrink) — otherwise it is omitted entirely and the
- * launch proceeds without isolation (today's pre-worktree-protocol
- * behaviour), never half-truncated. The result is double-checked against
- * `budget` after enforcePromptLength runs (rather than trusting the
- * pre-check alone) so a razor-thin edge case in the ellipsis math can never
- * let the protocol-inclusive candidate sneak past the cap — the essentials-
- * only prompt (guaranteed <= budget on its own, since essentials are
- * path-length-independent) is the fallback.
- *
- * BUG 1 (4th rework cycle, belt-and-suspenders): `enforcePromptLength` now
- * guarantees `encodedLength <= cap` in every case (BUG 6 fix, above), so
- * `withoutProtocol` can no longer overflow in practice — but this function
- * previously trusted that single call site without a post-hoc check, unlike
- * `withProtocol` below. Mirror the same defensive re-verification on BOTH
- * branches: never let EITHER candidate escape this function over `budget`,
- * even if a future change to `enforcePromptLength`'s internals regresses its
- * guarantee. The empty string is the final, always-safe floor.
- *
- * BUG 1 (4th rework cycle, priority-inversion fix): the "does the protocol
- * fit?" check MUST happen BEFORE calling enforcePromptLength on
- * `headWithProtocol`, not by inspecting its return value. Pre-BUG-6-fix, an
- * over-budget `headWithProtocol` made enforcePromptLength return it
- * VERBATIM (the old bug), which happened to double as an implicit "didn't
- * fit" signal the post-hoc `encodedLength <= budget` check could catch. Now
- * that enforcePromptLength always self-heals an over-cap head by trimming
- * IT (not just the tail), that implicit signal is gone: a `headWithProtocol`
- * too big for `budget` would get silently trimmed down to size — and since
- * `protocol` sits at the very front of `headWithProtocol`, the trim eats
- * into the essentials text that follows it, KEEPING the protocol at the
- * cost of cutting into the essentials (inverting the documented priority —
- * essentials must never be sacrificed for the best-effort protocol). The
- * explicit pre-check below restores the original contract: the protocol
- * rides the head only when `head + protocol`, BOTH fully intact, already
- * fits `budget` on its own.
+ * Formerly `fitCompactWorktreeProtocol` — it also decided whether an advisory
+ * worktree-isolation text protocol rode the prompt. That protocol is gone
+ * (isolation is now the launched `claude`'s own native `--worktree` flag,
+ * decided from `essentials.isolate` by the deep-link-building caller, not
+ * from prompt text), so this function is left with exactly what its name
+ * says: fit the essentials (head + work + directoryEcho) into `budget`.
  *
  * BUG B fix (5th rework cycle, QA BUG B): the head handed to
  * enforcePromptLength below is no longer `essentials.head` (the always-both-
@@ -1237,23 +1183,15 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
  * back-compat fallback for a caller with no step breakdown (see
  * resolveEssentialHead).
  *
- * BUG C fix (6th rework cycle, QA-confirmed): once the protocol is (or isn't)
- * folded in, the ORIGINAL implementation handed the entire trimmable tail —
- * `essentials.tail`, the directory-confirm echo bundled TOGETHER WITH the
- * "find work" step that carries `idea_id`/`task_id` — to enforcePromptLength,
- * which char-trims it like any other disposable text. On a real (no-repo,
- * previously-recorded-path) launch that combination routinely blew the URL
- * budget, so the work step got shredded mid-sentence (sometimes mid-UUID)
- * right alongside the genuinely disposable echo, with no special protection —
- * even though it's the one piece of the tail an agent can't self-heal (it has
- * no idea_id/task_id to resume from without it). Whenever a caller supplies
- * `work` (every real caller, via buildCompactPromptEssentials), that step now
- * gets the SAME atomic, whole-step-or-omit treatment headSteps already have —
- * see assembleAtomicTail's degrade ladder. A caller with no step breakdown at
- * all (`work` undefined — synthetic test fixtures only) keeps the pre-fix
- * char-trim behaviour unchanged.
+ * BUG C fix (6th rework cycle, QA-confirmed): the "find work" step (carrying
+ * `idea_id`/`task_id`, the one piece with no MCP-side recovery path) gets the
+ * SAME atomic, whole-step-or-omit treatment headSteps already have — see
+ * assembleAtomicTail's degrade ladder — rather than being char-trimmed
+ * alongside the genuinely disposable directory-echo. A caller with no step
+ * breakdown at all (`work` undefined — synthetic test fixtures only) keeps
+ * the pre-fix char-trim behaviour unchanged.
  */
-export function fitCompactWorktreeProtocol(
+export function fitCompactEssentials(
   essentials: CompactPromptEssentials,
   budget: number
 ): string {
@@ -1262,34 +1200,28 @@ export function fitCompactWorktreeProtocol(
   if (essentials.work === undefined) {
     // Back-compat path — no atomic work-step breakdown supplied. Preserve the
     // exact pre-fix behaviour: the whole tail is one char-trimmable blob.
-    const { tail, protocol } = essentials;
-    const withoutProtocol = enforcePromptLength(head, tail, budget);
-    const safeWithoutProtocol = encodedLength(withoutProtocol) <= budget ? withoutProtocol : "";
-    if (!protocol) return safeWithoutProtocol;
-
-    const headWithProtocol = `${protocol}\n\n${head}`;
-    // Pre-check (see BUG 1 priority-inversion note above): only attempt the
-    // protocol-inclusive candidate when the COMBINED head already fits budget
-    // intact — never let enforcePromptLength's head-trim decide this for us.
-    if (encodedLength(headWithProtocol) > budget) return safeWithoutProtocol;
-
-    const withProtocol = enforcePromptLength(headWithProtocol, tail, budget);
-    return encodedLength(withProtocol) <= budget ? withProtocol : safeWithoutProtocol;
+    const { tail } = essentials;
+    const withoutTail = enforcePromptLength(head, tail, budget);
+    return encodedLength(withoutTail) <= budget ? withoutTail : "";
   }
 
   return assembleAtomicTail(essentials, head, budget);
 }
 
 /**
- * BUG C fix (6th rework cycle) — assembles the tail (protocol + directory-echo
- * + work) atomically against `budget`, in a fixed priority DEGRADE LADDER,
- * never fragmenting the "find work" step (`work`) at the character level:
+ * BUG C fix (6th rework cycle) — assembles the tail (directory-echo +
+ * isolation-note + work) atomically against `budget`, in a fixed priority
+ * DEGRADE LADDER, never fragmenting the "find work" step (`work`) at the
+ * character level:
  *
- *  1. protocol + directoryEcho + work, all whole.
- *  2. directoryEcho + work, whole (protocol dropped — it's the single
- *     biggest chunk, so dropping it alone is tried first).
- *  3. work alone, whole (directoryEcho ALSO dropped — lowest priority of
- *     everything here, since it only duplicates the URL's own `cwd=` param).
+ *  1. directoryEcho + isolationNote + work, whole.
+ *  2. isolationNote + work, whole (directoryEcho dropped first — it only
+ *     duplicates the URL's own `cwd=` param, so it's the least valuable thing
+ *     here).
+ *  3. work alone, whole (isolationNote dropped next — real advisory content,
+ *     but the mitigation this note carries is honest-gap-on-drop by design;
+ *     losing it before `work`, which carries the idea/task id with no
+ *     recovery path, is the correct trade).
  *  4. Absolute floor: even `head` + `work` alone doesn't fit. `work` is still
  *     never fragmented — it's dropped entirely, and `head` runs through
  *     enforcePromptLength as the final, already-battle-tested safety net
@@ -1304,25 +1236,24 @@ function assembleAtomicTail(
   head: string,
   budget: number
 ): string {
-  const { protocol, directoryEcho, work, headSteps } = essentials;
+  const { directoryEcho, isolationNote, work, headSteps } = essentials;
   const stepOffset = headSteps?.length ?? 0;
 
-  const buildTail = (includeDirectoryEcho: boolean): string => {
+  const buildTail = (includeDirectoryEcho: boolean, includeIsolationNote: boolean): string => {
     const steps: string[] = [];
     if (includeDirectoryEcho && directoryEcho) steps.push(directoryEcho);
+    if (includeIsolationNote && isolationNote) steps.push(isolationNote);
     steps.push(work as string);
     return steps.map((s, i) => `${stepOffset + i + 1}. ${s}`).join("\n");
   };
 
-  if (protocol) {
-    const withProtocol = `${protocol}\n\n${head}${buildTail(true)}`;
-    if (encodedLength(withProtocol) <= budget) return withProtocol;
-  }
+  const full = `${head}${buildTail(true, true)}`;
+  if (encodedLength(full) <= budget) return full;
 
-  const withoutProtocol = `${head}${buildTail(true)}`;
-  if (encodedLength(withoutProtocol) <= budget) return withoutProtocol;
+  const withoutDirectoryEcho = `${head}${buildTail(false, true)}`;
+  if (encodedLength(withoutDirectoryEcho) <= budget) return withoutDirectoryEcho;
 
-  const workOnly = `${head}${buildTail(false)}`;
+  const workOnly = `${head}${buildTail(false, false)}`;
   if (encodedLength(workOnly) <= budget) return workOnly;
 
   // Even the work step alone doesn't fit alongside the head — omit it rather
@@ -1464,7 +1395,7 @@ export type BoundedDeepLinkResult =
  *     to "always true" for it, so tier 1's gate there is just `budgetWithCwd
  *     > 0`, unchanged from pre-FIX-A.)
  *  2. The cwd param can't deliver full essentials (or doesn't fit at all) →
- *     drop it. The essentials/protocol/tail now budget against the FULL
+ *     drop it. The essentials/tail now budget against the FULL
  *     no-cwd ceiling (CONSTANT — it doesn't shrink with path length, unlike
  *     tier 1's) with a `cd '<path>'` line folded in as an atomic prefix: it
  *     rides WHOLE alongside whatever essentials fit, or this tier is
@@ -1490,7 +1421,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   const baseWithCwd = buildLink({ prompt: "", cwd });
   const budgetWithCwd = cap - baseWithCwd.length - overhead;
   if (budgetWithCwd > 0) {
-    const prompt = fitCompactWorktreeProtocol(essentials, budgetWithCwd);
+    const prompt = fitCompactEssentials(essentials, budgetWithCwd);
     const url = buildLink({ prompt, cwd });
     if (url.length <= cap && essentialsSurviveWhole(essentials, prompt)) {
       return { ok: true, url, droppedCwd: false };
@@ -1518,7 +1449,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
     // path-length-independent budget back.
     const cdLine = buildCdLine(cwd);
     const withCd = foldCdIntoEssentials(essentials, cdLine);
-    const prompt = fitCompactWorktreeProtocol(withCd, budgetNoCwd);
+    const prompt = fitCompactEssentials(withCd, budgetNoCwd);
     if (prompt.includes(cwd) && essentialsSurviveWhole(essentials, prompt)) {
       const url = buildLink({ prompt });
       if (url.length <= cap) return { ok: true, url, droppedCwd: true };
@@ -1526,7 +1457,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   }
 
   // Tier 3 — folder-less minimal launch: essentials only, no directory info.
-  const prompt = fitCompactWorktreeProtocol(essentials, budgetNoCwd);
+  const prompt = fitCompactEssentials(essentials, budgetNoCwd);
   const url = buildLink({ prompt });
   if (url.length <= cap) return { ok: true, url, droppedCwd: !!cwd };
 

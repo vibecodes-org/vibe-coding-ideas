@@ -138,3 +138,50 @@ test("an explicit --cmd override NEVER receives --permission-mode, even if one i
   const result = resolveClaudeLaunch({ explicitCmd: "bash", permissionMode: "auto", mintId: () => MINTED });
   assert.deepEqual(result, { cmd: "bash", conv: null });
 });
+
+// ── concurrent-terminal isolation (native --worktree flag) — worktree only
+// ever applies to a fresh mint (branch 4); branches 1-3 must never append
+// --worktree, and it reuses the SAME id minted for --session-id. ──
+
+test("a fresh mint with worktree true appends --worktree <the minted id> after model/permission-mode", () => {
+  const result = resolveClaudeLaunch({ worktree: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --session-id ${MINTED} --worktree ${MINTED}`, conv: MINTED });
+});
+
+test("a fresh mint with worktree false/undefined spawns exactly today's command — no trailing space, no flag", () => {
+  for (const worktree of [false, undefined]) {
+    const result = resolveClaudeLaunch({ worktree, mintId: () => MINTED });
+    assert.equal(result.cmd, `claude --session-id ${MINTED}`);
+    assert.ok(!result.cmd.includes("--worktree"));
+  }
+});
+
+test("model, permissionMode and worktree all append together, in that order, on a fresh mint", () => {
+  const result = resolveClaudeLaunch({
+    model: "opus",
+    permissionMode: "auto",
+    worktree: true,
+    mintId: () => MINTED,
+  });
+  assert.equal(
+    result.cmd,
+    `claude --session-id ${MINTED} --model opus --permission-mode auto --worktree ${MINTED}`
+  );
+});
+
+test("resumeId NEVER receives --worktree, even if one is somehow passed — Claude Code's own --resume already reopens the original worktree", () => {
+  const result = resolveClaudeLaunch({ resumeId: RESUME_ID, worktree: true, mintId: () => MINTED });
+  assert.equal(result.cmd, `claude --resume ${RESUME_ID}`);
+  assert.ok(!result.cmd.includes("--worktree"));
+});
+
+test("the legacy --continue resume NEVER receives --worktree, even if one is somehow passed", () => {
+  const result = resolveClaudeLaunch({ resume: true, worktree: true, mintId: () => MINTED });
+  assert.equal(result.cmd, "claude --continue");
+  assert.ok(!result.cmd.includes("--worktree"));
+});
+
+test("an explicit --cmd override NEVER receives --worktree, even if one is somehow passed", () => {
+  const result = resolveClaudeLaunch({ explicitCmd: "bash", worktree: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "bash", conv: null });
+});

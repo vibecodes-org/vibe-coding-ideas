@@ -185,19 +185,29 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
   // Compact variant for URL-limited launches — the claude-cli:// deep link and
   // the in-browser terminal's vibecodes:// launch both have OS URL ceilings and
-  // an over-long URL silently fails to launch. BUG1 fix (and, this cycle, BUG5
-  // follow-through): NEITHER destination can use the unconditional
-  // buildCompactBootstrapPromptParts (which bakes the worktree-isolation
-  // protocol into a never-trimmed head) — the protocol is best-effort against
-  // each destination's OWN URL budget. Essentials-only (path-length-
-  // independent head/tail) + the protocol candidate kept separate, so both
-  // openInClaudeCode AND the in-browser launch (via the bus payload — see
-  // handleLaunchInBrowser below) decide inclusion against their actual budget
-  // via fitCompactWorktreeProtocol (never overflow, never half-truncate). ONE
-  // builder, so every launch destination carries a byte-identical essentials
-  // set for the same state.
+  // an over-long URL silently fails to launch. BUG1 fix: NEITHER destination
+  // can use the unconditional buildCompactBootstrapPromptParts (which bakes
+  // the raw cwd echo into a never-trimmed head) — essentials-only
+  // (path-length-independent head/tail) via fitCompactEssentials (never
+  // overflow, never half-truncate) is what both openInClaudeCode AND the
+  // in-browser launch (via the bus payload — see handleLaunchInBrowser below)
+  // budget against. ONE builder, so every launch destination carries a
+  // byte-identical essentials set for the same state — including `isolate`,
+  // the concurrent-session-isolation flag the in-browser (bridge) launch
+  // reads to decide whether to fire `claude --worktree`.
+  //
+  // `includeIsolationAdvisory` is the ONE deliberate divergence: the
+  // claude-cli:// scheme is a third-party handler VibeCodes doesn't control,
+  // so it has no `--worktree`-flag plumbing (unlike vibecodes://, our own
+  // bridge) — the prompt TEXT it fully owns is the only lever left to warn
+  // about a possibly-shared folder. Safe as advisory prose here specifically
+  // because this scheme always shows the user the prefilled prompt before
+  // Claude Code runs it (human-in-the-loop), unlike the old removed
+  // worktree-isolation protocol, which had no review step. openInClaudeCode
+  // passes `true`; handleLaunchInBrowser leaves it `false` (default) so the
+  // note never rides alongside vibecodes://'s real, enforced flag.
   const buildCompactEssentials = useCallback(
-    (state: LaunchPathState): CompactPromptEssentials => {
+    (state: LaunchPathState, includeIsolationAdvisory = false): CompactPromptEssentials => {
       const { newProject, existingPath } = compactDirArgsFor(state);
       return buildCompactPromptEssentials({
         appUrl: APP_URL,
@@ -208,6 +218,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         newProject,
         existingPath,
         taskId: props.variant === "board" ? undefined : props.taskId,
+        includeIsolationAdvisory,
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
@@ -269,8 +280,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
       // Budget the prompt against the claude-cli:// URL ceiling via
       // buildBoundedDeepLink (FIX A, QA BUG A): it keeps the essentials
-      // path-length-independent and folds the worktree protocol in ONLY when
-      // it fits the remaining budget (BUG1) — and, new this cycle, it also
+      // path-length-independent (BUG1) — and, new this cycle, it also
       // guarantees the FIRED url is never over-cap even when `cwd` ITSELF
       // (not just the prompt) is long enough to blow the cap alone: it
       // degrades by dropping the `cwd=` param and folding a `cd '<path>'`
@@ -278,7 +288,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // directory-less launch (or, in the extraordinarily unlikely case even
       // that can't fit, no launch at all — see the toast below) rather than
       // ever firing an over-cap URL Chromium would silently no-op.
-      const essentials = buildCompactEssentials(state);
+      const essentials = buildCompactEssentials(state, true);
       const result = buildBoundedDeepLink({
         essentials,
         cwd,
@@ -380,13 +390,14 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });
     // Carry the SAME compact bootstrap ESSENTIALS AND cwd the terminal-window
     // deep link would use for this state (bootstrap-prompt + folder parity).
-    // BUG5 follow-through (4th rework cycle): sent as essentials (not the
-    // unconditional head/tail parts) so the dock can hand off to
-    // fitCompactWorktreeProtocol against its OWN vibecodes:// URL budget,
-    // exactly like openInClaudeCode does for the claude-cli:// deep link —
-    // the worktree-isolation protocol degrades cleanly (atomic omit) instead
-    // of being baked into a never-trimmed head. cwd rides the payload so a
-    // pinned/recorded existing folder is honoured in the browser too.
+    // Sent as essentials (not the unconditional head/tail parts) so the dock
+    // can hand off to fitCompactEssentials against its OWN vibecodes:// URL
+    // budget, exactly like openInClaudeCode does for the claude-cli:// deep
+    // link. `essentials.isolate` also rides along — the dock reads it to
+    // decide whether to fire the launch with `claude --worktree` (this
+    // destination, unlike claude-cli://, is our own bridge, so it can act on
+    // it). cwd rides the payload so a pinned/recorded existing folder is
+    // honoured in the browser too.
     const state = resolveState();
     const essentials = buildCompactEssentials(state);
     requestBrowserLaunch({

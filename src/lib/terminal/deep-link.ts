@@ -118,16 +118,32 @@ export interface LaunchDeepLinkParams {
    * user-free-text like `prompt`: redactDeepLinkToken leaves it untouched.
    */
   permissionMode?: string;
+  /**
+   * Concurrent-terminal isolation — formerly an advisory text protocol baked
+   * into `prompt` (buildWorktreeIsolationProtocol in launch-claude-code.ts,
+   * removed); now a plain boolean that maps to Claude Code's own NATIVE
+   * `--worktree <name>` CLI flag (see terminal/bridge/src/resume-cmd.js and
+   * https://code.claude.com/docs/en/worktrees). Set from
+   * `CompactPromptEssentials.isolate` (launch-claude-code.ts) — existing-mode
+   * launches with a known/possibly-shared folder, repo-backed or not. Callers
+   * must never set this on a resume/resumeId launch: Claude Code's own
+   * `--resume`/`--continue` already reopens the worktree a session was
+   * originally spawned in, so there's nothing to (re-)pass — same posture as
+   * `model`/`permissionMode`'s fresh-launch-only constraint. The bridge
+   * mints the worktree name itself (reusing the same id it mints for
+   * `--session-id`); this flag only says WHETHER to isolate, not a name.
+   */
+  worktree?: boolean;
 }
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&prompt=…]` deep link. Throws
- * when a required field is missing so a malformed link is never fired.
- * `prompt` is always the LAST param so the base-link length (and therefore
- * the prompt budget) is stable — every other optional param, including
- * `cols`/`rows` and `model`, is inserted before it, alongside the other
- * credentials.
+ * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&worktree=1][&prompt=…]` deep
+ * link. Throws when a required field is missing so a malformed link is never
+ * fired. `prompt` is always the LAST param so the base-link length (and
+ * therefore the prompt budget) is stable — every other optional param,
+ * including `cols`/`rows`, `model` and `worktree`, is inserted before it,
+ * alongside the other credentials.
  */
 export function buildLaunchDeepLink({
   relay,
@@ -142,6 +158,7 @@ export function buildLaunchDeepLink({
   rows,
   model,
   permissionMode,
+  worktree,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -176,6 +193,10 @@ export function buildLaunchDeepLink({
   if (permissionMode && isValidPermissionModeValue(permissionMode)) {
     parts.push(`permissionMode=${encodeURIComponent(permissionMode)}`);
   }
+  // Concurrent-terminal isolation — same insertion point as model/
+  // permissionMode. Only ever the literal "1"; omitted entirely when falsy
+  // (no version-skew risk for an old bridge/helper).
+  if (worktree) parts.push(`worktree=1`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
