@@ -133,7 +133,7 @@ export function BoardPageTabs({
       <TabsContent
         value="board"
         forceMount
-        className={`flex min-h-0 flex-1 flex-col ${activeTab === "board" ? "" : "hidden"}`}
+        className={`min-h-0 flex-1 ${activeTab === "board" ? "" : "hidden"}`}
       >
         {children}
       </TabsContent>
