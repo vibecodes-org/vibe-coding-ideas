@@ -56,6 +56,45 @@ describe("resolveSessionName — precedence (Requirements §3)", () => {
   });
 });
 
+describe("resolveSessionName — boardKnown fallback (task b70bcbeb, board-switch UX fix)", () => {
+  it("falls back to 'Board not recorded · <sid4>' when boardKnown is false, ignoring any ideaTitle passed alongside it", () => {
+    expect(
+      resolveSessionName({
+        displayName: null,
+        taskTitle: null,
+        ideaTitle: "Vibe Coding Ideas",
+        sessionId: "9c2e1234",
+        boardKnown: false,
+      }),
+    ).toBe("Board not recorded · 9c2e");
+  });
+
+  it("still prefers the user's own name and the task title over the boardKnown-false fallback", () => {
+    expect(
+      resolveSessionName({
+        displayName: "Auth spike",
+        ideaTitle: null,
+        sessionId: "9c2e1234",
+        boardKnown: false,
+      }),
+    ).toBe("Auth spike");
+    expect(
+      resolveSessionName({
+        taskTitle: "Fix login redirect loop",
+        ideaTitle: null,
+        sessionId: "9c2e1234",
+        boardKnown: false,
+      }),
+    ).toBe("Fix login redirect loop");
+  });
+
+  it("omitting boardKnown (undefined) keeps the ordinary ideaTitle-driven fallback — back-compat default", () => {
+    expect(resolveSessionName({ ideaTitle: "Vibe Coding Ideas", sessionId: "9c2e1234" })).toBe(
+      "Vibe Coding Ideas · 9c2e",
+    );
+  });
+});
+
 describe("resolveSessionName — trimming", () => {
   it("treats a whitespace-only display name as unset and falls through to the task title", () => {
     expect(

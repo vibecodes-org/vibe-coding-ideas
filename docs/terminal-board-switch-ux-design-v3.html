@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The terminal tab should tell the truth</title>
+<style>
+  :root {
+    --page: #0b0b0d;
+    --surface: #141417;
+    --surface-2: #1b1b1f;
+    --line: #29292f;
+    --text: #ececef;
+    --muted: #a2a2ac;
+    --faint: #6b6b76;
+    --sky: #38bdf8;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  /* ---------- Page intro ---------- */
+  .kicker {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--sky); font-weight: 600; margin-bottom: 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.5vw, 40px);
+    line-height: 1.15; font-weight: 700; letter-spacing: -0.02em;
+    margin-bottom: 18px;
+  }
+  .summary {
+    font-size: 18px; color: var(--muted); max-width: 640px;
+    margin-bottom: 8px;
+  }
+  .summary strong { color: var(--text); font-weight: 600; }
+  .readtime { font-size: 13px; color: var(--faint); margin-top: 10px; }
+
+  /* ---------- Storyboard ---------- */
+  .story { margin-top: 56px; display: flex; flex-direction: column; gap: 52px; }
+  .panel { position: relative; }
+  .panel-head {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px;
+  }
+  .panel-num {
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    color: var(--page); background: var(--text);
+    width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; transform: translateY(3px);
+  }
+  .panel-title { font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+  .tag {
+    display: inline-block; font-size: 11.5px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 999px; transform: translateY(-1px);
+  }
+  .tag-bug { color: var(--red); background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.35); }
+  .tag-fix { color: var(--green); background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.35); }
+  .caption {
+    margin-top: 14px; font-size: 15.5px; color: var(--muted); max-width: 640px;
+  }
+  .caption strong { color: var(--text); font-weight: 600; }
+  .caption .bad { color: var(--red); font-weight: 600; }
+  .caption .good { color: var(--green); font-weight: 600; }
+
+  /* ---------- Screen mockup ---------- */
+  .screen {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: var(--surface); box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  .screen.bug-glow { border-color: rgba(248,113,113,.4); }
+  .screen.fix-glow { border-color: rgba(52,211,153,.35); }
+
+  /* top navigation */
+  .nav {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line);
+    background: #101013; font-size: 13px;
+  }
+  .logo { font-weight: 700; letter-spacing: -0.02em; margin-right: 14px; font-size: 13.5px; }
+  .logo b { color: var(--sky); }
+  .navitem {
+    padding: 4px 12px; border-radius: 7px; color: var(--faint); position: relative;
+  }
+  .navitem.on { color: var(--text); background: var(--surface-2); font-weight: 600; }
+  .avatar {
+    margin-left: auto; width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #38bdf8, #818cf8); flex: none;
+  }
+
+  /* click cue (panel 2) */
+  .clickcue { position: absolute; left: 50%; top: 100%; transform: translateX(-50%); pointer-events: none; }
+  .ring {
+    position: absolute; left: 50%; top: -14px; transform: translate(-50%,-50%);
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid var(--sky); opacity: .8;
+    animation: pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { transform: translate(-50%,-50%) scale(.5); opacity: .9; }
+    100% { transform: translate(-50%,-50%) scale(1.5); opacity: 0; }
+  }
+  .cursor { position: absolute; left: calc(50% + 2px); top: -12px; width: 16px; height: 16px; }
+  @media (prefers-reduced-motion: reduce) { .ring { animation: none; opacity: .6; } }
+
+  /* board area */
+  .boardarea { padding: 16px; display: flex; gap: 12px; background: var(--surface); }
+  .col {
+    flex: 1; background: #101013; border: 1px solid #202025;
+    border-radius: 9px; padding: 10px; min-height: 120px;
+  }
+  .colname { font-size: 11px; font-weight: 600; color: var(--faint); margin-bottom: 8px; letter-spacing: .04em; }
+  .card {
+    background: var(--surface-2); border: 1px solid #232329; border-radius: 6px;
+    height: 30px; margin-bottom: 7px; position: relative; overflow: hidden;
+  }
+  .card::after {
+    content: ""; position: absolute; left: 8px; top: 11px; height: 7px; width: 65%;
+    background: #2e2e35; border-radius: 4px;
+  }
+  .card.c2::after { width: 45%; }
+
+  /* terminal dock */
+  .dock { border-top: 1px solid var(--line); background: #0c0c0e; }
+  .tabstrip {
+    display: flex; align-items: stretch; background: #131316;
+    border-bottom: 1px solid #202025; height: 34px; font-size: 12.5px;
+  }
+  .tab {
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 14px; border-right: 1px solid #202025;
+    border-top: 2px solid var(--sky); background: #0c0c0e;
+    color: var(--text); font-weight: 600; position: relative;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
+  .tab.wrong { outline: 2px solid var(--red); outline-offset: -2px; border-top-color: var(--red); }
+  .plus { display: flex; align-items: center; padding: 0 12px; color: var(--faint); font-size: 15px; }
+
+  /* badge — the one new element */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+    color: var(--amber); background: rgba(251,191,36,.13);
+    border: 1px solid rgba(251,191,36,.45);
+    border-radius: 999px; padding: 1px 8px 1px 6px; flex: none;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+
+  /* dock header + terminal body */
+  .dockhead {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; font-size: 11.5px; color: var(--muted);
+    border-bottom: 1px solid #1c1c21; font-family: var(--mono);
+  }
+  .dockhead .live { color: var(--green); }
+  .term {
+    font-family: var(--mono); font-size: 12px; line-height: 1.7;
+    padding: 10px 14px 14px; color: #c7c7cf; min-height: 88px;
+  }
+  .term .path { color: var(--sky); }
+  .term .dim { color: var(--faint); }
+  .term .caret { display: inline-block; width: 7px; height: 13px; background: #c7c7cf; transform: translateY(2px); }
+
+  /* warning callout (panel 3) */
+  .callout {
+    position: absolute; left: 18px; bottom: 162px;
+    background: #2a1214; border: 1px solid rgba(248,113,113,.5);
+    color: #fecaca; border-radius: 9px; padding: 9px 13px;
+    font-size: 13px; max-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .callout::after {
+    content: ""; position: absolute; left: 26px; bottom: -7px;
+    width: 12px; height: 12px; background: #2a1214;
+    border-right: 1px solid rgba(248,113,113,.5); border-bottom: 1px solid rgba(248,113,113,.5);
+    transform: rotate(45deg);
+  }
+  .callout-left::after { left: 26px; }
+
+  /* fix callout (panel 4) */
+  .callout.ok {
+    background: #0f2318; border-color: rgba(52,211,153,.45); color: #bbf7d0;
+  }
+  .callout.ok::after { background: #0f2318; border-color: rgba(52,211,153,.45); }
+
+  .mockwrap { position: relative; }
+
+  /* ---------- Sections ---------- */
+  .section { margin-top: 72px; }
+  h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 12px; }
+  .section p { font-size: 16px; color: var(--muted); max-width: 640px; margin-bottom: 20px; }
+  .section p strong { color: var(--text); }
+
+  /* closing note */
+  .closing {
+    margin-top: 72px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface); padding: 24px 28px; max-width: 720px;
+  }
+  .closing h3 { font-size: 16px; font-weight: 650; margin-bottom: 8px; }
+  .closing p { font-size: 15.5px; color: var(--muted); }
+  .closing p strong { color: var(--text); }
+
+  @media (max-width: 620px) {
+    .boardarea .col:nth-child(3) { display: none; }
+    .callout { max-width: 240px; }
+    .navitem { padding: 4px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">Design proposal · in-app terminal</div>
+  <h1>The terminal tab should tell the truth</h1>
+  <p class="summary">
+    Right now, if you have a terminal open and you click over to look at a
+    <em>different</em> board, the terminal's tab <strong>changes its name to the new
+    board</strong> — even though it's still really working in the old board's project.
+    The fix: <strong>the tab always shows the project it's actually connected to</strong>,
+    plus one small marker when that's not the board you're currently looking at.
+  </p>
+  <p class="readtime">Four pictures, one story. About a 2-minute read.</p>
+
+  <div class="story">
+
+    <!-- ============ PANEL 1 ============ -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-num">1</span>
+        <span class="panel-title">Nick is working on Board A, terminal open</span>
+      </div>
+      <div class="mockwrap">
+        <div class="screen">
+          <div class="nav">
+            <span class="logo">Vibe<b>Codes</b></span>
+            <span class="navitem on">Board A</span>
+            <span class="navitem">Board B</span>
+            <span class="navitem">Feed</span>
+            <span class="avatar"></span>
+          </div>
+          <div class="boardarea">
+            <div class="col"><div class="colname">TO DO</div><div class="card"></div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">IN PROGRESS</div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">DONE</div><div class="card"></div><div class="card c2"></div><div class="card"></div></div>
+          </div>
+          <div class="dock">
+            <div class="tabstrip">
+              <div class="tab"><span class="dot"></span>Board A</div>
+              <div class="plus">+</div>
+            </div>
+            <div class="dockhead"><span class="live">●</span> Connected &nbsp;·&nbsp; folder: ~/projects/board-a</div>
+            <div class="term">
+              <span class="path">~/projects/board-a</span> <span class="dim">%</span> claude<br>
+              <span class="dim">Claude Code is running in this folder…</span><br>
+              <span class="caret"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        Everything is normal. Nick is looking at <strong>Board A</strong>, and the terminal
+        at the bottom is running in Board A's project folder. The tab says
+        <strong>Board A</strong> — which is true.
+      </p>
+    </div>
+
+    <!-- ============ PANEL 2 ============ -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-num">2</span>
+        <span class="panel-title">He clicks over to Board B — just to look at it</span>
+      </div>
+      <div class="mockwrap">
+        <div class="screen">
+          <div class="nav">
+            <span class="logo">Vibe<b>Codes</b></span>
+            <span class="navitem">Board A</span>
+            <span class="navitem on" style="outline: 2px solid var(--sky); outline-offset: 1px;">
+              Board B
+              <span class="clickcue">
+                <span class="ring"></span>
+                <svg class="cursor" viewBox="0 0 24 24" fill="#ececef" stroke="#0b0b0d" stroke-width="1.5">
+                  <path d="M5 3l14 8-6.5 1.5L16 19l-2.5 1.2-3.4-6.6L5 18V3z"/>
+                </svg>
+              </span>
+            </span>
+            <span class="navitem">Feed</span>
+            <span class="avatar"></span>
+          </div>
+          <div class="boardarea" style="opacity:.55">
+            <div class="col"><div class="colname">TO DO</div><div class="card"></div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">IN PROGRESS</div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">DONE</div><div class="card"></div><div class="card c2"></div><div class="card"></div></div>
+          </div>
+          <div class="dock">
+            <div class="tabstrip">
+              <div class="tab"><span class="dot"></span>Board A</div>
+              <div class="plus">+</div>
+            </div>
+            <div class="dockhead"><span class="live">●</span> Connected &nbsp;·&nbsp; folder: ~/projects/board-a</div>
+            <div class="term">
+              <span class="path">~/projects/board-a</span> <span class="dim">%</span> claude<br>
+              <span class="dim">Claude Code is running in this folder…</span><br>
+              <span class="caret"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        Nick clicks <strong>Board B</strong> in the top navigation to check something there.
+        The terminal panel stays open at the bottom — that's right, it should. It's still
+        busy running Board A's project.
+      </p>
+    </div>
+
+    <!-- ============ PANEL 3 : THE BUG ============ -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-num">3</span>
+        <span class="panel-title">The tab quietly changes its name</span>
+        <span class="tag tag-bug">What happens today — the bug</span>
+      </div>
+      <div class="mockwrap">
+        <div class="screen bug-glow">
+          <div class="nav">
+            <span class="logo">Vibe<b>Codes</b></span>
+            <span class="navitem">Board A</span>
+            <span class="navitem on">Board B</span>
+            <span class="navitem">Feed</span>
+            <span class="avatar"></span>
+          </div>
+          <div class="boardarea" style="opacity:.55">
+            <div class="col"><div class="colname">IDEAS</div><div class="card c2"></div><div class="card"></div></div>
+            <div class="col"><div class="colname">IN PROGRESS</div><div class="card"></div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">DONE</div><div class="card c2"></div></div>
+          </div>
+          <div class="dock">
+            <div class="tabstrip">
+              <div class="tab wrong"><span class="dot"></span>Board B</div>
+              <div class="plus">+</div>
+            </div>
+            <div class="dockhead"><span class="live">●</span> Connected &nbsp;·&nbsp; folder: ~/projects/board-a</div>
+            <div class="term">
+              <span class="path">~/projects/board-a</span> <span class="dim">%</span> claude<br>
+              <span class="dim">Claude Code is running in this folder…</span><br>
+              <span class="caret"></span>
+            </div>
+          </div>
+          <div class="callout callout-left">
+            ⚠&nbsp; The tab now says <strong>"Board B"</strong> — but underneath, this
+            terminal is still running <strong>Board A's</strong> project.
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        <span class="bad">This is the bug.</span> The tab has renamed itself to match
+        whatever board Nick is looking at. If he types a command here thinking he's
+        working on Board B, <strong>it lands in Board A's project instead</strong> —
+        the wrong code gets changed, and nothing warned him.
+      </p>
+    </div>
+
+    <!-- ============ PANEL 4 : THE FIX ============ -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-num">4</span>
+        <span class="panel-title">The tab keeps its real name, plus one small marker</span>
+        <span class="tag tag-fix">The fix</span>
+      </div>
+      <div class="mockwrap">
+        <div class="screen fix-glow">
+          <div class="nav">
+            <span class="logo">Vibe<b>Codes</b></span>
+            <span class="navitem">Board A</span>
+            <span class="navitem on">Board B</span>
+            <span class="navitem">Feed</span>
+            <span class="avatar"></span>
+          </div>
+          <div class="boardarea" style="opacity:.55">
+            <div class="col"><div class="colname">IDEAS</div><div class="card c2"></div><div class="card"></div></div>
+            <div class="col"><div class="colname">IN PROGRESS</div><div class="card"></div><div class="card c2"></div></div>
+            <div class="col"><div class="colname">DONE</div><div class="card c2"></div></div>
+          </div>
+          <div class="dock">
+            <div class="tabstrip">
+              <div class="tab"><span class="dot"></span>Board A&nbsp;<span class="badge">other board</span></div>
+              <div class="plus">+</div>
+            </div>
+            <div class="dockhead"><span class="live">●</span> Connected &nbsp;·&nbsp; folder: ~/projects/board-a</div>
+            <div class="term">
+              <span class="path">~/projects/board-a</span> <span class="dim">%</span> claude<br>
+              <span class="dim">Claude Code is running in this folder…</span><br>
+              <span class="caret"></span>
+            </div>
+          </div>
+          <div class="callout ok callout-left">
+            ✓&nbsp; Same moment, fixed: the tab still says <strong>"Board A"</strong>, and the
+            small amber marker means <strong>"this terminal belongs to a different board
+            than the one you're looking at."</strong>
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        <span class="good">This is the proposal.</span> The tab <strong>always shows the
+        project it's really connected to</strong> — it never renames itself just because
+        you moved to another board. The little amber <strong>"other board"</strong> marker
+        is the only new thing on screen: one glance tells you "careful — this one isn't
+        for the board I'm looking at." When you go back to Board A, the marker simply
+        disappears and the tab looks exactly like it does today.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- ============ HEADER STRIP SECTION ============ -->
+  <div class="section">
+    <h2>The same honesty in the strip above the terminal</h2>
+    <p>
+      Just above the terminal text there's a thin strip that shows what it's connected to.
+      It gets the same treatment: it always names the <strong>real</strong> board and folder,
+      in plain text — no marker of its own, because the amber marker already sits on the
+      tab right above it.
+    </p>
+    <div class="screen" style="max-width:720px">
+      <div class="dock" style="border-top:none">
+        <div class="tabstrip">
+          <div class="tab"><span class="dot"></span>Board A&nbsp;<span class="badge">other board</span></div>
+          <div class="plus">+</div>
+        </div>
+        <div class="dockhead">
+          <span class="live">●</span> Connected &nbsp;·&nbsp; Board A &nbsp;·&nbsp; folder: ~/projects/board-a
+        </div>
+        <div class="term">
+          <span class="path">~/projects/board-a</span> <span class="dim">%</span> claude<br>
+          <span class="dim">Claude Code is running in this folder…</span><br>
+          <span class="caret"></span>
+        </div>
+      </div>
+    </div>
+    <p class="caption" style="margin-top:14px">
+      One plain sentence to read it by: <strong>"You're looking at Board B, but this
+      terminal is Board A's"</strong> — the amber marker on the tab says it once, and the
+      strip below simply confirms the real board and folder in plain words, so the two
+      never repeat each other.
+    </p>
+  </div>
+
+  <!-- ============ CLOSING ============ -->
+  <div class="closing">
+    <h3>What this does NOT change</h3>
+    <p>
+      Nothing gets closed, paused or interrupted — the terminal keeps running exactly as
+      before, and switching boards works exactly as before. When a terminal belongs to
+      the board you're looking at (the normal, everyday case), <strong>nothing looks any
+      different than it does today</strong>. This is purely about the label being honest.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>

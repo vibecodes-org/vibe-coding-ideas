@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal dock identity on board switch (stamped labels + the elsewhere marker)</title>
+<style>
+:root{
+  --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --panel3:#141417;
+  --border:#27272a; --border2:#3f3f46;
+  --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+  --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+  --sky:#38bdf8; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+  --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+  --rose:#fb7185; --rose-bg:rgba(251,113,133,.09); --rose-bd:rgba(251,113,133,.45);
+  --violet:#a78bfa; --violet-bg:rgba(167,139,250,.1); --violet-bd:rgba(167,139,250,.5);
+  --indigo:#a5b4fc; --indigo-bg:rgba(129,140,248,.12); --indigo-bd:rgba(129,140,248,.5);
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+.wrap{max-width:1020px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h2{font-size:18px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:14.5px;margin:24px 0 8px}
+p{margin:8px 0;color:var(--dim)}
+strong{color:var(--txt)}
+.sub{color:var(--faint);font-size:13px;margin-bottom:20px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.chip{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--dim)}
+.chip.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+.chip.ind{border-color:var(--indigo-bd);color:var(--indigo);background:var(--indigo-bg)}
+code{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--txt)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+.decide{border-left:3px solid var(--sky)}
+.warn{border:1px dashed var(--amber-bd);background:var(--amber-bg);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--amber)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2);vertical-align:bottom}
+td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+td b{color:var(--txt)}
+ul,ol{margin:8px 0 8px 22px;color:var(--dim)}
+li{margin:4px 0}
+.cap{font-size:12px;color:var(--faint);margin:8px 0 24px;max-width:860px}
+.cap b{color:var(--dim)}
+
+/* ── mock scaffolding ─────────────────────────────────────────── */
+.mock{border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin:16px 0 8px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.mock-title{background:var(--panel2);border-bottom:1px solid var(--border);padding:6px 12px;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.viewing{background:#0b1120;border-bottom:1px solid var(--border);padding:5px 12px;font-size:11.5px;color:var(--sky)}
+.viewing b{color:#bae6fd}
+
+/* tab strip — pixel-faithful to terminal-dock.tsx */
+.strip{display:flex;align-items:stretch;background:var(--panel3);border-bottom:1px solid var(--border);height:34px;overflow-x:auto}
+.tab{display:flex;align-items:center;gap:6px;min-width:110px;max-width:190px;flex:0 0 auto;
+  border-right:1px solid var(--border);border-top:2px solid transparent;padding:0 10px;
+  font-size:12.5px;color:#a1a1aa;cursor:pointer;position:relative;white-space:nowrap}
+.tab:hover{background:rgba(39,39,42,.6);color:#f4f4f5}
+.tab.active{border-top-color:var(--sky);background:var(--panel);color:#f4f4f5;font-weight:600}
+.tab .glyph{flex:none;font-size:11px}
+.tab .lbl{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis}
+.tab .icon-btn{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;color:var(--faint)}
+.tab .icon-btn:hover{background:#3f3f46;color:#e4e4e7}
+.g-em{color:var(--emerald)} .g-am{color:var(--amber)} .g-idle{color:var(--faint)}
+.boardmark{flex:none;display:inline-flex;color:var(--indigo)}
+.boardmark svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
+.strip-util{margin-left:auto;display:flex;align-items:center;gap:6px;padding:0 8px}
+.popchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--violet-bd);background:var(--violet-bg);color:var(--violet);
+  border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
+.plus{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;color:var(--dim);border:1px solid transparent}
+.plus:hover{background:#3f3f46}
+
+/* pane header — pixel-faithful to terminal-session-view.tsx */
+.phead{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--panel3);border-bottom:1px solid var(--border);padding:8px 12px}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:6px;border:1px solid;padding:4px 10px;font-size:12px;font-weight:600}
+.badge.em{border-color:var(--emerald-bd);background:var(--emerald-bg);color:var(--emerald)}
+.badge.am{border-color:var(--amber-bd);background:var(--amber-bg);color:var(--amber)}
+.idline{font-family:var(--mono);font-size:12px;color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idline .dim2{color:#52525b}
+.bchip{display:inline-flex;align-items:center;gap:6px;border-radius:6px;border:1px solid var(--indigo-bd);background:var(--indigo-bg);
+  color:var(--indigo);padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none}
+.bchip svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
+.bchip:hover{background:rgba(129,140,248,.2)}
+.bchip:hover .goarrow{opacity:1;max-width:60px}
+.goarrow{opacity:0;max-width:0;overflow:hidden;transition:all .15s;font-weight:600;white-space:nowrap}
+.hctl{margin-left:auto;display:flex;align-items:center;gap:6px}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;border:1px solid var(--border2);background:rgba(39,39,42,.6);
+  color:#e4e4e7;padding:3px 10px;font-size:11.5px;cursor:pointer}
+.btn.rose{border-color:rgba(244,63,94,.45);background:transparent;color:var(--rose)}
+.term{background:var(--panel);padding:12px 14px;font-family:var(--mono);font-size:12px;color:#86efac;min-height:60px}
+.term .p{color:var(--faint)}
+
+/* tooltip card */
+.tipwrap{position:relative;display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.tipcard{background:#18181b;border:1px solid var(--border2);border-radius:8px;padding:10px 12px;min-width:250px;max-width:320px;
+  box-shadow:0 8px 24px rgba(0,0,0,.6);font-size:12px}
+.tipcard .tname{font-weight:700;color:#f4f4f5;font-size:12.5px;margin-bottom:6px}
+.tiprow{display:flex;align-items:center;gap:7px;margin:4px 0;color:var(--dim)}
+.tiprow svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;flex:none}
+.tiprow.board{color:var(--indigo);font-weight:600}
+.tiprow .mono{font-family:var(--mono);font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tipdiv{border-top:1px solid var(--border);margin:7px -12px 6px}
+.tipfoot{font-size:11px;color:var(--faint)}
+.connector{border-left:2px dashed var(--border2);align-self:stretch;margin:0 -6px}
+
+/* popped window mock */
+.winbar{display:flex;align-items:center;gap:8px;background:#18181b;border-bottom:1px solid var(--border);padding:7px 12px;font-size:12px;color:var(--dim)}
+.win-dots{display:flex;gap:5px}
+.win-dots i{width:10px;height:10px;border-radius:50%;background:#3f3f46}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal dock identity on board switch</h1>
+<p class="sub">UX Design step · task <code>b70bcbeb</code> · builds on the Requirements step ("Terminal dock identity on board switch") · 2026-08-27</p>
+<div class="meta">
+  <span class="chip sky">Display-layer only</span>
+  <span class="chip ind">New: the elsewhere marker</span>
+  <span class="chip">No teardown, no new dialogs</span>
+</div>
+
+<div class="panel decide">
+  <strong>Design thesis.</strong> Requirements established that the data already knows every session's true board —
+  only the rendering asks the wrong question. So the fix is one rule plus one exception-marker:
+  <br><br>
+  <strong>Rule — identity is stamped, not inherited.</strong> Every label on every surface derives from the
+  <em>session's own</em> board title (captured at launch, carried in the entry/registry row), never from the board
+  currently on screen. Navigation can never change what a tab says (Requirements AC 1, 2, 4).
+  <br><br>
+  <strong>Exception marker — mark the stranger, not the crowd.</strong> While a session's board ≠ the board being
+  viewed, that tab (and only that tab) gains a small indigo board-glyph, and its pane header promotes the board name
+  from quiet mono text into a visible, clickable board chip. Same-board sessions look exactly as they do today —
+  zero new chrome for the 95% case (AC 3).
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>A · The tab strip — viewing "Horse Racing Predictor", four sessions, one popped out</h2>
+<p>Realistic worst case per Requirements §2: a mix of task-named, renamed, and fallback-tier sessions; one long
+board name; one session mid-reconnect; one popped out.</p>
+
+<div class="mock" role="img" aria-label="Mockup of the terminal dock tab strip with same-board and other-board sessions">
+  <div class="mock-title">Terminal dock — expanded, tab strip</div>
+  <div class="viewing">Currently viewing board: <b>Horse Racing Predictor</b></div>
+  <div class="strip">
+    <!-- 1: active, same board, task-launched -->
+    <div class="tab active" title="Fix stale odds cache on race day — this board">
+      <span class="glyph g-em">●</span>
+      <span class="lbl">Fix stale odds cache on race day</span>
+      <span class="icon-btn">✎</span>
+      <span class="icon-btn">✕</span>
+    </div>
+    <!-- 2: same board, fallback tier -->
+    <div class="tab" title="Horse Racing Predictor · a3f9 — this board">
+      <span class="glyph g-em">●</span>
+      <span class="lbl">Horse Racing Predictor · a3f9</span>
+      <span class="icon-btn">✕</span>
+    </div>
+    <!-- 3: OTHER board, user-renamed, reconnecting -->
+    <div class="tab" title="deploy fix — runs on Recipe Saver, not this board">
+      <span class="glyph g-am">◍</span>
+      <span class="boardmark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg></span>
+      <span class="sr">On another board: Recipe Saver.</span>
+      <span class="lbl">deploy fix</span>
+      <span class="icon-btn">✕</span>
+    </div>
+    <!-- 4: OTHER board, fallback tier, long board name -->
+    <div class="tab" title="Customer Feedback Sentiment Dashboard · 7c2e — runs on Customer Feedback Sentiment Dashboard, not this board">
+      <span class="glyph g-em">●</span>
+      <span class="boardmark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg></span>
+      <span class="sr">On another board: Customer Feedback Sentiment Dashboard.</span>
+      <span class="lbl">Customer Feedback Sentiment Dashb…</span>
+      <span class="icon-btn">✕</span>
+    </div>
+    <div class="strip-util">
+      <span class="popchip" title="Popped out: research spike — click to bring back">⧉ research spike</span>
+      <span class="plus" title="Split view">▥</span>
+      <span class="plus" title="New session">＋</span>
+    </div>
+  </div>
+  <div class="phead">
+    <span class="badge em">● Connected</span>
+    <span class="idline">Horse Racing Predictor <span class="dim2">· session 41c8e2d0</span></span>
+    <span class="hctl">
+      <span class="btn">⧉ Pop out</span><span class="btn">🔓 Read-only</span><span class="btn rose">⏻ End</span>
+    </span>
+  </div>
+  <div class="term"><span class="p">~/projects/horse-racing-predictor $</span> claude<br>› Fixing the odds cache invalidation…▌</div>
+</div>
+<p class="cap"><b>What changed vs today:</b> tabs 3 and 4 keep the identity they were launched with — today tab 4 would
+read "Horse Racing Predictor · 7c2e" the moment you navigated here (the exact wrong-project hazard from Requirements §2).
+The indigo board-glyph appears <b>only</b> on tabs whose session targets a different board than the one on screen; it sits
+between the status glyph and the label, costs ~16px, and never displaces the status glyph (connection state and identity
+are independent facts and both stay visible). It disappears when you navigate <em>to</em> that session's board — the marker
+is relative to where you are, the label never is.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>B · The pane header — three identity states</h2>
+
+<h3>B1 — Same board (unchanged, the quiet default)</h3>
+<div class="mock">
+  <div class="phead">
+    <span class="badge em">● Connected</span>
+    <span class="idline">Horse Racing Predictor <span class="dim2">· session 41c8e2d0</span></span>
+    <span class="hctl"><span class="btn">⧉ Pop out</span><span class="btn">🔓 Read-only</span><span class="btn rose">⏻ End</span></span>
+  </div>
+</div>
+<p class="cap">Byte-identical to today's header, except the title now comes from the session's own record instead of the
+dock prop — invisible when they agree, which is exactly the point.</p>
+
+<h3>B2 — Other board (the promoted board chip + the folder truth)</h3>
+<div class="mock">
+  <div class="phead">
+    <span class="badge am">◍ Reconnecting</span>
+    <a class="bchip" href="#" title="This session runs on the Recipe Saver board — click to open that board" aria-label="Runs on board Recipe Saver, not this board. Open Recipe Saver board.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg>
+      Recipe Saver
+      <span class="goarrow">· Open board →</span>
+    </a>
+    <span class="idline">session 9b1f42aa <span class="dim2">· ~/projects/recipe-saver</span></span>
+    <span class="hctl"><span class="btn">⧉ Pop out</span><span class="btn">🔓 Read-only</span><span class="btn rose">⏻ End</span></span>
+  </div>
+  <div class="term"><span class="p">~/projects/recipe-saver $</span> claude<br>› Ready.▌</div>
+</div>
+<p class="cap"><b>Three deliberate moves:</b> (1) the board name is promoted from 12px mono grey into an indigo chip —
+same badge grammar as Auto-accept (amber) and Read-only (violet), so it reads as "a fact about this session" at a glance;
+(2) the working folder joins the identity line — the folder is the ground truth of where a command lands, and this header
+is the last thing a user sees before typing into the wrong project; (3) the chip is a real link: hover/focus reveals
+"Open board →", one click takes you to the session's true board — the cheapest possible recovery from "wait, this is the
+wrong one". It's informational first, navigational second; Escape-free, dismissal-free, no dialog (Requirements AC 7).</p>
+
+<h3>B3 — Legacy session with no recorded board (Requirements open question c)</h3>
+<div class="mock">
+  <div class="phead">
+    <span class="badge em">● Connected</span>
+    <span class="idline" title="This session predates board tracking — its working folder is the reliable identity">Board not recorded <span class="dim2">· session 77aa41b2 · ~/projects/old-side-project</span></span>
+    <span class="hctl"><span class="btn">⧉ Pop out</span><span class="btn">🔓 Read-only</span><span class="btn rose">⏻ End</span></span>
+  </div>
+</div>
+<p class="cap"><b>Decision: never guess, never alarm.</b> A registry row that predates the <code>ideaId</code> field gets
+"Board not recorded" in the quiet mono identity line with its folder as the disambiguator — the folder is always known for
+resumable sessions and is the actual truth anyway. It gets <b>no</b> indigo marker on its tab (we can't know it's
+elsewhere, and a false "stranger" flag would teach users to ignore the marker). The tab label falls back to
+"Session · 77aa" exactly as <code>resolveSessionName</code> already does with a blank idea title. Since the registry
+window is 48 hours and all new sessions are stamped, this state self-retires within two days of shipping.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>C · Hover / focus detail — the rich tooltip on cross-board tabs</h2>
+<p>Tabs are 110–190px; the marker answers "is this mine-here?" but not "which board, which folder?". Hovering or
+keyboard-focusing any tab shows the full identity (shadcn <code>Tooltip</code>, replacing today's native
+<code>title</code> string on the tab — same content, richer scent):</p>
+
+<div class="mock" style="overflow:visible">
+  <div class="mock-title">Tab hover — cross-board session</div>
+  <div style="background:var(--panel3);padding:18px 16px 26px">
+    <div class="tipwrap">
+      <div class="tab" style="border:1px solid var(--border2);border-top:2px solid transparent;border-radius:6px 6px 0 0;height:34px">
+        <span class="glyph g-am">◍</span>
+        <span class="boardmark"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg></span>
+        <span class="lbl">deploy fix</span>
+        <span class="icon-btn">✕</span>
+      </div>
+      <div class="connector" aria-hidden="true"></div>
+      <div class="tipcard" role="tooltip">
+        <div class="tname">deploy fix</div>
+        <div class="tiprow board">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg>
+          Runs on <b>Recipe Saver</b> — not this board
+        </div>
+        <div class="tiprow"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="mono">Nick's MacBook Pro · ~/projects/recipe-saver</span></div>
+        <div class="tiprow"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Started 2 h ago · reconnecting</div>
+        <div class="tipdiv"></div>
+        <div class="tipfoot">Commands typed here run in this folder — not in the board you're viewing.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">The footer line is the safety sentence, spelled out once, where the risk lives — never as a blocking
+dialog. Same-board tabs keep a plain one-line tooltip (name · folder); the rich card is the exception's, matching the
+marker. The tooltip is anchored to the tab (Fitts: the detail appears where the cursor already is), opens on focus for
+keyboard users, and its content mirrors the chooser's row anatomy (name / board chip / mono machine·folder) so the two
+surfaces visibly agree (AC 4).</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>D · Pop-out — stamped at birth</h2>
+<div class="mock">
+  <div class="winbar"><span class="win-dots"><i></i><i></i><i></i></span> deploy fix — Recipe Saver · VibeCodes Terminal</div>
+  <div class="phead">
+    <span class="badge em">● Connected</span>
+    <a class="bchip" href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M8 7.5v7"/><path d="M12 7.5v4"/><path d="M16 7.5v9"/></svg>Recipe Saver<span class="goarrow">· Open board →</span></a>
+    <span class="idline">session 9b1f42aa <span class="dim2">· ~/projects/recipe-saver</span></span>
+    <span class="hctl"><span class="btn">↩ Bring back to dock</span></span>
+  </div>
+  <div class="term"><span class="p">~/projects/recipe-saver $</span> claude<br>› Ready.▌</div>
+</div>
+<p class="cap">The pop-out payload already carries <code>ideaTitle</code> — it must carry the <b>session's</b> board
+title, never the viewed board's. Window title = "<i>resolved name</i> — <i>session's board</i>" for the window's whole
+life (AC 5). Inside the popped window there is no "currently viewed board", so the board chip renders
+<b>always</b> (it's the window's only board context) and its link opens the session's board in the main app. The
+dock-side violet "popped out" chip keeps the same stamped label.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>E · Behaviour decisions</h2>
+
+<h3>E1 — Open question (a): the pristine, never-launched tab</h3>
+<div class="panel decide">
+  <strong>It follows navigation — deliberately.</strong> The pristine slot has no session; it is a launch surface,
+  not an identity. On a board switch it re-targets the newly-viewed board (title, GitHub URL, recorded folders), shows
+  no marker, and its idle/setup copy names the new board. This is what makes AC 8 true ("new launches still target the
+  newly-viewed board") and it costs nothing: there is no user investment in a pristine tab to protect. The instant a
+  launch mints a session, identity is stamped and stops following.
+</div>
+
+<h3>E2 — Open question (b): how to signal "targets another board" without cluttering the strip</h3>
+<div class="panel decide">
+  <strong>Exception-only marking, glyph not words.</strong> Only cross-board tabs get the 12px indigo board-glyph
+  (mockup A). No text chip in the strip — at 110px minimum tab width a chip would crush labels below usefulness. Indigo
+  is a new, single-purpose hue in the dock's vocabulary (emerald = healthy, amber = attention, rose = failed, sky =
+  active/selected, violet = popped out), so it can't be misread as a connection state; and the signal is never
+  colour-only: the glyph is a distinct <em>shape</em> (a kanban board), it carries <code>sr-only</code> text
+  ("On another board: Recipe Saver"), and the tooltip and pane header repeat the fact in words.
+</div>
+
+<h3>E3 — Open question (c): registry rows predating <code>ideaId</code></h3>
+<div class="panel decide">
+  <strong>Never guess, never alarm</strong> — mockup B3. "Board not recorded" + working folder in the identity line;
+  no marker (no false positives); fallback label "Session · <i>sid4</i>" as the naming rule already produces. Ages out
+  with the 48h registry window.
+</div>
+
+<h3>E4 — Rename, toasts, announcements</h3>
+<ul>
+  <li><strong>Rename changes the name, never the identity.</strong> The rename flow is untouched; a renamed cross-board
+  tab keeps its marker (the name can't carry the board). The rename-failure toast names the session by its resolved
+  label and, when cross-board, appends the board: <code>Couldn't rename "deploy fix" (Recipe Saver)</code>.</li>
+  <li><strong>Announcements get parity, not verbosity</strong> (AC 6): the existing attention announcement becomes
+  <code>Terminal "deploy fix" (on board Recipe Saver): reconnecting</code> for cross-board sessions only; same-board
+  announcements are unchanged. Split-pane, drag-ghost and collapsed-bar labels all flow from the same stamped
+  derivation, so they inherit the fix without their own rules.</li>
+  <li><strong>The drag ghost</strong> reuses the tab's exact contents (status glyph + marker + label) — what you grab is
+  what you saw.</li>
+</ul>
+
+<div class="warn"><b>Explicit non-goals:</b> no prompt, dialog or confirmation on board switch (Requirements AC 7 and
+the dock's own hard rule: never trap the user); no session teardown or re-parenting; no change to the chooser or My
+Sessions panel, which already tell the truth — they are the pattern source ("Running now — other boards"), not a
+change target.</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>F · Rationale — design lenses</h2>
+<table>
+  <tr><th>Lens</th><th>How this design uses it</th></tr>
+  <tr><td><b>Gestalt — Similarity&nbsp;/ anomaly</b></td><td>Same-board tabs stay visually uniform; the single indigo glyph makes the cross-board tab the visible odd-one-out. Marking the exception exploits pre-attentive pop-out — no reading required to answer "which of these isn't from here?" (AC 3).</td></tr>
+  <tr><td><b>Gestalt — Proximity</b></td><td>The marker sits inside the tab, touching the label it qualifies; the board chip sits in the pane header's identity cluster, next to session id and folder — facts about one session are grouped, facts about the dock (split toggle, +) stay in the utility area.</td></tr>
+  <tr><td><b>Fitts's Law</b></td><td>The recovery action ("Open board →") lives on the chip the user is already reading/hovering, not in a menu across the screen. The chip's hit area is the full 24px-tall badge; the tooltip anchors to the cursor's tab.</td></tr>
+  <tr><td><b>Hick's Law</b></td><td>Zero new decisions on board switch — no prompt, no mode. The only added choice (visit the session's board) is optional and single-click. Progressive disclosure: glyph → tooltip → header chip → navigation, each level adding detail only when sought.</td></tr>
+  <tr><td><b>Information scent</b></td><td>A board-shaped icon means "board"; the tooltip says exactly what happens if you type ("commands run in this folder"); the chip's hover text says exactly where the click goes ("Open board").</td></tr>
+  <tr><td><b>Jakob's Law</b></td><td>Mirrors VS Code's remote-window indicator and browser tab favicons: a small leading mark declaring "where this really lives", with the window/tab title carrying the same fact. The badge grammar (bordered tinted chip) is the dock's own established Auto-accept/Read-only pattern.</td></tr>
+  <tr><td><b>Recognition over recall</b></td><td>The user never has to remember which board a session came from — every surface states it. The fallback label embeds the board name; named sessions get the marker + tooltip instead.</td></tr>
+  <tr><td><b>WCAG 2.1 AA</b></td><td>Indigo <code>#a5b4fc</code> on <code>#141417</code> ≈ 8.9:1; never colour-only (distinct glyph shape + sr-only + words); tooltip opens on keyboard focus; the chip is a real link with a visible focus ring; all states have text equivalents in aria announcements.</td></tr>
+</table>
+
+<h2>G · Acceptance criteria coverage (Requirements §4)</h2>
+<table>
+  <tr><th>#</th><th>Criterion</th><th>Where satisfied</th></tr>
+  <tr><td>1</td><td>Truthful identity on every surface</td><td>One stamped derivation feeds tab, header, pop-out, drag ghost, collapsed bar, toasts, announcements (A, B, D, E4).</td></tr>
+  <tr><td>2</td><td>Identity stable across navigation</td><td>Labels derive from the session's own record; only rename/relaunch change them. The <em>marker</em> is the only thing navigation toggles — by design, it describes the relationship, not the session.</td></tr>
+  <tr><td>3</td><td>Ambiguity resolvable at a glance</td><td>The exception-only indigo glyph (A, E2).</td></tr>
+  <tr><td>4</td><td>All surfaces agree</td><td>Tooltip and header reuse the chooser's row anatomy and the one naming rule; no surface re-derives (C).</td></tr>
+  <tr><td>5</td><td>Pop-out stamped with session identity</td><td>Window title + always-on board chip in the popped window (D).</td></tr>
+  <tr><td>6</td><td>Assistive-tech parity</td><td>sr-only marker text, tooltip on focus, board name in attention announcements (E4).</td></tr>
+  <tr><td>7</td><td>Cross-board work stays legitimate</td><td>No prompts, no dialogs, no teardown; the design's only interactivity is an optional link (E warn panel).</td></tr>
+  <tr><td>8</td><td>New launches target the viewed board</td><td>The pristine tab deliberately follows navigation (E1).</td></tr>
+  <tr><td>9</td><td>No connection / pop-out status regressions</td><td>Pure presentation: status glyphs, sockets, pop-out status handling untouched; marker never replaces the status glyph (A caption).</td></tr>
+</table>
+
+<p class="cap" style="margin-top:32px">Implementation surface (for the next step, not prescribed here): thread the
+session's own <code>ideaId</code>/<code>ideaTitle</code> (already on <code>SessionEntry</code>/registry rows) into
+<code>deriveTabLabel</code>'s call sites and the header/pop-out/announcement strings, plus the marker + chip + tooltip
+components above — the ~8 call sites Requirements scoped, display-layer only.</p>
+
+</div>
+</body>
+</html>

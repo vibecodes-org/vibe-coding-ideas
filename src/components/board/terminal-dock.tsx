@@ -168,6 +168,7 @@ import {
   findReclaimableEndedSlotByKey,
   decideTaskLaunch,
   summarizeSessionStatuses,
+  resolveTabBoardIdentity,
   type DedupeCandidate,
   type ReclaimCandidate,
 } from "./terminal-tabs";
@@ -827,18 +828,27 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // re-derive it). Reads the refs (not `sessions`/`summaries` state) so it's
   // callable from event handlers without becoming a dependency that forces
   // them to rebind on every session/summary change.
+  //
+  // Board-switch UX fix (task b70bcbeb): the idea title fed into
+  // `deriveTabLabel` is now the entry's OWN board (`resolveTabBoardIdentity`)
+  // — never this dock's live `ideaTitle` prop, which reflects whichever
+  // board is CURRENTLY being viewed and would otherwise silently relabel a
+  // live tab the instant the user navigates elsewhere.
   const labelFor = useCallback(
     (key: string | null): string => {
       if (!key) return "";
       const entry = sessionsRef.current.find((s) => s.key === key);
+      if (!entry) return "";
+      const identity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
       return deriveTabLabel({
-        displayName: entry?.displayName,
-        taskTitle: entry?.taskTitle,
-        ideaTitle,
+        displayName: entry.displayName,
+        taskTitle: entry.taskTitle,
+        ideaTitle: identity.ideaTitle,
         sessionId: summariesRef.current[key]?.sessionId ?? null,
+        boardKnown: identity.boardKnown,
       });
     },
-    [ideaTitle],
+    [ideaId, ideaTitle],
   );
 
   // Split-view focus-sync defect fix: the one place `keyboardLive` is set
@@ -1372,13 +1382,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       const summary = summariesRef.current[key];
       if (!summary?.sessionId || !summary.browserToken) return; // nothing minted yet — button shouldn't even be visible
       const entry = sessionsRef.current.find((s) => s.key === key);
+      // Board-switch UX fix (task b70bcbeb, design item 7): a pop-out window
+      // is stamped with the session's OWN board at the moment of pop-out,
+      // never the dock's current view — and, being a one-time snapshot into
+      // `basePayload` below, it then stays that way for the life of the
+      // window regardless of later navigation on this tab (or this board).
+      const boardIdentity = entry
+        ? resolveTabBoardIdentity(entry, ideaId, ideaTitle)
+        : { ideaTitle, boardKnown: true, isOtherBoard: false };
       const label = deriveTabLabel({
         displayName: entry?.displayName,
         taskTitle: entry?.taskTitle,
-        ideaTitle,
+        ideaTitle: boardIdentity.ideaTitle,
         sessionId: summary.sessionId,
+        boardKnown: boardIdentity.boardKnown,
       });
-      const identity = `${ideaTitle} · session ${summary.sessionId.slice(0, 8)}`;
+      const ownIdeaTitle = boardIdentity.ideaTitle ?? "Board not recorded";
+      const identity = `${ownIdeaTitle} · session ${summary.sessionId.slice(0, 8)}`;
       const nonce = generatePopoutNonce();
       // MUST be the direct, synchronous result of the click — no await before
       // this line — or popup blockers treat it as an unsolicited pop-up (D7).
@@ -1414,8 +1434,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         sid: summary.sessionId,
         browserToken: summary.browserToken,
         relayUrl: relayBaseUrl(),
-        ideaId,
-        ideaTitle,
+        // The session's OWN board, not the dock's current view — see the
+        // `boardIdentity` comment above.
+        ideaId: entry?.ideaId ?? ideaId,
+        ideaTitle: ownIdeaTitle,
         label,
         identity,
         readOnly: summary.readOnly,
@@ -1551,17 +1573,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       if (result.ok) return;
       setSessions((prev) => prev.map((s) => (s.key === key ? { ...s, displayName: previous ?? undefined } : s)));
       const entry = sessionsRef.current.find((s) => s.key === key);
+      const boardIdentity = entry
+        ? resolveTabBoardIdentity(entry, ideaId, ideaTitle)
+        : { ideaTitle, boardKnown: true };
       const stillCalled = deriveTabLabel({
         displayName: previous,
         taskTitle: entry?.taskTitle,
-        ideaTitle,
+        ideaTitle: boardIdentity.ideaTitle,
         sessionId: sid,
+        boardKnown: boardIdentity.boardKnown,
       });
       toast.error(`Couldn't rename the session — it's still called "${stillCalled}".`, {
         action: { label: "Retry", onClick: () => void persistTabRename(key, sid, next, previous) },
       });
     },
-    [renameSession, ideaTitle],
+    [renameSession, ideaId, ideaTitle],
   );
 
   // Prefill: the user's own name if one exists (SessionRenameField's row
@@ -1651,6 +1677,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // session.
                 displayName: payload?.displayName,
                 ideaId: payload?.ideaId ?? ideaId,
+                // Board-switch UX fix (task b70bcbeb): captured alongside
+                // `ideaId` above, at the same instant — a launch/resume
+                // always mints under the CURRENT board (any cross-board
+                // target routes through a navigate-first `?resume=`/
+                // `?reconnect=` round trip before ever reaching here), so the
+                // dock's own `ideaTitle` prop is this entry's true title.
+                ideaTitle,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1683,6 +1716,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // when the payload doesn't specify one (board/task launches
                 // always mean "here") — see SessionEntry.ideaId's doc.
                 ideaId: payload?.ideaId ?? ideaId,
+                // Board-switch UX fix (task b70bcbeb): see the reclaim
+                // branch's identical comment above.
+                ideaTitle,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1700,6 +1736,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       taskTitle: payload?.taskTitle,
       displayName: payload?.displayName,
       ideaId: payload?.ideaId ?? ideaId,
+      // Board-switch UX fix (task b70bcbeb): see the reclaim branch's
+      // identical comment above.
+      ideaTitle,
       createdAt: Date.now(),
       launchSeq: 1,
       launchPayload: payload ?? null,
@@ -1710,7 +1749,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     // 2nd+ tab (the pristine-slot reuse above is still the board's first tab,
     // same as P1, and isn't a "multi-session" event).
     posthogRef.current?.capture("terminal_tab_opened", { origin: entry.origin });
-  }, [ideaId]);
+  }, [ideaId, ideaTitle]);
 
   // Session entry chooser (card cbe60db5, F1; rework 11 fixes the gate below).
   // The actual entry point every launch source (toolbar bus event,
@@ -1871,6 +1910,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // (navigate first, `?reconnect=` picks it up here), never straight
         // to performReattach — so the current board IS the correct one.
         ideaId,
+        // Board-switch UX fix (task b70bcbeb): captured alongside `ideaId`
+        // above, for the same reason.
+        ideaTitle,
         createdAt: Date.now(),
         launchSeq: 0,
         launchPayload: null,
@@ -1887,7 +1929,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     } finally {
       setChooserBusy(false);
     }
-  }, [refreshRegistry, ideaId]);
+  }, [refreshRegistry, ideaId, ideaTitle]);
 
   // F1's empty-launch state ("today's open→launch behaviour remains") and
   // the instant-continue variant (design's veto note, Nick: yes) are both
@@ -2704,11 +2746,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 const poppedOut = poppedOutKeys.has(entry.key);
                 const meta = tabStatusMeta(displayStatusFor(entry.key));
                 const tabIsLive = poppedOut || isLiveTabStatus(status);
+                // Board-switch UX fix (task b70bcbeb): this tab's OWN board,
+                // never the dock's current view — see `resolveTabBoardIdentity`.
+                // `boardIdentity.isOtherBoard` is the SOLE trigger for the
+                // amber badge below (design item 2 — the only place it may
+                // appear).
+                const boardIdentity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
                 const label = deriveTabLabel({
                   displayName: entry.displayName,
                   taskTitle: entry.taskTitle,
-                  ideaTitle,
+                  ideaTitle: boardIdentity.ideaTitle,
                   sessionId: summary?.sessionId ?? null,
+                  boardKnown: boardIdentity.boardKnown,
                 });
                 const isActive = entry.key === activeKey;
                 const confirming = confirmingKey === entry.key;
@@ -2861,6 +2910,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                         >
                           {label}
                         </span>
+                        {/* "Other board" badge (task b70bcbeb, design item 2)
+                            — the ONE place this marker appears anywhere in
+                            the terminal UI (Nick explicitly rejected a
+                            second copy in the pane header as redundant).
+                            Only a tab whose OWN launched/attached session
+                            disagrees with the board currently being viewed
+                            gets it — same-board tabs (the normal case) and
+                            legacy/never-launched entries render exactly as
+                            before, zero new chrome. */}
+                        {boardIdentity.isOtherBoard && (
+                          <span
+                            className="inline-flex flex-none items-center gap-1 rounded-full border border-amber-500/45 bg-amber-500/[0.13] px-2 py-px text-[10px] font-bold tracking-wide text-amber-300"
+                            title={`This terminal belongs to ${boardIdentity.ideaTitle ?? "another board"}, not the board you're viewing`}
+                          >
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            other board
+                          </span>
+                        )}
                         {/* Pencil renders on the ACTIVE tab only (design §2's
                             deliberate, human-approved trade — a permanent
                             second icon on every background tab would crush
@@ -3020,6 +3087,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           const inPane = paneIndex !== -1;
           const isEntryVisible = splitActive ? inPane : entry.key === activeKey;
           const isFocusedPane = inPane && paneIndex === focusedPaneIndex;
+          // Board-switch UX fix (task b70bcbeb): this entry's OWN board, never
+          // the dock's current view — see `resolveTabBoardIdentity`.
+          const boardIdentity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
           return (
           <TerminalSessionView
             key={entry.key}
@@ -3028,8 +3098,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             label={deriveTabLabel({
               displayName: entry.displayName,
               taskTitle: entry.taskTitle,
-              ideaTitle,
+              ideaTitle: boardIdentity.ideaTitle,
               sessionId: summaries[entry.key]?.sessionId ?? null,
+              boardKnown: boardIdentity.boardKnown,
             })}
             isActive={isEntryVisible}
             expanded={expanded && isEntryVisible}
@@ -3097,11 +3168,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               ? (() => {
                   const entry = sessionsRef.current.find((s) => s.key === draggingKey);
                   const summary = summariesRef.current[draggingKey];
+                  // Board-switch UX fix (task b70bcbeb): this entry's OWN
+                  // board — no badge here (design item 2: the tab strip is
+                  // the only place it appears), just a truthful label.
+                  const dragBoardIdentity = entry
+                    ? resolveTabBoardIdentity(entry, ideaId, ideaTitle)
+                    : { ideaTitle, boardKnown: true };
                   const dragLabel = deriveTabLabel({
                     displayName: entry?.displayName,
                     taskTitle: entry?.taskTitle,
-                    ideaTitle,
+                    ideaTitle: dragBoardIdentity.ideaTitle,
                     sessionId: summary?.sessionId ?? null,
+                    boardKnown: dragBoardIdentity.boardKnown,
                   });
                   const dragMeta = tabStatusMeta(displayStatusFor(draggingKey));
                   return (
