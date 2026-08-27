@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import {
   decidePinMigration,
-  isValidAbsolutePath,
+  isPlausibleProjectPath,
   MANUAL_PIN_HOSTNAME,
   type RecordedProjectPath,
 } from "@/lib/launch-claude-code";
@@ -124,7 +124,7 @@ export async function saveManualProjectPath(
   hostname?: string | null
 ): Promise<SavePinResult> {
   const trimmed = absolutePath.trim();
-  if (!isValidAbsolutePath(trimmed)) return { ok: false };
+  if (!isPlausibleProjectPath(trimmed)) return { ok: false };
   return upsertProjectPath(ideaId, normalizeHostname(hostname) ?? MANUAL_PIN_HOSTNAME, trimmed);
 }
 
@@ -156,7 +156,7 @@ export async function migrateLaunchPathPin(
   hostname?: string | null
 ): Promise<MigratePinResult> {
   const trimmed = pinPath.trim();
-  if (!isValidAbsolutePath(trimmed)) return { ok: false, action: "invalid" };
+  if (!isPlausibleProjectPath(trimmed)) return { ok: false, action: "invalid" };
 
   const supabase = await createClient();
   const {

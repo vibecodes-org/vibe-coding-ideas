@@ -254,6 +254,14 @@ describe("migrateLaunchPathPin", () => {
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
+  // Regression: `/` is a valid absolute path but must never be recorded — it
+  // would poison every future launch on this machine.
+  it("rejects the filesystem root `/` without touching the database", async () => {
+    const result = await migrateLaunchPathPin(IDEA_ID, "/");
+    expect(result).toEqual({ ok: false, action: "invalid" });
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
   it("returns unauthenticated when there's no session, and writes nothing", async () => {
     userResult = null;
     const result = await migrateLaunchPathPin(IDEA_ID, PATH);
@@ -336,6 +344,12 @@ describe("saveManualProjectPath (the 'Set exact folder' dialog's server-side Sav
 
   it("rejects a non-absolute path", async () => {
     const result = await saveManualProjectPath(IDEA_ID, "not/absolute");
+    expect(result).toEqual({ ok: false });
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects the filesystem root `/` without touching the database", async () => {
+    const result = await saveManualProjectPath(IDEA_ID, "/");
     expect(result).toEqual({ ok: false });
     expect(mockUpsert).not.toHaveBeenCalled();
   });

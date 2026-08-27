@@ -38,6 +38,7 @@ import {
   validateFolderName,
   looksAbsolutePath,
   isValidAbsolutePath,
+  isPlausibleProjectPath,
   chooseLaunchCwd,
   resolveEffectiveLaunchTarget,
   composeNewProjectPath,
@@ -691,6 +692,64 @@ describe("isValidAbsolutePath", () => {
   });
 });
 
+describe("isPlausibleProjectPath", () => {
+  it("rejects the filesystem root and top-level folders", () => {
+    expect(isPlausibleProjectPath("/")).toBe(false);
+    expect(isPlausibleProjectPath("//")).toBe(false);
+    expect(isPlausibleProjectPath("/ ")).toBe(false);
+    expect(isPlausibleProjectPath("/tmp")).toBe(false);
+    expect(isPlausibleProjectPath("/Users")).toBe(false);
+    expect(isPlausibleProjectPath("/opt")).toBe(false);
+  });
+
+  it("rejects home directories", () => {
+    expect(isPlausibleProjectPath("/Users/nick")).toBe(false);
+    expect(isPlausibleProjectPath("/Users/nick/")).toBe(false);
+    expect(isPlausibleProjectPath("/home/nick")).toBe(false);
+    expect(isPlausibleProjectPath("/root")).toBe(false);
+  });
+
+  it("rejects Windows drive roots and Windows home directories", () => {
+    expect(isPlausibleProjectPath("C:\\")).toBe(false);
+    expect(isPlausibleProjectPath("C:/")).toBe(false);
+    expect(isPlausibleProjectPath("C:\\Users\\nick")).toBe(false);
+    expect(isPlausibleProjectPath("C:\\Users")).toBe(false);
+    expect(isPlausibleProjectPath("C:/Users")).toBe(false);
+    expect(isPlausibleProjectPath("C:\\Users\\")).toBe(false);
+    expect(isPlausibleProjectPath("c:\\users")).toBe(false);
+  });
+
+  it("rejects a UNC share with nothing after it", () => {
+    expect(isPlausibleProjectPath("\\\\server\\share")).toBe(false);
+  });
+
+  it("rejects everything isValidAbsolutePath rejects", () => {
+    expect(isPlausibleProjectPath("~")).toBe(false);
+    expect(isPlausibleProjectPath("~/x")).toBe(false);
+    expect(isPlausibleProjectPath("$HOME/x")).toBe(false);
+    expect(isPlausibleProjectPath("relative/x")).toBe(false);
+    expect(isPlausibleProjectPath("")).toBe(false);
+    expect(isPlausibleProjectPath("   ")).toBe(false);
+  });
+
+  it("accepts real project folders", () => {
+    expect(isPlausibleProjectPath("/Users/nick/projects/x")).toBe(true);
+    expect(isPlausibleProjectPath("/home/nick/code/x")).toBe(true);
+    expect(isPlausibleProjectPath("/opt/app")).toBe(true);
+  });
+
+  it("accepts with a trailing slash and surrounding whitespace", () => {
+    expect(isPlausibleProjectPath("/Users/nick/projects/x/")).toBe(true);
+    expect(isPlausibleProjectPath("  /Users/nick/x  ")).toBe(true);
+  });
+
+  it("accepts Windows and UNC project paths", () => {
+    expect(isPlausibleProjectPath("C:\\Users\\nick\\x")).toBe(true);
+    expect(isPlausibleProjectPath("D:/code")).toBe(true);
+    expect(isPlausibleProjectPath("\\\\server\\share\\proj")).toBe(true);
+  });
+});
+
 describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
   it("returns undefined for 0 records (first-launch / home flow)", () => {
     expect(chooseLaunchCwd([])).toBeUndefined();
@@ -840,6 +899,33 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
     it("no rows at all → undefined even with a known hostname", () => {
       expect(chooseLaunchCwd([], "Nicks-MacBook-Pro.local")).toBeUndefined();
       expect(chooseLaunchCwd(null, "Nicks-MacBook-Pro.local")).toBeUndefined();
+    });
+
+    // Regression: a poisoned `/` row keyed to the real hostname used to win
+    // outright under rule 1 — every future launch on that machine then opened
+    // at `/`. isPlausibleProjectPath filters it out before rule 1 ever runs.
+    it("a poisoned `/` row for our own hostname is ignored, not returned", () => {
+      expect(
+        chooseLaunchCwd([{ absolute_path: "/", hostname: "Nicks-MacBook-Pro.local" }], "Nicks-MacBook-Pro.local")
+      ).toBeUndefined();
+    });
+
+    it("a poisoned `/` row for our hostname + a good row elsewhere → the good row wins", () => {
+      expect(
+        chooseLaunchCwd(
+          [
+            { absolute_path: "/", hostname: "Nicks-MacBook-Pro.local" },
+            { absolute_path: "/Users/nick/good", hostname: "other-host" },
+          ],
+          "Nicks-MacBook-Pro.local"
+        )
+      ).toBe("/Users/nick/good");
+    });
+
+    it("a home-directory row for our hostname is ignored", () => {
+      expect(
+        chooseLaunchCwd([{ absolute_path: "/Users/nick", hostname: "mine" }], "mine")
+      ).toBeUndefined();
     });
   });
 });
@@ -1150,10 +1236,10 @@ describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", ()
     expect(p).toMatch(/as soon as the vibecodes board tools are available/i);
   });
 
-  it("includes the defensive cd guard (Change #3): STOP if pwd is still home", () => {
+  it("includes the defensive cd guard (Change #3): STOP if pwd is root or home", () => {
     const p = buildBoardBootstrapPrompt(base);
     expect(p).toMatch(
-      /if `?pwd`? still shows your home directory, STOP/i
+      /if `?pwd`? shows `?\/`? \(the filesystem root\) or your home directory, STOP/i
     );
     // The write-files guard still defends CLAUDE.md against landing in home.
     expect(p).toMatch(/Only AFTER you are confirmed inside the project folder/i);
@@ -1825,11 +1911,11 @@ describe("compact MCP-connect skip clause + record self-heal framing (Fix 2)", (
     }
   });
 
-  it("record_project_path is framed as re-confirm/self-heal, safe to repeat", () => {
+  it("record_project_path is framed as re-confirm/self-heal, guarded against `/` or home", () => {
     const p = buildCompactBootstrapPrompt(MODES["new-no-repo"]);
     expect(p).toContain("record_project_path");
     expect(p).toMatch(/re-confirm/i);
-    expect(p).toMatch(/every launch/i);
+    expect(p).toMatch(/never `?\/`? or home/i);
   });
 
   // Uses a REALISTIC-length idea_id (36-char UUID) + title/path, not the tiny

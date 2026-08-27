@@ -172,4 +172,15 @@ describe("useLaunchPathPinMigration", () => {
     await waitFor(() => expect(readLaunchPath(IDEA_ID)).toBeNull());
     expect(mockMigrate).not.toHaveBeenCalled();
   });
+
+  // Regression: `/` passes isValidAbsolutePath but is a poisoned "landing
+  // zone" pin — must be dropped terminally like any other implausible pin,
+  // never handed to the migration action.
+  it("a `/` pin is discarded immediately, without calling migrate", async () => {
+    window.localStorage.setItem(launchPathKey(IDEA_ID), JSON.stringify({ mode: "existing", path: "/" }));
+
+    renderHook(() => useLaunchPathPinMigration(IDEA_ID));
+    await waitFor(() => expect(readLaunchPath(IDEA_ID)).toBeNull());
+    expect(mockMigrate).not.toHaveBeenCalled();
+  });
 });

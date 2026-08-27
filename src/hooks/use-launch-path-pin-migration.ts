@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { migrateLaunchPathPin } from "@/actions/launch-path";
-import { clearLaunchPathPin, isValidAbsolutePath, readLaunchPath } from "@/lib/launch-claude-code";
+import {
+  clearLaunchPathPin,
+  isPlausibleProjectPath,
+  readLaunchPath,
+} from "@/lib/launch-claude-code";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { logger } from "@/lib/logger";
 
@@ -28,11 +32,12 @@ import { logger } from "@/lib/logger";
  * this folder that exists anywhere — deleting it here would be pure data
  * loss, not a retry.
  *
- * A pin that fails `isValidAbsolutePath` is a separate, TERMINAL case: no
- * retry can ever fix it (the server action rejects it the same way, every
- * time), so it's cleared immediately, client-side, before even calling the
- * server — otherwise it would silently retry-and-warn-log on every single
- * board load, forever.
+ * A pin that fails `isPlausibleProjectPath` — not an expanded absolute path,
+ * or a "landing zone" like `/` or a home directory that would poison every
+ * future launch — is a separate, TERMINAL case: no retry can ever fix it (the
+ * server action rejects it the same way, every time), so it's cleared
+ * immediately, client-side, before even calling the server — otherwise it
+ * would silently retry-and-warn-log on every single board load, forever.
  *
  * Passes `getMachineIdentity()` — this browser's real machine hostname, if a
  * terminal session has ever announced one — so the migration can land on
@@ -54,12 +59,13 @@ export function useLaunchPathPinMigration(ideaId: string): void {
     if (!pin || pin.mode !== "existing") return;
 
     // readLaunchPath doesn't validate what it reads back, so a corrupted or
-    // hand-edited pin can reach here looking like a normal one. It would fail
-    // this same check server-side (migrateLaunchPathPin's own
-    // isValidAbsolutePath guard) on every retry forever — checking here first
-    // lets us drop it once, terminally, instead of round-tripping to the
-    // server and warn-logging on every board load.
-    if (!isValidAbsolutePath(pin.path)) {
+    // hand-edited pin — including `/` or a home directory — can reach here
+    // looking like a normal one. It would fail this same check server-side
+    // (migrateLaunchPathPin's own isPlausibleProjectPath guard) on every
+    // retry forever — checking here first lets us drop it once, terminally,
+    // instead of round-tripping to the server and warn-logging on every
+    // board load.
+    if (!isPlausibleProjectPath(pin.path)) {
       clearLaunchPathPin(ideaId);
       return;
     }
