@@ -197,6 +197,16 @@ export function TerminalMySessionsPanel({
     if (open) void load();
   }, [open, load]);
 
+  // Also check once on mount (page load), not just when the panel opens —
+  // this component stays mounted whether the popover is open or not, so a
+  // hard refresh otherwise leaves the helper-update banner showing stale
+  // data until the user happens to open this panel or start a session
+  // (task 5b2053c9).
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Shared quiesce-then-download flow (src/lib/terminal/use-helper-update-flow.ts)
   // — the session chooser's "Update now" drives the exact same hook.
   const {
