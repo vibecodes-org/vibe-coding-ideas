@@ -21,7 +21,7 @@ export default function MainLayout({
           a scroll region, not a control. */}
       <main
         tabIndex={0}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden outline-none"
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden outline-none"
       >
         {/* Card b70bcbeb follow-up: TerminalDockShell hosts the one live
             TerminalDock instance above the `[id]` route segment so it
