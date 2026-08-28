@@ -261,6 +261,16 @@ describe("TerminalMySessionsPanel — Update now (shared quiesce-then-download f
   });
 });
 
+describe("TerminalMySessionsPanel — mount-time helper check (task 5b2053c9)", () => {
+  it("fetches the helper status on mount even while the panel stays closed", async () => {
+    sessionsResponse = [];
+    renderPanel(false);
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/terminal/helper/status");
+  });
+});
+
 describe("TerminalMySessionsPanel — rename (card 3bf262ac)", () => {
   it("hides the pencil entirely when no onRenameSession is supplied", async () => {
     sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop" })];
