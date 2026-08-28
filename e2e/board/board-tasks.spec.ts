@@ -29,7 +29,11 @@ test.describe("Board Tasks", () => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    await page.getByRole("button", { name: "Add task" }).first().click();
+    // Exact match: PR #211 added a column-header quick-add-to-top icon button
+    // whose aria-label ("Add task to top of <column>") substring-matches the
+    // loose locator below, and sits earlier in the DOM — `.first()` picked it
+    // instead of this bottom "Add task" button that opens the full dialog.
+    await page.getByRole("button", { name: "Add task", exact: true }).first().click();
     const newTitle = scopedTitle("New Task");
     await page.getByPlaceholder("Task title").fill(newTitle);
     await page.getByRole("button", { name: "Create" }).click();
