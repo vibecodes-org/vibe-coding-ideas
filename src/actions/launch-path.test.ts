@@ -354,6 +354,18 @@ describe("saveManualProjectPath (the 'Set exact folder' dialog's server-side Sav
     expect(mockUpsert).not.toHaveBeenCalled();
   });
 
+  // Nick, 28 Aug 2026: a pasted `claude --worktree` path collapses to the
+  // main project folder it hangs off — same rule as record_project_path.
+  it("a worktree path (`…/.claude/worktrees/<id>`) is stored as the MAIN project folder", async () => {
+    upsertResult = { data: ownedRow(REAL_HOSTNAME, PATH), error: null };
+    const result = await saveManualProjectPath(IDEA_ID, `${PATH}/.claude/worktrees/785bd5e8`, REAL_HOSTNAME);
+    expect(result).toEqual({ ok: true, recorded: { hostname: REAL_HOSTNAME, absolute_path: PATH } });
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ hostname: REAL_HOSTNAME, absolute_path: PATH }),
+      { onConflict: "idea_id,owner_user_id,hostname" }
+    );
+  });
+
   it("fails closed when unauthenticated", async () => {
     userResult = null;
     const result = await saveManualProjectPath(IDEA_ID, PATH);

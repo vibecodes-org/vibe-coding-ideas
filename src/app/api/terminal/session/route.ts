@@ -394,6 +394,37 @@ export async function POST(req: Request) {
     // and the mint response can never carry a forbidden value.
     const effectivePermissionMode = userAutoAccept ? AUTO_PERMISSION_MODE : undefined;
 
+    // ── (c.7) CONCURRENT-SESSION ISOLATION ──────────────────────────────────
+    // Does this user ALREADY have a live in-app session on this board? If so
+    // the new one must not share its project folder — the client fires the
+    // launch with `claude --worktree` (an isolated working copy) when this is
+    // true. The FIRST session on a board works in the main folder itself:
+    // isolating every launch unconditionally (the state of play after #219)
+    // put even a lone session in a throwaway `.claude/worktrees/<id>` copy,
+    // whose `pwd` then got recorded as the project folder. Counted BEFORE the
+    // insert below, so this row never counts itself. Best-effort read; on an
+    // error the SAFE default is to isolate (two sessions silently sharing a
+    // folder clobber each other's files — a needless worktree merely confuses).
+    let isolate = false;
+    {
+      const { count: siblingCount, error: siblingErr } = await supabase
+        .from("terminal_sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("idea_id", ideaId)
+        .eq("status", "active");
+      if (siblingErr) {
+        logger.warn("Terminal session mint: live-sibling count failed — defaulting to isolate", {
+          error: siblingErr.message,
+          userId: user.id,
+          ideaId,
+        });
+        isolate = true;
+      } else {
+        isolate = (siblingCount ?? 0) > 0;
+      }
+    }
+
     // ── (d) MINT + register. ────────────────────────────────────────────────
     // The bridge/browser pair (per-launch, random sid) and the helper's OWN
     // standing control-connection credential (card cc74a067 — reserved,
@@ -465,6 +496,13 @@ export async function POST(req: Request) {
       // (mirrors AC-8 for `model` above). Omitted (undefined, dropped by
       // JSON.stringify) when off — byte-identical to today's response shape.
       permissionMode: effectivePermissionMode,
+      // Concurrent-session isolation (see (c.7) above): true when another of
+      // this user's sessions is already live on this board, so the client
+      // fires this FRESH launch with `claude --worktree`. Always present (a
+      // plain boolean) — the client treats anything but `true` as "work in
+      // the main folder". Never threaded into a resume link: Claude Code's
+      // own `--resume` reopens whatever worktree the session started in.
+      isolate,
     });
   } catch (err) {
     logger.error("Terminal session mint error", {

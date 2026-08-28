@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
-import { isValidAbsolutePath, isPlausibleProjectPath } from "../../../src/lib/launch-claude-code";
+import {
+  isValidAbsolutePath,
+  isPlausibleProjectPath,
+  stripClaudeWorktreeSuffix,
+} from "../../../src/lib/launch-claude-code";
 import type { McpContext } from "../context";
 
 // --- Record Project Path ---
@@ -35,7 +39,16 @@ export async function recordProjectPath(
   ctx: McpContext,
   params: z.infer<typeof recordProjectPathSchema>
 ) {
-  const absolutePath = params.absolute_path.trim();
+  const reportedPath = params.absolute_path.trim();
+  // A session started with `claude --worktree` (the in-app terminal's
+  // concurrent-session isolation) has its `pwd` inside
+  // `<repo>/.claude/worktrees/<name>`. The project folder is the repo the
+  // worktree hangs off — store THAT, never the worktree, or every later launch
+  // on this machine opens inside a throwaway copy (and a second `--worktree`
+  // launch nests inside it). Normalised here so an agent that reports its raw
+  // `pwd` still records the right thing.
+  const absolutePath = stripClaudeWorktreeSuffix(reportedPath);
+  const normalizedFromWorktree = absolutePath !== reportedPath;
   const hostname = params.hostname.trim();
 
   // Reject anything that isn't an expanded absolute path. `~`, relative paths,
@@ -101,5 +114,12 @@ export async function recordProjectPath(
       absolute_path: data.absolute_path,
       updated_at: data.updated_at,
     },
+    ...(normalizedFromWorktree
+      ? {
+          normalized_from_worktree: reportedPath,
+          note:
+            "You are inside a Claude Code worktree (an isolated working copy). The MAIN project folder was recorded instead — that's correct. Keep working where you are; do not cd into the main folder.",
+        }
+      : {}),
   };
 }

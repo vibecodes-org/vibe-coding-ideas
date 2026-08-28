@@ -1282,6 +1282,16 @@ export function useTerminalSession(
          * for that, not this flag).
          */
         permissionMode?: string;
+        /**
+         * Concurrent-session isolation — the mint route's answer to "does
+         * this user already have another live session on this board?"
+         * (session/route.ts (c.7)). Only when this is `true` does a fresh
+         * launch fire `claude --worktree`; the first/only session on a board
+         * works in the main project folder itself. Same fresh-launch-only
+         * threading rule as `model`/`permissionMode` — never read on a
+         * resume, which reopens whatever worktree it started in by itself.
+         */
+        isolate?: boolean;
       },
     ) => {
       const trigger = opts?.trigger ?? "connect";
@@ -1437,7 +1447,16 @@ export function useTerminalSession(
               // needs no second pass: a wrong-but-running non-isolated
               // session in the original folder beats a launch that refuses
               // to start at all.
-              worktree: essentials.isolate && !!linkCwd,
+              //
+              // AND gated on `opts.isolate` — the mint route's "another of
+              // your sessions is already live on this board" answer (see
+              // session/route.ts (c.7)). `essentials.isolate` only says a
+              // known folder COULD be shared; whether it actually IS shared
+              // right now is what decides. Isolating every launch put even a
+              // lone first session in a throwaway `.claude/worktrees/<id>`
+              // copy, which then got recorded as the project folder and sent
+              // every later launch there too (Nick, 28 Aug 2026).
+              worktree: essentials.isolate && !!linkCwd && opts?.isolate === true,
             }),
         });
         if (!result.ok) {
@@ -1858,6 +1877,8 @@ export function useTerminalSession(
       model?: string;
       /** Task d3de150c — the mint route's resolved permission mode ("auto" or absent), fresh-launch only. */
       permissionMode?: string;
+      /** Concurrent-session isolation — true when another of this user's sessions is already live on this board (fires `--worktree`), fresh-launch only. */
+      isolate?: boolean;
     };
     try {
       const res = await fetch("/api/terminal/session", {
@@ -1971,6 +1992,7 @@ export function useTerminalSession(
         trigger: "connect",
         model: data.model,
         permissionMode: data.permissionMode,
+        isolate: data.isolate,
       });
 
     openBrowserLeg(data.sessionId, data.browserToken);

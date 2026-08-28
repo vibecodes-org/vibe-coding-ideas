@@ -13,7 +13,11 @@ export default defineConfig({
     // node_modules (incl. nested ones under terminal/* and scripts/*), and the
     // terminal/ workspace + scripts/, which ship their own `node --test` runners
     // (see terminal/RUN.md) and would otherwise pollute the app suite.
-    exclude: ["e2e/**", "**/node_modules/**", "terminal/**", "scripts/**"],
+    // `.claude/worktrees/` holds Claude Code's native-worktree copies of this
+    // repo (`claude --worktree`, fired by the in-app terminal for a second
+    // concurrent session) — each one is a full checkout, so without this the
+    // root run picks up every test file N+1 times.
+    exclude: ["e2e/**", "**/node_modules/**", "terminal/**", "scripts/**", "**/.claude/**"],
   },
   resolve: {
     alias: {

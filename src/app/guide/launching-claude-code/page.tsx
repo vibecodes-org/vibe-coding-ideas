@@ -157,17 +157,19 @@ export default function LaunchingClaudeCodePage() {
                 Automatic worktree isolation
               </strong>{" "}
               — your second and later concurrent sessions on the same repo
-              each get their own private git worktree (a sibling{" "}
+              each get their own private git worktree (Claude Code&apos;s own{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                &lt;repo&gt;.vibe/wt-1
-              </code>
-              ,{" "}
+                --worktree
+              </code>{" "}
+              mode: a full copy under{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                wt-2
+                &lt;repo&gt;/.claude/worktrees/&lt;session-id&gt;
               </code>
-              , and so on, each on its own branch) so two sessions never
-              collide editing the same files. Your first/primary session keeps
-              working in the repo folder itself, unchanged.
+              , on its own branch) so two sessions never collide editing the
+              same files. Your first/only session keeps working in the repo
+              folder itself, unchanged — and the folder VibeCodes remembers
+              for the project is always the repo itself, never one of those
+              copies.
             </li>
             <li>
               <strong className="text-foreground">My sessions</strong> — the

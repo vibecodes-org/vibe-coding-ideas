@@ -352,6 +352,34 @@ export function isPlausibleProjectPath(path: string): boolean {
   return false;
 }
 
+/**
+ * Collapse a Claude Code native-worktree path back to the MAIN project folder.
+ *
+ * `claude --worktree <name>` (the in-app terminal's concurrent-session
+ * isolation — see terminal/bridge/src/resume-cmd.js) starts the session in
+ * `<repo>/.claude/worktrees/<name>/`, so that session's `pwd` is the
+ * worktree, not the project. A session that obediently reported that `pwd`
+ * via `record_project_path` used to store the WORKTREE as this machine's
+ * project folder — then every later launch opened there (the "This machine"
+ * line showed `…/.claude/worktrees/<id>`), and a second `--worktree` launch
+ * nested inside it. The project folder is, by definition, the checkout the
+ * worktree hangs off — so every write path AND every read path runs through
+ * this, making an already-poisoned row self-heal on the next launch.
+ *
+ * Returns the trimmed path unchanged when it isn't inside a worktree. Handles
+ * both slash styles. Nested worktrees collapse to the OUTERMOST repo. A path
+ * that is nothing but `/.claude/worktrees/x` (no repo above it) is returned
+ * as-is — it's not a real project folder either way, and
+ * `isPlausibleProjectPath` rejects it.
+ */
+export function stripClaudeWorktreeSuffix(path: string): string {
+  const p = path.trim();
+  const m = /^(.*?)[\\/]\.claude[\\/]worktrees(?:[\\/].*)?$/.exec(p);
+  if (!m) return p;
+  const root = m[1];
+  return root ? root : p;
+}
+
 /** Compose `parent/name` into a single path, normalising the joining slash. */
 export function composeNewProjectPath(parent: string, name: string): string {
   const base = parent.trim().replace(/\/+$/, "");
@@ -538,13 +566,18 @@ export function chooseLaunchCwd(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined,
   realHostname: string | null = null
 ): string | undefined {
-  const usable = (records ?? []).filter((r) => isPlausibleProjectPath(r.absolute_path));
+  // Read-side self-heal: a row that was recorded from inside a
+  // `claude --worktree` session (see stripClaudeWorktreeSuffix) resolves to
+  // the MAIN project folder it hangs off, never the worktree itself.
+  const usable = (records ?? [])
+    .map((r) => ({ hostname: r.hostname, absolute_path: stripClaudeWorktreeSuffix(r.absolute_path) }))
+    .filter((r) => isPlausibleProjectPath(r.absolute_path));
   if (realHostname) {
     const own = usable.find((r) => r.hostname === realHostname);
-    if (own) return own.absolute_path.trim();
+    if (own) return own.absolute_path;
   }
-  const distinctPaths = new Set(usable.map((r) => r.absolute_path.trim()));
-  if (distinctPaths.size === 1) return usable[0].absolute_path.trim();
+  const distinctPaths = new Set(usable.map((r) => r.absolute_path));
+  if (distinctPaths.size === 1) return usable[0].absolute_path;
   return undefined;
 }
 
@@ -642,7 +675,7 @@ export function resolveEffectiveLaunchTarget({
     // back to the first path-match keeps the old label for unknown-identity
     // browsers rather than dropping to the bare "This machine".
     const pathMatches = (recordedPaths ?? []).filter(
-      (r) => r.absolute_path.trim() === recordedCwd
+      (r) => stripClaudeWorktreeSuffix(r.absolute_path) === recordedCwd
     );
     const match =
       pathMatches.find((r) => r.hostname === realHostname) ?? pathMatches[0];
@@ -998,7 +1031,13 @@ function buildCompactStepPieces({
     const repoNote = repo
       ? ` It should already be a clone of ${repo} — confirm with \`git remote -v\`; don't re-clone.`
       : "";
-    directoryEcho = `You should already be in ${existingPath} (recorded from a previous session).${repoNote} Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`;
+    // Concurrent-session isolation may have started this session in
+    // `<existingPath>/.claude/worktrees/<name>` (claude --worktree) instead
+    // of existingPath itself. Both are correct places to be; what is NOT
+    // correct is cd-ing between them — a session that leaves its worktree
+    // for the main folder defeats the isolation and collides with whichever
+    // session is already working there. So: confirm, stay put, never cd.
+    directoryEcho = `You should already be in ${existingPath} (recorded from a previous session) — or, if this launch was isolated, in a working copy under ${existingPath}/.claude/worktrees/. Either is correct: confirm with \`pwd\` and STAY where you started; do NOT \`cd\` from a worktree into the main folder or vice versa.${repoNote} Don't re-init or re-clone — reuse the folder as-is.`;
     // Concurrent-session isolation — the deep link's cwd is what puts this
     // session in a possibly-shared folder, whether or not the idea is
     // repo-backed (a repo-backed idea with NO known folder resolves via the
@@ -1025,6 +1064,14 @@ function buildCompactStepPieces({
 
   const essentialSteps = [
     `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`,
+    // Deliberately says nothing about worktrees: this step lives in the
+    // never-trimmed head of a URL-capped launch link, and even one extra
+    // clause here truncates the realistic repo-backed fixture's "work" step
+    // (src/lib/terminal/deep-link.test.ts). A worktree `pwd` is collapsed to
+    // the main folder SERVER-side instead (mcp-server/src/tools/project-paths.ts
+    // → stripClaudeWorktreeSuffix), the tool's own description says so, and
+    // the "stay put" guidance rides `directoryEcho` (only present when a
+    // folder is known — the only case a worktree launch can happen).
     `Re-confirm the folder (never \`/\` or home — cd in first): call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here.`,
   ];
 

@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Claude Code native-worktree copies of this repo (`claude --worktree`,
+    // fired by the in-app terminal for a second concurrent session) — each
+    // is a full checkout; linting them re-reports every finding N+1 times.
+    ".claude/**",
   ]),
   // Project rule overrides. Warnings (not errors) for the intentional patterns
   // below so the blocking lint gate stays clean without risky refactors.

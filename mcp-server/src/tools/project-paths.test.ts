@@ -125,6 +125,71 @@ describe("recordProjectPath — validation (error path)", () => {
   });
 });
 
+// Nick, 28 Aug 2026: a session started with `claude --worktree` (the in-app
+// terminal's concurrent-session isolation) reported its pwd —
+// `<repo>/.claude/worktrees/<id>` — and that got stored as the project
+// folder, so every later launch on the machine opened inside the worktree.
+describe("recordProjectPath — a worktree pwd is stored as the MAIN project folder", () => {
+  const MAIN = "/Users/nick/projects/vibecodes";
+  const WORKTREE = `${MAIN}/.claude/worktrees/785bd5e8-c3f4-41eb-987d-46de8d814949`;
+
+  it("collapses the worktree path to the repo it hangs off before upserting", async () => {
+    const { chain, captured } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+
+    const result = await recordProjectPath(ctx, {
+      idea_id: IDEA_ID,
+      hostname: "Nicks-MacBook",
+      absolute_path: WORKTREE,
+    });
+
+    const payload = captured.upserted as { absolute_path: string };
+    expect(payload.absolute_path).toBe(MAIN);
+    expect(result.success).toBe(true);
+  });
+
+  it("tells the agent what happened and to stay in the worktree", async () => {
+    const { chain } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+
+    const result = await recordProjectPath(ctx, {
+      idea_id: IDEA_ID,
+      hostname: "Nicks-MacBook",
+      absolute_path: WORKTREE,
+    });
+
+    expect(result.normalized_from_worktree).toBe(WORKTREE);
+    expect(result.note).toMatch(/do not cd into the main folder/i);
+  });
+
+  it("an ordinary path carries no normalisation note", async () => {
+    const { chain } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+
+    const result = await recordProjectPath(ctx, {
+      idea_id: IDEA_ID,
+      hostname: "Nicks-MacBook",
+      absolute_path: MAIN,
+    });
+
+    expect(result).not.toHaveProperty("normalized_from_worktree");
+    expect(result).not.toHaveProperty("note");
+  });
+
+  it("a worktree with nothing plausible above it is still rejected, and nothing is saved", async () => {
+    const { chain, captured } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+    await expect(
+      recordProjectPath(ctx, {
+        idea_id: IDEA_ID,
+        hostname: "host",
+        absolute_path: "/Users/nick/.claude/worktrees/abc",
+      })
+    ).rejects.toThrow(/not a project folder/i);
+    expect(captured.upserted).toBeNull();
+  });
+});
+
 describe("recordProjectPath — upsert (happy path)", () => {
   it("upserts on (idea_id, owner_user_id, hostname) and returns the stored value", async () => {
     const { chain, captured } = createChain(STORED);

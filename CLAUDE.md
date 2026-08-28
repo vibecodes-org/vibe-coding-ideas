@@ -104,6 +104,15 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   alive elsewhere — never read it as ended or errored.
 - Sessions with no recorded folder can't be resumed; hide them from the chooser
   but keep them in the internal reconnect check.
+- **The recorded project folder is always the MAIN checkout, never a worktree.**
+  A second concurrent in-app session runs in `<repo>/.claude/worktrees/<id>`
+  (`claude --worktree`); its `pwd` must never be stored as the project folder.
+  `stripClaudeWorktreeSuffix` collapses it on every write AND read path
+  (self-heals poisoned rows). Only isolate when the mint route says another
+  session is already live on the board (`isolate: true`) — the first/only
+  session works in the main folder. Never tell a session to `cd` between the
+  two. Don't add words to the compact prompt's protected head: the realistic
+  repo-backed launch link is within ~5 chars of its cap (deep-link.test.ts).
 
 ### Logging
 - Use `logger.*` from `src/lib/logger.ts`, NOT `console.*`

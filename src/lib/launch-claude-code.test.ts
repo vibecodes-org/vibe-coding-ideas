@@ -39,6 +39,7 @@ import {
   looksAbsolutePath,
   isValidAbsolutePath,
   isPlausibleProjectPath,
+  stripClaudeWorktreeSuffix,
   chooseLaunchCwd,
   resolveEffectiveLaunchTarget,
   composeNewProjectPath,
@@ -750,6 +751,74 @@ describe("isPlausibleProjectPath", () => {
   });
 });
 
+// Nick, 28 Aug 2026: a session started with `claude --worktree` has its pwd
+// inside `<repo>/.claude/worktrees/<id>`; reporting that pwd recorded the
+// WORKTREE as the project folder, so the launch dropdown showed it and every
+// later launch opened there. The main folder is the repo the worktree hangs
+// off — this helper is what every write AND read path collapses through.
+describe("stripClaudeWorktreeSuffix", () => {
+  it("collapses a worktree path to the repo it hangs off", () => {
+    expect(
+      stripClaudeWorktreeSuffix(
+        "/Users/nickball/projects/vibe-coding-ideas/.claude/worktrees/785bd5e8-c3f4-41eb-987d-46de8d814949"
+      )
+    ).toBe("/Users/nickball/projects/vibe-coding-ideas");
+  });
+
+  it("collapses a path DEEPER inside the worktree too (pwd from a subfolder)", () => {
+    expect(
+      stripClaudeWorktreeSuffix("/Users/nick/projects/x/.claude/worktrees/abc/src/components")
+    ).toBe("/Users/nick/projects/x");
+  });
+
+  it("tolerates a trailing slash", () => {
+    expect(stripClaudeWorktreeSuffix("/Users/nick/projects/x/.claude/worktrees/abc/")).toBe(
+      "/Users/nick/projects/x"
+    );
+  });
+
+  it("collapses nested worktrees to the OUTERMOST repo", () => {
+    expect(
+      stripClaudeWorktreeSuffix("/Users/nick/x/.claude/worktrees/a/.claude/worktrees/b")
+    ).toBe("/Users/nick/x");
+  });
+
+  it("handles Windows separators", () => {
+    expect(stripClaudeWorktreeSuffix("C:\\Users\\nick\\x\\.claude\\worktrees\\abc")).toBe(
+      "C:\\Users\\nick\\x"
+    );
+    expect(stripClaudeWorktreeSuffix("C:/Users/nick/x/.claude/worktrees/abc")).toBe(
+      "C:/Users/nick/x"
+    );
+  });
+
+  it("leaves an ordinary project path alone (trimmed)", () => {
+    expect(stripClaudeWorktreeSuffix("  /Users/nick/projects/x  ")).toBe("/Users/nick/projects/x");
+    expect(stripClaudeWorktreeSuffix("/Users/nick/projects/x")).toBe("/Users/nick/projects/x");
+  });
+
+  it("does not mistake a similarly named folder for a worktree", () => {
+    expect(stripClaudeWorktreeSuffix("/Users/nick/projects/worktrees")).toBe(
+      "/Users/nick/projects/worktrees"
+    );
+    expect(stripClaudeWorktreeSuffix("/Users/nick/.claude/worktrees-archive/x")).toBe(
+      "/Users/nick/.claude/worktrees-archive/x"
+    );
+    expect(stripClaudeWorktreeSuffix("/Users/nick/projects/x/.claude")).toBe(
+      "/Users/nick/projects/x/.claude"
+    );
+  });
+
+  it("returns a bare `/.claude/worktrees/x` unchanged (nothing above it to collapse to)", () => {
+    expect(stripClaudeWorktreeSuffix("/.claude/worktrees/x")).toBe("/.claude/worktrees/x");
+  });
+
+  it("a worktree directly under a home directory collapses to home — which the plausibility check then rejects", () => {
+    expect(stripClaudeWorktreeSuffix("/Users/nick/.claude/worktrees/abc")).toBe("/Users/nick");
+    expect(isPlausibleProjectPath(stripClaudeWorktreeSuffix("/Users/nick/.claude/worktrees/abc"))).toBe(false);
+  });
+});
+
 describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
   it("returns undefined for 0 records (first-launch / home flow)", () => {
     expect(chooseLaunchCwd([])).toBeUndefined();
@@ -927,6 +996,44 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
         chooseLaunchCwd([{ absolute_path: "/Users/nick", hostname: "mine" }], "mine")
       ).toBeUndefined();
     });
+  });
+});
+
+// Read-side self-heal for rows that were already poisoned with a worktree
+// path before the write-side fix shipped: the next launch on that machine
+// must open (and display) the MAIN folder, with no data migration.
+describe("chooseLaunchCwd / resolveEffectiveLaunchTarget — worktree rows heal to the main folder", () => {
+  const WORKTREE =
+    "/Users/nickball/projects/vibe-coding-ideas/.claude/worktrees/785bd5e8-c3f4-41eb-987d-46de8d814949";
+  const MAIN = "/Users/nickball/projects/vibe-coding-ideas";
+
+  it("a worktree row keyed to this machine resolves to the main folder", () => {
+    expect(chooseLaunchCwd([{ absolute_path: WORKTREE, hostname: "mbp" }], "mbp")).toBe(MAIN);
+  });
+
+  it("a lone worktree row (hostname unknown) resolves to the main folder", () => {
+    expect(chooseLaunchCwd([{ absolute_path: WORKTREE, hostname: "mbp" }])).toBe(MAIN);
+  });
+
+  it("a worktree row and a main-folder row on different hosts agree → one distinct path", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: WORKTREE, hostname: "mbp" },
+        { absolute_path: MAIN, hostname: "imac" },
+      ])
+    ).toBe(MAIN);
+  });
+
+  it("the launch dropdown's \"This machine\" line shows the main folder, attributed to the right host", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      recordedPaths: [{ absolute_path: WORKTREE, hostname: "mbp" }],
+      realHostname: "mbp",
+    });
+    expect(t.cwd).toBe(MAIN);
+    expect(t.displayPath).toBe(MAIN);
+    expect(t.displayLabel).toBe("This machine — mbp");
+    expect(t.host).toBe("mbp");
   });
 });
 
@@ -1982,6 +2089,60 @@ describe("resolveLaunchCwd (shared cwd rule: claude-cli:// + vibecodes:// launch
 // path), now expressed as the plain `isolate` boolean on
 // CompactPromptEssentials, and that no trace of the old protocol text is
 // left in any prompt.
+// Nick, 28 Aug 2026: the two instructions that made isolated sessions wander.
+// "cd there if not" sent a worktree session back into the main folder
+// (defeating the isolation), and "record pwd" stored the worktree as the
+// project folder. The prompt must now say STAY PUT and RECORD THE MAIN FOLDER.
+describe("compact prompt — worktree-aware folder + record wording", () => {
+  const essentials = buildCompactPromptEssentials({
+    appUrl: "https://vibecodes.co.uk",
+    ideaId: "idea-1",
+    ideaTitle: "My Idea",
+    mode: "existing",
+    repoUrl: null,
+    existingPath: "/Users/nick/projects/my-idea",
+  });
+  const full = buildCompactBootstrapPrompt({
+    appUrl: "https://vibecodes.co.uk",
+    ideaId: "idea-1",
+    ideaTitle: "My Idea",
+    mode: "existing",
+    repoUrl: null,
+    existingPath: "/Users/nick/projects/my-idea",
+  });
+
+  it("the folder step names BOTH acceptable places (main folder or a worktree under it) and says to stay put", () => {
+    const echo = essentials.directoryEcho as string;
+    expect(echo).toContain("/Users/nick/projects/my-idea");
+    expect(echo).toContain("/Users/nick/projects/my-idea/.claude/worktrees/");
+    expect(echo).toMatch(/STAY where you started/);
+    expect(echo).toMatch(/do NOT `cd` from a worktree into the main folder/i);
+  });
+
+  it("no longer tells the session to `cd` to the recorded folder", () => {
+    expect(full).not.toMatch(/`cd` there if not/i);
+  });
+
+  // The record step itself is left UNCHANGED: it lives in the never-trimmed
+  // head of a URL-capped link, and adding even one clause there truncated the
+  // realistic repo-backed fixture's "work" step (deep-link.test.ts). The
+  // worktree→main-folder collapse is enforced server-side (recordProjectPath
+  // → stripClaudeWorktreeSuffix) and described on the tool itself instead.
+  it("the record step is byte-identical to before (head budget untouched) and stays path-length-independent", () => {
+    const head = essentials.head;
+    expect(head).toContain(
+      "Re-confirm the folder (never `/` or home — cd in first): call record_project_path (idea_id idea-1, machine `hostname`, `pwd`) so future launches reopen here."
+    );
+    expect(head).not.toContain("worktree");
+    expect(head).not.toContain("/Users/nick/projects/my-idea");
+  });
+
+  it("the stay-put guidance rides the trimmable folder step, not the protected head", () => {
+    expect(full).toMatch(/STAY where you started/);
+    expect(essentials.head).not.toMatch(/STAY where you started/);
+  });
+});
+
 describe("concurrent-terminal isolation — the `isolate` flag (formerly the worktree-isolation protocol)", () => {
   const APP_URL = "https://vibecodes.co.uk";
 
