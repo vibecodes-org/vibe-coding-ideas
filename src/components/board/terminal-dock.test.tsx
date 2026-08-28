@@ -1535,6 +1535,76 @@ describe("TerminalDock — browsing renders IN the panel when nothing is running
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
     expect(screen.getByTestId("session-view").dataset.key).toBe(key);
   });
+
+  // Nick's field report, 2026-08-28 (task 466672d2). Two sessions side by
+  // side, ended both, clicked "View my other sessions": the list rendered in
+  // the panel — correct — but BOTH dead panes stayed visible under it, so the
+  // dock grew to full height and covered the board. Root cause: the split
+  // body's `inlineBrowse && "hidden"` and `splitActive && "flex
+  // items-stretch"` are both `display` utilities, and `cn()` is
+  // tailwind-merge, which keeps the LAST conflicting class — so split view
+  // silently deleted the hide. Single-tab browse never hit it (no `flex`).
+  describe("with a split view whose panes have all ended", () => {
+    async function mintTwoSessions(): Promise<[string, string]> {
+      const first = await openFirstTabViaChooser();
+      act(() => {
+        requestBrowserLaunch();
+      });
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId("chooser-start-new"));
+      await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+      const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+      return [first, keys.find((k) => k !== first) as string];
+    }
+
+    it("hides the split body while browsing — the dead panes must not stack under the list and swallow the board", async () => {
+      stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+      render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+      const [keyA, keyB] = await mintTwoSessions();
+
+      fireEvent.click(screen.getByRole("button", { name: "Split view: show two sessions side by side" }));
+      await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+      // Split is genuinely rendering: the body carries its side-by-side layout.
+      expect(screen.getByTestId("terminal-dock-split-body")).toHaveClass("flex");
+
+      endTab(keyA);
+      endTab(keyB);
+      fireEvent.click(screen.getAllByTestId("view-my-other-sessions")[0]);
+
+      // Nothing live to protect, so it's the in-panel list, not the overlay…
+      await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      // …and the panes underneath are hidden, not laid out beside the list.
+      // The exact regression: `flex` used to survive and evict `hidden`.
+      const body = screen.getByTestId("terminal-dock-split-body");
+      expect(body).toHaveClass("hidden");
+      expect(body).not.toHaveClass("flex");
+      // Still mounted, though — "Back to terminal" returns to their scrollback.
+      expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+      expect(screen.getAllByTestId("session-view")).toHaveLength(2);
+    });
+
+    it("'Back to terminal' restores the side-by-side layout it left", async () => {
+      stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+      render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+      const [keyA, keyB] = await mintTwoSessions();
+
+      fireEvent.click(screen.getByRole("button", { name: "Split view: show two sessions side by side" }));
+      await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+      endTab(keyA);
+      endTab(keyB);
+      fireEvent.click(screen.getAllByTestId("view-my-other-sessions")[0]);
+      await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole("button", { name: /Back to terminal/ }));
+
+      await waitFor(() => expect(screen.queryByTestId("chooser")).not.toBeInTheDocument());
+      const body = screen.getByTestId("terminal-dock-split-body");
+      expect(body).toHaveClass("flex");
+      expect(body).not.toHaveClass("hidden");
+      expect(screen.getAllByTestId("session-view")).toHaveLength(2);
+    });
+  });
 });
 
 describe("TerminalDock — resize handle hidden while the active tab is popped out (card 534d2049, AC3 rework)", () => {
