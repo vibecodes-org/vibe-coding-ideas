@@ -259,6 +259,58 @@ describe("POST /api/terminal/session — effective auto-accept resolution (task 
   });
 });
 
+// Nick, 28 Aug 2026: isolating EVERY launch put even a lone first session in
+// a throwaway `.claude/worktrees/<id>` copy. The mint route now answers
+// "is another of your sessions already live on this board?" and the client
+// only fires `--worktree` when it says yes.
+describe("POST /api/terminal/session — concurrent-session isolation flag (isolate)", () => {
+  it("isolate is false when this user has no other live session on the board", async () => {
+    tableResults.terminal_sessions = { data: null, error: null, count: 0 };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.isolate).toBe(false);
+  });
+
+  it("isolate is true when another live session already exists on the board", async () => {
+    tableResults.terminal_sessions = { data: null, error: null, count: 1 };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.isolate).toBe(true);
+  });
+
+  it("scopes the sibling count to this user, this board, live rows only", async () => {
+    tableResults.terminal_sessions = { data: null, error: null, count: 1 };
+    await POST(req({ ideaId: IDEA_1 }));
+    // Every terminal_sessions chain shares one mock; the eq calls across the
+    // route's reads must include the three scoping predicates.
+    const eqCalls = mockFrom.mock.results
+      .map((r) => r.value)
+      .filter((chain) => chain?.eq)
+      .flatMap((chain) => chain.eq.mock.calls as unknown[][]);
+    expect(eqCalls).toEqual(
+      expect.arrayContaining([
+        ["user_id", "user-1"],
+        ["idea_id", IDEA_1],
+        ["status", "active"],
+      ]),
+    );
+  });
+
+  it("defaults to isolate=true (the safe side) when the sibling count read fails — and still mints", async () => {
+    tableResults.terminal_sessions = { data: null, error: { message: "connection reset" }, count: null };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.isolate).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/live-sibling count failed/),
+      expect.objectContaining({ ideaId: IDEA_1 }),
+    );
+  });
+});
+
 // Card 0301fe8e (Nick, 2026-08-25): the SAME claude conversation resumed
 // twice at once. The mint route is the server backstop — a resume whose
 // conversation this user already has a LIVE row on is refused, and a

@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger";
 import {
   decidePinMigration,
   isPlausibleProjectPath,
+  stripClaudeWorktreeSuffix,
   MANUAL_PIN_HOSTNAME,
   type RecordedProjectPath,
 } from "@/lib/launch-claude-code";
@@ -123,7 +124,9 @@ export async function saveManualProjectPath(
   absolutePath: string,
   hostname?: string | null
 ): Promise<SavePinResult> {
-  const trimmed = absolutePath.trim();
+  // A pasted worktree path (`…/.claude/worktrees/<id>`) collapses to the main
+  // project folder it hangs off — same rule as every other write path.
+  const trimmed = stripClaudeWorktreeSuffix(absolutePath);
   if (!isPlausibleProjectPath(trimmed)) return { ok: false };
   return upsertProjectPath(ideaId, normalizeHostname(hostname) ?? MANUAL_PIN_HOSTNAME, trimmed);
 }
@@ -155,7 +158,7 @@ export async function migrateLaunchPathPin(
   pinPath: string,
   hostname?: string | null
 ): Promise<MigratePinResult> {
-  const trimmed = pinPath.trim();
+  const trimmed = stripClaudeWorktreeSuffix(pinPath);
   if (!isPlausibleProjectPath(trimmed)) return { ok: false, action: "invalid" };
 
   const supabase = await createClient();

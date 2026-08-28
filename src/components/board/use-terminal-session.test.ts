@@ -1693,7 +1693,9 @@ describe("useTerminalSession", () => {
       expect(src).not.toContain(encodeURIComponent(veryLongPath));
     });
 
-    it("still fires --worktree for the ordinary case: a short recorded folder that fits the cwd param", async () => {
+    it("still fires --worktree for the ordinary case: a short recorded folder that fits the cwd param AND another session is already live on the board", async () => {
+      // The mint route reports a live sibling (session/route.ts (c.7)).
+      vi.stubGlobal("fetch", vi.fn(async () => mintResponse({ isolate: true })));
       const shortPath = "/Users/nick/projects/recipe-saver";
       const { result } = renderHook(() =>
         useTerminalSession(
@@ -1718,6 +1720,60 @@ describe("useTerminalSession", () => {
       const src = iframes[0].getAttribute("src") ?? "";
       expect(src).toContain(`cwd=${encodeURIComponent(shortPath)}`);
       expect(src).toContain("worktree=1");
+    });
+
+    // Nick, 28 Aug 2026: the FIRST (only) session on a board must work in the
+    // main project folder itself. Isolating it too put a lone session in a
+    // throwaway `.claude/worktrees/<id>` copy, whose pwd then got recorded as
+    // the project folder and sent every later launch there.
+    it("does NOT fire --worktree for the first/only session on a board (mint reports no live sibling)", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => mintResponse({ isolate: false })));
+      const shortPath = "/Users/nick/projects/recipe-saver";
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: shortPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      // Still opens in the recorded folder — just not in an isolated copy of it.
+      expect(src).toContain(`cwd=${encodeURIComponent(shortPath)}`);
+      expect(src).not.toContain("worktree=1");
+    });
+
+    it("does NOT fire --worktree when the mint response omits the flag entirely (older server)", async () => {
+      // Default mintResponse() carries no `isolate` — anything but `true` means "main folder".
+      const shortPath = "/Users/nick/projects/recipe-saver";
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: shortPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const src = document.querySelectorAll("iframe")[0].getAttribute("src") ?? "";
+      expect(src).not.toContain("worktree=1");
     });
   });
 
