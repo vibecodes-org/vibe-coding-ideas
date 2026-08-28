@@ -3116,8 +3116,20 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               while actually rendering the split — `splitBodyRef` measures
               THIS element for the width floor either way, since it's the
               space the two panes would share. `relative` hosts the drop-zone
-              overlay below. */}
-          <div ref={splitBodyRef} className={cn("relative", inlineBrowse && "hidden", splitActive && "flex items-stretch")}>
+              overlay below.
+
+              `hidden` and `flex` are MUTUALLY EXCLUSIVE here, not stacked
+              (Nick's field report 2026-08-28): both are `display` utilities,
+              and `cn()` is tailwind-merge, which resolves a conflict by
+              keeping the LAST one — so `hidden` + `flex items-stretch` came
+              out as just `flex items-stretch`, and a browse from a split
+              with both panes ended showed the chooser AND both dead panes,
+              ballooning the dock over the whole board. Browsing wins. */}
+          <div
+            ref={splitBodyRef}
+            data-testid="terminal-dock-split-body"
+            className={cn("relative", inlineBrowse ? "hidden" : splitActive && "flex items-stretch")}
+          >
         {sessions.map((entry) => {
           const paneIndex = splitActive ? paneKeys.indexOf(entry.key) : -1;
           const inPane = paneIndex !== -1;
