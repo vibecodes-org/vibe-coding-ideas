@@ -85,6 +85,7 @@ import {
   buildLaunchDeepLink,
   redactDeepLinkToken,
 } from "@/lib/terminal/deep-link";
+import { shouldSkipHelperToken } from "@/lib/terminal/helper-row";
 import { type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import {
   buildBoundedDeepLink,
@@ -345,6 +346,19 @@ export interface UseTerminalSessionOptions {
    * got there. Omitted outside split view (paneFocused undefined) — no-op.
    */
   onKeyboardFocusChange?: (focused: boolean) => void;
+  /**
+   * Launch-link size fix (board task d40ce211): the caller's last-known
+   * helper-status check (`/api/terminal/helper/status` — see
+   * terminal-dock.tsx's `helperStatus` state), paired with when it was
+   * fetched. Fed straight to `shouldSkipHelperToken`
+   * (src/lib/terminal/helper-row.ts) at fire time to decide whether THIS
+   * launch can omit the `helperToken` param — recently-confirmed-connected
+   * only; `null`/stale/disconnected always sends it, unchanged from before
+   * this option existed. Read fresh via a ref inside `fireLaunchDeepLink` (a
+   * stable callback), same idiom as `onKeyboardFocusChange` above. Omitted
+   * (undefined/null) is always safe — it's exactly today's behaviour.
+   */
+  lastHelperStatus?: { connected: boolean; checkedAt: number } | null;
 }
 
 /** The minimum a popped-out window needs to attach to an existing session — see `attachExisting` above. */
@@ -565,6 +579,7 @@ export function useTerminalSession(
     grabFocus = true,
     dragActiveRef,
     onKeyboardFocusChange,
+    lastHelperStatus = null,
   } = options;
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
@@ -579,6 +594,10 @@ export function useTerminalSession(
   // mount-once effect to re-run (same idiom as `posthogRef` above).
   const onKeyboardFocusChangeRef = useRef(onKeyboardFocusChange);
   onKeyboardFocusChangeRef.current = onKeyboardFocusChange;
+  // Launch-link size fix (board task d40ce211): read fresh inside the stable
+  // `fireLaunchDeepLink` callback below, same idiom as the ref above.
+  const lastHelperStatusRef = useRef(lastHelperStatus);
+  lastHelperStatusRef.current = lastHelperStatus;
 
   const [state, dispatch] = useReducer(terminalReducer, initialConnectionState);
   const [readOnly, setReadOnly] = useState(false);
@@ -1312,6 +1331,13 @@ export function useTerminalSession(
       // `currentLaunchDims`'s own doc comment for why this is read here
       // rather than left to a post-spawn resize.
       const dims = currentLaunchDims();
+      // Launch-link size fix (board task d40ce211): omit `helperToken`
+      // (~283 chars) when we've recently (<30s) confirmed the helper is
+      // already connected — see shouldSkipHelperToken's doc. Computed once
+      // per fire and applied to whichever buildLaunchDeepLink call below
+      // actually runs, same posture as `dims`.
+      const skipHelperToken = shouldSkipHelperToken(lastHelperStatusRef.current, Date.now());
+      const effectiveHelperToken = skipHelperToken ? undefined : helperToken;
       const carriedForResume = promptPartsRef.current;
       const forcedCwd = opts?.forceResumeCwd?.trim() || null;
       const resumeSource = forcedCwd
@@ -1336,7 +1362,7 @@ export function useTerminalSession(
             relay: relayBaseUrl(),
             session: sessionId,
             token: bridgeToken,
-            helperToken,
+            helperToken: effectiveHelperToken,
             cwd,
             resume: resumeId ? undefined : true,
             resumeId,
@@ -1418,7 +1444,7 @@ export function useTerminalSession(
               relay: relayBaseUrl(),
               session: sessionId,
               token: bridgeToken,
-              helperToken,
+              helperToken: effectiveHelperToken,
               cwd: linkCwd,
               prompt,
               cols: dims?.cols,
@@ -1488,6 +1514,10 @@ export function useTerminalSession(
         urlChars,
         hasCwd,
         droppedCwd,
+        // Launch-link size fix (board task d40ce211): whether this fire
+        // omitted `helperToken` because the helper was recently confirmed
+        // connected — see shouldSkipHelperToken's doc.
+        helperTokenOmitted: skipHelperToken,
       });
       if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
     },

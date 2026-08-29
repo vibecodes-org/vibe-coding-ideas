@@ -3,6 +3,7 @@ import {
   deriveHelperChip,
   fetchHelperStatus,
   shouldShowStopButton,
+  shouldSkipHelperToken,
   stopButtonLabel,
   stopConfirmBody,
   updateNudgeCopy,
@@ -150,5 +151,29 @@ describe("formatHelperEventAge", () => {
 
   it("a future timestamp (clock skew) clamps to 'just now', never negative", () => {
     expect(formatHelperEventAge(NOW + 10_000, NOW)).toBe("just now");
+  });
+});
+
+describe("shouldSkipHelperToken", () => {
+  const NOW = 1_700_000_000_000;
+
+  it("connected + fresh (<30s) -> skip", () => {
+    expect(shouldSkipHelperToken({ connected: true, checkedAt: NOW - 10_000 }, NOW)).toBe(true);
+  });
+
+  it("connected + exactly at the 30s boundary -> do not skip", () => {
+    expect(shouldSkipHelperToken({ connected: true, checkedAt: NOW - 30_000 }, NOW)).toBe(false);
+  });
+
+  it("connected but stale (>=30s) -> do not skip", () => {
+    expect(shouldSkipHelperToken({ connected: true, checkedAt: NOW - 45_000 }, NOW)).toBe(false);
+  });
+
+  it("disconnected -> do not skip, regardless of age", () => {
+    expect(shouldSkipHelperToken({ connected: false, checkedAt: NOW }, NOW)).toBe(false);
+  });
+
+  it("unknown status (null) -> do not skip", () => {
+    expect(shouldSkipHelperToken(null, NOW)).toBe(false);
   });
 });
