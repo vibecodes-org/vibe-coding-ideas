@@ -326,6 +326,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // chooser's own predicate treats as "nothing to nudge about", never an
   // error state.
   const [helperStatus, setHelperStatus] = useState<HelperStatus | null>(null);
+  // Launch-link size fix (board task d40ce211): WHEN `helperStatus` above was
+  // last fetched — `shouldSkipHelperToken` (src/lib/terminal/helper-row.ts)
+  // needs both the reading and its age to decide whether a launch can omit
+  // `helperToken`. Set in lock-step with `helperStatus` everywhere that state
+  // is written; `null` whenever `helperStatus` is `null` (nothing fetched
+  // yet, or the fetch failed) so a stale/absent reading is never mistaken for
+  // a fresh one.
+  const [helperStatusCheckedAt, setHelperStatusCheckedAt] = useState<number | null>(null);
+  // Launch-link size fix (board task d40ce211): the shape `useTerminalSession`'s
+  // `lastHelperStatus` option wants, derived from the pair above — `null`
+  // whenever either half is missing (nothing fetched yet, or a failed fetch).
+  const lastHelperStatus = useMemo(
+    () => (helperStatus && helperStatusCheckedAt !== null ? { connected: helperStatus.connected, checkedAt: helperStatusCheckedAt } : null),
+    [helperStatus, helperStatusCheckedAt],
+  );
   // A task-scoped (or board-level) launch that arrived while the chooser was
   // showing — carried so "Start new session" / the task-dedupe banner can
   // act on it once the user actually picks something (F1: nothing mints on
@@ -666,7 +681,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   useEffect(() => {
     if (!enabled) return;
-    void fetchHelperStatus().then(setHelperStatus);
+    void fetchHelperStatus().then((status) => {
+      setHelperStatus(status);
+      setHelperStatusCheckedAt(status ? Date.now() : null);
+    });
   }, [enabled]);
 
   // The chooser's own "Update now" shares the My sessions panel's
@@ -676,7 +694,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // flow settles, mirroring the panel's own post-quiesce `load()`.
   const refreshAfterHelperUpdate = useCallback(() => {
     void refreshRegistry();
-    void fetchHelperStatus().then(setHelperStatus);
+    void fetchHelperStatus().then((status) => {
+      setHelperStatus(status);
+      setHelperStatusCheckedAt(status ? Date.now() : null);
+    });
   }, [refreshRegistry]);
 
   // This tab's own snapshot infos (session-snapshot.ts) — one per sid the
@@ -3172,6 +3193,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onReconnectTakenOver={(sid) => void performReattach(sid, { focus: true })}
             onRetryReconnect={(sid) => void performReattach(sid, { focus: true })}
             onResumeEndedSession={handleResumeEndedSession}
+            lastHelperStatus={lastHelperStatus}
           />
           );
         })}

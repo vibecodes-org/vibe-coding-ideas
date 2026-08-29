@@ -857,6 +857,64 @@ describe("useTerminalSession", () => {
       expect(mockSockets).toHaveLength(1);
     });
 
+    // Launch-link size fix (board task d40ce211): `helperToken` (~283 chars,
+    // the single biggest avoidable contributor to launch links overflowing
+    // their 2048-char cap) is omitted ONLY when the caller's last helper-
+    // status check was recently (<30s) confirmed connected — see
+    // shouldSkipHelperToken (src/lib/terminal/helper-row.ts). Every other
+    // reading (stale, disconnected, unknown) must keep sending it exactly as
+    // before this fix, no behaviour change. Reuses the fixture immediately
+    // above, varying only `lastHelperStatus`.
+    describe("launch-link size fix — omitting helperToken (board task d40ce211)", () => {
+      const attachExisting = {
+        sessionId: "sid-reconnect",
+        browserToken: "reconnect-browser-token",
+        bridgeToken: "reconnect-bridge-token",
+        helperToken: "reconnect-helper-token",
+      };
+
+      async function fireAndGetSrc(lastHelperStatus: { connected: boolean; checkedAt: number } | null) {
+        const requestExpand = vi.fn();
+        const { result } = renderHook(() =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand,
+            autoConnectWhenExpanded: false,
+            attachExisting,
+            lastHelperStatus,
+          }),
+        );
+        mountContainer(result);
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        await flushEffects();
+        expect(result.current.launchPhase).toBe("opening");
+        const iframes = document.querySelectorAll("iframe");
+        expect(iframes).toHaveLength(1);
+        return iframes[0].getAttribute("src") ?? "";
+      }
+
+      it("omits helperToken when the status is connected and fresh (<30s)", async () => {
+        const src = await fireAndGetSrc({ connected: true, checkedAt: Date.now() - 5_000 });
+        expect(src).not.toContain("helperToken=");
+      });
+
+      it("includes helperToken when the status is connected but stale (>=30s)", async () => {
+        const src = await fireAndGetSrc({ connected: true, checkedAt: Date.now() - 45_000 });
+        expect(src).toContain(`helperToken=${encodeURIComponent("reconnect-helper-token")}`);
+      });
+
+      it("includes helperToken when the status is disconnected", async () => {
+        const src = await fireAndGetSrc({ connected: false, checkedAt: Date.now() });
+        expect(src).toContain(`helperToken=${encodeURIComponent("reconnect-helper-token")}`);
+      });
+
+      it("includes helperToken when the status is unknown (lastHelperStatus omitted)", async () => {
+        const src = await fireAndGetSrc(null);
+        expect(src).toContain(`helperToken=${encodeURIComponent("reconnect-helper-token")}`);
+      });
+    });
+
     // URGENT reattach fix (task 27d19c68, 2026-08-17 incident): Nick hit this
     // TWICE live — a hard refresh, then a cross-tab Reconnect, both reattached
     // successfully and then <1s later replaced the live conversation with an

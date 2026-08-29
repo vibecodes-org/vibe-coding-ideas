@@ -267,6 +267,13 @@ interface TerminalSessionViewProps {
    * hook-effect re-subscription — see use-terminal-session.ts's doc.
    */
   dragActiveRef?: { current: boolean };
+  /**
+   * Launch-link size fix (board task d40ce211): forwarded straight to
+   * `useTerminalSession`'s same-named option — see its doc there. Sourced
+   * from the dock's own `helperStatus` poll (terminal-dock.tsx); omitted
+   * (undefined) is always safe, it's exactly today's behaviour.
+   */
+  lastHelperStatus?: { connected: boolean; checkedAt: number } | null;
 }
 
 export function TerminalSessionView({
@@ -295,6 +302,7 @@ export function TerminalSessionView({
   grabFocus = true,
   dragActiveRef,
   onPaneFocusChange,
+  lastHelperStatus,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -314,6 +322,7 @@ export function TerminalSessionView({
     grabFocus,
     dragActiveRef,
     onKeyboardFocusChange: onPaneFocusChange,
+    lastHelperStatus,
   });
   const {
     state,

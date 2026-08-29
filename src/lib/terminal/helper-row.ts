@@ -85,6 +85,29 @@ export function deriveHelperChip(status: HelperStatus | null, sessionCount: numb
       };
 }
 
+/**
+ * Launch-link size fix (board task d40ce211 — approved, scoped-down option
+ * from the launch-link-overflow investigation; see PR#232/#233/#234 for the
+ * real incidents this class of bug has caused). The `helperToken` param
+ * (~283 chars) exists solely to (re)establish the helper's own persistent
+ * control connection to the relay — a helper that's already connected treats
+ * a redundant one as a no-op. So it's safe to OMIT it from a launch link when
+ * we've RECENTLY (< 30s) confirmed via `/api/terminal/helper/status` that the
+ * helper is already connected; any staler/unknown/disconnected reading keeps
+ * sending it exactly as before (no behaviour change in that case).
+ *
+ * 30 seconds is the exact, deliberate threshold — it matches the helper's own
+ * auto-reconnect backoff ceiling (2s→30s, terminal/helper/main.js), so a
+ * wrong read here costs no more delay than the helper's self-heal already
+ * bounds.
+ */
+export function shouldSkipHelperToken(
+  lastStatus: { connected: boolean; checkedAt: number } | null,
+  now: number,
+): boolean {
+  return lastStatus !== null && lastStatus.connected && now - lastStatus.checkedAt < 30_000;
+}
+
 /** Only "running" and "winding-down" offer a Stop affordance (design §4 mocks). */
 export function shouldShowStopButton(chip: HelperChip | null): boolean {
   return chip?.kind === "running" || chip?.kind === "winding-down";
