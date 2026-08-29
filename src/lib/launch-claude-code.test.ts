@@ -41,6 +41,7 @@ import {
   isPlausibleProjectPath,
   stripClaudeWorktreeSuffix,
   chooseLaunchCwd,
+  chooseLaunchCwdDetailed,
   resolveEffectiveLaunchTarget,
   composeNewProjectPath,
   buildBoardBootstrapPrompt,
@@ -896,20 +897,26 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
     ).toBeUndefined();
   });
 
-  // ── rule 1: this machine's own row wins ───────────────────────────────────
+  // ── rule 1: this machine's own row wins — UNLESS it disagrees with the rest ──
   // idea_project_paths is keyed (idea_id, owner_user_id, hostname). A row under
-  // THIS browser's real hostname is this machine's folder by that key, so the
-  // read now uses the same three-part key the write does instead of only
-  // resolving when every machine happens to agree on one path.
+  // THIS browser's real hostname is this machine's folder by that key — but
+  // ONLY as a fast path while nothing disagrees with it. `os.hostname()` can
+  // drift for the same physical machine (network-dependent suffix), so a
+  // freshly-written row under a "new" hostname is not automatically trusted
+  // over an established, disagreeing row elsewhere; see chooseLaunchCwdDetailed's
+  // doc (rule 1b) for the recency tie-break this section exercises.
   describe("machine-aware read (realHostname)", () => {
     const twoMachines = [
       { absolute_path: "/Users/nick/projects/x", hostname: "Nicks-MacBook-Pro.local" },
       { absolute_path: "/home/nick/code/x", hostname: "linux-box" },
     ];
 
-    it("THE fix: >1 distinct paths but one row is ours → resolves to OUR path", () => {
-      expect(chooseLaunchCwd(twoMachines, "Nicks-MacBook-Pro.local")).toBe("/Users/nick/projects/x");
-      expect(chooseLaunchCwd(twoMachines, "linux-box")).toBe("/home/nick/code/x");
+    it("no disagreement (single row) → resolves to OUR path regardless of recency", () => {
+      // Unchanged fast path (rule 1a): only one row exists at all, so there's
+      // nothing to disagree with — no updated_at needed.
+      expect(
+        chooseLaunchCwd([{ absolute_path: "/Users/nick/projects/x", hostname: "Nicks-MacBook-Pro.local" }], "Nicks-MacBook-Pro.local")
+      ).toBe("/Users/nick/projects/x");
     });
 
     it("unchanged when the hostname is unknown — same rows still ambiguous", () => {
@@ -930,16 +937,83 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
       ).toBe("/Users/nick/x");
     });
 
-    it("our row beats a manual-pin row recorded before the machine was known", () => {
+    it("our row beats a manual-pin row recorded before the machine was known, WHEN it's also more recent", () => {
       expect(
         chooseLaunchCwd(
           [
-            { absolute_path: "/Users/nick/guessed", hostname: MANUAL_PIN_HOSTNAME },
-            { absolute_path: "/Users/nick/actual", hostname: "Nicks-MacBook-Pro.local" },
+            { absolute_path: "/Users/nick/guessed", hostname: MANUAL_PIN_HOSTNAME, updated_at: "2026-08-01T00:00:00Z" },
+            { absolute_path: "/Users/nick/actual", hostname: "Nicks-MacBook-Pro.local", updated_at: "2026-08-20T00:00:00Z" },
           ],
           "Nicks-MacBook-Pro.local"
         )
       ).toBe("/Users/nick/actual");
+    });
+
+    // ── THE FIX: hostname drift no longer blindly wins on disagreement ───────
+    // This is the exact scenario the "hostname drift" card describes: one
+    // physical Mac resolves os.hostname() differently depending on network,
+    // leaving an established, correct row under the "old" hostname (kept
+    // fresh — every ordinary launch on that network self-heals it) and a
+    // one-off, WRONG row under a "new" hostname, written back when the drift
+    // first happened and never touched since. The browser's currently-
+    // remembered hostname (realHostname) matches the new, wrong row — but it
+    // must NOT win just because it matches; recency (updated_at) across ALL
+    // rows decides, and here the CORRECT row is the more recently updated one.
+    it("THE FIX: current-hostname row LOSES to a more recently updated other-hostname row", () => {
+      const rows = [
+        // Established, correct row — kept fresh by ordinary launches on the "old" hostname.
+        { absolute_path: "/Users/nick/projects/vibe-coding-ideas", hostname: "Nicks-MBP.home.local", updated_at: "2026-08-25T00:00:00Z" },
+        // One-off WRONG row — written once when the network/hostname drift first
+        // happened, never updated since (this is the poisoned row from the sibling bug).
+        { absolute_path: "/Users/nick/projects/wrong-checkout", hostname: "Nicks-MacBook-Pro.local", updated_at: "2026-08-05T00:00:00Z" },
+      ];
+      expect(chooseLaunchCwd(rows, "Nicks-MacBook-Pro.local")).toBe(
+        "/Users/nick/projects/vibe-coding-ideas"
+      );
+      // Decision detail: the caller can tell this was a recovery, and from where.
+      expect(chooseLaunchCwdDetailed(rows, "Nicks-MacBook-Pro.local")).toEqual({
+        cwd: "/Users/nick/projects/vibe-coding-ideas",
+        recoveredFromHostname: "Nicks-MBP.home.local",
+      });
+    });
+
+    it("current-hostname row WINS when it genuinely is the more recent write", () => {
+      const rows = [
+        { absolute_path: "/Users/nick/projects/old-checkout", hostname: "Nicks-MBP.home.local", updated_at: "2026-08-01T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/new-checkout", hostname: "Nicks-MacBook-Pro.local", updated_at: "2026-08-29T00:00:00Z" },
+      ];
+      const decision = chooseLaunchCwdDetailed(rows, "Nicks-MacBook-Pro.local");
+      expect(decision.cwd).toBe("/Users/nick/projects/new-checkout");
+      // No recovery — the current machine's own row is the one that won.
+      expect(decision.recoveredFromHostname).toBeUndefined();
+    });
+
+    it("a multi-row group on the OTHER side uses its most-recently-updated row for the tie-break", () => {
+      const rows = [
+        { absolute_path: "/Users/nick/projects/ours", hostname: "mine", updated_at: "2026-08-15T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/theirs", hostname: "old-1", updated_at: "2026-08-01T00:00:00Z" },
+        // Still one distinct "other" path, but this specific row is newer than "ours".
+        { absolute_path: "/Users/nick/projects/theirs", hostname: "old-2", updated_at: "2026-08-20T00:00:00Z" },
+      ];
+      expect(chooseLaunchCwd(rows, "mine")).toBe("/Users/nick/projects/theirs");
+    });
+
+    it("recency can't be compared (updated_at missing on the deciding side) → asks again, doesn't guess", () => {
+      const rows = [
+        { absolute_path: "/Users/nick/projects/mine", hostname: "mine" }, // no updated_at
+        { absolute_path: "/Users/nick/projects/theirs", hostname: "theirs", updated_at: "2026-08-20T00:00:00Z" },
+      ];
+      expect(chooseLaunchCwd(rows, "mine")).toBeUndefined();
+      expect(chooseLaunchCwdDetailed(rows, "mine")).toEqual({ cwd: undefined });
+    });
+
+    it("other rows disagree WITH EACH OTHER too (3-way split) → today's safe fallback, no 3-way tie-break invented", () => {
+      const rows = [
+        { absolute_path: "/Users/nick/projects/mine", hostname: "mine", updated_at: "2026-08-29T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/b", hostname: "host-b", updated_at: "2026-08-10T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/c", hostname: "host-c", updated_at: "2026-08-15T00:00:00Z" },
+      ];
+      expect(chooseLaunchCwd(rows, "mine")).toBeUndefined();
     });
 
     it("trims our row's path, like every other branch", () => {
@@ -1086,9 +1160,12 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH — s
   });
 
   it("…but resolves that same ambiguous set once realHostname names one of the rows", () => {
+    // Own row (linux) must also be the more recently updated one — with the
+    // recency tie-break, hostname identity alone no longer decides a genuine
+    // disagreement (see chooseLaunchCwdDetailed's rule 1b).
     const ambiguous = [
-      { absolute_path: "/Users/nick/x", hostname: "mac" },
-      { absolute_path: "/home/nick/x", hostname: "linux" },
+      { absolute_path: "/Users/nick/x", hostname: "mac", updated_at: "2026-08-01T00:00:00Z" },
+      { absolute_path: "/home/nick/x", hostname: "linux", updated_at: "2026-08-20T00:00:00Z" },
     ];
     const t = resolveEffectiveLaunchTarget({
       hasRepo: false,
@@ -1159,6 +1236,41 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH — s
     expect(t.displayPath).toBeUndefined();
     expect(t.displayLabel).toBeUndefined();
     expect(t.source).toBe("none");
+  });
+
+  // Hostname-drift recovery (rule 1b) surfaced end to end — the launch button
+  // reads this off resolveEffectiveLaunchTarget, not chooseLaunchCwd directly.
+  it("recoveredFromHostname is set, and the label names the row actually used, on a recency recovery", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      recordedPaths: [
+        { absolute_path: "/Users/nick/projects/correct", hostname: "old-host", updated_at: "2026-08-25T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/wrong", hostname: "new-host", updated_at: "2026-08-05T00:00:00Z" },
+      ],
+      realHostname: "old-host",
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/correct");
+    expect(t.recoveredFromHostname).toBeUndefined(); // "old-host" IS our own row here — no recovery
+  });
+
+  it("recoveredFromHostname names the OTHER machine when this machine's own row lost the tie-break", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      recordedPaths: [
+        { absolute_path: "/Users/nick/projects/correct", hostname: "old-host", updated_at: "2026-08-25T00:00:00Z" },
+        { absolute_path: "/Users/nick/projects/wrong", hostname: "new-host", updated_at: "2026-08-05T00:00:00Z" },
+      ],
+      realHostname: "new-host",
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/correct");
+    expect(t.recoveredFromHostname).toBe("old-host");
+    expect(t.displayLabel).toBe("This machine — old-host");
+    expect(t.source).toBe("recorded");
+  });
+
+  it("no recoveredFromHostname on the ordinary no-disagreement path", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: recorded });
+    expect(t.recoveredFromHostname).toBeUndefined();
   });
 });
 
@@ -1286,8 +1398,36 @@ describe("decidePinMigration (browser-pin → idea_project_paths migration decis
     });
 
     // End-to-end of the pair: migrate into an ambiguous set, then read back.
-    // Before this change the read returned undefined here forever.
-    it("insert then read → the machine's own row resolves out of an ambiguous set", () => {
+    it("insert then read → the machine's own row resolves once the OTHER rows agree with each other", () => {
+      // Two other rows sharing ONE path (not two disagreeing paths — see the
+      // next test for that case): own's row disagreeing with a single unified
+      // "everyone else" path is the recency tie-break (rule 1b), which this
+      // own row wins on account of being the most recently written.
+      const existing = [
+        { absolute_path: "/Users/other/x", hostname: "mac", updated_at: "2026-08-01T00:00:00Z" },
+        { absolute_path: "/Users/other/x", hostname: "linux", updated_at: "2026-08-01T00:00:00Z" },
+      ];
+      const decision = decidePinMigration(existing, "Nicks-MacBook-Pro.local");
+      expect(decision).toEqual({ action: "insert", hostname: "Nicks-MacBook-Pro.local" });
+      // Before our own row exists, both other rows agree on one path (rule 2).
+      expect(chooseLaunchCwd(existing, "Nicks-MacBook-Pro.local")).toBe("/Users/other/x");
+      const after = [
+        ...existing,
+        {
+          absolute_path: "/Users/nick/projects/mine",
+          hostname: "Nicks-MacBook-Pro.local",
+          updated_at: "2026-08-20T00:00:00Z",
+        },
+      ];
+      expect(chooseLaunchCwd(after, "Nicks-MacBook-Pro.local")).toBe("/Users/nick/projects/mine");
+    });
+
+    // Regression (behaviour intentionally CHANGED by the hostname-drift fix):
+    // when the OTHER rows disagree with each other too (a genuine 3-way
+    // split), chooseLaunchCwd no longer lets the current machine's own row
+    // win outright — that would be inventing a 3-way tie-break nobody asked
+    // for. It falls back to the existing safe "ask again" behaviour instead.
+    it("insert then read → a genuine 3-way split (others disagree with each other) still asks again", () => {
       const existing = [
         { absolute_path: "/Users/other/x", hostname: "mac" },
         { absolute_path: "/home/other/x", hostname: "linux" },
@@ -1299,7 +1439,7 @@ describe("decidePinMigration (browser-pin → idea_project_paths migration decis
         ...existing,
         { absolute_path: "/Users/nick/projects/mine", hostname: "Nicks-MacBook-Pro.local" },
       ];
-      expect(chooseLaunchCwd(after, "Nicks-MacBook-Pro.local")).toBe("/Users/nick/projects/mine");
+      expect(chooseLaunchCwd(after, "Nicks-MacBook-Pro.local")).toBeUndefined();
     });
   });
 

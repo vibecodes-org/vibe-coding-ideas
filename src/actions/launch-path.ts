@@ -73,7 +73,7 @@ async function upsertProjectPath(
       },
       { onConflict: "idea_id,owner_user_id,hostname" }
     )
-    .select("owner_user_id, hostname, absolute_path")
+    .select("owner_user_id, hostname, absolute_path, updated_at")
     .single();
 
   if (error) {
@@ -99,7 +99,10 @@ async function upsertProjectPath(
     return { ok: false };
   }
 
-  return { ok: true, recorded: { hostname: data.hostname, absolute_path: data.absolute_path } };
+  return {
+    ok: true,
+    recorded: { hostname: data.hostname, absolute_path: data.absolute_path, updated_at: data.updated_at },
+  };
 }
 
 /**
