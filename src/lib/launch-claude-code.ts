@@ -390,17 +390,6 @@ export function composeNewProjectPath(parent: string, name: string): string {
 export interface RecordedProjectPath {
   absolute_path: string;
   hostname: string;
-  /**
-   * ISO 8601 timestamp of the row's last write (`idea_project_paths.updated_at`,
-   * NOT NULL in the DB — every write path, agent or human, sets it). Optional
-   * here only because a handful of callers (older tests, the create-new
-   * localStorage path) never had a DB row to read it from. Used by
-   * `chooseLaunchCwd` to break a hostname-vs-hostname disagreement: see its
-   * doc for why recency, not "which hostname the browser currently
-   * remembers," is the right tie-break signal (task: hostname drift
-   * fragmenting the saved folder per machine).
-   */
-  updated_at?: string;
 }
 
 /**
@@ -538,36 +527,14 @@ export function decidePinMigration(
 }
 
 /** Internal shape `chooseLaunchCwdDetailed` works over — hostname + path already
- *  worktree-collapsed, `updated_at` parsed to epoch ms (undefined if missing
- *  or unparsable). */
+ *  worktree-collapsed. */
 interface UsableRow {
   hostname: string;
   absolute_path: string;
-  updatedAtMs: number | undefined;
-}
-
-/** Latest parseable `updated_at` across `rows`, or undefined if none has one. */
-function latestUpdatedAtMs(rows: readonly UsableRow[]): number | undefined {
-  let max: number | undefined;
-  for (const r of rows) {
-    if (r.updatedAtMs === undefined) continue;
-    if (max === undefined || r.updatedAtMs > max) max = r.updatedAtMs;
-  }
-  return max;
 }
 
 export interface ChooseLaunchCwdDecision {
   cwd: string | undefined;
-  /**
-   * Set when `cwd` was resolved from a row NOT under `realHostname`, despite
-   * `realHostname` having its own usable (but disagreeing, and older) row —
-   * i.e. the recency tie-break (rule 1b, below) fired. Lets a caller show
-   * something like "recovered from an older machine record" instead of
-   * silently attributing the folder to the browser's current hostname.
-   * Undefined whenever rule 1a/2/3 resolved instead (no disagreement to
-   * recover from), including when `cwd` is undefined.
-   */
-  recoveredFromHostname?: string;
 }
 
 /**
@@ -586,35 +553,33 @@ export interface ChooseLaunchCwdDecision {
  * currently remembers — see the "hostname drift" card this rewrites for.
  * Precedence:
  *
- *  1a. `realHostname` known AND a usable row exists under it AND every OTHER
- *      usable row agrees with its path (or there are no other rows) →
- *      **that row's path**, unchanged fast path. Where rule 1a and rule 2
- *      both apply they agree by definition.
- *  1b. `realHostname`'s row DISAGREES with other rows, but every one of those
- *      OTHER rows agrees with each other on a single different path (i.e.
- *      exactly 2 distinct paths total) → **recency tie-break**: the row(s)
- *      with the more recently updated `updated_at` win, regardless of which
- *      hostname they're under. Rationale: a hostname rename (the drift bug)
- *      writes a NEW row under a "new" hostname that is often the WRONG,
- *      stale-relative-to-reality folder, while the correct folder sits on an
- *      older, more-established row under the "old" hostname — hostname
- *      identity alone can no longer be trusted to pick the right one, but
- *      which row was written/self-healed most recently can. If either side's
- *      `updated_at` can't be compared (missing/unparsable on the row(s) that
- *      would decide it), this falls through to rule 3 (undefined) rather than
- *      guessing.
+ *  1. `realHostname` known AND a usable row exists under it AND every OTHER
+ *     usable row agrees with its path (or there are no other rows) →
+ *     **that row's path**, the fast path. Where rule 1 and rule 2 both apply
+ *     they agree by definition.
  *  2. Otherwise, 1 distinct path across all usable rows → that path, whether it
  *     came from one row or several (also covers "no `realHostname`" and
  *     "`realHostname` matches no row"). The common same-path-across-machines
  *     case (two hosts both checked out under /Users/nick/projects/<slug>):
  *     whichever machine the browser is on, the folder is at this path.
- *  3. Otherwise (0 usable rows; `realHostname` unknown/unmatched with >1
- *     distinct paths; >2 distinct paths even with `realHostname` known; or a
- *     1b recency tie-break that can't be compared) → undefined: the safe
- *     first-launch flow that asks. Never guess a path we can't tie to the
- *     machine actually running the launch, and never invent a 3-way
- *     tie-break — a disagreement rule 1b can't resolve stays exactly as
- *     ambiguous as it was before this row existed.
+ *  3. Otherwise — `realHostname`'s own row DISAGREES with at least one other
+ *     row (2-way, 3-way, or wider; 0 usable rows also lands here) →
+ *     undefined: the safe first-launch flow that asks. This INCLUDES the
+ *     case where every other row agrees with each other on one single other
+ *     path (a clean 2-way split). A previous version of this function tried
+ *     to break that specific 2-way case by `updated_at` recency — the row
+ *     written most recently wins. That is unsafe: a hostname-rename
+ *     poisoned row (the drift bug this function exists to defend against) is,
+ *     by construction, the NEWEST write in the table — it was JUST written by
+ *     the confused session — so "most recent wins" picks the poisoned row
+ *     every time in the real incident shape (old-hostname row = older +
+ *     correct; new-hostname row = newer + wrong). There is no reliable signal
+ *     in (hostname, path, timestamp) alone that tells a deliberate folder
+ *     move apart from a poisoning write — both look identical: a new row with
+ *     a recent timestamp. So a genuine disagreement, of any shape, is never
+ *     auto-resolved here; asking again is the correct, safe behaviour. Never
+ *     guess a path we can't tie unambiguously to the machine actually running
+ *     the launch.
  *
  * A row is only usable if its absolute_path is a plausible project folder
  * (strict validation, plus not `/`, a home directory, or another top-level
@@ -633,9 +598,7 @@ export function chooseLaunchCwdDetailed(
     .map((r) => ({
       hostname: r.hostname,
       absolute_path: stripClaudeWorktreeSuffix(r.absolute_path),
-      updatedAtMs: r.updated_at !== undefined ? Date.parse(r.updated_at) : undefined,
     }))
-    .map((r) => ({ ...r, updatedAtMs: Number.isNaN(r.updatedAtMs) ? undefined : r.updatedAtMs }))
     .filter((r) => isPlausibleProjectPath(r.absolute_path));
 
   if (usable.length === 0) return { cwd: undefined };
@@ -647,27 +610,8 @@ export function chooseLaunchCwdDetailed(
   if (!own) return { cwd: undefined };
 
   // own's row disagrees with at least one other row (distinctPaths.size > 1).
-  const otherRows = usable.filter((r) => r.absolute_path !== own.absolute_path);
-  const otherDistinctPaths = new Set(otherRows.map((r) => r.absolute_path));
-  if (otherDistinctPaths.size > 1) {
-    // The other rows don't even agree with each other — a genuine 3+-way
-    // split. No basis to pick among them; keep the existing safe fallback.
-    return { cwd: undefined };
-  }
-
-  // Exactly 2 distinct paths: own's, and one shared by every other row.
-  // Recency decides — the row(s) written most recently win.
-  const ownRows = usable.filter((r) => r.absolute_path === own.absolute_path);
-  const ownRecency = latestUpdatedAtMs(ownRows);
-  const otherRecency = latestUpdatedAtMs(otherRows);
-  if (ownRecency === undefined || otherRecency === undefined) {
-    // Can't compare — don't guess.
-    return { cwd: undefined };
-  }
-  if (otherRecency > ownRecency) {
-    return { cwd: otherRows[0].absolute_path, recoveredFromHostname: otherRows[0].hostname };
-  }
-  return { cwd: own.absolute_path };
+  // No signal here can safely pick a winner — ask again rather than guess.
+  return { cwd: undefined };
 }
 
 /** See `chooseLaunchCwdDetailed` for the full rule set this wraps. */
@@ -718,17 +662,6 @@ export interface EffectiveLaunchTarget {
    * `MANUAL_PIN_HOSTNAME`).
    */
   source: "saved" | "recorded" | "none";
-  /**
-   * Set when `cwd` was recovered from a DIFFERENT machine's row despite this
-   * browser's own (current-hostname) row existing and disagreeing with it —
-   * `chooseLaunchCwdDetailed`'s rule 1b (recency tie-break) fired. Names the
-   * hostname the resolved path actually came from, so a caller CAN show
-   * something honest like "recovered from an older machine record" instead
-   * of implying the current machine's own row was used. Undefined in every
-   * other case, including "no path resolved" and "resolved without any
-   * disagreement to recover from."
-   */
-  recoveredFromHostname?: string;
 }
 
 export interface ResolveEffectiveLaunchTargetArgs {
@@ -775,16 +708,13 @@ export function resolveEffectiveLaunchTarget({
   recordedPaths,
   realHostname = null,
 }: ResolveEffectiveLaunchTargetArgs): EffectiveLaunchTarget {
-  const { cwd: recordedCwd, recoveredFromHostname } = chooseLaunchCwdDetailed(recordedPaths, realHostname);
+  const { cwd: recordedCwd } = chooseLaunchCwdDetailed(recordedPaths, realHostname);
   if (recordedCwd) {
     // Label from the row we actually resolved FROM where we can: with several
     // rows sharing the resolved path (rule 2), the one under this machine's own
     // hostname is the honest thing to name in "This machine — <host>". Falling
     // back to the first path-match keeps the old label for unknown-identity
-    // browsers rather than dropping to the bare "This machine". A recovery
-    // (recoveredFromHostname set) never matches realHostname by construction —
-    // this machine's own row disagreed and lost — so it always falls to the
-    // first path-match, which is exactly the recovered-from row.
+    // browsers rather than dropping to the bare "This machine".
     const pathMatches = (recordedPaths ?? []).filter(
       (r) => stripClaudeWorktreeSuffix(r.absolute_path) === recordedCwd
     );
@@ -796,7 +726,6 @@ export function resolveEffectiveLaunchTarget({
       displayLabel: match ? `This machine — ${match.hostname}` : "This machine",
       host: match ? match.hostname : null,
       source: "recorded",
-      ...(recoveredFromHostname ? { recoveredFromHostname } : {}),
     };
   }
 
