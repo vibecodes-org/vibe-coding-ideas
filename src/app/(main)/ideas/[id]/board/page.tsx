@@ -178,7 +178,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     isTeamMember
       ? supabase
           .from("idea_project_paths")
-          .select("absolute_path, hostname")
+          .select("absolute_path, hostname, updated_at")
           .eq("idea_id", id)
           .eq("owner_user_id", user.id)
       : Promise.resolve({ data: null }),
