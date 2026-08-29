@@ -1646,23 +1646,20 @@ describe("useTerminalSession", () => {
     });
   });
 
-  // Regression net for the dropped-cwd/worktree bug found in the "Reproduce &
-  // Investigate" step: a second concurrent session on the same recorded
-  // folder sets `essentials.isolate` (so the launch fires `--worktree`), but
-  // when the recorded path is too long for the vibecodes:// URL budget,
-  // buildBoundedDeepLink drops the `cwd` param entirely (folding a `cd`
-  // line into the prompt instead — inert prose the bridge never executes).
-  // Firing `--worktree` with no `cwd` param left the bridge falling back to
-  // `process.cwd()` (`/` for a helper-forked process), and Claude Code
-  // refuses to start there. The fix: `worktree` is gated on the launch link
-  // actually carrying a `cwd` param, not on `essentials.isolate` alone.
-  describe("concurrent-session isolation vs. a dropped cwd (worktree regression)", () => {
-    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH=2048) to force
-    // buildBoundedDeepLink past tier 1, regardless of the rest of the link's
-    // fixed overhead.
+  // Nick, 29 Aug 2026: the in-browser launch NEVER trades the folder away to
+  // make the prompt fit. The old ladder dropped `cwd=` from a launch whose
+  // prompt missed the cap by 56 chars (long board title + a longer folder);
+  // the bridge then spawned claude at `/` (a helper-forked process's cwd),
+  // the prompt said "cd in first", and the agent cd'd into — and recorded —
+  // another project's checkout as that board's folder. Now: the prompt
+  // shrinks around the folder, and a folder that can't fit at all refuses to
+  // launch (toast) rather than launching folder-less.
+  describe("the folder is never dropped from the launch link", () => {
+    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH=2048) that no prompt
+    // trimming could ever make room for it.
     const veryLongPath = `/Users/nick/projects/${"x".repeat(2200)}`;
 
-    it("does NOT fire --worktree when the recorded folder is too long to fit the launch link's cwd param", async () => {
+    it("refuses to launch (toast, no link fired) when the recorded folder can't fit the link at all — never a folder-less launch", async () => {
       const { result } = renderHook(() =>
         useTerminalSession(
           {
@@ -1680,17 +1677,48 @@ describe("useTerminalSession", () => {
       });
 
       // The recorded folder is still resolved as this session's cwd (that
-      // resolution is independent of the URL budget) — isolate would have
-      // been requested for it.
+      // resolution is independent of the URL budget).
       expect(result.current.cwd).toBe(veryLongPath);
+
+      // No link fired: a folder-less launch would start the agent at `/`.
+      expect(document.querySelectorAll("iframe")).toHaveLength(0);
+      expect(toastError).toHaveBeenCalledWith(
+        "Project path too long to launch — open the folder manually and run Claude Code there",
+      );
+    });
+
+    it("keeps the folder and shrinks the prompt when the full prompt + folder overflow the cap (the personal-finance-board repro)", async () => {
+      // The real shape: a 67-char folder and a 55-char board title. With the
+      // full "find work" step the link overflows by a few dozen chars; the
+      // compact work step rides instead and the folder stays.
+      const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            ideaTitle: "Personal spending and financial analysis and tracking",
+            recordedProjectPaths: [{ absolute_path: realPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
 
       const iframes = document.querySelectorAll("iframe");
       expect(iframes).toHaveLength(1);
       const src = iframes[0].getAttribute("src") ?? "";
-      // Degraded launch: no real cwd param made it into the URL, so
-      // `--worktree` must NOT be fired (would spawn against `/`, a non-repo).
-      expect(src).not.toContain("worktree=1");
-      expect(src).not.toContain(encodeURIComponent(veryLongPath));
+      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src).toContain(`cwd=${encodeURIComponent(realPath)}`);
+      const prompt = decodeURIComponent(src.split("prompt=")[1] ?? "");
+      // The agent still knows which board and to ask first — even if only
+      // the compact form of the work step made it.
+      expect(prompt).toContain(`get_board (idea_id ${descriptor.ideaId})`);
+      expect(prompt).toContain("ASK first");
     });
 
     it("still fires --worktree for the ordinary case: a short recorded folder that fits the cwd param AND another session is already live on the board", async () => {

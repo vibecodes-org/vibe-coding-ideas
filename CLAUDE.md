@@ -113,6 +113,15 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   session works in the main folder. Never tell a session to `cd` between the
   two. Don't add words to the compact prompt's protected head: the realistic
   repo-backed launch link is within ~5 chars of its cap (deep-link.test.ts).
+- **The browser launch link never drops the folder to make the prompt fit.**
+  `buildBoundedDeepLink` is called with `cwdPolicy: "keep"` from
+  `use-terminal-session.ts`: the prompt degrades around `cwd=` (directory echo
+  → full work step → compact work step → head only), and a folder that can't
+  fit at all refuses to launch (toast). The old ladder dropped `cwd=` on a
+  long-titled board; the bridge then spawned claude at `/` (a helper-forked
+  process's cwd), the prompt said "cd in first", and the agent cd'd into and
+  *recorded* another project's checkout as that board's folder (29 Aug 2026).
+  The terminal-window (claude-cli://) launch keeps the default "degrade" ladder.
 
 ### Logging
 - Use `logger.*` from `src/lib/logger.ts`, NOT `console.*`

@@ -991,6 +991,18 @@ interface CompactStepPieces {
   /** Always-present, path-length-independent: MCP connect + record_project_path. */
   essentialSteps: string[];
   work: string;
+  /**
+   * A SHORT form of `work` carrying the same load-bearing facts (the
+   * idea/task id, the "ask first" rule) in far fewer words. Rides only when
+   * the full `work` step can't fit a URL budget whole — see
+   * assembleAtomicTail's degrade ladder. Nick, 29 Aug 2026: before this rung
+   * existed, a long board title + a longer-than-average folder left the
+   * in-browser launch link 56 encoded chars short of fitting the full work
+   * step alongside the folder — and the ladder chose to drop the FOLDER, so
+   * the session started at `/` and recorded another project's checkout as
+   * this board's folder.
+   */
+  workCompact: string;
 }
 
 function buildCompactStepPieces({
@@ -1078,12 +1090,16 @@ function buildCompactStepPieces({
   const work = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
     : `Find work, but ASK first: call get_board (idea_id ${ideaId}), NOT get_my_tasks. Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). Name the top one, ask before starting it, and wait for my reply. Then get_task, assign to yourself, move to In Progress, start. Comment as you go.`;
+  // Same facts, fewer words — the budget-pressure fallback for `work`.
+  const workCompact = taskId
+    ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start.`
+    : `Find work, but ASK first: get_board (idea_id ${ideaId}); only To Do/Backlog. Name the top one and wait for my reply before starting it.`;
 
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`
     : `Set up VibeCodes and pick up board work for "${title}".`;
 
-  return { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work };
+  return { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work, workCompact };
 }
 
 /**
@@ -1180,6 +1196,14 @@ export interface CompactPromptEssentials {
    */
   work?: string;
   /**
+   * Short form of `work` (see CompactStepPieces.workCompact) — the rung
+   * between "full work step" and "no work step at all" in
+   * assembleAtomicTail's ladder. Whole-or-omitted like everything else there.
+   * Optional for back-compat with synthetic fixtures; buildCompactPromptEssentials
+   * always supplies it.
+   */
+  workCompact?: string;
+  /**
    * The existing-folder confirm-echo tail step (duplicates the deep link's
    * `cwd` param, so it's genuinely disposable — unlike `work`). LOWEST
    * priority of everything in the trimmable tail: `fitCompactEssentials`
@@ -1220,7 +1244,7 @@ export interface CompactPromptEssentials {
  * nothing for fitCompactEssentials to budget against there any more.
  */
 export function buildCompactPromptEssentials(args: CompactBootstrapArgs): CompactPromptEssentials {
-  const { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work } =
+  const { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work, workCompact } =
     buildCompactStepPieces(args);
 
   // Priority order for the BUG B atomic degrade: leadingSteps (mkdir/clone —
@@ -1246,6 +1270,7 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
     tail: numberedTail,
     isolate,
     work,
+    workCompact,
     directoryEcho,
     isolationNote,
   };
@@ -1320,8 +1345,14 @@ export function fitCompactEssentials(
  *     but the mitigation this note carries is honest-gap-on-drop by design;
  *     losing it before `work`, which carries the idea/task id with no
  *     recovery path, is the correct trade).
- *  4. Absolute floor: even `head` + `work` alone doesn't fit. `work` is still
- *     never fragmented — it's dropped entirely, and `head` runs through
+ *  4. workCompact alone, whole (Nick, 29 Aug 2026) — the same idea/task id
+ *     and "ask first" rule in far fewer words. This is the rung that lets a
+ *     URL-capped launch keep its FOLDER: without it, a full work step that
+ *     missed the budget by a few dozen chars used to cost either the work
+ *     step (agent sits idle) or — in buildBoundedDeepLink's old ladder — the
+ *     `cwd=` param itself (agent starts at `/` and wanders).
+ *  5. Absolute floor: even `head` + `workCompact` doesn't fit. Neither work
+ *     form is ever fragmented — both are dropped, and `head` runs through
  *     enforcePromptLength as the final, already-battle-tested safety net
  *     (guaranteed <= budget in every case, per its own BUG 6 fix).
  *
@@ -1334,25 +1365,34 @@ function assembleAtomicTail(
   head: string,
   budget: number
 ): string {
-  const { directoryEcho, isolationNote, work, headSteps } = essentials;
+  const { directoryEcho, isolationNote, work, workCompact, headSteps } = essentials;
   const stepOffset = headSteps?.length ?? 0;
 
-  const buildTail = (includeDirectoryEcho: boolean, includeIsolationNote: boolean): string => {
+  const buildTail = (
+    includeDirectoryEcho: boolean,
+    includeIsolationNote: boolean,
+    workStep: string
+  ): string => {
     const steps: string[] = [];
     if (includeDirectoryEcho && directoryEcho) steps.push(directoryEcho);
     if (includeIsolationNote && isolationNote) steps.push(isolationNote);
-    steps.push(work as string);
+    steps.push(workStep);
     return steps.map((s, i) => `${stepOffset + i + 1}. ${s}`).join("\n");
   };
 
-  const full = `${head}${buildTail(true, true)}`;
+  const full = `${head}${buildTail(true, true, work as string)}`;
   if (encodedLength(full) <= budget) return full;
 
-  const withoutDirectoryEcho = `${head}${buildTail(false, true)}`;
+  const withoutDirectoryEcho = `${head}${buildTail(false, true, work as string)}`;
   if (encodedLength(withoutDirectoryEcho) <= budget) return withoutDirectoryEcho;
 
-  const workOnly = `${head}${buildTail(false, false)}`;
+  const workOnly = `${head}${buildTail(false, false, work as string)}`;
   if (encodedLength(workOnly) <= budget) return workOnly;
+
+  if (workCompact) {
+    const compactOnly = `${head}${buildTail(false, false, workCompact)}`;
+    if (encodedLength(compactOnly) <= budget) return compactOnly;
+  }
 
   // Even the work step alone doesn't fit alongside the head — omit it rather
   // than fragment it. `head` itself already fits `budget` (resolveEssentialHead
@@ -1459,6 +1499,29 @@ export interface BoundedDeepLinkArgs {
    * or relay/session/token).
    */
   buildLink: (parts: { prompt: string; cwd?: string }) => string;
+  /**
+   * What to do when `cwd` + the FULL essentials don't both fit `cap`.
+   *
+   *  - `"degrade"` (default — the claude-cli:// terminal-window launch): the
+   *    original ladder below. The cwd param is given up (tiers 2/3) so the
+   *    essentials can budget against the full ceiling; a `cd` line is folded
+   *    into the prompt where it fits. Tolerable there because the user SEES
+   *    the prompt before Claude Code runs it, and a folder-less claude-cli://
+   *    launch opens wherever the desktop app defaults to, not `/`.
+   *  - `"keep"` (the in-browser vibecodes:// launch, Nick 29 Aug 2026): the
+   *    cwd param is NEVER dropped. The prompt degrades around it via
+   *    fitCompactEssentials' own ladder (directory echo → isolation note →
+   *    full work step → compact work step → head only), and if even the
+   *    folder alone can't fit alongside the fixed link overhead the result is
+   *    `ok: false` (the caller's "path too long" toast) — never a folder-less
+   *    launch. The bridge at the other end of that link spawns `claude` in
+   *    `process.cwd()` when no cwd arrives, which for a helper-forked child
+   *    is `/`; the bootstrap prompt then tells the agent to "cd in first",
+   *    and it cd's into whatever looks plausible — that is exactly how the
+   *    personal-finance board's session ended up working in, and recording,
+   *    the VibeCodes checkout.
+   */
+  cwdPolicy?: "degrade" | "keep";
 }
 
 export type BoundedDeepLinkResult =
@@ -1513,18 +1576,29 @@ export type BoundedDeepLinkResult =
 export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLinkResult {
   const { essentials, cwd, cap, buildLink } = args;
   const overhead = args.promptKeyOverhead ?? 0;
+  const keepCwd = args.cwdPolicy === "keep";
 
-  // Tier 1 — cwd rides its own URL param, but only when doing so doesn't
-  // cost any essentials degradation (see the ladder note above).
+  // Tier 1 — cwd rides its own URL param. Under the default "degrade" policy
+  // this is accepted only when it doesn't cost any essentials degradation (see
+  // the ladder note above); under "keep" it is THE outcome — the prompt has
+  // already been fitted around the folder by fitCompactEssentials' ladder, and
+  // whatever survived rides. (An over-cap URL is still never returned: the
+  // `<= cap` check stands, and fitCompactEssentials guarantees the fitted
+  // prompt is within `budgetWithCwd`, so this can only fail on a caller whose
+  // buildLink measures differently from its own `prompt: ""` baseline.)
   const baseWithCwd = buildLink({ prompt: "", cwd });
   const budgetWithCwd = cap - baseWithCwd.length - overhead;
   if (budgetWithCwd > 0) {
     const prompt = fitCompactEssentials(essentials, budgetWithCwd);
     const url = buildLink({ prompt, cwd });
-    if (url.length <= cap && essentialsSurviveWhole(essentials, prompt)) {
+    if (url.length <= cap && (keepCwd || essentialsSurviveWhole(essentials, prompt))) {
       return { ok: true, url, droppedCwd: false };
     }
   }
+  // "keep": the folder can't fit alongside the link's fixed overhead at all
+  // (a >1,100-char path, at today's overhead). Refuse — the caller toasts —
+  // rather than fire a folder-less launch that starts the agent at `/`.
+  if (keepCwd) return { ok: false };
 
   // Tiers 2/3 — drop the cwd param. budgetNoCwd is CONSTANT regardless of
   // path length (unlike budgetWithCwd, which shrinks linearly with it), so

@@ -2804,3 +2804,243 @@ describe("FIX A: buildBoundedDeepLink (cwd param unclamped, QA BUG A)", () => {
     });
   });
 });
+
+// ── Nick, 29 Aug 2026: the in-browser launch never trades the folder away ──
+// A brand-new browser session on the "Personal spending and financial analysis
+// and tracking" board started in the VibeCodes checkout. Its launch link was
+// 2021/2048 chars with NO cwd= param: the fixed overhead (relay + session +
+// two 283-char tokens + cols/rows/model/permissionMode = 763 chars) plus the
+// 78-char folder param left the full prompt 56 encoded chars over budget, so
+// the old ladder dropped the FOLDER to give the "find work" step its space.
+// The bridge then spawned claude at `/`, the prompt said "cd in first", and
+// the agent cd'd into — and recorded — another project's checkout.
+describe("buildBoundedDeepLink cwdPolicy: keep + the compact work-step rung (Nick, 29 Aug 2026)", () => {
+  const relay = "wss://vibecodes-terminal-relay.nickball.workers.dev";
+  const session = "3960fe51-6010-44e8-9e77-a3c5882afffd";
+  const realToken = "x".repeat(283); // measured length of a real HMAC-signed token
+  const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
+  const realTitle = "Personal spending and financial analysis and tracking";
+  const CAP = 2048;
+
+  /** Mirrors buildLaunchDeepLink's real param set and order (drift-tested there). */
+  function realVibecodesLink(parts: { prompt: string; cwd?: string }): string {
+    const p = [
+      `relay=${encodeURIComponent(relay)}`,
+      `session=${encodeURIComponent(session)}`,
+      `token=${encodeURIComponent(realToken)}`,
+      `helperToken=${encodeURIComponent(realToken)}`,
+    ];
+    if (parts.cwd) p.push(`cwd=${encodeURIComponent(parts.cwd)}`);
+    p.push("cols=213", "rows=33", "model=sonnet", "permissionMode=auto");
+    if (parts.prompt) p.push(`prompt=${encodeURIComponent(parts.prompt)}`);
+    return `vibecodes://launch?${p.join("&")}`;
+  }
+  const decodePrompt = (url: string) => decodeURIComponent(url.split("prompt=")[1] ?? "");
+
+  const realEssentials = () =>
+    buildCompactPromptEssentials({
+      appUrl: APP_URL,
+      ideaId: realIdeaId,
+      ideaTitle: realTitle,
+      mode: "existing",
+      repoUrl: null,
+      existingPath: realPath,
+    });
+
+  it("REPRO: the real launch shape genuinely overflows — the old default ladder drops the folder", () => {
+    const result = buildBoundedDeepLink({
+      essentials: realEssentials(),
+      cwd: realPath,
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // This is the bug, pinned so the fixture stays honest: if a future prose
+      // trim makes the full prompt fit alongside the folder, this repro no
+      // longer exercises the overflow path and needs a longer title/path.
+      expect(result.droppedCwd).toBe(true);
+      expect(result.url).not.toContain("cwd=");
+    }
+  });
+
+  it("FIX: with cwdPolicy 'keep', the same launch keeps the folder and rides the compact work step", () => {
+    const essentials = realEssentials();
+    const result = buildBoundedDeepLink({
+      essentials,
+      cwd: realPath,
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      cwdPolicy: "keep",
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.droppedCwd).toBe(false);
+    expect(result.url.length).toBeLessThanOrEqual(CAP);
+    expect(result.url).toContain(`cwd=${encodeURIComponent(realPath)}`);
+    const prompt = decodePrompt(result.url);
+    // Head intact (connect + record), work step present in its COMPACT form,
+    // whole — the agent still knows which board and that it must ask first.
+    for (const step of essentials.headSteps ?? []) expect(prompt).toContain(step);
+    expect(prompt).not.toContain(essentials.work as string);
+    expect(prompt).toContain(essentials.workCompact as string);
+    expect(prompt).toContain(`get_board (idea_id ${realIdeaId})`);
+    expect(prompt).toContain("ASK first");
+    // Never a fragment: the compact step ends the prompt cleanly.
+    expect(prompt.trimEnd().endsWith("before starting it.")).toBe(true);
+  });
+
+  it("'keep' still rides the FULL work step when it fits (short title — the VibeCodes board's own shape)", () => {
+    const essentials = buildCompactPromptEssentials({
+      appUrl: APP_URL,
+      ideaId: realIdeaId,
+      ideaTitle: "VibeCodes",
+      mode: "existing",
+      repoUrl: null,
+      existingPath: "/Users/nickball/projects/vibe-coding-ideas",
+    });
+    const result = buildBoundedDeepLink({
+      essentials,
+      cwd: "/Users/nickball/projects/vibe-coding-ideas",
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      cwdPolicy: "keep",
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.url).toContain("cwd=");
+    expect(decodePrompt(result.url)).toContain(essentials.work as string);
+  });
+
+  it("'keep' with a task-scoped launch keeps the folder and the task id", () => {
+    const taskId = "042d9505-4902-422a-990b-6371fbf1128f";
+    const essentials = buildCompactPromptEssentials({
+      appUrl: APP_URL,
+      ideaId: realIdeaId,
+      ideaTitle: realTitle,
+      mode: "existing",
+      repoUrl: null,
+      existingPath: realPath,
+      taskId,
+    });
+    const result = buildBoundedDeepLink({
+      essentials,
+      cwd: realPath,
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      cwdPolicy: "keep",
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.url).toContain(`cwd=${encodeURIComponent(realPath)}`);
+    expect(decodePrompt(result.url)).toContain(`task_id ${taskId}`);
+  });
+
+  it("'keep' NEVER returns a folder-less launch across a dense-path sweep: either the cwd param rides, or ok:false", () => {
+    function denselyNestedCwd(length: number): string {
+      let path = "";
+      while (path.length < length) path += "/nested-folder-name";
+      return path.slice(0, length);
+    }
+    for (const cwdLen of [60, 200, 500, 900, 1100, 1300, 1650, 2500]) {
+      for (const titleLen of [9, 55, 80]) {
+        const cwd = denselyNestedCwd(cwdLen);
+        const essentials = buildCompactPromptEssentials({
+          appUrl: APP_URL,
+          ideaId: realIdeaId,
+          ideaTitle: "T".repeat(titleLen),
+          mode: "existing",
+          repoUrl: null,
+          existingPath: cwd,
+        });
+        const result = buildBoundedDeepLink({
+          essentials,
+          cwd,
+          cap: CAP,
+          promptKeyOverhead: "&prompt=".length,
+          cwdPolicy: "keep",
+          buildLink: realVibecodesLink,
+        });
+        if (!result.ok) continue; // toast path — nothing fired, nothing to check
+        expect(result.droppedCwd, `cwd=${cwdLen} title=${titleLen}`).toBe(false);
+        expect(result.url, `cwd=${cwdLen} title=${titleLen}`).toContain(`cwd=${encodeURIComponent(cwd)}`);
+        expect(result.url.length, `cwd=${cwdLen} title=${titleLen}`).toBeLessThanOrEqual(CAP);
+      }
+    }
+  });
+
+  it("'keep' refuses (ok:false) rather than launching folder-less when even the folder alone can't fit", () => {
+    const cwd = "/" + "x".repeat(2200);
+    const result = buildBoundedDeepLink({
+      essentials: realEssentials(),
+      cwd,
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      cwdPolicy: "keep",
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("the default ('degrade') policy is unchanged — the claude-cli:// terminal-window launch keeps its ladder", () => {
+    const essentials: CompactPromptEssentials = {
+      header: "HEADER",
+      headSteps: ["STEP_ONE_MCP_CONNECT", "STEP_TWO_RECORD_PATH"],
+      head: "HEADER\n\n1. STEP_ONE_MCP_CONNECT\n2. STEP_TWO_RECORD_PATH\n",
+      tail: "3. WORK",
+    };
+    const buildLink = (parts: { prompt: string; cwd?: string }) => {
+      const p = [`q=${encodeURIComponent(parts.prompt)}`];
+      if (parts.cwd) p.push(`cwd=${encodeURIComponent(parts.cwd)}`);
+      return `scheme://open?${p.join("&")}`;
+    };
+    // Same fixture as "tier 3" above: default policy still fires folder-less.
+    const result = buildBoundedDeepLink({ essentials, cwd: "/" + "x".repeat(2000), cap: 300, buildLink });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.droppedCwd).toBe(true);
+  });
+
+  describe("assembleAtomicTail's compact rung (via fitCompactEssentials)", () => {
+    const head = "HEADER\n\n1. CONNECT\n2. RECORD\n";
+    const work = "FULL WORK STEP — long enough to matter " + "w".repeat(60);
+    // Longer than fitEssentialHead's truncation-marker reserve (~23 encoded
+    // chars), so a budget one short of "head + compact" still admits the
+    // FULL head and the rung genuinely decides the outcome.
+    const workCompact = "SHORT WORK STEP, still well under the full one";
+    const essentials: CompactPromptEssentials = {
+      header: "HEADER",
+      headSteps: ["CONNECT", "RECORD"],
+      head,
+      tail: `3. ${work}`,
+      work,
+      workCompact,
+    };
+    const enc = (s: string) => encodeURIComponent(s).length;
+
+    it("rides the full work step when it fits", () => {
+      expect(fitCompactEssentials(essentials, enc(`${head}3. ${work}`))).toBe(`${head}3. ${work}`);
+    });
+
+    it("falls back to the compact work step, whole, when the full one doesn't fit", () => {
+      const out = fitCompactEssentials(essentials, enc(`${head}3. ${work}`) - 1);
+      expect(out).toBe(`${head}3. ${workCompact}`);
+    });
+
+    it("drops both forms cleanly (head only) when even the compact one doesn't fit — never a fragment", () => {
+      const out = fitCompactEssentials(essentials, enc(`${head}3. ${workCompact}`) - 1);
+      expect(out).toBe(head);
+      expect(out).not.toContain("WORK");
+    });
+
+    it("a caller with no compact form behaves exactly as before (work dropped → head only)", () => {
+      const legacy: CompactPromptEssentials = { ...essentials, workCompact: undefined };
+      const out = fitCompactEssentials(legacy, enc(`${head}3. ${work}`) - 1);
+      expect(out).toBe(head);
+    });
+  });
+});

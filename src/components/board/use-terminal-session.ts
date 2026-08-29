@@ -1404,6 +1404,15 @@ export function useTerminalSession(
           cwd,
           cap: MAX_LAUNCH_URL_LENGTH,
           promptKeyOverhead: "&prompt=".length,
+          // Nick, 29 Aug 2026: the folder is NEVER traded away to make the
+          // prompt fit. The old default ladder dropped `cwd=` from a
+          // personal-finance-board launch whose full prompt missed the cap by
+          // 56 chars; the bridge then spawned claude at `/`, the agent cd'd
+          // into the VibeCodes checkout and recorded THAT as the board's
+          // folder. With "keep", the prompt shrinks around the folder
+          // (compact work step, then head only) and a path that can't fit at
+          // all gets the "path too long" toast below instead of a launch.
+          cwdPolicy: "keep",
           buildLink: ({ prompt, cwd: linkCwd }) =>
             buildLaunchDeepLink({
               relay: relayBaseUrl(),
@@ -1429,24 +1438,16 @@ export function useTerminalSession(
               // this call, and Claude Code's own `--resume` already reopens
               // whatever worktree the session originally spawned in.
               //
-              // BUG FIX (isolation-vs-dropped-cwd): gated on `!!linkCwd`, NOT
-              // just `essentials.isolate`, because buildBoundedDeepLink (see
-              // its doc) calls THIS closure once per degrade tier, and only the
-              // tier-1 call ever passes a `linkCwd` — tiers 2/3 drop `cwd` from
-              // the URL param entirely (folding it into the prompt as a `cd`
-              // line instead, or dropping it altogether), which the bridge
-              // (terminal/bridge/src/index.js) reads via the `cwd` QUERY PARAM
-              // ONLY — that folded `cd` line is inert prose to it, never
-              // shell-executed. Firing `--worktree` with no real `cwd` left the
-              // bridge falling back to `process.cwd()` (`/` for a
-              // helper-forked process), and Claude Code refuses to start
+              // Gated on `!!linkCwd`, NOT just `essentials.isolate`. Under
+              // `cwdPolicy: "keep"` (above) the folder is never dropped, so
+              // this is belt-and-braces now — but it stays: buildBoundedDeepLink
+              // calls THIS closure with the exact params of the candidate it's
+              // measuring, and the bridge (terminal/bridge/src/index.js) reads
+              // the folder from the `cwd` QUERY PARAM ONLY. Firing `--worktree`
+              // with no real `cwd` left the bridge at `process.cwd()` (`/` for
+              // a helper-forked process), and Claude Code refuses to start
               // there ("Can only use --worktree in a git repository, but / is
-              // not a git repository"). Checking `linkCwd` (this call's own
-              // param, always in sync with whichever tier actually won)
-              // is equivalent to checking the final `result.droppedCwd` but
-              // needs no second pass: a wrong-but-running non-isolated
-              // session in the original folder beats a launch that refuses
-              // to start at all.
+              // not a git repository").
               //
               // AND gated on `opts.isolate` — the mint route's "another of
               // your sessions is already live on this board" answer (see
