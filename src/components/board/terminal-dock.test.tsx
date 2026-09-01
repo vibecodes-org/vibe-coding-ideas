@@ -123,12 +123,20 @@ vi.mock("./terminal-session-view", () => ({
     grabFocus,
     onPaneFocusChange,
     autoConnectWhenExpanded,
+    wakeResume,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
+    // Card dccd6c95 (sleep/resume routing, wake recheck): the dock's own
+    // `computeWakeRecheck` derivation is exercised directly by
+    // wake-recheck.test.ts; this stub only needs to prove the dock actually
+    // THREADS the result down to the right tab's view, via a data attribute
+    // a test can read (mirrors every other "surfaced as a data attribute"
+    // prop in this stub, e.g. `autoConnectWhenExpanded` above).
+    wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
     // Task 9f30ae15: the real prop the dock always passes — wired here (not
     // just accepted and dropped) so requestClose's `actionsMapRef.current
     // .get(key)?.end()` has a real spy to resolve, keyed exactly like the
@@ -183,6 +191,7 @@ vi.mock("./terminal-session-view", () => ({
         data-task-id={entry.taskId ?? ""}
         data-idea-id={entry.ideaId ?? ""}
         data-auto-connect-when-expanded={autoConnectWhenExpanded ? "true" : "false"}
+        data-wake-resume-cwd={wakeResume?.cwd ?? ""}
       >
         <button
           data-testid={`resume-ended-${entry.key}`}
@@ -2273,6 +2282,101 @@ describe("TerminalDock — closing a non-last tab must not collapse the panel (f
     // that was left dangling on the closed session's key.
     await waitFor(() => expect(tabContainer(firstKey)).toHaveAttribute("aria-selected", "true"));
     expect(screen.getByRole("button", { name: /Collapse terminal panel/ })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+// Sleep/resume routing fix (card dccd6c95): the dock never re-checked
+// anything once a tab's session died behind a hidden tab or a slept Mac —
+// `refreshRegistry` only ran once, on mount. This proves the wiring, not the
+// pure derivation itself (that's wake-recheck.test.ts): a visibilitychange
+// event re-fetches the registry, and once it reports this tab's own sid
+// `ended`, the resume material reaches THAT tab's view via the `wakeResume`
+// prop (surfaced here as `data-wake-resume-cwd` — see the mock above).
+describe("TerminalDock — wake recheck on tab visibility regain (card dccd6c95)", () => {
+  it("re-fetches the registry on visibilitychange and feeds an ended tab's own resume material to its view", async () => {
+    let registryCallCount = 0;
+    let endedSid = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          registryCallCount += 1;
+          // First call (mount): nothing live or recent — seeds a pristine
+          // tab (F1's "empty-launch"). Every later call (the wake recheck)
+          // reports that same tab's own sid as ended, with resume material.
+          if (registryCallCount === 1 || !endedSid) {
+            return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              sessions: [
+                {
+                  sid: endedSid,
+                  ideaId: "idea-1",
+                  ideaTitle: "My Idea",
+                  taskId: null,
+                  taskTitle: null,
+                  machineLabel: null,
+                  cwd: "/Users/nick/projects/here",
+                  claudeSessionId: "claude-conv-abc",
+                  displayName: null,
+                  createdAt: new Date().toISOString(),
+                  status: "ended",
+                  endedAt: new Date().toISOString(),
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Empty registry on mount seeds one pristine tab directly (no chooser
+    // click needed — see entryDecision's "empty-launch" branch).
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key!;
+    endedSid = `sid-for-${key}`;
+
+    // This tab learns its own sid (mirrors the real hook's `pair.sessionId`,
+    // set once by connect()/attach and never cleared on error).
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+
+    const callsBeforeWake = registryCallCount;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(callsBeforeWake));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-view").dataset.wakeResumeCwd).toBe("/Users/nick/projects/here"),
+    );
+  });
+
+  it("re-fetches on 'online' too, and never offers resume material for a tab whose sid is still active", async () => {
+    let registryCallCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          registryCallCount += 1;
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+
+    const callsBeforeWake = registryCallCount;
+    fireEvent(window, new Event("online"));
+
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(callsBeforeWake));
+    // The registry never reported anything ended — no material to offer.
+    expect(screen.getByTestId("session-view").dataset.wakeResumeCwd).toBe("");
   });
 });
 

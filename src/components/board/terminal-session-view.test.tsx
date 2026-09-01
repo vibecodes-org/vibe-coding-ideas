@@ -187,7 +187,10 @@ function installMockWaitingSession(pairingTimedOut: boolean) {
 // takeover from a genuine attach-rejection — this file never reaches into the
 // real reducer/socket (that's use-terminal-session.test.ts / connection.test.ts);
 // it only checks TerminalSessionView renders the right branch for a given state.
-function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
+function installMockErrorSession(
+  state: Partial<TerminalConnectionState> & { cwd?: string | null; claudeSessionId?: string | null } = {},
+) {
+  const { cwd = null, claudeSessionId = null, ...stateOverrides } = state;
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     lastContainerRef = containerRef;
@@ -200,7 +203,7 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
         closeCode: RELAY_CLOSE.DUP_BROWSER,
         closeReason: null,
         refusalCap: null,
-        ...state,
+        ...stateOverrides,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -208,8 +211,8 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
       notEncryptedYet: false,
       e2eeActive: false,
       pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
-      cwd: null,
-      claudeSessionId: null,
+      cwd,
+      claudeSessionId,
       readOnly: false,
       autoAccept: false,
       inputEnabled: false,
@@ -302,6 +305,11 @@ function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void
 function renderErrorView(
   onReconnectTakenOver: (sid: string) => void = vi.fn(),
   onCapExceeded?: () => void,
+  extra: {
+    onBrowseSessions?: () => void;
+    onResumeEndedSession?: (payload: BrowserLaunchPayload, sid: string | null) => void;
+    wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
+  } = {},
 ) {
   return render(
     <TerminalSessionView
@@ -317,6 +325,9 @@ function renderErrorView(
       onAnnounce={vi.fn()}
       onReconnectTakenOver={onReconnectTakenOver}
       onCapExceeded={onCapExceeded}
+      onBrowseSessions={extra.onBrowseSessions}
+      onResumeEndedSession={extra.onResumeEndedSession}
+      wakeResume={extra.wakeResume}
     />,
   );
 }
@@ -721,6 +732,146 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     renderEndedView();
 
     expect(screen.queryByRole("button", { name: /View my other sessions/ })).not.toBeInTheDocument();
+  });
+});
+
+// Card dccd6c95 (sleep/resume routing — "Sleeping the Mac kills the session
+// with no way back"): the generic error panel used to be a dead end — its
+// only action ("Try again") mints an unrelated fresh session. These pin the
+// two additions: the same "View my other sessions" escape hatch the
+// ended/integrity-failed panels already have, and a Resume affordance that
+// reuses the ended panel's EXACT copy/payload machinery whenever this tab
+// still knows its own cwd (from the hook directly, or from the dock's
+// wake-recheck fallback) — never on owner-mismatch, never replacing "Try
+// again".
+describe("TerminalSessionView — generic error panel escape hatches (card dccd6c95)", () => {
+  it("renders the 'View my other sessions' link on a generic error and fires onBrowseSessions", () => {
+    const onBrowseSessions = vi.fn();
+    installMockErrorSession({ errorKind: "session-mint-failed" });
+    renderErrorView(vi.fn(), undefined, { onBrowseSessions });
+
+    const link = screen.getByRole("button", { name: /View my other sessions/ });
+    fireEvent.click(link);
+    expect(onBrowseSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the browse link when onBrowseSessions isn't wired (e.g. the pop-out window)", () => {
+    installMockErrorSession({ errorKind: "session-mint-failed" });
+    renderErrorView();
+
+    expect(screen.queryByRole("button", { name: /View my other sessions/ })).not.toBeInTheDocument();
+  });
+
+  it("offers Resume as the primary action, above 'Try again', when this tab's own hook state knows its cwd", () => {
+    const onResumeEndedSession = vi.fn();
+    installMockErrorSession({
+      errorKind: "session-mint-failed",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderErrorView(vi.fn(), undefined, { onResumeEndedSession });
+
+    const resumeButton = screen.getByRole("button", { name: /Resume this conversation/ });
+    fireEvent.click(resumeButton);
+    expect(onResumeEndedSession).toHaveBeenCalledWith(
+      {
+        resume: undefined,
+        resumeId: "claude-conv-abc",
+        cwd: "/Users/nick/projects/vibe-coding-ideas",
+        taskId: undefined,
+        taskTitle: undefined,
+        ideaId: undefined,
+      },
+      "sess-1",
+    );
+    // "Try again" is never removed — Resume is additive, not a replacement.
+    expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
+  });
+
+  it("falls back to the dock's wake-recheck resume material when this tab's own hook state has no cwd", () => {
+    const onResumeEndedSession = vi.fn();
+    installMockErrorSession({ errorKind: "session-mint-failed", cwd: null, claudeSessionId: null });
+    renderErrorView(vi.fn(), undefined, {
+      onResumeEndedSession,
+      wakeResume: { cwd: "/Users/nick/projects/other-idea", claudeSessionId: null },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Resume this conversation/ }));
+    expect(onResumeEndedSession).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: true, resumeId: undefined, cwd: "/Users/nick/projects/other-idea" }),
+      "sess-1",
+    );
+  });
+
+  it("hides Resume when neither this tab's own state nor wake-recheck knows a cwd", () => {
+    installMockErrorSession({ errorKind: "session-mint-failed", cwd: null, claudeSessionId: null });
+    renderErrorView(vi.fn(), undefined, { onResumeEndedSession: vi.fn() });
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Try again/ })).toBeInTheDocument();
+  });
+
+  it("never offers Resume for an owner-mismatch error, even with a known cwd", () => {
+    installMockErrorSession({
+      errorKind: "owner-mismatch",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderErrorView(vi.fn(), undefined, { onResumeEndedSession: vi.fn() });
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    // owner-mismatch also hides "Try again" already (pre-existing behaviour,
+    // see canLaunch's `state.errorKind !== "owner-mismatch"` guard) — pinned
+    // here too so this test fails loudly if that guard ever regresses.
+    expect(screen.queryByRole("button", { name: /Try again/ })).not.toBeInTheDocument();
+  });
+
+  // QA rework: a session-limit refusal (cap-reached) leaves an EARLIER tab's
+  // hook state still holding its own sessionCwd (set before the cap ever
+  // hit) — so without this guard the cap pane could show "Resume this
+  // conversation" right next to its own "View my sessions" button, and
+  // clicking Resume would just re-fire the identical capped mint. Never
+  // offered here, even with both sessionCwd AND wake-recheck material
+  // present — mirrors the owner-mismatch exclusion above.
+  it("never offers Resume for a cap-reached error, even with a known cwd and wake-recheck material", () => {
+    installMockErrorSession({
+      errorKind: "cap-reached",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderErrorView(vi.fn(), vi.fn(), {
+      onResumeEndedSession: vi.fn(),
+      wakeResume: { cwd: "/Users/nick/projects/other-idea", claudeSessionId: null },
+    });
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    // The cap pane's own dedicated action is untouched.
+    expect(screen.getByRole("button", { name: "View my sessions" })).toBeInTheDocument();
+  });
+
+  // Same rework: the cap pane's "View my sessions" button (card 695c2c54)
+  // already covers what "View my other sessions" promises here — showing
+  // both would be a redundant duplicate action.
+  it("omits the duplicate 'View my other sessions' link on cap-reached when the dedicated cap button is showing", () => {
+    const onCapExceeded = vi.fn();
+    const onBrowseSessions = vi.fn();
+    installMockErrorSession({ errorKind: "cap-reached" });
+    renderErrorView(vi.fn(), onCapExceeded, { onBrowseSessions });
+
+    expect(screen.getByRole("button", { name: "View my sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /View my other sessions/ })).not.toBeInTheDocument();
+  });
+
+  // But when the host has no My-sessions panel wired (onCapExceeded
+  // omitted — e.g. the pop-out window), the browse link is the only escape
+  // hatch left, so it must still render rather than vanish entirely.
+  it("keeps the 'View my other sessions' link on cap-reached when onCapExceeded isn't wired", () => {
+    const onBrowseSessions = vi.fn();
+    installMockErrorSession({ errorKind: "cap-reached" });
+    renderErrorView(vi.fn(), undefined, { onBrowseSessions });
+
+    expect(screen.queryByRole("button", { name: "View my sessions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View my other sessions/ })).toBeInTheDocument();
   });
 });
 
