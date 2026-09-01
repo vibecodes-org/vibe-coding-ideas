@@ -66,7 +66,10 @@ export async function reapExpiredSessions(
       updates.map(({ id, endedAt }) =>
         supabase
           .from("terminal_sessions")
-          .update({ status: "ended", ended_at: endedAt })
+          // Terminal P2 (E2EE): clear the session key when a row is reaped
+          // as expired — one of the three places a row is marked ended,
+          // alongside session/end and session/closed.
+          .update({ status: "ended", ended_at: endedAt, e2ee_session_key: null })
           .eq("id", id)
           .eq("status", "active"),
       ),

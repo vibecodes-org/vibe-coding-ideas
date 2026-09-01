@@ -35,6 +35,21 @@ describe("resolveDockView — install-first entry", () => {
   it("waiting-to-pair with the idle launch phase is the legacy manual pairing flow", () => {
     expect(resolveDockView("waiting-to-pair", "idle", true, true)).toBe("legacy-waiting");
   });
+
+  // Terminal P2 (E2EE) — the design's build notes call for these as their own
+  // views, not folded into the generic "error" presentation.
+  it("an error with errorKind e2ee-required resolves to its own view", () => {
+    expect(resolveDockView("error", "idle", true, true, "e2ee-required")).toBe("e2ee-required");
+  });
+
+  it("an error with errorKind e2ee-verify-failed resolves to its own view", () => {
+    expect(resolveDockView("error", "idle", true, true, "e2ee-verify-failed")).toBe("integrity-failed");
+  });
+
+  it("an ordinary error (or errorKind omitted) still resolves to the plain error view", () => {
+    expect(resolveDockView("error", "idle", true, true, "duplicate")).toBe("error");
+    expect(resolveDockView("error", "idle", true, true)).toBe("error");
+  });
 });
 
 describe("resolveDockView — the ~8s timeout fallback", () => {

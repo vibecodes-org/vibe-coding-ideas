@@ -215,13 +215,24 @@ const SEMVER_RE = /^\d+\.\d+\.\d+$/;
  * @param {string | null | undefined} version
  * @param {string | null | undefined} [host]
  * @param {string | null | undefined} [conv]
+ * @param {boolean} [e2ee]
  * @returns {string}
  */
-export function encodeBridgeVersionFrame(version, host, conv) {
+export function encodeBridgeVersionFrame(version, host, conv, e2ee) {
   const msg = { t: "bridge-version" };
   if (version) msg.v = version;
   if (host) msg.host = host;
   if (conv) msg.conv = conv;
+  // E2EE CAPABILITY NEGOTIATION (Terminal P2, FR-5): a bridge that was handed
+  // a session key (see terminal/bridge/src/index.js) announces `e2ee:true`
+  // alongside its version/host/conv, on the SAME frame — no new relay message
+  // type, exactly the "reuse the existing bridge-version announce/forward
+  // mechanism" FR-3 requires. Boolean, omitted entirely (not `false`) when
+  // the bridge has no key, so an old bridge (or one that failed to receive a
+  // key) is indistinguishable from "capability unknown" — the dock's gating
+  // policy (src/lib/terminal/e2ee-policy.ts) treats missing exactly like
+  // false, same graceful-degrade shape as a missing `v`/`host`/`conv`.
+  if (e2ee) msg.e2ee = true;
   return JSON.stringify(msg);
 }
 
@@ -286,6 +297,25 @@ export function parseBridgeVersionConv(text) {
     return typeof msg.conv === "string" ? sanitizeConversationId(msg.conv) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Extract the bridge's announced E2EE capability (Terminal P2, FR-5). Returns
+ * `true` only for the literal boolean `true` — anything else (absent,
+ * malformed, `false`) is treated as "not encrypted", never trusted as
+ * capable by default. Same defense-in-depth re-validation posture as
+ * parseBridgeVersionHost/parseBridgeVersionConv.
+ * @param {unknown} text
+ * @returns {boolean}
+ */
+export function parseBridgeVersionE2ee(text) {
+  if (!isBridgeVersionFrame(text)) return false;
+  try {
+    const msg = JSON.parse(text);
+    return msg.e2ee === true;
+  } catch {
+    return false;
   }
 }
 

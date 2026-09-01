@@ -83,7 +83,12 @@ async function reattachForStash(
       body: JSON.stringify({ sid: stash.sid }),
     });
     if (!res.ok) return { ok: false, gone: true };
-    const data = (await res.json()) as { sessionId: string; browserToken: string };
+    const data = (await res.json()) as {
+      sessionId: string;
+      browserToken: string;
+      /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only. */
+      sessionKey?: string;
+    };
     const snapshot = loadSessionSnapshot(stash.sid);
     const buffer = snapshot ? toReconnectBuffer(snapshot) : undefined;
     return {
@@ -99,6 +104,10 @@ async function reattachForStash(
         readOnly: stash.readOnly,
         autoAccept: stash.autoAccept,
         buffer,
+        // Terminal P2 (E2EE): this window's own attach is fresh (a reload
+        // reattach), so it needs its own copy of the key just like any other
+        // reattach — the reattach route now hands it back for exactly this.
+        sessionKey: data.sessionKey,
       },
     };
   } catch {

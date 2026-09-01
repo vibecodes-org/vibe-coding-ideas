@@ -102,6 +102,12 @@ test("bridge <-> relay <-> browser round-trip + single-attach + owner-binding", 
       BRIDGE_TOKEN: tokensA.bridge,
       // keep timeouts short so a hang fails fast rather than dangling
       "BRIDGE_MAX_SECONDS": "60",
+      // Never let the E2EE key-fetch escape to the real app (defaults to
+      // https://vibecodes.co.uk when unset) — an unroutable loopback port
+      // fails fast with ECONNREFUSED instead of hitting production. Placed
+      // AFTER the `...process.env` spread so a dev's real .env.local value
+      // can never leak into a test run.
+      TERMINAL_APP_URL: "http://127.0.0.1:1",
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -238,7 +244,9 @@ test("bridge --launch-url parses the deep link and round-trips through the relay
     process.execPath,
     [BRIDGE_ENTRY, "--launch-url", launchUrl, "--cmd", `${process.execPath} ${SENTINEL}`],
     {
-      env: { PATH: process.env.PATH, BRIDGE_MAX_SECONDS: "60" },
+      // TERMINAL_APP_URL: no real network call from the E2EE key fetch — see
+      // the note in the previous spawn() above.
+      env: { PATH: process.env.PATH, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: "http://127.0.0.1:1" },
       stdio: ["ignore", "inherit", "inherit"],
     },
   );

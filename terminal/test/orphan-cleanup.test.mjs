@@ -105,6 +105,9 @@ function spawnBridge({ relayUrl, session, token, cmd, extraArgv = [], env = {} }
       SESSION_ID: session,
       BRIDGE_TOKEN: token,
       BRIDGE_MAX_SECONDS: "60",
+      // No real network call from the E2EE key fetch — an unroutable
+      // loopback port fails fast instead of hitting production.
+      TERMINAL_APP_URL: "http://127.0.0.1:1",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],

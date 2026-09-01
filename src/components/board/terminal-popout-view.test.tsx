@@ -64,6 +64,8 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
       launchPhase: "idle",
       peerDegraded: false,
       helperVersion: null,
+      notEncryptedYet: false,
+      e2eeActive: false,
       pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
       cwd: null,
       claudeSessionId: null,

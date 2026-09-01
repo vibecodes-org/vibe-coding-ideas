@@ -2810,6 +2810,11 @@ export type Database = {
         created_at: string;
         ended_at: string | null;
         expires_at: string;
+        // Terminal P2 (E2EE) — see migration 00164. Persists on the row for
+        // the session's registered lifetime (any authenticated owner's tab
+        // can reattach and decrypt) — cleared to null only when the session
+        // itself ends (session/end, session/closed, session-reap.ts).
+        e2ee_session_key: string | null;
       };
       Insert: {
         id?: string;
@@ -2826,6 +2831,7 @@ export type Database = {
         created_at?: string;
         ended_at?: string | null;
         expires_at: string;
+        e2ee_session_key?: string | null;
       };
       Update: {
         id?: string;
@@ -2842,6 +2848,7 @@ export type Database = {
         created_at?: string;
         ended_at?: string | null;
         expires_at?: string;
+        e2ee_session_key?: string | null;
       };
       Relationships: [
         {

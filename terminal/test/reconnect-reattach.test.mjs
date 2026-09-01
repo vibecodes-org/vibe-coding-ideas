@@ -209,7 +209,9 @@ test("(e) reattach with a different owner sub is rejected OWNER_MISMATCH; the he
 /** Spawn the real bridge (env-configured) with stderr capture, like orphan-cleanup. */
 function spawnBridge({ relayUrl, session, token, cmd, env = {} }) {
   const child = spawn(process.execPath, [BRIDGE_ENTRY, "--cmd", cmd], {
-    env: { PATH: process.env.PATH, RELAY_URL: relayUrl, SESSION_ID: session, BRIDGE_TOKEN: token, BRIDGE_MAX_SECONDS: "60", ...env },
+    // TERMINAL_APP_URL: no real network call from the E2EE key fetch — an
+    // unroutable loopback port fails fast instead of hitting production.
+    env: { PATH: process.env.PATH, RELAY_URL: relayUrl, SESSION_ID: session, BRIDGE_TOKEN: token, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: "http://127.0.0.1:1", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";

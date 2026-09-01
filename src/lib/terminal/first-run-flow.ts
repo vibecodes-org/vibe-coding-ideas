@@ -5,7 +5,7 @@
 // + header pill the dock shows, and how the deep-link launch phase advances on the
 // ~8s timeout. Kept pure so the branch logic is unit-testable without React or a DOM.
 
-import type { TerminalStatus } from "./connection";
+import type { TerminalErrorKind, TerminalStatus } from "./connection";
 
 /** UI phase for the same-machine deep-link auto-launch path. */
 export type LaunchPhase = "idle" | "opening" | "helper-timeout";
@@ -27,7 +27,15 @@ export type DockView =
   | "connected"
   | "disconnected"
   | "session-ended"
-  | "error";
+  | "error"
+  // Terminal P2 (E2EE) — the design doc's build notes call for these as their
+  // own DockView values (each with its own dockStatusMeta pill + StateOverlay
+  // branch) rather than folding them into the generic "error" presentation.
+  // The underlying connection status is still "error" either way (see
+  // connection.ts's mapCloseCode) — this is purely a presentation split,
+  // exactly like the "connecting"/"connecting-returning" pairing above.
+  | "e2ee-required"
+  | "integrity-failed";
 
 /**
  * Decide the current view. Pure over its inputs so the pill + overlay never diverge.
@@ -50,6 +58,10 @@ export function resolveDockView(
   launchPhase: LaunchPhase,
   supported: boolean,
   paired: boolean,
+  // Terminal P2 (E2EE) — optional so every pre-existing call site (and the
+  // pre-existing test file) keeps compiling unchanged; only the two E2EE
+  // errorKinds ever redirect "error" to a more specific view.
+  errorKind?: TerminalErrorKind | null,
 ): DockView {
   switch (status) {
     case "connected":
@@ -59,6 +71,8 @@ export function resolveDockView(
     case "session-ended":
       return "session-ended";
     case "error":
+      if (errorKind === "e2ee-required") return "e2ee-required";
+      if (errorKind === "e2ee-verify-failed") return "integrity-failed";
       return "error";
     case "connecting":
       return paired ? "connecting-returning" : "connecting";

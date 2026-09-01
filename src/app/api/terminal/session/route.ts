@@ -9,6 +9,7 @@
 // exact same code verifies on the Cloudflare relay. The secret comes from the
 // TERMINAL_SESSION_SECRET env var — never hard-coded.
 
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
@@ -47,6 +48,7 @@ import {
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
 import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
 import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
+import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -436,6 +438,18 @@ export async function POST(req: Request) {
       mintHelperToken({ sub: user.id, secret }),
     ]);
 
+    // Terminal P2 (E2EE, FR-1): a fresh random 256-bit key, generated here
+    // (off the relay entirely) at mint time. The browser leg gets it right
+    // in this response (HTTPS, app→browser, authenticated) — and so does
+    // ANY other authenticated tab/device of this owner's, via the reattach
+    // route's response. The bridge leg has no equivalent channel today, so
+    // it's stashed in the registry row for the bridge to collect via a
+    // dedicated HTTPS fetch (/api/terminal/session/key) — repeatable for the
+    // session's whole lifetime, not one-time, so a relaunched bridge can
+    // fetch the same key again. See that route and migration 00164 for why
+    // this is the chosen off-relay delivery path.
+    const e2eeSessionKey = randomBytes(32).toString("base64");
+
     const { error: insertErr } = await supabase.from("terminal_sessions").insert({
       sid: tokens.sid,
       user_id: user.id,
@@ -453,6 +467,7 @@ export async function POST(req: Request) {
       claude_session_id: resumeId ?? null,
       status: "active",
       expires_at: computeSessionExpiresAt(nowMs),
+      e2ee_session_key: e2eeSessionKey,
     });
     if (insertErr) {
       // The registry is best-effort (R2) — never fail an otherwise-successful
@@ -484,6 +499,17 @@ export async function POST(req: Request) {
       browserToken: tokens.browser,
       bridgeToken: tokens.bridge,
       helperToken,
+      // Terminal P2 (E2EE): base64 256-bit key for THIS session, browser-side
+      // only — never persist beyond in-memory dock state (FR-6). The bridge
+      // fetches its own copy via /api/terminal/session/key (never this
+      // response).
+      sessionKey: e2eeSessionKey,
+      // Terminal P2 (E2EE, FR-5) — Phase B enforcement flag, single-sourced
+      // server-side (never a NEXT_PUBLIC_ env var) so flipping it is a pure
+      // deploy-time change with no client rebuild. Always false today: this
+      // task implements the flag but does not turn it on anywhere (see
+      // TERMINAL_E2EE_REQUIRED's doc in e2ee-policy.ts).
+      e2eeRequired: isE2eeRequired(process.env.TERMINAL_E2EE_REQUIRED),
       // Task c4ca2d95: resolved starting model for a FRESH launch only — the
       // client must never thread this into a resume/resumeId deep link (AC-8).
       // Omitted (undefined, dropped by JSON.stringify) when nothing should be

@@ -54,6 +54,8 @@ import {
   RefreshCw,
   X,
   Zap,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -81,6 +83,7 @@ import {
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
+import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -330,6 +333,8 @@ export function TerminalSessionView({
     launchPhase,
     peerDegraded,
     helperVersion,
+    notEncryptedYet,
+    e2eeActive,
     pair,
     cwd: sessionCwd,
     claudeSessionId,
@@ -347,6 +352,13 @@ export function TerminalSessionView({
   // thing that satisfies "dismissible", and a fresh tab/reload re-evaluating the
   // gate is exactly the desired behaviour (still-stale helper, nudge again).
   const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
+  // Terminal P2 (E2EE) — Phase A "not encrypted yet" notice. Per-session
+  // dismissal only, same posture as the helper-update nudge above: this is
+  // NOT the persistent lock icon Nick explicitly rejected in design review
+  // (binding decision 1) — it only shows during the fallback window and
+  // disappears the moment `notEncryptedYet` goes false (bridge confirms, or
+  // the session ends), never lingering as a permanent status chip.
+  const [dismissedE2eeNotice, setDismissedE2eeNotice] = useState(false);
   // Common foundations F2: a reconnect/instant-continue entry with no fresh
   // snapshot to restore — the dismissible "history isn't shown here" note.
   const [dismissedReconnectNote, setDismissedReconnectNote] = useState(false);
@@ -442,7 +454,7 @@ export function TerminalSessionView({
   const boardIdentity = resolveTabBoardIdentity(entry, descriptor.ideaId, descriptor.ideaTitle);
   const ownBoardLabel = boardIdentity.ideaTitle ?? "Board not recorded";
 
-  const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
+  const view = resolveDockView(state.status, launchPhase, platform.supported, paired, state.errorKind);
   // Card cbe60db5 rework 6 (Nick's field-test item 4): the "error"/4001 state
   // legitimately stays the underlying mechanism (unchanged, same as the
   // popped-out window's isPreemptedClose) — this only swaps the PRESENTATION
@@ -624,7 +636,33 @@ export function TerminalSessionView({
               </span>
             </>
           )}
-          <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}>
+          {/* Terminal P2 (E2EE) design §2 — the quiet Phase A chip. Persists
+              for as long as THIS session stays unencrypted (mirrors
+              `notEncryptedYet`'s own "connected, has a key, bridge hasn't
+              confirmed e2ee" definition) — it's gone the moment the bridge
+              announces capability, and never reappears once it has (design
+              §5's binding call: no permanent lock icon either way). Icon-only
+              collapse at narrow widths keeps the status pill from ever being
+              pushed out; `title` doubles as the focusable-chip tooltip
+              (design §2 behaviour detail — hover/focus, chip is a real
+              focusable element via tabIndex). */}
+          {notEncryptedYet && (
+            <span
+              className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
+              title={E2EE_COPY.chip.notE2eeTooltip}
+              tabIndex={0}
+            >
+              <LockOpen className="h-3 w-3" aria-hidden="true" />
+              <span className="hidden sm:inline">{E2EE_COPY.chip.notE2ee}</span>
+            </span>
+          )}
+          <span
+            className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}
+            // Terminal P2 (E2EE) design §5 — the positive indicator lives
+            // ONLY here, one hover/focus away, never as a permanent chip.
+            title={view === "connected" && e2eeActive ? E2EE_COPY.connected.tooltip : undefined}
+            tabIndex={view === "connected" && e2eeActive ? 0 : undefined}
+          >
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
           </span>
@@ -745,6 +783,41 @@ export function TerminalSessionView({
           onConfirm={helperUpdate.confirm}
           onCancel={helperUpdate.cancel}
         />
+
+        {/* Terminal P2 (E2EE) design §2 — the dismissable sky nudge bar, the
+            actionable layer above the persistent header chip. Shown while
+            `notEncryptedYet` is true (this session has a key but the bridge
+            hasn't confirmed it can encrypt yet — an old helper, or
+            negotiation still in flight); dismissing it never removes the
+            chip above — the caveat stays visible, the nagging stops (design
+            §2's explicit "dismissal scope" behaviour, per-session state like
+            `dismissedHelperNudge`). Reuses the EXACT shared "Update now"
+            affordance (`HelperUpdateButton` → the confirm/quiesce/download
+            flow already wired up for `helperUpdate` below) — the hard rule
+            is every update affordance is the same component, never a second
+            one invented for this feature. `role="status"` (polite): must
+            never steal focus from the terminal mid-keystroke. */}
+        {notEncryptedYet && !dismissedE2eeNotice && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 border-b border-l-2 border-sky-500/30 border-l-sky-500 bg-sky-500/5 px-3.5 py-2 text-[11px] text-sky-300"
+          >
+            <LockOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              {E2EE_COPY.nudge.body}
+              <span className="block text-[11px] font-normal text-zinc-500">{E2EE_COPY.nudge.sub}</span>
+            </span>
+            <HelperUpdateButton onClick={helperUpdate.start} />
+            <button
+              type="button"
+              className="shrink-0 text-sky-400 hover:text-sky-200"
+              onClick={() => setDismissedE2eeNotice(true)}
+              aria-label="Dismiss not-encrypted notice"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
 
         {/* Session entry chooser — reconnect with no snapshot to restore
             (common foundations F2): never a silently blank screen. Shown
@@ -888,6 +961,13 @@ export function dockStatusMeta(
       return { label: "Reconnecting…", Icon: WifiOff, className: "border-zinc-600 bg-zinc-800/60 text-zinc-300" };
     case "session-ended":
       return { label: "Session ended", Icon: Square, className: "border-zinc-600 bg-zinc-800/60 text-zinc-300" };
+    // Terminal P2 (E2EE) design §3/§4 — amber family for both, per the
+    // decision table: "amber = something needs attention", distinct from the
+    // rose "Error" pill used for every other error kind below.
+    case "e2ee-required":
+      return { label: E2EE_COPY.required.pill, Icon: Shield, className: "border-amber-500/50 bg-amber-500/10 text-amber-400" };
+    case "integrity-failed":
+      return { label: E2EE_COPY.integrity.pill, Icon: ShieldAlert, className: "border-amber-500/50 bg-amber-500/10 text-amber-400" };
     case "error":
       return { label: errorKind === "owner-mismatch" ? "Owner mismatch" : "Error", Icon: CircleAlert, className: "border-rose-500/55 bg-rose-500/10 text-rose-400" };
     default:
@@ -1084,6 +1164,71 @@ function StateOverlay({
           <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onReconnectTakenOver}>
             <RefreshCw className="h-3.5 w-3.5" /> Reconnect here
           </Button>
+        </>
+      )}
+
+      {/* Terminal P2 (E2EE) design §3 — Phase B fail-closed connect state.
+          Deliberately the SAME centred in-panel surface as every other
+          connect-time state above (never a modal — "a connect failure has no
+          live tab to protect"), with the "Update now" action reusing the
+          exact shared HelperUpdateButton flow (`onDownloadHelper` is wired to
+          the same `helperUpdate.start` every other update affordance in this
+          view uses). "Not now" is a pure acknowledgement: nothing was
+          minted, nothing to undo — the surrounding dock chrome (collapse,
+          tab close, Escape) already gives every real way to leave, per the
+          hard-learned "never trap the user" rule this design explicitly
+          cites. */}
+      {view === "e2ee-required" && (
+        <>
+          <Shield className="h-7 w-7 text-sky-400" aria-hidden="true" />
+          <div className="text-base font-semibold text-zinc-100">{E2EE_COPY.required.title}</div>
+          <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.required.body}</p>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            <HelperUpdateButton onClick={onDownloadHelper} className="px-4 py-2 text-sm" />
+            <Button
+              variant="ghost"
+              className="text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+              onClick={() => {
+                /* Pure acknowledgement — see the comment above this branch. */
+              }}
+            >
+              Not now
+            </Button>
+          </div>
+          <p className="max-w-md text-[11px] text-zinc-500">{E2EE_COPY.required.fine}</p>
+        </>
+      )}
+
+      {/* Terminal P2 (E2EE) design §4 — mid-session AEAD verification
+          failure. Amber, never rose "Error": the honest first hypothesis is
+          a network glitch, not an attack (FR-5's "distinct from ordinary
+          errors" expressed as calm, not alarming, copy) — Nick's binding
+          decision: this exact wording is used EVERY time, including a
+          second consecutive failure; there is no escalated variant.
+          "Reconnect" reuses the ordinary reattach path (`onRetry`, same as
+          every other reconnect action in this overlay); "Browse sessions"
+          is the existing escape hatch. Never auto-reconnects — unlike the
+          Wi-Fi-drop banner, this is the one state where the user must
+          consciously resume (design §4's explicit "must never do" list). */}
+      {view === "integrity-failed" && (
+        <>
+          <ShieldAlert className="h-7 w-7 text-amber-400" aria-hidden="true" />
+          <div className="text-base font-semibold text-amber-400">{E2EE_COPY.integrity.title}</div>
+          <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.integrity.body}</p>
+          <div className="flex flex-wrap justify-center gap-2.5">
+            <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onRetry}>
+              <RefreshCw className="h-3.5 w-3.5" /> Reconnect
+            </Button>
+            {onBrowseSessions && (
+              <Button
+                variant="ghost"
+                className="text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                onClick={onBrowseSessions}
+              >
+                Browse sessions
+              </Button>
+            )}
+          </div>
         </>
       )}
 

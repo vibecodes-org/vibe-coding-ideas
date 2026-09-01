@@ -56,6 +56,7 @@ import {
   isPeerReattachedFrame,
 } from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
+import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -243,6 +244,50 @@ const HELPER_VERSION = resolveHelperVersion();
 // this param at all.
 const HOST = sanitizeMachineLabel(os.hostname());
 
+// ── E2EE key delivery (Terminal P2, FR-1) ─────────────────────────────────────
+// The bridge has no room in the launch deep link for a 256-bit key — that
+// link's params are already within ~5 chars of their length cap for a
+// realistic repo-backed launch (see CLAUDE.md's In-App Terminal section and
+// deep-link.test.ts), and growing them is an explicit do-not-regress. So the
+// bridge instead makes a DIRECT HTTPS call to the VibeCodes app itself (never
+// through the relay) using the SAME bridge token it already holds — see
+// src/app/api/terminal/session/key/route.ts. `TERMINAL_APP_URL` overrides
+// the default for local/dev runs; production has exactly one app origin.
+const APP_URL = (process.env.TERMINAL_APP_URL || "").trim() || "https://vibecodes.co.uk";
+const E2EE_KEY_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Fetch this session's E2EE key from the app. Never throws — any failure
+ * (network error, timeout, non-200, `delivered:false`) is treated exactly
+ * like "this app/session doesn't support E2EE yet": the caller falls back to
+ * a plaintext session (Phase A negotiation, FR-5), the same graceful-degrade
+ * shape as a missing helperVersion/host/conv.
+ * @returns {Promise<Buffer|null>}
+ */
+async function fetchE2eeSessionKey() {
+  if (!TOKEN || !SESSION) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), E2EE_KEY_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/key`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sid: SESSION, token: TOKEN }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (!body?.delivered || typeof body.sessionKey !== "string") return null;
+    const key = Buffer.from(body.sessionKey, "base64");
+    return key.length === 32 ? key : null;
+  } catch (e) {
+    log("warn", "e2ee key fetch failed — running this session unencrypted", { err: String(e?.message || e) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
@@ -381,6 +426,12 @@ async function main() {
   let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
+  // Terminal P2 (E2EE): re-created fresh on EVERY attach/reconnect in
+  // openRelay() below — FR-4's rekey-per-attach requirement. `null` for both
+  // for the life of the process whenever E2EE_KEY (outer scope) was never
+  // collected, i.e. this session runs in plaintext exactly as before.
+  let e2eeEnc = null; // FrameEncryptor — bridge output (b2w)
+  let e2eeDec = null; // FrameDecryptor — bridge input (w2b)
   let bytesOut = 0; // PTY -> ws
   let bytesIn = 0; // ws -> PTY
   let open = false;
@@ -421,8 +472,20 @@ async function main() {
   // kept for any future outbound control frame) are never buffered.
   const outputBatcher = createOutputBatcher({
     send: (chunk, meta) => {
+      // Terminal P2 (E2EE): encrypt the FINAL, already-coalesced chunk right
+      // here — the one point every outbound binary WS message actually
+      // passes through, so a burst that got merged by the batcher still
+      // becomes exactly ONE AEAD frame on the wire (encrypting earlier, per
+      // onData chunk, would let the batcher concatenate several independent
+      // frames into one message — see term.onData's comment above).
+      // e2eeEnc always reflects the CURRENT attach (reset in openRelay() on
+      // every reconnect), so a chunk re-queued from preOpenBuffer after a
+      // reconnect is encrypted with the NEW attach's subkey, never the old.
+      // Only encrypt when actually sending now — buffering the PLAINTEXT
+      // chunk when the socket isn't open avoids burning a nonce on a frame
+      // that's discarded here (it's re-encrypted for real when re-queued).
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(chunk, { binary: meta.binary });
+        ws.send(meta.binary && e2eeEnc ? e2eeEnc.encrypt(chunk) : chunk, { binary: meta.binary });
       } else if (!shuttingDown) {
         preOpenBuffer.push(chunk);
       }
@@ -538,7 +601,11 @@ async function main() {
     }
 
     // PTY -> relay (binary, verbatim). Coalesced (MITIGATION 2) — see
-    // outputBatcher above; a quiet line still goes out immediately.
+    // outputBatcher above; a quiet line still goes out immediately. Terminal
+    // P2 (E2EE) encrypts in the batcher's own `send` callback below, NOT
+    // here — encrypting per-onData-chunk would let the batcher's coalescing
+    // concatenate several independent AEAD frames into one WS message, which
+    // the one-frame-per-message wire format can't represent.
     term.onData((data) => {
       const buf = Buffer.from(data, "utf8");
       bytesOut += buf.length;
@@ -585,6 +652,15 @@ async function main() {
   // gated on the relay's explicit `attached` control frame, sent only after
   // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
   if (!PROMPT) spawnPty();
+  // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
+  // relay connect URL is built, so a successful fetch can announce `e2ee=1`
+  // on THIS attach (and every reconnect reuses the SAME key — see
+  // E2EE_KEY/E2EE_ENC/E2EE_DEC below, refreshed per attach in openRelay()).
+  // Never blocks/gates the PTY spawn above — only delays this bridge's OWN
+  // relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
+  // produced meanwhile is safely queued in preOpenBuffer, not lost.
+  const E2EE_KEY = await fetchE2eeSessionKey();
+  if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
@@ -596,7 +672,10 @@ async function main() {
     // terminal/shared/control-frames.mjs's EXACT-CONVERSATION RESUME header
     // comment). Absent for an explicit --cmd override or a legacy --continue
     // launch (CONV is null there — nothing honest to announce).
-    (CONV ? `&conv=${encodeURIComponent(CONV)}` : "");
+    (CONV ? `&conv=${encodeURIComponent(CONV)}` : "") +
+    // Terminal P2 (E2EE, FR-3/FR-5): announce capability alongside the other
+    // metadata, reusing this exact mechanism — see control-frames.mjs.
+    (E2EE_KEY ? `&e2ee=1` : "");
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop
@@ -688,6 +767,15 @@ async function main() {
       url: redactedUrl, host: os.hostname(), attempt: reconnectAttempt,
     });
     ws = new WebSocket(url);
+    // Terminal P2 (E2EE, FR-4): fresh encryptor/decryptor EVERY attach — a
+    // fresh random attachId per FrameEncryptor construction, so the HKDF
+    // subkey (and therefore the whole nonce space) is unique to this
+    // connection even on a reconnect that reuses the same session key. `null`
+    // when this session never collected a key (Phase A plaintext fallback).
+    if (E2EE_KEY) {
+      e2eeEnc = new FrameEncryptor(E2EE_KEY, "b2w", SESSION);
+      e2eeDec = new FrameDecryptor(E2EE_KEY, "w2b", SESSION);
+    }
 
     // Per-attempt open timeout. The FIRST connect failing is fatal; a RECONNECT
     // attempt that won't open just cycles (terminate → close → next attempt/budget).
@@ -714,6 +802,26 @@ async function main() {
       if (isBinary) {
         // opaque keystroke bytes -> PTY stdin. While a prompt spawn is still
         // gated there is no PTY; pre-auth keystrokes are dropped, never buffered.
+        // Terminal P2 (E2EE, FR-5): when this attach has a decryptor, EVERY
+        // binary frame must decrypt cleanly before it's trusted — a failure
+        // (tamper, replay, wrong key, cross-direction reflection) fails
+        // closed: the session ends distinctly, and the bytes are NEVER
+        // written to the PTY, buffered, or otherwise trusted as input.
+        if (e2eeDec) {
+          let plaintext;
+          try {
+            plaintext = e2eeDec.decrypt(Buffer.isBuffer(data) ? data : Buffer.from(data));
+          } catch (e) {
+            log("error", "e2ee frame verification failed — ending session", {
+              err: e instanceof PtyCryptoError ? e.message : String(e?.message || e),
+            });
+            shutdown(1, "e2ee-verify-failed");
+            return;
+          }
+          bytesIn += plaintext.length;
+          if (term) term.write(plaintext.toString("utf8"));
+          return;
+        }
         bytesIn += data.length;
         if (term) term.write(data.toString("utf8"));
         return;

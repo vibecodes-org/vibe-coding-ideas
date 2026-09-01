@@ -101,7 +101,9 @@ test("assertRelayAllowed throws host-only (never the token) on reject", () => {
 
 function spawnBridge(argv, env = {}) {
   const child = spawn(process.execPath, [BRIDGE_ENTRY, ...argv], {
-    env: { PATH: process.env.PATH, BRIDGE_MAX_SECONDS: "60", ...env },
+    // TERMINAL_APP_URL: no real network call from the E2EE key fetch — an
+    // unroutable loopback port fails fast instead of hitting production.
+    env: { PATH: process.env.PATH, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: "http://127.0.0.1:1", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";

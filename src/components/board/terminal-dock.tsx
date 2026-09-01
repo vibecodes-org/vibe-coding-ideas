@@ -1882,6 +1882,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         cwd?: string | null;
         claudeSessionId?: string | null;
         displayName?: string | null;
+        /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only. */
+        sessionKey?: string;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -1903,6 +1905,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         initialBuffer,
         cwd: data.cwd,
         claudeSessionId: data.claudeSessionId,
+        // Terminal P2 (E2EE): forward the reattach route's own copy of the
+        // session key so ANY of this owner's tabs/devices reattaching to a
+        // live session can decrypt it, not just the one that minted it.
+        sessionKey: data.sessionKey,
       };
 
       const currentSessions = sessionsRef.current;
@@ -2476,7 +2482,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     return st === "connected" || st === "connecting" || st === "waiting-to-pair" || st === "disconnected";
   }).length;
   const singleView = activeSummary
-    ? resolveDockView(activeSummary.status, activeSummary.launchPhase, activeSummary.platformSupported, activeSummary.paired)
+    ? resolveDockView(
+        activeSummary.status,
+        activeSummary.launchPhase,
+        activeSummary.platformSupported,
+        activeSummary.paired,
+        activeSummary.errorKind,
+      )
     : "setup";
   const singleMeta = dockStatusMeta(singleView, activeSummary?.errorKind ?? null);
 

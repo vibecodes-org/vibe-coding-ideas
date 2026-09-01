@@ -635,19 +635,29 @@ export class TerminalRelay {
       // this block's own header comment and control-frames.mjs's
       // EXACT-CONVERSATION RESUME doc).
       const bridgeConv = sanitizeConversationId(url.searchParams.get("conv"));
+      // E2EE CAPABILITY (Terminal P2, FR-3/FR-5): the ONLY relay-adjacent
+      // change this feature makes. Reuses this exact announce/forward
+      // mechanism — a bridge that was handed a session key announces
+      // `e2ee=1` on its relay connect URL (see terminal/bridge/src/index.js),
+      // stored/replayed durably exactly like helperVersion/host/conv. The
+      // relay treats it as an opaque boolean flag, same as those three — it
+      // never inspects, generates, or forwards any key material itself.
+      const bridgeE2ee = url.searchParams.get("e2ee") === "1";
       if (helperVersion) await this.state.storage.put("bridgeHelperVersion", helperVersion);
       if (bridgeHost) await this.state.storage.put("bridgeHost", bridgeHost);
       if (bridgeConv) await this.state.storage.put("bridgeConv", bridgeConv);
-      if (helperVersion || bridgeHost || bridgeConv) {
+      if (bridgeE2ee) await this.state.storage.put("bridgeE2ee", true);
+      if (helperVersion || bridgeHost || bridgeConv || bridgeE2ee) {
         const browserPeer = this.findPeer("bridge");
         if (browserPeer) {
-          const [storedVersion, storedHost, storedConv] = await Promise.all([
+          const [storedVersion, storedHost, storedConv, storedE2ee] = await Promise.all([
             this.state.storage.get("bridgeHelperVersion"),
             this.state.storage.get("bridgeHost"),
             this.state.storage.get("bridgeConv"),
+            this.state.storage.get("bridgeE2ee"),
           ]);
           try {
-            browserPeer.send(encodeBridgeVersionFrame(storedVersion, storedHost, storedConv));
+            browserPeer.send(encodeBridgeVersionFrame(storedVersion, storedHost, storedConv, storedE2ee === true));
           } catch (e) {
             this.log("bridge-version forward failed", { session, err: String(e) });
           }
@@ -663,14 +673,15 @@ export class TerminalRelay {
       // is live when none is — see shouldReplayStoredBridgeAnnouncement's
       // doc comment in pairing.js for the incident this fixes.
       if (shouldReplayStoredBridgeAnnouncement(post.bridge)) {
-        const [bridgeHelperVersion, bridgeHost, bridgeConv] = await Promise.all([
+        const [bridgeHelperVersion, bridgeHost, bridgeConv, bridgeE2ee] = await Promise.all([
           this.state.storage.get("bridgeHelperVersion"),
           this.state.storage.get("bridgeHost"),
           this.state.storage.get("bridgeConv"),
+          this.state.storage.get("bridgeE2ee"),
         ]);
-        if (bridgeHelperVersion || bridgeHost || bridgeConv) {
+        if (bridgeHelperVersion || bridgeHost || bridgeConv || bridgeE2ee) {
           try {
-            server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost, bridgeConv));
+            server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost, bridgeConv, bridgeE2ee === true));
           } catch (e) {
             this.log("bridge-version send failed", { session, err: String(e) });
           }

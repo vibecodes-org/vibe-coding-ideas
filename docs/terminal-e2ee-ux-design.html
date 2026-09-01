@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal E2EE rollout UX</title>
+<style>
+  :root{
+    --bg:#09090b; --panel:#0c0c0e; --panel2:#131316; --line:#27272a; --line2:#3f3f46;
+    --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+    --emerald:#34d399; --amber:#fbbf24; --rose:#fb7185; --sky:#38bdf8; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:40px 20px}
+  main{max-width:960px;margin:0 auto}
+  h1{font-size:24px;letter-spacing:-.02em;margin-bottom:6px}
+  h2{font-size:18px;letter-spacing:-.01em;margin:44px 0 6px;padding-top:20px;border-top:1px solid var(--line)}
+  h3{font-size:14.5px;margin:26px 0 8px;color:var(--txt)}
+  p{color:var(--dim);margin:8px 0;max-width:76ch}
+  ul{color:var(--dim);margin:8px 0 8px 20px;max-width:74ch}
+  li{margin:4px 0}
+  .meta{color:var(--faint);font-size:12.5px;margin-bottom:8px}
+  .lead{color:var(--dim);font-size:15px;max-width:76ch}
+  strong{color:var(--txt);font-weight:600}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#c4b5fd}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px}
+  th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);color:var(--dim);vertical-align:top}
+  td:first-child{color:var(--txt);font-weight:600;white-space:nowrap}
+  .wrap{overflow-x:auto}
+  .decision td:first-child{white-space:normal;min-width:130px}
+
+  /* chips — pill, icon + label, never colour alone */
+  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px 2px 8px;font-size:11.5px;font-weight:600;border:1px solid;white-space:nowrap}
+  .chip svg{flex:none}
+  .chip.emerald{color:var(--emerald);border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08)}
+  .chip.amber{color:var(--amber);border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08)}
+  .chip.rose{color:var(--rose);border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.08)}
+  .chip.sky{color:var(--sky);border-color:rgba(56,189,248,.5);background:rgba(56,189,248,.08)}
+  .chip.zinc{color:#d4d4d8;border-color:var(--line2);background:rgba(39,39,42,.6)}
+
+  /* buttons — matching dock chrome (shadcn size=xs) */
+  .btn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:6px;padding:3px 10px;border:1px solid var(--line2);background:transparent;color:var(--txt);cursor:default;white-space:nowrap}
+  .btn.sky-solid{border-color:transparent;background:var(--sky);color:#082f49}
+  .btn.ghost{border-color:transparent;color:var(--dim)}
+  .btn.outline{border-color:var(--line2);background:rgba(39,39,42,.6);color:#e4e4e7}
+  .btn.lg{font-size:12.5px;padding:6px 14px;border-radius:7px}
+
+  /* dock mock */
+  .dock{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.45);font-size:13px;overflow:hidden;max-width:660px}
+  .dock .tabs{display:flex;align-items:center;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .dock .tab{font-size:11.5px;font-weight:600;color:var(--faint);padding:5px 12px;border:1px solid transparent;border-bottom:none;border-radius:7px 7px 0 0}
+  .dock .tab.on{color:var(--txt);background:var(--panel);border-color:var(--line)}
+  .dock .tabx{margin-left:auto;color:var(--faint);font-size:12px;padding:0 6px}
+  .dock .hd{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .dock .hd .name{font-weight:600;font-size:12.5px;color:var(--txt)}
+  .dock .hd .spacer{flex:1}
+  .dock .body{position:relative;background:#0a0a0b;min-height:150px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;color:#a1a1aa;padding:10px 12px}
+  .dock .body .cmd{color:#e4e4e7}
+  .dock .body .grn{color:var(--emerald)}
+  .nudge{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);border-left:2px solid var(--sky);background:rgba(56,189,248,.05);padding:8px 14px;font-size:11.5px;color:#7dd3fc}
+  .nudge .grow{flex:1;min-width:0;color:#7dd3fc}
+  .nudge .sub{display:block;color:var(--faint);font-size:11px;font-weight:400}
+  .nudge .x{color:var(--faint);font-size:13px;padding:0 2px}
+
+  /* centred overlay panel (matches StateOverlay in terminal-session-view.tsx) */
+  .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(12,12,14,.95);padding:24px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .overlay .ttl{font-size:15px;font-weight:600}
+  .overlay .bd{font-size:13px;color:var(--dim);max-width:420px;line-height:1.55}
+  .overlay .acts{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .overlay .fine{font-size:11px;color:var(--faint);max-width:420px}
+
+  /* modal variant */
+  .modal-scrim{background:rgba(0,0,0,.55);border:1px dashed var(--line2);border-radius:12px;padding:36px 20px;display:flex;justify-content:center;margin:14px 0}
+  .modal{background:var(--panel);border:1px solid var(--line2);border-radius:12px;max-width:440px;width:100%;box-shadow:0 16px 50px rgba(0,0,0,.6);padding:20px;position:relative;text-align:left}
+  .modal .x{position:absolute;top:12px;right:14px;color:var(--faint);font-size:14px}
+  .modal .ttl{font-size:15px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .modal .bd{font-size:13px;color:var(--dim);line-height:1.55}
+  .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+  /* tooltip mock */
+  .tipwrap{display:inline-flex;flex-direction:column;align-items:flex-start;gap:6px}
+  .tip{background:#18181b;border:1px solid var(--line2);border-radius:7px;padding:7px 10px;font-size:11.5px;color:var(--dim);box-shadow:0 6px 20px rgba(0,0,0,.5);max-width:280px}
+  .tip b{color:var(--txt);font-weight:600}
+
+  .caption{font-size:11.5px;color:var(--faint);margin:-4px 0 18px;max-width:72ch}
+  .mocks{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+
+  /* flow diagram */
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px 22px;margin:16px 0;overflow-x:auto}
+  .lane-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:14px 0 8px}
+  .lane-title:first-child{margin-top:0}
+  .lane{display:flex;align-items:center;gap:0;min-width:860px;margin:10px 0}
+  .state{border:1px solid var(--line2);background:var(--panel2);border-radius:8px;padding:8px 14px;text-align:center;flex:none;min-width:118px}
+  .state .n{font-weight:700;font-size:12.5px;color:var(--txt)}
+  .state .d{font-size:10.5px;color:var(--faint);margin-top:1px}
+  .state.emerald{border-color:rgba(52,211,153,.55)} .state.emerald .n{color:var(--emerald)}
+  .state.amber{border-color:rgba(251,191,36,.55)} .state.amber .n{color:var(--amber)}
+  .state.sky{border-color:rgba(56,189,248,.55)} .state.sky .n{color:var(--sky)}
+  .state.zinc{border-style:dashed}
+  .arrow{flex:1;min-width:56px;position:relative;height:1px;background:var(--line2);margin:0 2px}
+  .arrow::after{content:"";position:absolute;right:-1px;top:-3.5px;border:4px solid transparent;border-left-color:var(--line2)}
+  .arrow .lbl{position:absolute;left:50%;transform:translateX(-50%);top:-20px;font-size:10px;color:var(--dim);white-space:nowrap;background:var(--panel);padding:0 4px}
+  .arrow .lbl.below{top:auto;bottom:-20px}
+
+  .callout{border:1px solid var(--line);border-left:3px solid var(--sky);background:var(--panel);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:13px;color:var(--dim);max-width:76ch}
+  .callout.amber{border-left-color:var(--amber)}
+  .callout b{color:var(--txt)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Terminal E2EE — rollout &amp; failure UX</h1>
+<div class="meta">Task: “Terminal P2: end-to-end encryption of the PTY stream (GA gate)” · UX Design step · 2026-09-01</div>
+<p class="lead">
+The crypto work is invisible when it succeeds. This document designs the four moments it becomes visible,
+implementing the UX half of <strong>FR-5</strong> from the Requirements deliverable: the Phase A
+“negotiated, fall back to plaintext” indicator, the Phase B fail-closed connect state, the mid-session
+integrity-failure termination, and the call on whether an encrypted session gets a positive badge.
+Everything reuses existing dock patterns — status pills (<code>dockStatusMeta</code>), the sky
+helper-update nudge family and shared <code>HelperUpdateButton</code>, and the centred
+<code>StateOverlay</code> panels — no new UI vocabulary is introduced.
+</p>
+
+<h2>0 · The four design calls, up front</h2>
+<div class="wrap"><table class="decision">
+<tr><th>Surface</th><th>Decision</th><th>Why</th></tr>
+<tr>
+  <td>1 · Phase A plaintext fallback</td>
+  <td>A quiet <strong>zinc header chip</strong> (open-padlock icon + “Not encrypted end-to-end”) that lives for the session, plus a <strong>dismissable sky nudge bar</strong> with the shared “Update now” button, shown once per session on connect.</td>
+  <td>During rollout <em>most</em> users will be in this state; amber everywhere would read as “the product is broken”. Zinc-with-icon is honest but calm. The nudge reuses the exact helper-update pattern (button + copy family) per the hard rule that every update affordance is the same component.</td>
+</tr>
+<tr>
+  <td>2 · Phase B fail-closed connect</td>
+  <td>A <strong>centred in-panel state</strong> (like <code>TimeoutPanel</code>), not a modal. A modal variant is specced only for surfaces that are already dialogs; it closes via X, Escape, and outside-click.</td>
+  <td>The failure happens inside the dock at connect time — the dock body is the context, and project rules say render in the panel unless a live tab needs protecting. A panel can’t trap anyone. Where a dialog is unavoidable, the never-trap rule is explicit.</td>
+</tr>
+<tr>
+  <td>3 · Mid-session integrity failure</td>
+  <td>Clean terminate → <strong>amber “Secure link interrupted” pill + calm overlay</strong> offering Reconnect. Never rose “Error”, never garbled output.</td>
+  <td>Per FR-5 this state must be distinct from ordinary errors, and the honest first hypothesis is a network glitch, not an attack. Amber = “something needs attention”, rose = “something is wrong with you/your setup”. Reconnect is the recovery, so it’s the primary action.</td>
+</tr>
+<tr>
+  <td>4 · Positive “is encrypted” indicator</td>
+  <td><strong>No persistent lock icon.</strong> Confirmation lives in the Connected pill’s tooltip (“End-to-end encrypted — the relay can’t read this session”) and as a line in the My&nbsp;sessions panel row detail.</td>
+  <td>Rationale in §5 — the marked state should be the exception, not the rule.</td>
+</tr>
+</table></div>
+
+<h2>1 · User flow — trigger → states → recovery</h2>
+<p>
+Three lanes. Lane 1 is the common Phase A path; lane 2 is Phase B with <code>TERMINAL_E2EE_REQUIRED</code>
+flipped; lane 3 is the rare mid-session AEAD verification failure. Per <strong>AC-6/AC-7</strong>, every lane
+must behave sensibly under version skew in either direction — the copy never names versions or assumes the
+web app and helper deployed together (see §7).
+</p>
+
+<div class="diagram">
+  <div class="lane-title">Lane 1 · Phase A — helper too old to negotiate (plaintext fallback)</div>
+  <div class="lane">
+    <div class="state"><div class="n">Connect</div><div class="d">launch / reattach</div></div>
+    <div class="arrow"><span class="lbl">negotiate via version channel</span></div>
+    <div class="state zinc"><div class="n">No E2EE</div><div class="d">helper pre-E2EE</div></div>
+    <div class="arrow"><span class="lbl">connect anyway</span></div>
+    <div class="state emerald"><div class="n">Connected</div><div class="d">+ zinc chip in header</div></div>
+    <div class="arrow"><span class="lbl">once per session</span></div>
+    <div class="state sky"><div class="n">Update nudge</div><div class="d">dismissable bar</div></div>
+    <div class="arrow"><span class="lbl">“Update now” → shared quiesce flow</span><span class="lbl below">or dismiss → chip remains</span></div>
+    <div class="state"><div class="n">Helper updated</div><div class="d">next session is E2EE</div></div>
+  </div>
+
+  <div class="lane-title">Lane 2 · Phase B — encryption required, helper can’t negotiate (fail closed)</div>
+  <div class="lane">
+    <div class="state"><div class="n">Connect</div><div class="d">launch / reattach</div></div>
+    <div class="arrow"><span class="lbl">negotiation fails · flag on</span></div>
+    <div class="state amber"><div class="n">Update needed</div><div class="d">in-panel state, §3</div></div>
+    <div class="arrow"><span class="lbl">“Update now” → shared flow</span><span class="lbl below">“Not now” / close dock — never trapped</span></div>
+    <div class="state"><div class="n">Helper updated</div><div class="d">user relaunches</div></div>
+    <div class="arrow"><span class="lbl">reconnect</span></div>
+    <div class="state emerald"><div class="n">Connected</div><div class="d">E2EE active</div></div>
+  </div>
+
+  <div class="lane-title">Lane 3 · Established E2EE session — a frame fails AEAD verification</div>
+  <div class="lane">
+    <div class="state emerald"><div class="n">Connected</div><div class="d">E2EE active</div></div>
+    <div class="arrow"><span class="lbl">verification fails → terminate, write nothing</span></div>
+    <div class="state amber"><div class="n">Secure link interrupted</div><div class="d">calm overlay, §4</div></div>
+    <div class="arrow"><span class="lbl">“Reconnect” (fresh keys)</span><span class="lbl below">or “Browse sessions” / close</span></div>
+    <div class="state emerald"><div class="n">Reconnected</div><div class="d">verified stream resumes</div></div>
+  </div>
+</div>
+<p class="caption">
+Recovery is always ≤1 action from the failure state, and every state is escapable: the dock’s own
+collapse/close, tab switching, and Escape all keep working throughout. Nothing here ever blocks the rest of
+the board page.
+</p>
+
+<h2>2 · Surface 1 — Phase A: “not end-to-end encrypted yet” (non-blocking)</h2>
+<p>
+Two layers with different lifetimes. The <strong>chip</strong> is the persistent, glanceable truth marker —
+it sits in the session header next to the status pill and lives as long as the session (so a
+security-conscious user can always check). The <strong>nudge bar</strong> is the actionable layer — it
+appears once when the session connects without E2EE, carries the shared “Update now” button, and is
+dismissable (X). Dismissing the nudge never removes the chip: the caveat stays visible, the nagging stops.
+</p>
+
+<div class="dock" role="img" aria-label="Dock mockup: connected session with a 'Not encrypted end-to-end' chip and a sky update nudge bar">
+  <div class="tabs">
+    <span class="tab on">Fix login redirect</span>
+    <span class="tab">Session 2</span>
+    <span class="tabx">⌄ &nbsp; ⤢ &nbsp; ✕</span>
+  </div>
+  <div class="hd">
+    <span class="name">Fix login redirect</span>
+    <span class="spacer"></span>
+    <span class="chip zinc" title="Traffic to this session is protected in transit (TLS), but the relay can technically read it. Update the helper to close that gap.">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+      Not encrypted end-to-end
+    </span>
+    <span class="chip emerald"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="5"/></svg> Connected</span>
+  </div>
+  <div class="nudge">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+    <span class="grow">
+      This session isn’t end-to-end encrypted yet — the helper on your Mac needs an update.
+      <span class="sub">Everything keeps working in the meantime; the update takes about a minute.</span>
+    </span>
+    <span class="btn sky-solid">Update now</span>
+    <span class="x" role="button" aria-label="Dismiss">✕</span>
+  </div>
+  <div class="body">
+    <span class="grn">➜</span> <span class="cmd">claude</span><br>
+    ▐ Claude Code v3.2 — working in ~/projects/app<br>
+    &nbsp;&nbsp;Reading src/middleware.ts…<br>
+    &nbsp;&nbsp;<span class="grn">✓</span> Found the redirect loop in the auth callback
+  </div>
+</div>
+<p class="caption">
+The chip uses the open-padlock icon so the meaning survives without colour (WCAG: never colour alone). The
+nudge bar is the exact visual family of the existing helper-update notices (left sky rule,
+<code>bg-sky-500/5</code>, 11.5px sky text) and its button IS <code>HelperUpdateButton</code> — clicking it
+runs the shared confirm → quiesce → download flow, including the “your running sessions will end first”
+confirm. No new update path is invented.
+</p>
+
+<h3>Behaviour details</h3>
+<ul>
+  <li><strong>Chip tooltip</strong> (hover/focus — the chip is a focusable element): <em>“Traffic to this session is protected in transit, but the relay server can technically read it. Update the helper to close that gap.”</em> Honest about what “not E2E” means without implying the session is unsafe on the wire.</li>
+  <li><strong>Narrow dock</strong> (&lt;~480px panel width): chip collapses to icon-only with the same tooltip and an <code>aria-label</code>; it never pushes the status pill out.</li>
+  <li><strong>Dismissal scope</strong>: per session (state in the dock, like the existing reconnect note’s <code>dismissedReconnectNote</code>). A new session on the same old helper shows the nudge again — that’s deliberate; it’s the only pressure toward updating before Phase B.</li>
+  <li><strong>Split view / pop-out</strong>: chip renders in each session’s own header; the nudge renders once per session view, not once per pane arrangement.</li>
+  <li><strong>Announcement</strong>: the nudge bar is <code>role="status"</code> (polite) — it must not steal focus from the terminal, where the user is likely mid-keystroke.</li>
+</ul>
+
+<h2>3 · Surface 2 — Phase B: encryption required, helper too old (fail closed)</h2>
+<p>
+When <code>TERMINAL_E2EE_REQUIRED</code> is on and negotiation fails, the connect attempt stops before any
+plaintext flows (FR-5: “never a silent downgrade”). The user sees this <strong>in the dock panel</strong> as
+a centred state — the same surface as the existing timeout and session-ended panels — with an amber
+“Update needed” pill in the header. Framing matters: this is not an error in something the user did; it’s a
+one-time chore with a one-click fix, so the copy leads with the fix, not the failure.
+</p>
+
+<div class="dock" role="img" aria-label="Dock mockup: fail-closed state panel telling the user to update the helper">
+  <div class="tabs">
+    <span class="tab on">Fix login redirect</span>
+    <span class="tabx">⌄ &nbsp; ⤢ &nbsp; ✕</span>
+  </div>
+  <div class="hd">
+    <span class="name">Fix login redirect</span>
+    <span class="spacer"></span>
+    <span class="chip amber">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10z"/></svg>
+      Update needed
+    </span>
+  </div>
+  <div class="body" style="min-height:230px">
+    <div class="overlay">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <div class="ttl">Update the helper to reconnect</div>
+      <div class="bd">
+        Terminal sessions are now end-to-end encrypted, and the helper on your Mac is too old to take part.
+        Nothing was sent unprotected — we stopped before connecting.
+      </div>
+      <div class="acts">
+        <span class="btn sky-solid lg">Update now</span>
+        <span class="btn ghost lg">Not now</span>
+      </div>
+      <div class="fine">The update takes about a minute. Your project files and any local work are untouched.</div>
+    </div>
+  </div>
+</div>
+<p class="caption">
+“Update now” is the shared <code>HelperUpdateButton</code> flow. “Not now” returns the tab to the neutral
+ready/ended state — the terminal simply stays unavailable, exactly as the task allows. The dock’s collapse,
+tab close, and Escape all work throughout; there is nothing modal to trap anyone.
+</p>
+
+<h3>Why a panel, not a dialog — and the dialog variant anyway</h3>
+<p>
+Two project rules point the same way: “only use an overlay when a live tab genuinely needs protecting;
+otherwise render in the panel”, and modals break context (this design system avoids them for content that
+can be inline). A connect failure has no live tab to protect. The panel also survives the user wandering
+off — it’s still there, un-dismissed, when they come back, which a dialog isn’t.
+</p>
+<p>
+One surface is already a dialog: launching from a task’s shortcut menu / launch-choice dialog. If the
+requirement is detected at that stage, the <em>same dialog</em> swaps to this content rather than opening a
+second one — and per the hard-learned rule it is dismissable every way:
+</p>
+
+<div class="modal-scrim" role="img" aria-label="Dialog variant of the update-needed message, with a visible close button">
+  <div class="modal">
+    <span class="x" aria-label="Close">✕</span>
+    <div class="ttl">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--sky)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Update the helper to reconnect
+    </div>
+    <div class="bd">
+      Terminal sessions are now end-to-end encrypted, and the helper on your Mac is too old to take part.
+      Nothing was sent unprotected — we stopped before connecting.
+    </div>
+    <div class="acts">
+      <span class="btn ghost lg">Not now</span>
+      <span class="btn sky-solid lg">Update now</span>
+    </div>
+  </div>
+</div>
+<p class="caption">
+Dialog variant: identical copy and actions. Closes via the X, <strong>Escape</strong>, and
+<strong>outside-click</strong> — all three, in every mode. Closing = “Not now”: no state is lost, nothing
+was minted, the user can reopen the launch path whenever they’re ready. Focus lands on “Update now” on open
+and returns to the triggering element on close.
+</p>
+
+<h2>4 · Surface 3 — mid-session integrity failure (calm terminate)</h2>
+<p>
+An established encrypted session receives data that fails verification. Per FR-5 the session terminates
+distinctly and nothing unverified is ever written to the PTY or xterm — so the scrollback beneath the
+overlay is intact, verified output up to the moment of the stop. The overlay follows the existing
+<code>StateOverlay</code> recipe (icon · title · body · actions) and the header pill goes
+<strong>amber</strong>, deliberately not the rose “Error” pill: rose says “broken”, amber says “paused for a
+reason”. The copy names the most likely cause first (network corruption) and mentions tampering only
+implicitly (“couldn’t verify”), because alarming a user over what is almost always a glitch is a worse
+failure than under-dramatizing a real attack — the protective action (terminate + fresh keys on reconnect)
+is identical either way, and the user’s job is the same: reconnect.
+</p>
+
+<div class="dock" role="img" aria-label="Dock mockup: secure link interrupted overlay with reconnect action">
+  <div class="tabs">
+    <span class="tab on">Fix login redirect</span>
+    <span class="tab">Session 2</span>
+    <span class="tabx">⌄ &nbsp; ⤢ &nbsp; ✕</span>
+  </div>
+  <div class="hd">
+    <span class="name">Fix login redirect</span>
+    <span class="spacer"></span>
+    <span class="chip amber">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      Secure link interrupted
+    </span>
+  </div>
+  <div class="body" style="min-height:230px">
+    <div class="overlay">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+      <div class="ttl">Secure link interrupted</div>
+      <div class="bd">
+        Some data on this session’s encrypted stream couldn’t be verified, so we stopped it rather than show
+        you output we can’t vouch for. This is usually a network hiccup. Your agent may still be running on
+        your machine — reconnecting starts a fresh, verified stream.
+      </div>
+      <div class="acts">
+        <span class="btn sky-solid lg">Reconnect</span>
+        <span class="btn ghost lg">Browse sessions</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">
+“Reconnect” reuses the existing reattach-mint path (same as the chooser’s Reconnect) with a fresh key
+exchange. “Browse sessions” is the existing escape hatch to the My&nbsp;sessions panel. If reconnect fails
+verification <em>again</em> immediately, fall through to the ordinary connection-error handling — repeating
+this overlay in a loop would train users to ignore it.
+</p>
+
+<h3>What this state must never do</h3>
+<ul>
+  <li>Render partial/garbled bytes and <em>then</em> show the overlay — the terminate happens before any unverified write (FR-5).</li>
+  <li>Use the rose Error pill or the word “attack”, “tampered”, or “security breach” in first-line copy.</li>
+  <li>Auto-reconnect silently. A verification failure is the one connection state where the user should consciously resume — unlike the Wi-Fi-drop state, which does auto-reconnect. That asymmetry <em>is</em> the “distinct termination” FR-5 asks for, expressed in UX.</li>
+</ul>
+
+<h2>5 · Surface 4 — the positive indicator: recommend no persistent lock</h2>
+<p><strong>Call: don’t add a lock icon to the header. Put confirmation one hover away instead.</strong></p>
+<ul>
+  <li><strong>The marked state should be the exception.</strong> Once enforcement lands, 100% of sessions are E2EE — a lock on every header is chrome that means nothing (browsers walked this exact path: Chrome removed the padlock in 2023 because users either ignored it or misread it as a quality endorsement). The Phase A “not encrypted” chip already makes non-E2EE the marked, visible state; its absence is the signal.</li>
+  <li><strong>Header space is contested.</strong> The session header already carries the name, the status pill, and (Phase A) the caveat chip, in a panel that can be split into panes. Every permanent addition costs truncation at narrow widths.</li>
+  <li><strong>The guarantee is still checkable.</strong> Security-conscious users get explicit confirmation in two existing surfaces, at zero pixel cost when idle:</li>
+</ul>
+
+<div class="mocks">
+  <div>
+    <div class="tipwrap">
+      <span class="chip emerald"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="5"/></svg> Connected</span>
+      <div class="tip">
+        <b>Connected · end-to-end encrypted</b><br>
+        Only this browser tab and the helper on your Mac hold the keys — the relay in between can’t read your session.
+      </div>
+    </div>
+    <p class="caption" style="margin-top:8px">Connected pill tooltip (hover/focus) gains one line + explainer.</p>
+  </div>
+  <div>
+    <div class="dock" style="max-width:360px;margin:0">
+      <div class="hd" style="border-bottom:none">
+        <div>
+          <div class="name">Fix login redirect</div>
+          <div style="font-size:11px;color:var(--faint)">Nicks-MBP · ~/projects/app · 2h ago ·
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-1px" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            end-to-end encrypted</div>
+        </div>
+        <span class="spacer"></span>
+        <span class="btn outline">Reconnect</span>
+      </div>
+    </div>
+    <p class="caption" style="margin-top:8px">My&nbsp;sessions panel row detail gains a closed-padlock + label.</p>
+  </div>
+</div>
+
+<p>
+If product later wants a visible trust cue for marketing reasons, the right home is the session
+<em>chooser</em>/My&nbsp;sessions surfaces (where the user is deciding, and there’s room), never the
+per-second working header. This design keeps that door open without committing header pixels now.
+</p>
+
+<h2>6 · Copy table (exact strings)</h2>
+<p>
+Single-sourced in a new <code>src/lib/terminal/e2ee-copy.ts</code>, mirroring how
+<code>helper-update-flow.ts</code> exports its strings so tests and any future surface can’t drift.
+Tone matches the house style: plain, concrete, no jargon (“end-to-end encrypted” is the one term of art,
+always accompanied by what it means), no exclamation marks, no blame.
+</p>
+<div class="wrap"><table>
+<tr><th>Key</th><th>String</th></tr>
+<tr><td>chip.notE2ee</td><td>Not encrypted end-to-end</td></tr>
+<tr><td>chip.notE2ee.tooltip</td><td>Traffic to this session is protected in transit, but the relay server can technically read it. Update the helper to close that gap.</td></tr>
+<tr><td>nudge.body</td><td>This session isn’t end-to-end encrypted yet — the helper on your Mac needs an update.</td></tr>
+<tr><td>nudge.sub</td><td>Everything keeps working in the meantime; the update takes about a minute.</td></tr>
+<tr><td>required.pill</td><td>Update needed</td></tr>
+<tr><td>required.title</td><td>Update the helper to reconnect</td></tr>
+<tr><td>required.body</td><td>Terminal sessions are now end-to-end encrypted, and the helper on your Mac is too old to take part. Nothing was sent unprotected — we stopped before connecting.</td></tr>
+<tr><td>required.fine</td><td>The update takes about a minute. Your project files and any local work are untouched.</td></tr>
+<tr><td>integrity.pill</td><td>Secure link interrupted</td></tr>
+<tr><td>integrity.title</td><td>Secure link interrupted</td></tr>
+<tr><td>integrity.body</td><td>Some data on this session’s encrypted stream couldn’t be verified, so we stopped it rather than show you output we can’t vouch for. This is usually a network hiccup. Your agent may still be running on your machine — reconnecting starts a fresh, verified stream.</td></tr>
+<tr><td>connected.tooltip</td><td>Connected · end-to-end encrypted — only this browser tab and the helper on your Mac hold the keys; the relay in between can’t read your session.</td></tr>
+</table></div>
+
+<h2>7 · Version-skew matrix (AC-6 / AC-7)</h2>
+<p>
+None of the copy above names a version number, claims the update “adds encryption” as a dated fact, or
+assumes the web app and helper deployed together. Concretely:
+</p>
+<div class="wrap"><table>
+<tr><th>Skew</th><th>What happens</th><th>UX shown</th></tr>
+<tr><td>Old helper · new web app (Phase A)</td><td>Negotiation says no; plaintext fallback.</td><td>§2 chip + nudge. The primary rollout experience.</td></tr>
+<tr><td>Old helper · new web app (Phase B)</td><td>Fail closed before connecting.</td><td>§3 panel/dialog. “Update now” always fetches the current helper, so the copy never needs a version.</td></tr>
+<tr><td>New helper · old web app</td><td>Helper offers E2EE; old web client can’t negotiate → plaintext (Phase A semantics — the flag lives server-side, so an old client is only ever seen pre-enforcement).</td><td>Nothing. An old client has none of this UI; the helper must not surface its own warning — the dock is the single voice for session state.</td></tr>
+<tr><td>Mid-deploy skew / flag flip during a live session</td><td>Established sessions are never downgraded or killed by the flip; enforcement applies at next connect.</td><td>A Phase A session keeps its chip until it ends; its <em>next</em> connect hits §3. No live session ever pops a surprise dialog because a deploy happened.</td></tr>
+</table></div>
+
+<h2>8 · State coverage &amp; accessibility checklist</h2>
+<ul>
+  <li><strong>All states handled:</strong> negotiating (indistinguishable from the existing amber “Connecting…” — no new spinner state; negotiation adds no user-visible phase), success-encrypted (§5: unmarked + tooltip), success-plaintext (§2), fail-closed (§3), mid-session failure (§4). Empty/loading states are unchanged — this feature adds no new fetches to the dock’s first paint.</li>
+  <li><strong>Never colour alone:</strong> every pill/chip pairs icon + label (open padlock = not E2EE, shield = update needed, shield-alert = interrupted, closed padlock = confirmed E2EE).</li>
+  <li><strong>Contrast:</strong> all copy tokens ≥4.5:1 on the dock’s <code>#0c0c0e</code>/<code>#0a0a0b</code> grounds (zinc-400 body 7.6:1; sky-300 nudge text 9.8:1; amber-400 pill 9.0:1; the sky-solid button’s <code>text-sky-950</code>-on-sky-500 6.6:1).</li>
+  <li><strong>Keyboard:</strong> chip is focusable (tooltip on focus); nudge dismiss X is a real button; overlay actions are in normal tab order; dialog variant traps focus <em>within</em> itself while open but closes on Escape — never traps the user.</li>
+  <li><strong>Screen readers:</strong> nudge = <code>role="status"</code> (polite); the §3 and §4 state changes announce via the panel’s existing <code>aria-live</code> region with the pill label + title, not the full body.</li>
+  <li><strong>375px / narrow panel:</strong> chip → icon-only + tooltip; nudge bar wraps its button below the text; overlay copy is already max-width-constrained and centre-scrolls (existing <code>overflow-y-auto</code> overlay behaviour).</li>
+  <li><strong>Realistic data:</strong> mockups above use a real-length session name; a long name truncates in the header (existing behaviour) before any chip does — the caveat chip never disappears in favour of the name.</li>
+</ul>
+
+<div class="callout">
+<b>Build notes for the implementation step.</b> New <code>DockView</code> values:
+<code>e2ee-required</code> (§3) and <code>integrity-failed</code> (§4), each with a
+<code>dockStatusMeta</code> row (amber family) and a <code>StateOverlay</code> branch; the §2 chip + nudge
+are header/notice additions to the connected view, not new views. Reuse
+<code>HelperUpdateButton</code>/<code>HelperUpdateFlowNotice</code> verbatim for every “Update now”. Copy
+constants in <code>src/lib/terminal/e2ee-copy.ts</code> with unit tests asserting the §7 rules (no version
+numbers in strings). The popped-out window renders the same states via its existing shared components —
+remember a popped-out tab’s misleading mid-preemption status must not be read as an integrity failure.
+</div>
+
+</main>
+</body>
+</html>

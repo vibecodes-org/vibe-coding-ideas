@@ -21,8 +21,9 @@
 // doc for why that's safe (same-owner reattach, relay's existing 4001 path).
 
 import { useEffect } from "react";
-import { CircleAlert, Loader2, Lock, LockOpen, Power, Square, Undo2, Zap } from "lucide-react";
+import { CircleAlert, Loader2, Lock, LockOpen, Power, Shield, ShieldAlert, Square, Undo2, Zap } from "lucide-react";
 import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
+import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolveDockView, type DockView } from "@/lib/terminal/first-run-flow";
@@ -79,6 +80,9 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
     // directly. Absent covers deploy skew and "the dock had nothing to
     // serialize yet".
     initialBuffer: payload.buffer ?? null,
+    // Terminal P2 (E2EE): present only on a reload-reattach hand-off (see
+    // PopoutPayload's doc) — the ordinary dock→popout hand-off omits it.
+    sessionKey: payload.sessionKey,
   };
 
   const session = useTerminalSession(descriptor, {
@@ -122,7 +126,7 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
     document.title = `Terminal · ${payload.label}`;
   }, [payload.label]);
 
-  const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
+  const view = resolveDockView(state.status, launchPhase, platform.supported, paired, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
   const showEnd =
     view === "connected" || view === "disconnected" || view === "connecting" || view === "connecting-returning";
@@ -297,6 +301,38 @@ function PopoutOverlay({
           Claude Code on your machine stopped. The scrollback above is kept — you can close this window, or check
           the board for what happened.
         </p>
+      </div>
+    );
+  }
+
+  // Terminal P2 (E2EE) — this small window has no helper-update chrome of
+  // its own (no HelperUpdateButton, no confirm/quiesce/download flow lives
+  // here), so Phase B fail-closed just points back to the main board tab
+  // rather than duplicating that flow in miniature. Same design copy as the
+  // dock's panel (design §3), just without the "Update now" action.
+  if (view === "e2ee-required") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+        <Shield className="h-7 w-7 text-sky-400" aria-hidden="true" />
+        <div className="text-base font-semibold text-zinc-100">{E2EE_COPY.required.title}</div>
+        <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.required.body}</p>
+        <p className="max-w-md text-[11px] text-zinc-500">Update the helper from the board tab, then reopen this window.</p>
+      </div>
+    );
+  }
+
+  // Terminal P2 (E2EE) design §4 — same calm, non-accusatory copy as the
+  // dock's overlay; "Reconnect" reuses this window's own `onRetry` (already
+  // wired to the same reattach path the dock's Reconnect button uses).
+  if (view === "integrity-failed") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+        <ShieldAlert className="h-7 w-7 text-amber-400" aria-hidden="true" />
+        <div className="text-base font-semibold text-amber-400">{E2EE_COPY.integrity.title}</div>
+        <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.integrity.body}</p>
+        <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onRetry}>
+          Reconnect
+        </Button>
       </div>
     );
   }

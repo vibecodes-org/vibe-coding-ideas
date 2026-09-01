@@ -78,7 +78,9 @@ export async function POST(req: Request) {
     const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from("terminal_sessions")
-      .update({ status: "ended", ended_at: nowIso })
+      // Terminal P2 (E2EE): clear the session key the moment the relay
+      // confirms the session is gone — the registry TTL is only a backstop.
+      .update({ status: "ended", ended_at: nowIso, e2ee_session_key: null })
       .eq("sid", sid)
       .eq("status", "active")
       .select("id")
