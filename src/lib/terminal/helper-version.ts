@@ -41,8 +41,10 @@
  *  bridge's `--worktree` flag (real, Claude-Code-enforced concurrent-
  *  session isolation) — an older helper silently ignores the new
  *  `worktree` deep-link param, same as every prior unshipped bridge
- *  change, so this bump is what actually nudges users to it. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.7";
+ *  change, so this bump is what actually nudges users to it. 0.3.8
+ *  (task 6d7a50ab): first helper that speaks the PTY end-to-end
+ *  encryption protocol — an older helper negotiates plaintext only. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.8";
 
 export type HelperVersionParts = readonly [number, number, number];
 
