@@ -109,7 +109,9 @@ export async function POST(req: Request) {
 
       const { error: updateErr } = await supabase
         .from("terminal_sessions")
-        .update({ status: "ended", ended_at: new Date().toISOString() })
+        // Terminal P2 (E2EE): clear the session key the moment a session
+        // ends — the registry TTL is only a backstop, not the primary clear.
+        .update({ status: "ended", ended_at: new Date().toISOString(), e2ee_session_key: null })
         .eq("id", target.id);
       if (updateErr) {
         logger.error("Terminal session end: registry update failed", {

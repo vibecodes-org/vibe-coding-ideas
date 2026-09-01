@@ -44,6 +44,18 @@ export const RELAY_CLOSE = Object.freeze({
   BAD_TOKEN: 4006,
 });
 
+// Terminal P2 (E2EE) — these two are CLIENT-initiated closes (the browser leg
+// closes its own socket with one of these codes; see use-terminal-session.ts's
+// `wsRef.current?.close(...)` calls), not relay-issued, but they flow through
+// the exact same `closed` event → `mapCloseCode` path as every other close, so
+// they get their own reserved codes here rather than a parallel mechanism.
+export const E2EE_CLOSE = Object.freeze({
+  /** Phase B fail-closed (FR-5): TERMINAL_E2EE_REQUIRED is on and negotiation never completed within the grace window. */
+  REQUIRED_NEGOTIATION_FAILED: 4011,
+  /** Mid-session AEAD verification failure (FR-5): terminate before any unverified bytes are written. */
+  VERIFY_FAILED: 4010,
+});
+
 export type TerminalStatus =
   | "idle"
   | "connecting"
@@ -61,7 +73,14 @@ export type TerminalErrorKind =
   | "relay-unreachable"
   | "session-mint-failed"
   | "cap-reached"
-  | "unknown";
+  | "unknown"
+  // Terminal P2 (E2EE) — see E2EE_CLOSE above. "e2ee-required" drives the
+  // design's §3 fail-closed panel/dialog; "e2ee-verify-failed" drives §4's
+  // calm "Secure link interrupted" overlay — deliberately its own kind, never
+  // folded into the generic "unknown"/"relay-unreachable" buckets, so the
+  // dock can render its distinct, non-alarming copy instead of a plain error.
+  | "e2ee-required"
+  | "e2ee-verify-failed";
 
 export type EndedReason = "user" | "remote" | "idle" | "max-duration" | "reconnect-failed";
 
@@ -159,6 +178,10 @@ export function mapCloseCode(
       // The bridge leg went away. Could be a clean exit or a drop — the relay
       // can't tell us which, so treat it as a (recoverable) disconnect.
       return { status: "disconnected", errorKind: null, endedReason: null };
+    case E2EE_CLOSE.REQUIRED_NEGOTIATION_FAILED:
+      return { status: "error", errorKind: "e2ee-required", endedReason: null };
+    case E2EE_CLOSE.VERIFY_FAILED:
+      return { status: "error", errorKind: "e2ee-verify-failed", endedReason: null };
     case 1000:
       // Normal closure — a clean session end. Parse the reason for the calm
       // idle / max-duration copy when the bridge supplied it.
@@ -670,5 +693,25 @@ export function parseBridgeVersionConv(text: string): string | null {
     return UUID_RE.test(trimmed) ? trimmed.toLowerCase() : null;
   } catch {
     return null;
+  }
+}
+
+// ── E2EE capability negotiation (Terminal P2, FR-5) ───────────────────────────
+//
+// The SAME bridge-version frame gains an optional `e2ee` boolean — the bridge
+// announces it once it's collected a session key (terminal/bridge/src/index.js;
+// terminal/shared/control-frames.mjs's encodeBridgeVersionFrame). Extracted
+// here for the same reason host/conv are separate accessors.
+
+/** Extract the bridge's announced E2EE capability, or `false` for anything
+ *  absent/malformed (a non-`true` `e2ee`, bad JSON, wrong tag) — never trust
+ *  a missing/garbled field as capable by default. */
+export function parseBridgeVersionE2ee(text: string): boolean {
+  if (!isControlFrame(text, "bridge-version")) return false;
+  try {
+    const msg = JSON.parse(text) as { e2ee?: unknown };
+    return msg.e2ee === true;
+  } catch {
+    return false;
   }
 }

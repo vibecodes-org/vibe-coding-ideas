@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     // the explicit filter keeps the query honest regardless of client).
     const { data: row, error: rowErr } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, status, expires_at, cwd, claude_session_id, display_name")
+      .select("sid, idea_id, status, expires_at, cwd, claude_session_id, display_name, e2ee_session_key")
       .eq("sid", sid)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -136,6 +136,14 @@ export async function POST(req: Request) {
       // registry's own display_name so performReattach can seed the fresh
       // entry's `displayName` exactly like it already seeds cwd/claudeSessionId.
       displayName: row.display_name,
+      // Terminal P2 (E2EE): the approved key-delivery design hands this to
+      // ANY of the owner's authenticated tabs/devices, not just the one that
+      // minted the session — a reload, a second tab, or a different device
+      // reattaching to a live session must still be able to decrypt it. Same
+      // base64 256-bit key the mint route returns; browser-side only, never
+      // persisted beyond in-memory dock state (FR-6). `null` when the row
+      // predates this feature or the session has already ended.
+      sessionKey: row.e2ee_session_key,
     });
   } catch (err) {
     logger.error("Terminal session reattach error", {

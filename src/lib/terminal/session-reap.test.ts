@@ -55,7 +55,9 @@ describe("reapExpiredSessions", () => {
 
     expect(result).toEqual({ activeBefore: 1, reapedIds: ["row-1"] });
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload).toEqual({ status: "ended", ended_at: expiresAt });
+    // Terminal P2 (E2EE): the reap write also clears the session key —
+    // reaping is one of the three places a row is marked ended.
+    expect(updateCalls[0].payload).toEqual({ status: "ended", ended_at: expiresAt, e2ee_session_key: null });
     expect(updateCalls[0].payload.ended_at).not.toBe(new Date(NOW).toISOString());
     expect(updateCalls[0].filters).toEqual({ id: "row-1", status: "active" });
   });

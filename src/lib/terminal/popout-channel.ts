@@ -209,6 +209,16 @@ export interface PopoutPayload {
    * scrollback is never allowed to sink a hand-off.
    */
   buffer?: TransferredBuffer;
+  /**
+   * Terminal P2 (E2EE): base64 256-bit session key, browser-side only —
+   * present on a reload-reattach hand-off (terminal-popout-client.tsx's own
+   * `/api/terminal/session/reattach` call), since a popped window's socket
+   * re-attaches fresh and needs its own decryptor. Absent on the ordinary
+   * dock→popout hand-off (the dock keeps that path's key material to itself
+   * today — the popped window inherits an in-flight attach, not a fresh
+   * one) and on deploy skew / a pre-feature session.
+   */
+  sessionKey?: string;
 }
 
 export type PopoutChannelMessage =
@@ -304,6 +314,11 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
   if (p.buffer !== undefined) {
     const buffer = parseTransferredBuffer(p.buffer);
     if (buffer) result.buffer = buffer;
+  }
+  // Terminal P2 (E2EE): same leniency as `buffer` — a malformed/absent key
+  // never sinks the hand-off, it just falls back to Phase A plaintext.
+  if (typeof p.sessionKey === "string" && p.sessionKey.length > 0) {
+    result.sessionKey = p.sessionKey;
   }
   return result;
 }

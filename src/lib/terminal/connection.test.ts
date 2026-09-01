@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   RELAY_CLOSE,
+  E2EE_CLOSE,
   RECONNECT_GRACE_MS,
   HEARTBEAT_INTERVAL_MS,
   LINK_SILENT_AFTER_MS,
@@ -16,6 +17,7 @@ import {
   parseBridgeVersionFrame,
   parseBridgeVersionHost,
   parseBridgeVersionConv,
+  parseBridgeVersionE2ee,
   shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
@@ -255,6 +257,18 @@ describe("mapCloseCode", () => {
     const max = mapCloseCode(1000, "max-duration: session reached its 4 hour limit", "connected");
     expect(max.status).toBe("session-ended");
     expect(max.endedReason).toBe("max-duration");
+  });
+
+  it("Terminal P2 (E2EE): a fail-closed negotiation-timeout close maps to its own errorKind, not a generic error", () => {
+    const mapped = mapCloseCode(E2EE_CLOSE.REQUIRED_NEGOTIATION_FAILED, "e2ee-required-negotiation-failed", "connecting");
+    expect(mapped.status).toBe("error");
+    expect(mapped.errorKind).toBe("e2ee-required");
+  });
+
+  it("Terminal P2 (E2EE): a mid-session AEAD verification failure maps to its own errorKind, even from a live stream", () => {
+    const mapped = mapCloseCode(E2EE_CLOSE.VERIFY_FAILED, "e2ee-verify-failed", "connected");
+    expect(mapped.status).toBe("error");
+    expect(mapped.errorKind).toBe("e2ee-verify-failed");
   });
 
   it("abnormal close depends on prior status", () => {
@@ -647,6 +661,28 @@ describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
     expect(isBridgeVersionFrame(frame)).toBe(true);
     expect(parseBridgeVersionHost(frame)).toBe("x".repeat(80));
     expect(parseBridgeVersionConv(frame)).toBe(CONV_ID);
+  });
+
+  // Terminal P2 (E2EE, FR-5): the SAME frame gains an optional `e2ee` boolean —
+  // pin byte-for-byte against the real shared encoder, same as version/host/conv.
+  it("detects the shared bridge-version frame's e2ee field byte-for-byte", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.4.0", "Nicks-MacBook-Pro", undefined, true);
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionE2ee(frame)).toBe(true);
+  });
+
+  it("parseBridgeVersionE2ee returns false when `e2ee` is absent (old bridge — graceful degrade)", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.3.3");
+    expect(parseBridgeVersionE2ee(frame)).toBe(false);
+    expect(parseBridgeVersionFrame(frame)).toBe("0.3.3"); // version still parses fine
+  });
+
+  it("parseBridgeVersionE2ee rejects a falsy/non-boolean `e2ee` or malformed JSON", () => {
+    expect(parseBridgeVersionE2ee(encodeSharedBridgeVersionFrame("0.4.0", undefined, undefined, false))).toBe(false);
+    expect(parseBridgeVersionE2ee('{"t":"bridge-version","e2ee":"true"}')).toBe(false);
+    expect(parseBridgeVersionE2ee('{"t":"bridge-version"}')).toBe(false);
+    expect(parseBridgeVersionE2ee('{"t":"bridge-version"' /* truncated */)).toBe(false);
+    expect(parseBridgeVersionE2ee(encodeSharedHeartbeatAckFrame())).toBe(false); // wrong tag entirely
   });
 
   it("shouldDeclareLinkSilent: exactly the threshold is NOT yet dead; strictly beyond is", () => {

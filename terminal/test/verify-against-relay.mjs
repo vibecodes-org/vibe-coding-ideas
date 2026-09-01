@@ -63,7 +63,10 @@ try {
   console.log("[verify] browser leg connected (authenticated)");
 
   bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--cmd", `${process.execPath} ${SENTINEL}`], {
-    env: { ...process.env, RELAY_URL, SESSION_ID: session, BRIDGE_TOKEN: tokensA.bridge, BRIDGE_MAX_SECONDS: "60" },
+    // TERMINAL_APP_URL after the `...process.env` spread: this manual
+    // verification script has no app server running, so the E2EE key fetch
+    // must never reach production either.
+    env: { ...process.env, RELAY_URL, SESSION_ID: session, BRIDGE_TOKEN: tokensA.bridge, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: "http://127.0.0.1:1" },
     stdio: ["ignore", "inherit", "inherit"],
   });
 

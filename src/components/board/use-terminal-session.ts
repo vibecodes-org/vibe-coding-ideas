@@ -75,12 +75,21 @@ import {
   parseBridgeVersionFrame,
   parseBridgeVersionHost,
   parseBridgeVersionConv,
+  parseBridgeVersionE2ee,
   relayBaseUrl,
   shouldDeclareLinkSilent,
   terminalReducer,
   type TerminalConnectionState,
   type TerminalStatus,
 } from "@/lib/terminal/connection";
+import {
+  FrameEncryptor,
+  FrameDecryptor,
+  PtyCryptoError,
+  DIRECTION_BRIDGE_TO_BROWSER,
+  DIRECTION_BROWSER_TO_BRIDGE,
+} from "@/lib/terminal/pty-crypto";
+import { decideE2eePolicy, E2EE_NEGOTIATION_GRACE_MS } from "@/lib/terminal/e2ee-policy";
 import {
   MAX_LAUNCH_URL_LENGTH,
   buildLaunchDeepLink,
@@ -135,6 +144,25 @@ interface MintErrorBody {
   /** Card 0301fe8e — set on a `conversation_live` refusal: the live session already running the conversation, and its board. */
   liveSid?: string;
   liveIdeaId?: string;
+}
+
+/**
+ * Terminal P2 (E2EE): decode the mint response's base64 session key into raw
+ * bytes, or null for anything absent/malformed/wrong-length — never throw
+ * (an old app response, a network hiccup mangling JSON, or the feature being
+ * off server-side are all just "no key", the same graceful Phase A fallback
+ * an old bridge that never announces `e2ee` already gets).
+ */
+function decodeBase64SessionKey(raw: string | undefined): Uint8Array | null {
+  if (!raw) return null;
+  try {
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.length === 32 ? bytes : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -414,6 +442,16 @@ export interface AttachExistingPair {
    * for the same reasons.
    */
   helperToken?: string;
+  /**
+   * Terminal P2 (E2EE): the reattach route now returns the session's key too
+   * (any of the owner's authenticated tabs/devices can decrypt a live
+   * session, not just the one that minted it) — base64 256-bit, browser-side
+   * only, same shape as the mint response's `sessionKey`. Absent for a
+   * popped-out window's hand-off (that channel doesn't transfer key
+   * material — the pop-out inherits an already-attached socket, not a fresh
+   * reattach) or a session that predates this feature / has already ended.
+   */
+  sessionKey?: string;
 }
 
 export interface PairInfo {
@@ -511,6 +549,21 @@ export interface UseTerminalSessionResult {
    * helper-version.ts) to decide whether to show the update notice.
    */
   helperVersion: string | null;
+  /**
+   * Terminal P2 (E2EE) — Phase A "not encrypted yet" signal (design doc,
+   * Nick's binding decision 1: no persistent lock icon — this is the ONLY
+   * E2EE indicator, and it's non-blocking). True only while connected, this
+   * session has a key, and the bridge hasn't (yet, or ever — an old helper)
+   * confirmed it can encrypt.
+   */
+  notEncryptedYet: boolean;
+  /**
+   * Terminal P2 (E2EE) design §5 — the positive counterpart to
+   * `notEncryptedYet`, for the Connected pill's tooltip only (never a header
+   * badge — see that field's own doc for the binding "no persistent chip"
+   * decision).
+   */
+  e2eeActive: boolean;
   /** The minted session's ids/tokens (null before mint / after end). */
   pair: PairInfo | null;
   /**
@@ -652,8 +705,29 @@ export function useTerminalSession(
   // pre-2a helper, which never sends one at all; the dock treats that identically
   // to "known stale" (src/lib/terminal/helper-version.ts).
   const [helperVersion, setHelperVersion] = useState<string | null>(null);
+  // Terminal P2 (E2EE): true once the CURRENT attach's bridge has announced
+  // `e2ee:true` on its bridge-version frame. Reset to false at the start of
+  // every openBrowserLeg() attach (see that function).
+  const [bridgeE2ee, setBridgeE2ee] = useState(false);
+  const e2eeActivatedSidRef = useRef<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // Terminal P2 (E2EE). The session key from the mint response, decoded once
+  // and kept ONLY in this in-memory ref — never localStorage/sessionStorage
+  // (FR-6). Survives every openBrowserLeg() call for this tab (reconnect,
+  // pop-out reattach) — a fresh browser tab/page refresh has no way to
+  // recover it today (this pass's known E2EE gap; see the task's final
+  // report). `e2eeEncRef`/`e2eeDecRef` are rebuilt fresh on EVERY
+  // openBrowserLeg() attach (FR-4 — a fresh HKDF subkey per attach), and are
+  // `null` whenever this session has no key or the bridge hasn't announced
+  // E2EE capability yet (Phase A plaintext fallback, FR-5).
+  const sessionKeyBytesRef = useRef<Uint8Array | null>(null);
+  const e2eeEncRef = useRef<FrameEncryptor | null>(null);
+  const e2eeDecRef = useRef<FrameDecryptor | null>(null);
+  // Terminal P2 (E2EE, FR-5) — Phase B enforcement flag from the mint
+  // response (see e2ee-policy.ts's isE2eeRequired doc). Always false today.
+  const e2eeRequiredRef = useRef(false);
+  const e2eeGraceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<XFitAddon | null>(null);
   // Scrollback transfer (card 35cffc10): `attachToExisting` can run BEFORE
@@ -882,13 +956,25 @@ export function useTerminalSession(
       });
 
       // Keystrokes → relay (binary). Guarded by the pure input-enabled predicate so
-      // read-only / non-connected states never reach the PTY.
+      // read-only / non-connected states never reach the PTY. Terminal P2
+      // (E2EE): AEAD-encrypted here whenever this attach's encryptor is
+      // active (WebCrypto is async, so the send happens once it resolves —
+      // xterm's onData ordering guarantee doesn't depend on this callback
+      // itself being synchronous). `null` (no key, or bridge hasn't
+      // announced capability yet) sends the raw bytes exactly as before.
       term.onData((data) => {
         if (statusRef.current !== "connected" || readOnlyRef.current) return;
         const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(new TextEncoder().encode(data));
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        const bytes = new TextEncoder().encode(data);
+        const enc = e2eeEncRef.current;
+        if (enc) {
+          void enc.encrypt(bytes).then((frame) => {
+            if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) ws.send(frame);
+          });
+          return;
         }
+        ws.send(bytes);
       });
 
       termRef.current = term;
@@ -1533,6 +1619,10 @@ export function useTerminalSession(
     // close never re-triggers the reconnect loop (only genuine drops do).
     clearReconnectTimer();
     clearDegradeTimer();
+    if (e2eeGraceTimerRef.current) {
+      clearTimeout(e2eeGraceTimerRef.current);
+      e2eeGraceTimerRef.current = null;
+    }
     reconnectDeadlineRef.current = 0;
     reconnectAttemptRef.current = 0;
     setPeerDegraded(false);
@@ -1568,6 +1658,17 @@ export function useTerminalSession(
       }
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
+      // Terminal P2 (E2EE, FR-4): every fresh attach (a real reconnect, a
+      // pop-out reattach, or the very first open) gets its own encryptor/
+      // decryptor pair, reset here — a decryptor pinned to the PREVIOUS
+      // attach's attachId would reject every frame on this new one. Real
+      // objects are only built once this attach's bridge announces `e2ee`
+      // capability (see the bridge-version frame handler below); until then
+      // (or if it never does — Phase A fallback) this session runs plaintext.
+      e2eeEncRef.current = null;
+      e2eeDecRef.current = null;
+      e2eeActivatedSidRef.current = null;
+      setBridgeE2ee(false);
       // Fresh socket → fresh watchdog: disarm until ITS first hb-ack and restart
       // the silence clock (an inherited stale stamp must never condemn a new leg).
       hbArmedRef.current = false;
@@ -1588,6 +1689,34 @@ export function useTerminalSession(
         // attached yet, so decideResize would just "defer" again — a wasted call.
         // The connected-transition effect (see sendResize's call sites) is the one
         // retry that matters: it fires once reachability is actually true.
+
+        // Terminal P2 (E2EE, FR-5) — Phase B fail-closed. Always a no-op today
+        // (e2eeRequiredRef is only ever true if TERMINAL_E2EE_REQUIRED is
+        // flipped on server-side, which this task deliberately does not do).
+        // Gives negotiation a bounded window (the bridge's own bridge-version
+        // announce/relay-forward round trip) before deciding: if this attach
+        // is still missing a working E2EE pairing once it elapses, the
+        // session must end distinctly — never silently run plaintext when
+        // the flag is on.
+        if (e2eeGraceTimerRef.current) clearTimeout(e2eeGraceTimerRef.current);
+        if (e2eeRequiredRef.current) {
+          e2eeGraceTimerRef.current = setTimeout(() => {
+            e2eeGraceTimerRef.current = null;
+            const policy = decideE2eePolicy({
+              required: e2eeRequiredRef.current,
+              browserHasKey: sessionKeyBytesRef.current !== null,
+              bridgeE2ee: e2eeDecRef.current !== null,
+            });
+            if (policy === "fail-closed") {
+              logger.error("Terminal E2EE required but negotiation failed — ending session", { sessionId });
+              try {
+                wsRef.current?.close(4011, "e2ee-required-negotiation-failed");
+              } catch {
+                /* already closing */
+              }
+            }
+          }, E2EE_NEGOTIATION_GRACE_MS);
+        }
       };
       ws.onmessage = (ev) => {
         // ANY inbound frame proves the link carried something just now — feed the
@@ -1648,6 +1777,18 @@ export function useTerminalSession(
                 body: JSON.stringify({ claudeSessionId: conv }),
               }).catch(() => {});
             }
+            // Terminal P2 (E2EE, FR-4/FR-5): activate once per attach — the
+            // frame can be re-sent (e.g. a later field updates), so guard on
+            // e2eeActivatedSidRef the same way host/conv guard on their own
+            // "once per session" refs above. Only ever builds NEW encryptor/
+            // decryptor instances (never reused across attaches).
+            const e2ee = parseBridgeVersionE2ee(ev.data);
+            if (e2ee && sessionKeyBytesRef.current && e2eeActivatedSidRef.current !== sessionId) {
+              e2eeActivatedSidRef.current = sessionId;
+              setBridgeE2ee(true);
+              e2eeEncRef.current = new FrameEncryptor(sessionKeyBytesRef.current, DIRECTION_BROWSER_TO_BRIDGE, sessionId);
+              e2eeDecRef.current = new FrameDecryptor(sessionKeyBytesRef.current, DIRECTION_BRIDGE_TO_BROWSER, sessionId);
+            }
             return;
           }
           if (isPeerDegradedFrame(ev.data)) {
@@ -1681,23 +1822,50 @@ export function useTerminalSession(
         // BINARY = opaque PTY bytes → the bridge is streaming; the link is HEALTHY.
         // Clear the launch nudges, mark paired on first success, and reset every
         // reconnect/degrade timer + budget so a later drop starts a fresh window.
-        clearHelperTimer();
-        removeLaunchIframe();
-        setLaunchPhase("idle");
-        clearDegradeTimer();
-        setPeerDegraded(false);
-        reconnectDeadlineRef.current = 0;
-        reconnectAttemptRef.current = 0;
-        if (!pairedRef.current) {
-          markBrowserPaired();
-          setPaired(true);
+        const markLinkHealthyAndWrite = (plaintext: Uint8Array) => {
+          clearHelperTimer();
+          removeLaunchIframe();
+          setLaunchPhase("idle");
+          clearDegradeTimer();
+          setPeerDegraded(false);
+          reconnectDeadlineRef.current = 0;
+          reconnectAttemptRef.current = 0;
+          if (!pairedRef.current) {
+            markBrowserPaired();
+            setPaired(true);
+          }
+          dispatch({ type: "data" });
+          termRef.current?.write(plaintext);
+          // Reload-reattach instant-continue (design item 5): mark the buffer
+          // dirty so the periodic snapshot effect below has something new to
+          // save next tick.
+          snapshotDirtyRef.current = true;
+        };
+        // Terminal P2 (E2EE, FR-5): once this attach's decryptor is active,
+        // EVERY binary frame must verify before anything is trusted — a
+        // failure (tamper, replay, wrong key, cross-direction reflection)
+        // fails closed: the frame is NEVER written to xterm, and the socket
+        // is closed with a distinct reason rather than silently dropped or
+        // downgraded to plaintext.
+        if (e2eeDecRef.current) {
+          const dec = e2eeDecRef.current;
+          void dec
+            .decrypt(new Uint8Array(ev.data as ArrayBuffer))
+            .then(markLinkHealthyAndWrite)
+            .catch((err) => {
+              logger.error("Terminal E2EE frame verification failed — closing session", {
+                sessionId,
+                error: err instanceof PtyCryptoError ? err.message : String(err),
+              });
+              try {
+                wsRef.current?.close(4010, "e2ee-verify-failed");
+              } catch {
+                /* already closing */
+              }
+            });
+          return;
         }
-        dispatch({ type: "data" });
-        termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
-        // Reload-reattach instant-continue (design item 5): mark the buffer
-        // dirty so the periodic snapshot effect below has something new to
-        // save next tick.
-        snapshotDirtyRef.current = true;
+        markLinkHealthyAndWrite(new Uint8Array(ev.data as ArrayBuffer));
       };
       ws.onerror = () => {
         logger.warn("Terminal relay socket error", { sessionId });
@@ -1911,6 +2079,10 @@ export function useTerminalSession(
       permissionMode?: string;
       /** Concurrent-session isolation — true when another of this user's sessions is already live on this board (fires `--worktree`), fresh-launch only. */
       isolate?: boolean;
+      /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only (FR-1). */
+      sessionKey?: string;
+      /** Terminal P2 (E2EE, FR-5) — Phase B enforcement flag (see e2ee-policy.ts). */
+      e2eeRequired?: boolean;
     };
     try {
       const res = await fetch("/api/terminal/session", {
@@ -1986,6 +2158,12 @@ export function useTerminalSession(
       bridgeToken: data.bridgeToken,
       browserToken: data.browserToken,
     });
+    // Terminal P2 (E2EE, FR-1/FR-6): decode once, keep in memory only. A
+    // malformed/missing key (old app, or the feature simply unavailable) is
+    // an honest "no E2EE this session" — openBrowserLeg's Phase A fallback
+    // handles it the same as an old bridge that never announces capability.
+    sessionKeyBytesRef.current = decodeBase64SessionKey(data.sessionKey);
+    e2eeRequiredRef.current = data.e2eeRequired === true;
     // Cheap cross-component telemetry (card cc74a067, design §9): pairs THIS
     // mint with a previously observed helper idle-quit (the Helper row's own
     // status-transition detection — see helper-relaunch-signal.ts) if one
@@ -2095,6 +2273,13 @@ export function useTerminalSession(
       // it already does over connect()'s seeded resumeId.
       setSessionCwd(p.cwd ?? null);
       setClaudeSessionId(p.claudeSessionId ?? null);
+      // Terminal P2 (E2EE, FR-1/FR-6): mirror connect()'s own decode — a
+      // reattach (My sessions Reconnect, chooser, reload-reattach) is just as
+      // entitled to the key as the original mint, per the approved
+      // key-delivery design. Absent (pop-out hand-off, a pre-feature/ended
+      // session) decodes to null, the same honest "no E2EE this session"
+      // openBrowserLeg's Phase A fallback already handles.
+      sessionKeyBytesRef.current = decodeBase64SessionKey(p.sessionKey);
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       // Scrollback transfer (card 35cffc10, Flow A): a handed-over buffer
@@ -2429,6 +2614,18 @@ export function useTerminalSession(
     launchPhase,
     peerDegraded,
     helperVersion,
+    // Terminal P2 (E2EE) — Phase A "not encrypted yet" signal (design doc,
+    // Nick's binding decision 1: NO persistent lock icon — this is true ONLY
+    // while connected, this session has a key, and the bridge hasn't (yet,
+    // or ever — an old helper) confirmed it can encrypt).
+    notEncryptedYet: state.status === "connected" && sessionKeyBytesRef.current !== null && !bridgeE2ee,
+    // Terminal P2 (E2EE) design §5 — the positive indicator with NO
+    // persistent chip: this only feeds the Connected pill's tooltip (and,
+    // later, the My-sessions row detail), never a header badge. True once
+    // the bridge has actually confirmed it can encrypt for the CURRENT
+    // attach — mirrors `notEncryptedYet`'s own connected+bridgeE2ee check,
+    // just the positive case.
+    e2eeActive: state.status === "connected" && bridgeE2ee,
     pair,
     cwd: sessionCwd,
     claudeSessionId,
