@@ -59,7 +59,9 @@ export function TaskCommentsSection({
     const supabase = createClient();
     const { data } = await supabase
       .from("board_task_comments")
-      .select("*, author:users!board_task_comments_author_id_fkey(*)")
+      // Author join column-scoped to what this file renders: avatar_url,
+      // full_name/email (via displayName()), is_bot (badge), id (botRoles lookup).
+      .select("*, author:users!board_task_comments_author_id_fkey(id, full_name, email, avatar_url, is_bot)")
       .eq("task_id", taskId)
       .order("created_at", { ascending: true });
 
@@ -87,7 +89,9 @@ export function TaskCommentsSection({
         async (payload) => {
           const { data } = await supabase
             .from("board_task_comments")
-            .select("*, author:users!board_task_comments_author_id_fkey(*)")
+            // Author join column-scoped to what this file renders: avatar_url,
+      // full_name/email (via displayName()), is_bot (badge), id (botRoles lookup).
+      .select("*, author:users!board_task_comments_author_id_fkey(id, full_name, email, avatar_url, is_bot)")
             .eq("id", payload.new.id)
             .single();
 

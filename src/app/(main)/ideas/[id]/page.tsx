@@ -95,10 +95,11 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const { id } = await params;
   const { user, supabase } = await requireAuth();
 
-  // Fetch idea with author
+  // Fetch idea with author — author join is column-scoped to what's rendered
+  // below (avatar + name in the hero card and JSON-LD), not select("*").
   const { data: idea } = await supabase
     .from("ideas")
-    .select("*, author:users!ideas_author_id_fkey(*), project_kit:project_kits!ideas_project_kit_id_fkey(name)")
+    .select("*, author:users!ideas_author_id_fkey(id, full_name, avatar_url), project_kit:project_kits!ideas_project_kit_id_fkey(name)")
     .eq("id", id)
     .single();
 
@@ -116,14 +117,16 @@ export default async function IdeaDetailPage({ params }: PageProps) {
     { data: recentDiscussions },
     { count: boardTaskCount },
   ] = await Promise.all([
+    // Author join column-scoped to what CommentItem renders (avatar + name).
     supabase
       .from("comments")
-      .select("*, author:users!comments_author_id_fkey(*)")
+      .select("*, author:users!comments_author_id_fkey(id, full_name, avatar_url)")
       .eq("idea_id", id)
       .order("created_at", { ascending: true }),
+    // User join column-scoped to what the Team avatar stack renders.
     supabase
       .from("collaborators")
-      .select("*, user:users!collaborators_user_id_fkey(*)")
+      .select("*, user:users!collaborators_user_id_fkey(id, full_name, avatar_url)")
       .eq("idea_id", id),
     supabase
       .from("votes")
@@ -152,9 +155,11 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
     getIdeaTeam(supabase, id, idea.author_id, user.id),
+    // Author join scoped to `id` only — RecentDiscussionsPreview never renders
+    // the discussion author, `id` is kept purely to satisfy the shape.
     supabase
       .from("idea_discussions")
-      .select("*, author:users!idea_discussions_author_id_fkey(*)")
+      .select("*, author:users!idea_discussions_author_id_fkey(id)")
       .eq("idea_id", id)
       .order("pinned", { ascending: false })
       .order("last_activity_at", { ascending: false })
@@ -219,7 +224,8 @@ export default async function IdeaDetailPage({ params }: PageProps) {
     (user.id === idea.author_id)
       ? supabase
           .from("collaboration_requests")
-          .select("*, requester:users!collaboration_requests_requester_id_fkey(*)")
+          // Requester join column-scoped to what PendingRequests renders.
+          .select("*, requester:users!collaboration_requests_requester_id_fkey(id, full_name, avatar_url)")
           .eq("idea_id", id)
           .eq("status", "pending")
           .order("created_at", { ascending: true })

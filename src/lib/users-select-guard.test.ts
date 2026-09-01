@@ -45,22 +45,13 @@ const SCAN_DIRS = ["src", "mcp-server/src"];
  * Files with a known, pre-existing `.from("users").select("*")` call that
  * this security fix did NOT touch (out of scope — see file header). Do not
  * add a new file here without a comment justifying why it's not the same bug.
+ *
+ * Empty as of migration 00165 (Phase 2b of the `public.users` PII hardening):
+ * `src/lib/idea-team.ts` and `src/components/ideas/add-collaborator-popover.tsx`
+ * (the two previous entries) were both narrowed to explicit column lists —
+ * see idea-team.ts's `TEAM_USER_COLUMNS` and the popover's inline select().
  */
-const ALLOWLIST: ReadonlyArray<string> = [
-  // Idea team roster (author/collaborators) — same "full row to arbitrary
-  // idea page" pattern as the profile page bug, not fixed by this hotfix.
-  "src/lib/idea-team.ts",
-  // NOTE: the discussion pages' direct `.from("users").select("*")` for
-  // `currentUser` (previously allowlisted here) was narrowed to an explicit
-  // column list as part of the encrypted_anthropic_key migration (00152) —
-  // it was a cheap fix to make alongside the column-grant change, so it's
-  // no longer in this allowlist. Their SEPARATE embedded-join wildcard
-  // (`author:users!...(*)`) is a different call site, still out of scope,
-  // and remains in EMBEDDED_WILDCARD_ALLOWLIST below.
-  //
-  // Collaborator-add autocomplete search — same pattern, not fixed by this hotfix.
-  "src/components/ideas/add-collaborator-popover.tsx",
-];
+const ALLOWLIST: ReadonlyArray<string> = [];
 
 const repoRoot = process.cwd();
 
@@ -151,19 +142,15 @@ const EMBEDDED_USERS_WILDCARD_RE = /users(?:![A-Za-z0-9_]+)?\(\s*\*\s*\)/;
  * Files with a known, pre-existing embedded `users(...)(*)` join that this
  * security fix did NOT touch (out of scope — see file header). Do not add a
  * new file here without a comment justifying why it's not the same bug.
+ *
+ * Empty as of migration 00165 (Phase 2b of the `public.users` PII hardening):
+ * every file previously listed here (dashboard, ideas, idea detail/board/
+ * discussions pages, activity-timeline.tsx, task-comments-section.tsx,
+ * board-refetch.ts, idea-team.ts) had its embedded `users(...)` joins
+ * narrowed to explicit column lists — see each file's select() comment for
+ * the exact fields and why.
  */
-const EMBEDDED_WILDCARD_ALLOWLIST: ReadonlyArray<string> = [
-  "src/app/(main)/dashboard/page.tsx",
-  "src/app/(main)/ideas/page.tsx",
-  "src/app/(main)/ideas/[id]/page.tsx",
-  "src/app/(main)/ideas/[id]/board/page.tsx",
-  "src/app/(main)/ideas/[id]/discussions/page.tsx",
-  "src/app/(main)/ideas/[id]/discussions/[discussionId]/page.tsx",
-  "src/components/board/activity-timeline.tsx",
-  "src/components/board/task-comments-section.tsx",
-  "src/lib/board-refetch.ts",
-  "src/lib/idea-team.ts",
-];
+const EMBEDDED_WILDCARD_ALLOWLIST: ReadonlyArray<string> = [];
 
 describe("users select() guard (embedded-join wildcard)", () => {
   const allFiles = SCAN_DIRS.flatMap((d) => walk(join(repoRoot, d)));
@@ -395,5 +382,225 @@ describe("encrypted_anthropic_key select() guard", () => {
   it("ai-helpers.ts itself still selects encrypted_anthropic_key (sanity: the allowlist target is real)", () => {
     const content = readFileSync(join(repoRoot, ALLOWED_FILE), "utf8");
     expect(SELECT_WITH_KEY_RE.test(content)).toBe(true);
+  });
+});
+
+/**
+ * Regression guard for the narrowing work above (migration 00165, re-applying
+ * the `authenticated` column-level revoke that 00153 rolled back): every call
+ * site that used to run a wildcard `users` select must still fetch every
+ * column its UI actually renders, and must never fetch `encrypted_anthropic_key`
+ * (which `authenticated` can no longer SELECT at all — that query would now
+ * fail at runtime). These pin the specific column lists chosen during the
+ * narrowing so a future edit can't silently widen (security regression) or
+ * narrow (functionality regression) one of them without a test failing.
+ */
+describe("narrowed users select()/join column lists (migration 00165 regression guard)", () => {
+  const read = (rel: string) => readFileSync(join(repoRoot, rel), "utf8");
+
+  // A file must select every column in `required` (in the given select()/join
+  // fragment) and none of `forbidden`. `pattern` locates the specific
+  // select()/join call within the file's source so unrelated selects in the
+  // same file can't accidentally satisfy the assertion.
+  function expectColumns(content: string, pattern: RegExp, required: string[], forbidden: string[] = []) {
+    const match = content.match(pattern);
+    expect(match, `expected to find a match for ${pattern}`).not.toBeNull();
+    const fragment = match![0];
+    for (const col of required) {
+      expect(fragment, `expected "${col}" in: ${fragment}`).toContain(col);
+    }
+    for (const col of [...forbidden, "encrypted_anthropic_key"]) {
+      expect(fragment, `did not expect "${col}" in: ${fragment}`).not.toContain(col);
+    }
+  }
+
+  it("idea-team.ts: TEAM_USER_COLUMNS covers every field teamMembers/allMentionable consumers render", () => {
+    const content = read("src/lib/idea-team.ts");
+    expectColumns(
+      content,
+      /const TEAM_USER_COLUMNS = "([^"]+)"/,
+      ["id", "full_name", "avatar_url", "email", "is_bot", "notification_preferences"]
+    );
+    // All three fetches (author, embedded collaborators join, bot users) reuse the constant.
+    expect(content.match(/TEAM_USER_COLUMNS/g)?.length).toBeGreaterThanOrEqual(4); // 1 declaration + 3 uses
+  });
+
+  it("add-collaborator-popover.tsx: search select covers rendered fields + the is_bot filter column", () => {
+    const content = read("src/components/ideas/add-collaborator-popover.tsx");
+    expectColumns(
+      content,
+      /\.from\("users"\)\s*\.select\("([^"]+)"\)/,
+      ["id", "full_name", "avatar_url", "email", "is_bot"]
+    );
+  });
+
+  it("ideas/page.tsx and dashboard/page.tsx: idea author joins cover exactly what IdeaCard renders", () => {
+    for (const file of ["src/app/(main)/ideas/page.tsx", "src/app/(main)/dashboard/page.tsx"]) {
+      const content = read(file);
+      const matches = [...content.matchAll(/author:users!ideas_author_id_fkey\(([^)]+)\)/g)];
+      expect(matches.length, `expected at least one author join in ${file}`).toBeGreaterThan(0);
+      for (const m of matches) {
+        expect(m[1]).toContain("id");
+        expect(m[1]).toContain("full_name");
+        expect(m[1]).toContain("avatar_url");
+        expect(m[1]).toContain("is_admin");
+        expect(m[1]).not.toContain("encrypted_anthropic_key");
+      }
+    }
+  });
+
+  it("dashboard/page.tsx: unused board_tasks assignee join is scoped to id only", () => {
+    const content = read("src/app/(main)/dashboard/page.tsx");
+    expectColumns(
+      content,
+      /assignee:users!board_tasks_assignee_id_fkey\(([^)]+)\)/,
+      ["id"]
+    );
+    const match = content.match(/assignee:users!board_tasks_assignee_id_fkey\(([^)]+)\)/);
+    expect(match![1].trim()).toBe("id");
+  });
+
+  it("board_tasks assignee joins (board page + board-refetch.ts) cover what board-task-card.tsx renders", () => {
+    for (const file of ["src/app/(main)/ideas/[id]/board/page.tsx", "src/lib/board-refetch.ts"]) {
+      const content = read(file);
+      expectColumns(
+        content,
+        /assignee:users!board_tasks_assignee_id_fkey\(([^)]+)\)/,
+        ["id", "full_name", "email", "avatar_url", "is_bot"]
+      );
+    }
+  });
+
+  it("ideas/[id]/page.tsx: author/comments/collaborators/requester joins are column-scoped", () => {
+    const content = read("src/app/(main)/ideas/[id]/page.tsx");
+    // `\*, author:...` (not the separate generateMetadata query, which only
+    // selects `full_name` and is intentionally minimal — not part of this fix).
+    expectColumns(content, /\*, author:users!ideas_author_id_fkey\(([^)]+)\)/, ["id", "full_name", "avatar_url"]);
+    expectColumns(content, /author:users!comments_author_id_fkey\(([^)]+)\)/, ["id", "full_name", "avatar_url"]);
+    expectColumns(content, /user:users!collaborators_user_id_fkey\(([^)]+)\)/, ["id", "full_name", "avatar_url"]);
+    expectColumns(content, /requester:users!collaboration_requests_requester_id_fkey\(([^)]+)\)/, ["id", "full_name", "avatar_url"]);
+    // RecentDiscussionsPreview never reads the discussion author — scoped to id only.
+    const discussionAuthor = content.match(/author:users!idea_discussions_author_id_fkey\(([^)]+)\)/);
+    expect(discussionAuthor![1].trim()).toBe("id");
+  });
+
+  it("discussions list/detail pages: author/reply joins cover displayName()/avatar/bot-badge fields", () => {
+    expectColumns(
+      read("src/app/(main)/ideas/[id]/discussions/page.tsx"),
+      /author:users!idea_discussions_author_id_fkey\(([^)]+)\)/,
+      ["id", "full_name", "email", "avatar_url", "is_bot"]
+    );
+    const discussionDetail = read("src/app/(main)/ideas/[id]/discussions/[discussionId]/page.tsx");
+    expectColumns(
+      discussionDetail,
+      /author:users!idea_discussions_author_id_fkey\(([^)]+)\)/,
+      ["id", "full_name", "email", "avatar_url", "is_bot"]
+    );
+    expectColumns(
+      discussionDetail,
+      /author:users!idea_discussion_replies_author_id_fkey\(([^)]+)\)/,
+      ["id", "full_name", "avatar_url", "is_bot"]
+    );
+  });
+
+  it("activity-timeline.tsx: actor join covers displayName()/bot-badge fields, no unused avatar_url", () => {
+    const content = read("src/components/board/activity-timeline.tsx");
+    const matches = [...content.matchAll(/actor:users!board_task_activity_actor_id_fkey\(([^)]+)\)/g)];
+    expect(matches.length).toBe(2); // initial fetch + realtime re-fetch
+    for (const m of matches) {
+      expect(m[1]).toContain("id");
+      expect(m[1]).toContain("full_name");
+      expect(m[1]).toContain("email");
+      expect(m[1]).toContain("is_bot");
+      expect(m[1]).not.toContain("encrypted_anthropic_key");
+    }
+  });
+
+  it("task-comments-section.tsx: author join covers avatar/displayName()/bot-badge fields", () => {
+    const content = read("src/components/board/task-comments-section.tsx");
+    const matches = [...content.matchAll(/author:users!board_task_comments_author_id_fkey\(([^)]+)\)/g)];
+    expect(matches.length).toBe(2); // initial fetch + realtime re-fetch
+    for (const m of matches) {
+      expect(m[1]).toContain("id");
+      expect(m[1]).toContain("full_name");
+      expect(m[1]).toContain("email");
+      expect(m[1]).toContain("avatar_url");
+      expect(m[1]).toContain("is_bot");
+    }
+  });
+});
+
+/**
+ * Regression guard for migration 00165 itself: pins the exact `authenticated`
+ * column grant list. This can't exercise real Postgres GRANT enforcement
+ * (that needs a live database — verified separately), but it CAN catch the
+ * two ways this specific migration breaks the app if edited carelessly:
+ * (1) dropping a real column from the grant list breaks every query naming
+ * it (the exact shape of the 00153 incident, just from a missing grant
+ * instead of a missing wildcard-narrowing), and (2) re-adding
+ * `encrypted_anthropic_key` reopens the hole 00152 closed.
+ */
+describe("migration 00165: authenticated column grant", () => {
+  const MIGRATION_FILE = "supabase/migrations/00165_reapply_authenticated_users_column_grant.sql";
+  const content = readFileSync(join(repoRoot, MIGRATION_FILE), "utf8");
+
+  // Every real column of public.users as of this migration, verified against
+  // the live schema (information_schema.columns) — not copied from 00152's
+  // now-stale list, which predates terminal_model/terminal_auto_accept/
+  // feed_preferences.
+  const EXPECTED_GRANTED_COLUMNS = [
+    "id",
+    "email",
+    "full_name",
+    "avatar_url",
+    "bio",
+    "github_username",
+    "contact_info",
+    "notification_preferences",
+    "default_board_columns",
+    "feed_preferences",
+    "model_tier_map",
+    "terminal_model",
+    "terminal_auto_accept",
+    "is_admin",
+    "is_super_admin",
+    "is_bot",
+    "ai_enabled",
+    "has_anthropic_key",
+    "ai_daily_limit",
+    "ai_starter_credits",
+    "onboarding_completed_at",
+    "mcp_connected_at",
+    "created_at",
+    "updated_at",
+  ];
+
+  it("revokes the table-level grant before re-granting columns", () => {
+    expect(content).toMatch(/revoke select on table public\.users from authenticated;/);
+  });
+
+  it("grants exactly the expected column list to authenticated, excluding encrypted_anthropic_key", () => {
+    const match = content.match(/grant select \(([\s\S]*?)\) on public\.users to authenticated;/);
+    expect(match, "expected to find the authenticated column grant").not.toBeNull();
+
+    const columns = match![1]
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    expect(columns.sort()).toEqual([...EXPECTED_GRANTED_COLUMNS].sort());
+    expect(columns).not.toContain("encrypted_anthropic_key");
+  });
+
+  it("does not touch the anon role's grants or any RLS policy", () => {
+    // Only checks actual SQL statements, not prose — the migration's header
+    // comments legitimately discuss `anon` (why it's out of scope) and
+    // "policy" (why RLS isn't the mechanism here).
+    const sqlStatements = content
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(sqlStatements).not.toMatch(/\banon\b/);
+    expect(sqlStatements.toLowerCase()).not.toContain("policy");
   });
 });

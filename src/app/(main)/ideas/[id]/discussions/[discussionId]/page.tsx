@@ -59,20 +59,22 @@ export default async function DiscussionDetailPage({ params }: PageProps) {
 
   const isTeamMember = isAuthor || !!collab;
 
-  // Fetch discussion with author
+  // Fetch discussion with author — column-scoped to what discussion-thread.tsx
+  // renders (avatar, displayName()/full_name, bot badge).
   const { data: discussion } = await supabase
     .from("idea_discussions")
-    .select("*, author:users!idea_discussions_author_id_fkey(*)")
+    .select("*, author:users!idea_discussions_author_id_fkey(id, full_name, email, avatar_url, is_bot)")
     .eq("id", discussionId)
     .eq("idea_id", ideaId)
     .maybeSingle();
 
   if (!discussion) notFound();
 
-  // Fetch replies with authors
+  // Fetch replies with authors — column-scoped to what reply-item.tsx /
+  // child-reply-item.tsx render (avatar, displayName()/full_name, bot badge).
   const { data: replies } = await supabase
     .from("idea_discussion_replies")
-    .select("*, author:users!idea_discussion_replies_author_id_fkey(*)")
+    .select("*, author:users!idea_discussion_replies_author_id_fkey(id, full_name, email, avatar_url, is_bot)")
     .eq("discussion_id", discussionId)
     .order("created_at", { ascending: true });
 

@@ -134,9 +134,10 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     { data: recordedProjectPaths },
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
+    // Assignee join column-scoped to what board-task-card.tsx / task-detail-dialog.tsx render.
     supabase
       .from("board_tasks")
-      .select("*, assignee:users!board_tasks_assignee_id_fkey(*)")
+      .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
       .eq("idea_id", id)
       .order("position", { ascending: true }),
     supabase
