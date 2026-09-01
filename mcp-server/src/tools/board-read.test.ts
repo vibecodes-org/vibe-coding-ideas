@@ -260,6 +260,21 @@ describe("getBoard — compact response format", () => {
 
     expect(result.columns[0].tasks[0].workflow).toBe("2/4 done, 1 in progress");
   });
+
+  it("orders tasks by position then id, so ties (e.g. two tasks both moved to position 0) resolve deterministically", async () => {
+    const ctx = buildBoardContext({});
+    await getBoard(ctx, params);
+
+    const fromFn = ctx.supabase.from as unknown as (table: string) => Record<string, unknown>;
+    const tasksChain = fromFn("board_tasks");
+    const orderCalls = (tasksChain.order as ReturnType<typeof vi.fn>).mock.calls;
+    expect(orderCalls).toContainEqual(["position"]);
+    expect(orderCalls).toContainEqual(["id"]);
+    // "id" must be the secondary key, applied after "position".
+    const positionIdx = orderCalls.findIndex((c: unknown[]) => c[0] === "position");
+    const idIdx = orderCalls.findIndex((c: unknown[]) => c[0] === "id");
+    expect(idIdx).toBeGreaterThan(positionIdx);
+  });
 });
 
 // ---------------------------------------------------------------------------

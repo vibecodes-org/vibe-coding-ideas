@@ -410,7 +410,11 @@ export function registerTools(
 
   server.tool(
     "move_task",
-    "Move a task to a different column. Position auto-calculated if not provided.",
+    "Move a task to a different column. Place it with position: \"top\"/\"bottom\", or " +
+      "before_task_id/after_task_id to sit next to a specific sibling task — never pass a raw " +
+      "position number, the absolute value is computed internally. Defaults to the bottom of " +
+      "the column when no placement is given. The response's `position` is the actual value " +
+      "written, so success/no-op can be told apart without a second get_board call.",
     moveTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
