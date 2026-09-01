@@ -129,6 +129,20 @@ describe("terminalReducer — ending & failures", () => {
     expect(s.errorKind).toBe("session-mint-failed");
   });
 
+  // Ghost-sessions fix C: a mint refused for hitting the per-user cap must
+  // get its own errorKind so the persistent pane can say what actually
+  // happened instead of the generic "check your connection" copy.
+  it("session-mint-failed with refusal 'cap' → error with errorKind cap-reached", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: "cap" }]);
+    expect(s.status).toBe("error");
+    expect(s.errorKind).toBe("cap-reached");
+  });
+
+  it("session-mint-failed with no refusal keeps the generic errorKind (unrelated mint failure)", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: undefined }]);
+    expect(s.errorKind).toBe("session-mint-failed");
+  });
+
   it("reconnect-exhausted → honest session-ended (reconnect-failed), from a live drop", () => {
     // connect → live → drop (disconnected) → grace window / token lapses.
     const dropped = run([

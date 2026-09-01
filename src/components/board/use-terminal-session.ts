@@ -48,6 +48,7 @@ import {
   DAILY_RELAY_BUDGET_MESSAGE,
   CONVERSATION_LIVE_CODE,
   CONVERSATION_LIVE_MESSAGE,
+  CAP_REFUSAL_CODE,
 } from "@/lib/terminal/session-cap";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
@@ -170,7 +171,7 @@ function reportMintFailure(
     });
     return;
   }
-  if (body?.code === "cap_exceeded") {
+  if (body?.code === CAP_REFUSAL_CODE) {
     const cap = typeof body.cap === "number" ? body.cap : getTerminalSessionCap();
     posthog?.capture("terminal_cap_hit", { cap });
     const copy = capReachedToastCopy(cap);
@@ -1935,7 +1936,12 @@ export function useTerminalSession(
         // Superseded while minting → let the newer attempt own the outcome
         // (a stale refusal toast for an attempt nobody's waiting on anymore).
         if (isConnectSuperseded(gen, connectGenRef.current)) return;
-        dispatch({ type: "session-mint-failed" });
+        // Fix C (ghost-sessions): thread WHICH refusal this was into the
+        // reducer so the persistent error pane can render cap-specific copy
+        // instead of the generic "check your connection" message — the toast
+        // (reportMintFailure, below) already had this distinction; the pane
+        // never did.
+        dispatch({ type: "session-mint-failed", refusal: body?.code === CAP_REFUSAL_CODE ? "cap" : undefined });
         reportMintFailure(
           res.status,
           body,

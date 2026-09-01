@@ -60,6 +60,7 @@ export type TerminalErrorKind =
   | "connect-timeout"
   | "relay-unreachable"
   | "session-mint-failed"
+  | "cap-reached"
   | "unknown";
 
 export type EndedReason = "user" | "remote" | "idle" | "max-duration" | "reconnect-failed";
@@ -85,7 +86,7 @@ export interface TerminalConnectionState {
 export type TerminalEvent =
   | { type: "connect" }
   | { type: "session-created"; sessionId: string }
-  | { type: "session-mint-failed" }
+  | { type: "session-mint-failed"; refusal?: "cap" }
   | { type: "relay-open" }
   | { type: "data" }
   | { type: "user-end" }
@@ -247,7 +248,20 @@ export function terminalReducer(
       return { ...state, sessionId: event.sessionId };
 
     case "session-mint-failed":
-      return { ...state, status: "error", errorKind: "session-mint-failed", closeCode: null, closeReason: null };
+      // Fix C (ghost-sessions): a mint refused for the per-user session cap
+      // (`code: "cap_exceeded"` — see reportMintFailure/isCapRefusalMessage
+      // in use-terminal-session.ts) gets its own errorKind so the PERSISTENT
+      // pane can say what actually happened ("you're at your limit") instead
+      // of the generic "check your connection" copy, which was flatly wrong
+      // for a refusal that has nothing to do with connectivity. Every other
+      // mint failure keeps the pre-existing generic errorKind.
+      return {
+        ...state,
+        status: "error",
+        errorKind: event.refusal === "cap" ? "cap-reached" : "session-mint-failed",
+        closeCode: null,
+        closeReason: null,
+      };
 
     case "relay-open":
       // Relay reached; the bridge may not have attached yet → waiting-to-pair.

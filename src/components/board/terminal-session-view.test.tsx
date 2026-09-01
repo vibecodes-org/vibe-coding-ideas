@@ -460,6 +460,21 @@ describe("TerminalSessionView — same-owner takeover state", () => {
     expect(screen.getByText("Couldn't verify this session")).toBeInTheDocument();
     expect(screen.getByText("The session couldn't be verified. Launch again to start a fresh one.")).toBeInTheDocument();
   });
+
+  // Ghost-sessions fix C: a cap refusal (409 cap_exceeded) used to dispatch the
+  // same generic errorKind as any other mint failure, so the persistent pane
+  // always said "check your connection" — wrong when the real reason was
+  // "you're already running the max". Pins the pane's own copy, separate from
+  // the toast (covered in use-terminal-session.test.ts).
+  it("renders cap-specific copy — not the generic connection-check message — for errorKind cap-reached", () => {
+    installMockErrorSession({ errorKind: "cap-reached", closeCode: null, closeReason: null });
+    renderErrorView();
+
+    expect(screen.getByText("You're at your session limit")).toBeInTheDocument();
+    expect(screen.getByText(/end one to start another/i)).toBeInTheDocument();
+    expect(screen.getByText(/My sessions/)).toBeInTheDocument();
+    expect(screen.queryByText(/check your connection/i)).not.toBeInTheDocument();
+  });
 });
 
 // Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a timed-out
