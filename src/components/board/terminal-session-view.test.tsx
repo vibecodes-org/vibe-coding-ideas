@@ -73,6 +73,7 @@ function installMockSession() {
         endedReason: null,
         closeCode: null,
         closeReason: null,
+        refusalCap: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -113,6 +114,7 @@ function installMockWaitingSession(pairingTimedOut: boolean) {
         endedReason: null,
         closeCode: null,
         closeReason: null,
+        refusalCap: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -152,6 +154,7 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
         endedReason: null,
         closeCode: RELAY_CLOSE.DUP_BROWSER,
         closeReason: null,
+        refusalCap: null,
         ...state,
       },
       launchPhase: "idle",
@@ -194,6 +197,7 @@ function installMockEndedSession(
         endedReason: "idle",
         closeCode: 1000,
         closeReason: null,
+        refusalCap: null,
         ...stateOverrides,
       },
       launchPhase: "idle",
@@ -246,7 +250,10 @@ function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void
   );
 }
 
-function renderErrorView(onReconnectTakenOver: (sid: string) => void = vi.fn()) {
+function renderErrorView(
+  onReconnectTakenOver: (sid: string) => void = vi.fn(),
+  onCapExceeded?: () => void,
+) {
   return render(
     <TerminalSessionView
       entry={baseEntry()}
@@ -260,6 +267,7 @@ function renderErrorView(onReconnectTakenOver: (sid: string) => void = vi.fn()) 
       onRegisterActions={vi.fn()}
       onAnnounce={vi.fn()}
       onReconnectTakenOver={onReconnectTakenOver}
+      onCapExceeded={onCapExceeded}
     />,
   );
 }
@@ -474,6 +482,40 @@ describe("TerminalSessionView — same-owner takeover state", () => {
     expect(screen.getByText(/end one to start another/i)).toBeInTheDocument();
     expect(screen.getByText(/My sessions/)).toBeInTheDocument();
     expect(screen.queryByText(/check your connection/i)).not.toBeInTheDocument();
+  });
+
+  // Card 695c2c54: the pane shows the number the refusing route itself
+  // reported — a deliberately non-default cap proves state.refusalCap wins
+  // over the client's configured default (5).
+  it("renders the server-supplied cap number when the refusal carried one", () => {
+    installMockErrorSession({ errorKind: "cap-reached", closeCode: null, closeReason: null, refusalCap: 3 });
+    renderErrorView();
+
+    expect(screen.getByText(/3 terminals running/)).toBeInTheDocument();
+  });
+
+  // Card 695c2c54: the pane's copy names the fix — this button IS the fix,
+  // wired to the same My-sessions opener the cap toast uses, and still
+  // available long after the toast has auto-dismissed.
+  it("offers a working 'View my sessions' button on the cap-reached pane", () => {
+    installMockErrorSession({ errorKind: "cap-reached", closeCode: null, closeReason: null });
+    const onCapExceeded = vi.fn();
+    renderErrorView(vi.fn(), onCapExceeded);
+
+    const button = screen.getByRole("button", { name: "View my sessions" });
+    fireEvent.click(button);
+    expect(onCapExceeded).toHaveBeenCalled();
+  });
+
+  it("renders no 'View my sessions' button without a handler, or on non-cap errors", () => {
+    installMockErrorSession({ errorKind: "cap-reached", closeCode: null, closeReason: null });
+    renderErrorView(); // no onCapExceeded wired (e.g. a host that has no My-sessions panel)
+    expect(screen.queryByRole("button", { name: "View my sessions" })).not.toBeInTheDocument();
+    cleanup();
+
+    installMockErrorSession({ errorKind: "session-mint-failed", closeCode: null, closeReason: null });
+    renderErrorView(vi.fn(), vi.fn());
+    expect(screen.queryByRole("button", { name: "View my sessions" })).not.toBeInTheDocument();
   });
 });
 
@@ -707,6 +749,7 @@ function installMockSessionWithStatus(status: TerminalConnectionState["status"],
         endedReason: null,
         closeCode: null,
         closeReason: null,
+        refusalCap: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -777,7 +820,7 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
       const containerRef = useRef<HTMLDivElement | null>(null);
       lastContainerRef = containerRef;
       return {
-        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null },
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null },
         launchPhase: "idle",
         peerDegraded: false,
         helperVersion: null,
@@ -885,7 +928,7 @@ describe("TerminalSessionView — helper download affordances run the Update-now
       const containerRef = useRef<HTMLDivElement | null>(null);
       lastContainerRef = containerRef;
       return {
-        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null },
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null },
         launchPhase: "idle",
         peerDegraded: false,
         helperVersion: null,

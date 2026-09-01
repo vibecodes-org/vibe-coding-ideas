@@ -81,12 +81,20 @@ export interface TerminalConnectionState {
    * `isSameOwnerPreemptedClose` below for why the embedded dock needs it.
    */
   closeReason: string | null;
+  /**
+   * The per-user session cap the mint route reported alongside a
+   * `cap_exceeded` refusal (its 409 body's `cap`). Lets the cap-reached pane
+   * show the server's real limit rather than the client's configured default,
+   * which can lag a changed TERMINAL_SESSION_CAP. Null except while
+   * `errorKind === "cap-reached"` with a numeric cap in the refusal body.
+   */
+  refusalCap: number | null;
 }
 
 export type TerminalEvent =
   | { type: "connect" }
   | { type: "session-created"; sessionId: string }
-  | { type: "session-mint-failed"; refusal?: "cap" }
+  | { type: "session-mint-failed"; refusal?: "cap"; cap?: number }
   | { type: "relay-open" }
   | { type: "data" }
   | { type: "user-end" }
@@ -103,6 +111,7 @@ export const initialConnectionState: TerminalConnectionState = {
   endedReason: null,
   closeCode: null,
   closeReason: null,
+  refusalCap: null,
 };
 
 /** A status that means "we are mid-handshake, no bridge stream yet". */
@@ -240,6 +249,7 @@ export function terminalReducer(
         endedReason: null,
         closeCode: null,
         closeReason: null,
+        refusalCap: null,
       };
 
     case "session-created":
@@ -261,6 +271,9 @@ export function terminalReducer(
         errorKind: event.refusal === "cap" ? "cap-reached" : "session-mint-failed",
         closeCode: null,
         closeReason: null,
+        // Card 695c2c54: keep the server's own cap number alongside the
+        // refusal so the pane can't disagree with the route that refused it.
+        refusalCap: event.refusal === "cap" && typeof event.cap === "number" ? event.cap : null,
       };
 
     case "relay-open":

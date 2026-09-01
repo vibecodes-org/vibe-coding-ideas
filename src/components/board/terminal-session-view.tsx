@@ -810,6 +810,7 @@ export function TerminalSessionView({
                 if (pair) onReconnectTakenOver?.(pair.sessionId);
               }}
               onBrowseSessions={onBrowseSessions}
+              onCapExceeded={onCapExceeded}
             />
           )}
           {state.status === "disconnected" && (
@@ -925,6 +926,7 @@ function StateOverlay({
   onCopyBridge,
   onReconnectTakenOver,
   onBrowseSessions,
+  onCapExceeded,
   onDownloadHelper,
 }: {
   view: DockView;
@@ -955,6 +957,12 @@ function StateOverlay({
   onReconnectTakenOver: () => void;
   /** See TerminalSessionViewProps' same-named prop. */
   onBrowseSessions?: () => void;
+  /**
+   * Card 695c2c54: opens the dock's "My sessions" panel — the same handler
+   * the cap-refusal toast fires. Rendered as a button on the cap-reached
+   * pane so the fix is one click away even after the toast has gone.
+   */
+  onCapExceeded?: () => void;
   /** Every download affordance runs the shared stand-down-first flow. */
   onDownloadHelper: () => void;
 }) {
@@ -1084,6 +1092,18 @@ function StateOverlay({
           <CircleAlert className="h-7 w-7 text-rose-400" />
           <div className="text-base font-semibold text-rose-400">{errorTitle(state)}</div>
           <p className="max-w-md text-[13px] text-zinc-400">{errorMessage(state)}</p>
+          {state.errorKind === "cap-reached" && onCapExceeded && (
+            // Card 695c2c54: the pane's copy names the fix (end a session in
+            // My sessions) — this button IS that fix, same handler as the
+            // cap-refusal toast's action, still here after the toast is gone.
+            <Button
+              size="sm"
+              className="bg-emerald-500 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
+              onClick={onCapExceeded}
+            >
+              View my sessions
+            </Button>
+          )}
           {canLaunch && state.errorKind !== "owner-mismatch" && (
             <Button
               variant="outline"
@@ -1343,8 +1363,10 @@ function errorMessage(state: TerminalConnectionState): string {
     case "cap-reached":
       // Reuses the mint route's own copy (session-cap.ts → capRefusalMessage)
       // so the cap number is single-sourced with the server-side enforcement
-      // and the toast this same refusal already fires.
-      return `${capRefusalMessage()} Find it in My sessions.`;
+      // and the toast this same refusal already fires. Card 695c2c54: prefer
+      // the cap the refusing route itself reported (state.refusalCap) so the
+      // number can never lag a changed TERMINAL_SESSION_CAP.
+      return `${capRefusalMessage(state.refusalCap ?? undefined)} Find it in My sessions.`;
     default:
       return "The terminal session didn't start. Try launching again.";
   }

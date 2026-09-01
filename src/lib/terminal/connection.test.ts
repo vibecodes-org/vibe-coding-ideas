@@ -136,6 +136,30 @@ describe("terminalReducer — ending & failures", () => {
     const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: "cap" }]);
     expect(s.status).toBe("error");
     expect(s.errorKind).toBe("cap-reached");
+    // No cap in the refusal body → null; the pane falls back to the default.
+    expect(s.refusalCap).toBeNull();
+  });
+
+  // Card 695c2c54: the refusing route's own `cap` rides the event into state
+  // (a deliberately non-default number proves the server value wins), and a
+  // fresh connect clears it with the rest of the error metadata.
+  it("session-mint-failed with refusal 'cap' carries the server's cap, cleared on the next connect", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: "cap", cap: 3 }]);
+    expect(s.errorKind).toBe("cap-reached");
+    expect(s.refusalCap).toBe(3);
+
+    const retried = run([
+      { type: "connect" },
+      { type: "session-mint-failed", refusal: "cap", cap: 3 },
+      { type: "connect" },
+    ]);
+    expect(retried.refusalCap).toBeNull();
+  });
+
+  it("a non-cap mint failure never stores a cap, even if one is present on the event", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", cap: 3 }]);
+    expect(s.errorKind).toBe("session-mint-failed");
+    expect(s.refusalCap).toBeNull();
   });
 
   it("session-mint-failed with no refusal keeps the generic errorKind (unrelated mint failure)", () => {
