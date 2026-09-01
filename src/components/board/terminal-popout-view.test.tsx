@@ -60,7 +60,7 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     return {
-      state: { status, sessionId: "sess-1", errorKind: null, endedReason: null, closeCode, closeReason: null },
+      state: { status, sessionId: "sess-1", errorKind: null, endedReason: null, closeCode, closeReason: null, refusalCap: null },
       launchPhase: "idle",
       peerDegraded: false,
       helperVersion: null,

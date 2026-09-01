@@ -1941,7 +1941,14 @@ export function useTerminalSession(
         // instead of the generic "check your connection" message — the toast
         // (reportMintFailure, below) already had this distinction; the pane
         // never did.
-        dispatch({ type: "session-mint-failed", refusal: body?.code === CAP_REFUSAL_CODE ? "cap" : undefined });
+        // Card 695c2c54: also forward the route's own `cap` so the pane shows
+        // the server's real limit, not the client default (they can differ if
+        // TERMINAL_SESSION_CAP changes) — same field the toast already reads.
+        dispatch({
+          type: "session-mint-failed",
+          refusal: body?.code === CAP_REFUSAL_CODE ? "cap" : undefined,
+          cap: typeof body?.cap === "number" ? body.cap : undefined,
+        });
         reportMintFailure(
           res.status,
           body,

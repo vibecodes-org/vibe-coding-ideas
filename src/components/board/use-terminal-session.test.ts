@@ -444,6 +444,9 @@ describe("useTerminalSession", () => {
     // errorKind (not just the toast) so the persistent pane can render
     // cap-specific copy instead of the generic "check your connection".
     expect(result.current.state.errorKind).toBe("cap-reached");
+    // Card 695c2c54: the refusal body's own cap rides into state so the pane
+    // renders the server's number, never a stale client default.
+    expect(result.current.state.refusalCap).toBe(5);
     expect(mockSockets).toHaveLength(0);
     expect(toastError).toHaveBeenCalled();
     const [title, opts] = toastError.mock.calls[0];
