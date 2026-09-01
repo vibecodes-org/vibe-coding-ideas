@@ -825,6 +825,54 @@ describe("TerminalSessionView — generic error panel escape hatches (card dccd6
     // here too so this test fails loudly if that guard ever regresses.
     expect(screen.queryByRole("button", { name: /Try again/ })).not.toBeInTheDocument();
   });
+
+  // QA rework: a session-limit refusal (cap-reached) leaves an EARLIER tab's
+  // hook state still holding its own sessionCwd (set before the cap ever
+  // hit) — so without this guard the cap pane could show "Resume this
+  // conversation" right next to its own "View my sessions" button, and
+  // clicking Resume would just re-fire the identical capped mint. Never
+  // offered here, even with both sessionCwd AND wake-recheck material
+  // present — mirrors the owner-mismatch exclusion above.
+  it("never offers Resume for a cap-reached error, even with a known cwd and wake-recheck material", () => {
+    installMockErrorSession({
+      errorKind: "cap-reached",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderErrorView(vi.fn(), vi.fn(), {
+      onResumeEndedSession: vi.fn(),
+      wakeResume: { cwd: "/Users/nick/projects/other-idea", claudeSessionId: null },
+    });
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    // The cap pane's own dedicated action is untouched.
+    expect(screen.getByRole("button", { name: "View my sessions" })).toBeInTheDocument();
+  });
+
+  // Same rework: the cap pane's "View my sessions" button (card 695c2c54)
+  // already covers what "View my other sessions" promises here — showing
+  // both would be a redundant duplicate action.
+  it("omits the duplicate 'View my other sessions' link on cap-reached when the dedicated cap button is showing", () => {
+    const onCapExceeded = vi.fn();
+    const onBrowseSessions = vi.fn();
+    installMockErrorSession({ errorKind: "cap-reached" });
+    renderErrorView(vi.fn(), onCapExceeded, { onBrowseSessions });
+
+    expect(screen.getByRole("button", { name: "View my sessions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /View my other sessions/ })).not.toBeInTheDocument();
+  });
+
+  // But when the host has no My-sessions panel wired (onCapExceeded
+  // omitted — e.g. the pop-out window), the browse link is the only escape
+  // hatch left, so it must still render rather than vanish entirely.
+  it("keeps the 'View my other sessions' link on cap-reached when onCapExceeded isn't wired", () => {
+    const onBrowseSessions = vi.fn();
+    installMockErrorSession({ errorKind: "cap-reached" });
+    renderErrorView(vi.fn(), undefined, { onBrowseSessions });
+
+    expect(screen.queryByRole("button", { name: "View my sessions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View my other sessions/ })).toBeInTheDocument();
+  });
 });
 
 // Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): a

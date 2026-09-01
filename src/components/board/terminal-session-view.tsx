@@ -535,6 +535,10 @@ export function TerminalSessionView({
     view === "error" &&
     !takenOver &&
     state.errorKind !== "owner-mismatch" &&
+    // A capped mint can't be resumed into — nothing new ever connected, so
+    // "Resume" would just re-fire the identical refused mint. The cap
+    // pane's own "View my sessions" button (below) is the correct action.
+    state.errorKind !== "cap-reached" &&
     !!resumeCwd &&
     !!onResumeEndedSession;
   const handleResume = () => {
@@ -1313,8 +1317,11 @@ function StateOverlay({
               integrity-failed panels already have — see onBrowseSessions'
               doc on TerminalSessionViewProps. Never shown for the
               "Taken over" branch above (that has its own calm copy) or when
-              the caller omits the callback (the pop-out window). */}
-          {onBrowseSessions && (
+              the caller omits the callback (the pop-out window). Also
+              skipped on cap-reached when the dedicated "View my sessions"
+              button above is rendering — that button already covers what
+              this link promises here, and showing both is redundant. */}
+          {onBrowseSessions && !(state.errorKind === "cap-reached" && onCapExceeded) && (
             <button
               type="button"
               className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
