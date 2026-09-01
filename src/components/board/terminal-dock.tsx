@@ -111,6 +111,7 @@ import {
   type TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
+import { computeWakeRecheck, type WakeResumeMaterial, type WakeTabSid } from "@/lib/terminal/wake-recheck";
 import { loadSessionSnapshot, readTabSids, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
 import {
@@ -319,6 +320,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // ideas — null while the initial fetch is in flight (the "checking your
   // sessions…" beat: nothing may auto-mint before this is known, F1).
   const [registryRows, setRegistryRows] = useState<ChooserRegistryRow[] | null>(null);
+  // Sleep/resume routing fix (card dccd6c95): a tab's own socket state can
+  // keep reading "error" for a session that died while the browser tab was
+  // hidden or the Mac was asleep — nothing used to re-check that. The wake
+  // effect below (visibilitychange/online) re-fetches the registry and this
+  // holds what `computeWakeRecheck` (wake-recheck.ts) found for each OPEN
+  // tab whose sid the registry now reports `ended`, keyed by tab key — fed
+  // into that tab's `TerminalSessionView` as `wakeResume` so its error
+  // panel's Resume affordance can offer the same recovery the ended panel
+  // already does. Recomputed (not just wake-triggered) any time the
+  // registry or the open tabs change, so a normal `refreshRegistry()` call
+  // elsewhere in this file keeps it current too.
+  const [wakeResumeByKey, setWakeResumeByKey] = useState<Record<string, WakeResumeMaterial>>({});
   // Chooser helper-update nudge (card cbe60db5, rework 3): the caller's own
   // last-known helper status, fetched once alongside the registry — same
   // `/api/terminal/helper/status` response the My sessions panel polls
@@ -643,6 +656,52 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   useEffect(() => {
     if (!enabled) return;
     void refreshRegistry();
+  }, [enabled, refreshRegistry]);
+
+  // Sleep/resume routing fix (card dccd6c95, wake recheck): recompute which
+  // open tabs the registry now says are `ended` any time either side
+  // changes — the fresh rows from ANY `refreshRegistry()` call (the mount
+  // fetch above, the wake listener just below, or any of this file's other
+  // existing call sites), or the open tabs/their sids. Pure derivation, so
+  // this is cheap and safe to run on every relevant change rather than only
+  // on the wake path specifically. See wake-recheck.ts's doc for what
+  // `computeWakeRecheck` does and doesn't decide.
+  useEffect(() => {
+    if (registryRows === null) return;
+    const tabs: WakeTabSid[] = sessions.map((s) => ({ key: s.key, sid: summaries[s.key]?.sessionId ?? null }));
+    setWakeResumeByKey(computeWakeRecheck(registryRows, tabs));
+  }, [registryRows, sessions, summaries]);
+
+  // Sleep/resume routing fix (card dccd6c95): the dock had NO
+  // visibilitychange/focus/online listener at all — a session that died
+  // while the tab was hidden (the Mac slept, the browser tab was backgrounded)
+  // sat unnoticed until the user happened to click back into it. Re-runs the
+  // SAME registry fetch the mount effect above already trusts
+  // (`refreshRegistry`) whenever the tab regains visibility or the network
+  // comes back, throttled to at most once per few seconds so a flurry of
+  // focus/online events (switching apps repeatedly, a flaky connection)
+  // can't hammer the endpoint. Never auto-executes a resume — see this
+  // file's `handleResumeEndedSession` and terminal-session-view.tsx's
+  // `handleResume` for the human-gated action this only offers.
+  const lastWakeRecheckRef = useRef(0);
+  useEffect(() => {
+    if (!enabled) return;
+    const WAKE_RECHECK_MIN_INTERVAL_MS = 5_000;
+    const recheck = () => {
+      const now = Date.now();
+      if (now - lastWakeRecheckRef.current < WAKE_RECHECK_MIN_INTERVAL_MS) return;
+      lastWakeRecheckRef.current = now;
+      void refreshRegistry();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", recheck);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", recheck);
+    };
   }, [enabled, refreshRegistry]);
 
   // ── rename (card 3bf262ac) — the ONE persistence function every rename
@@ -3206,6 +3265,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRetryReconnect={(sid) => void performReattach(sid, { focus: true })}
             onResumeEndedSession={handleResumeEndedSession}
             lastHelperStatus={lastHelperStatus}
+            wakeResume={wakeResumeByKey[entry.key] ?? null}
           />
           );
         })}
