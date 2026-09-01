@@ -126,6 +126,21 @@ export function mapCloseCode(
     case RELAY_CLOSE.OWNER_MISMATCH:
       return { status: "error", errorKind: "owner-mismatch", endedReason: null };
     case RELAY_CLOSE.BAD_TOKEN:
+      // A grace-window reattach reuses the ORIGINAL token, no re-mint (see
+      // RECONNECT_GRACE_MS's doc above) — while still handshaking, `priorStatus`
+      // stays "disconnected" for the whole reattach loop (use-terminal-session.ts's
+      // scheduleReconnect / reconnectNow's grace-reconnect branch never dispatch
+      // "connect", by design, so isHandshaking(priorStatus) is false here). If the
+      // relay has already torn the session down by the time that reattach lands
+      // (e.g. a Mac sleep's grace window expired — ghost-sessions fix A), the SAME
+      // 4006 fires for an honest "this ended while you were away", not a genuine
+      // bad/tampered token. Only a first establishment (still handshaking) gets the
+      // scary verify-error copy; a refused RECONNECT gets the calm ended copy —
+      // reusing "reconnect-failed"'s existing "We couldn't reattach in time…"
+      // messaging, which already says exactly this.
+      if (!isHandshaking(priorStatus)) {
+        return { status: "session-ended", errorKind: null, endedReason: "reconnect-failed" };
+      }
       return { status: "error", errorKind: "bad-token", endedReason: null };
     case RELAY_CLOSE.DUP_BROWSER:
     case RELAY_CLOSE.DUP_BRIDGE:

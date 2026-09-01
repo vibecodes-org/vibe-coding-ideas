@@ -171,8 +171,24 @@ describe("mapCloseCode", () => {
     });
   });
 
-  it("4006 → bad-token error", () => {
+  it("4006 during first establishment (still handshaking) → bad-token error", () => {
     expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "connecting").errorKind).toBe("bad-token");
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "waiting-to-pair").errorKind).toBe("bad-token");
+  });
+
+  // Ghost-sessions fix B: a Mac sleep drops both legs; the grace-window reattach
+  // (use-terminal-session.ts's scheduleReconnect / reconnectNow) reopens with the
+  // ORIGINAL token while priorStatus stays "disconnected" (it never dispatches
+  // "connect" — see that file's grace-reconnect branch). If the relay already tore
+  // the session down by then, that reattach gets refused 4006 too — but this is an
+  // honest "ended while you were away", not a genuinely bad/tampered token, so it
+  // must render the calm ended copy, not the scary verify error.
+  it("4006 refusing a RECONNECT (priorStatus disconnected) → calm session-ended, not an error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected")).toEqual({
+      status: "session-ended",
+      errorKind: null,
+      endedReason: "reconnect-failed",
+    });
   });
 
   it("4001 / 4002 → duplicate error", () => {
