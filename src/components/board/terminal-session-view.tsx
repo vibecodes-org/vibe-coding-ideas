@@ -1366,7 +1366,8 @@ function errorMessage(state: TerminalConnectionState): string {
       // and the toast this same refusal already fires. Card 695c2c54: prefer
       // the cap the refusing route itself reported (state.refusalCap) so the
       // number can never lag a changed TERMINAL_SESSION_CAP.
-      return `${capRefusalMessage(state.refusalCap ?? undefined)} Find it in My sessions.`;
+      // Wording chosen by Nick, 1 Sep 2026 (card 695c2c54 item 3).
+      return `${capRefusalMessage(state.refusalCap ?? undefined)} End one from My sessions.`;
     default:
       return "The terminal session didn't start. Try launching again.";
   }
