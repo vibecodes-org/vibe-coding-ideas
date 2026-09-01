@@ -244,7 +244,10 @@ export function TerminalSessionChooser({
   // `sections.recent` itself stays unfiltered (see visibleRecentRows's doc
   // comment in chooser-data.ts): `findTaskSessionMatch` above this component
   // and `entry-decision.ts`'s registry read both still need the full set.
-  const visibleRecent = visibleRecentRows(sections.recent);
+  // Board-affiliation split (this card): applied to the already-derived
+  // `recentHere`/`recentElsewhere` halves, same as the old single list.
+  const visibleRecentHere = visibleRecentRows(sections.recentHere);
+  const visibleRecentElsewhere = visibleRecentRows(sections.recentElsewhere);
 
   const taskMatch = pendingTask ? findLiveSessionForTask(sections, pendingTask.taskId) : null;
   const wasOpenSid =
@@ -395,6 +398,30 @@ export function TerminalSessionChooser({
         </ChooserSection>
       )}
 
+      {visibleRecentHere.length > 0 && (
+        <ChooserSection label="Recent — this board (ended in the last 48h)">
+          {visibleRecentHere.map((row) => (
+            <RecentRow
+              key={row.sid}
+              row={row}
+              busy={busy}
+              confirming={confirmingResumeSid === row.sid}
+              limitLine={limitLine}
+              onRequestConfirm={() => setConfirmingResumeSid(row.sid)}
+              onCancelConfirm={() => setConfirmingResumeSid(null)}
+              onConfirm={() => {
+                setConfirmingResumeSid(null);
+                onResume(row);
+              }}
+              renameOverride={renameOverrides[row.sid]}
+              renaming={renamingSid === row.sid}
+              onEditingChange={(editing) => setRenamingSid(editing ? row.sid : null)}
+              onRenameSession={onRenameSession && commitRename}
+            />
+          ))}
+        </ChooserSection>
+      )}
+
       {sections.liveElsewhere.length > 0 && (
         <ChooserSection label="Running now — other boards">
           {sections.liveElsewhere.map((row) => (
@@ -415,9 +442,9 @@ export function TerminalSessionChooser({
         </ChooserSection>
       )}
 
-      {visibleRecent.length > 0 && (
-        <ChooserSection label="Recent — ended in the last 48h">
-          {visibleRecent.map((row) => (
+      {visibleRecentElsewhere.length > 0 && (
+        <ChooserSection label="Recent — other boards (ended in the last 48h)">
+          {visibleRecentElsewhere.map((row) => (
             <RecentRow
               key={row.sid}
               row={row}

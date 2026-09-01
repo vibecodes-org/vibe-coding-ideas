@@ -150,6 +150,41 @@ export interface ChooserSections {
   liveHere: ChooserLiveRow[];
   liveElsewhere: ChooserLiveRow[];
   recent: ChooserRecentRow[];
+  /**
+   * Board-affiliation split of `recent` (card TODO: "clearly separate this
+   * board's sessions from other boards' sessions"), ADDITIVE ONLY —
+   * `recent` above is untouched and stays the combined, capped list every
+   * existing consumer (`findTaskSessionMatch`, `chooserHeaderCounts`,
+   * terminal-dock.tsx's `?resume=` lookup) keeps reading directly. These two
+   * are a partition of that SAME already-capped/deduped/windowed list by
+   * `ideaId === currentIdeaId`, in the same newest-ended-first order —
+   * nothing about the 48h window, RECENT_MAX, dedupe or machine filtering
+   * changes; this is purely a display split applied on top of the finished
+   * `recent` array. See `partitionRecentByBoard` below.
+   */
+  recentHere: ChooserRecentRow[];
+  /** The other half of `recentHere`'s split — see that field's doc. */
+  recentElsewhere: ChooserRecentRow[];
+}
+
+/**
+ * Pure partition of an already-finished `recent` list (post 48h-window,
+ * post-cap, post-dedupe — see `ChooserSections.recentHere`'s doc) into
+ * this-board vs. other-boards, preserving the incoming order (newest-ended
+ * first). Exported standalone so it's independently testable against the
+ * both-empty / one-empty / mixed / already-capped cases without re-deriving
+ * a full registry-row fixture each time.
+ */
+export function partitionRecentByBoard(
+  recent: ChooserRecentRow[],
+  currentIdeaId: string,
+): { recentHere: ChooserRecentRow[]; recentElsewhere: ChooserRecentRow[] } {
+  const recentHere: ChooserRecentRow[] = [];
+  const recentElsewhere: ChooserRecentRow[] = [];
+  for (const r of recent) {
+    (r.ideaId === currentIdeaId ? recentHere : recentElsewhere).push(r);
+  }
+  return { recentHere, recentElsewhere };
 }
 
 function withinRecentWindow(endedAt: string, nowMs: number): boolean {
@@ -265,7 +300,9 @@ export function deriveChooserSections(
     displayName: r.displayName,
   }));
 
-  return { liveHere, liveElsewhere, recent };
+  const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, currentIdeaId);
+
+  return { liveHere, liveElsewhere, recent, recentHere, recentElsewhere };
 }
 
 /**

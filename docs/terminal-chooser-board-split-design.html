@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Terminal Chooser — Board-First Grouping (Design, v2 rework)</title>
+<style>
+  :root {
+    --zinc-950: #09090b; --zinc-900: #18181b; --zinc-800: #27272a;
+    --zinc-700: #3f3f46; --zinc-600: #52525b; --zinc-500: #71717a;
+    --zinc-400: #a1a1aa; --zinc-300: #d4d4d8; --zinc-100: #f4f4f5;
+    --panel: #111114;
+    --sky-500: #0ea5e9; --sky-950: #082f49; --sky-300: #7dd3fc;
+    --emerald-500: #10b981; --emerald-950: #022c22;
+    --amber-500: #f59e0b; --amber-300: #fcd34d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--zinc-950); color: var(--zinc-300);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { color: var(--zinc-100); font-size: 22px; margin: 0 0 4px; }
+  h2 { color: var(--zinc-100); font-size: 16px; margin: 44px 0 10px; border-bottom: 1px solid var(--zinc-800); padding-bottom: 8px; }
+  p, li { font-size: 13.5px; color: var(--zinc-400); }
+  .meta { font-size: 12px; color: var(--zinc-500); margin-bottom: 28px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; background: var(--zinc-900); border: 1px solid var(--zinc-800); border-radius: 4px; padding: 1px 5px; color: var(--zinc-300); }
+  .callout { border-left: 2px solid var(--sky-500); background: rgba(14,165,233,.05); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 14px 0; font-size: 13px; }
+  .callout.warn { border-left-color: var(--amber-500); background: rgba(245,158,11,.05); }
+  .callout.warn strong { color: var(--amber-300); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 12px 0; }
+  th, td { text-align: left; padding: 7px 10px; border: 1px solid var(--zinc-800); color: var(--zinc-400); vertical-align: top; }
+  th { color: var(--zinc-300); background: var(--panel); font-size: 11.5px; }
+  .scrollx { overflow-x: auto; }
+
+  /* ============ chooser mock (mirrors terminal-session-chooser.tsx classes) ============ */
+  .mock-frame { display: flex; gap: 18px; align-items: flex-start; margin: 18px 0 8px; flex-wrap: wrap; }
+  .chooser {
+    width: 560px; max-width: 100%; background: var(--zinc-950);
+    border: 1px solid var(--zinc-800); border-radius: 8px; overflow: hidden;
+    font-size: 13px; flex: none;
+  }
+  .chooser.small { width: 420px; }
+  /* Start-new block — px-3.5 py-3 border-b border-zinc-800 */
+  .startnew { border-bottom: 1px solid var(--zinc-800); padding: 12px 14px; }
+  .startnew-row { display: flex; align-items: center; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 6px; font-weight: 600; cursor: default; white-space: nowrap; }
+  .btn-new { background: var(--emerald-500); color: var(--emerald-950); font-size: 13px; padding: 7px 14px; }
+  .btn-xs-sky { background: var(--sky-500); color: var(--sky-950); font-size: 11.5px; padding: 4px 9px; }
+  .btn-xs-emerald { background: var(--emerald-500); color: var(--emerald-950); font-size: 11.5px; padding: 4px 9px; }
+  .hint { font-size: 11.5px; color: var(--zinc-500); }
+  .modelline { margin: 6px 0 0; font-size: 11px; color: var(--zinc-500); }
+  /* Section heading — the ChooserSection component, UNCHANGED:
+     border-t border-zinc-800 bg-[#111114] px-3.5 py-1.5
+     text-[10.5px] font-bold uppercase tracking-wide text-zinc-500 */
+  .sec {
+    border-top: 1px solid var(--zinc-800); background: var(--panel);
+    padding: 6px 14px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; color: var(--zinc-500);
+    position: relative;
+  }
+  .sec .new-tag {
+    position: absolute; right: 10px; top: 4px; letter-spacing: 0;
+    font-size: 9.5px; font-weight: 700; color: var(--amber-300);
+    border: 1px solid rgba(245,158,11,.4); background: rgba(245,158,11,.1);
+    border-radius: 4px; padding: 1px 5px; text-transform: uppercase;
+  }
+  /* Row — border-t border-zinc-800 px-3.5 py-2.5, flex items-start gap-2.5 */
+  .row { border-top: 1px solid var(--zinc-800); padding: 10px 14px; display: flex; align-items: flex-start; gap: 10px; }
+  .row-main { min-width: 0; flex: 1; }
+  .row-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--zinc-100); }
+  .chip { font-size: 11px; font-weight: 400; color: var(--zinc-500); }
+  .badge {
+    border: 1px solid rgba(245,158,11,.4); background: rgba(245,158,11,.1);
+    color: var(--amber-300); border-radius: 4px; padding: 2px 6px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+  }
+  .row-id { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--zinc-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-note { margin-top: 4px; font-size: 11px; color: var(--zinc-500); }
+  .pencil { color: var(--zinc-600); font-size: 12px; flex: none; padding-top: 2px; }
+  .footer { display: flex; justify-content: flex-end; border-top: 1px solid var(--zinc-800); background: var(--panel); padding: 8px 14px; }
+  .btn-ghost { background: transparent; color: var(--zinc-400); font-size: 11.5px; padding: 4px 9px; }
+  .figcap { font-size: 12px; color: var(--zinc-500); margin: 6px 0 0; }
+  .empty-grid { display: flex; gap: 18px; flex-wrap: wrap; margin: 14px 0; }
+  /* Annotation-only: shows where the SHIPPED focus rule lands. Not part of the UI. */
+  .focus-ring { outline: 2px solid var(--sky-300); outline-offset: 2px; }
+  .focus-anno { position: relative; }
+  .focus-tag {
+    display: inline-block; margin-top: 6px; font-size: 9.5px; font-weight: 700;
+    letter-spacing: 0; text-transform: uppercase; color: var(--sky-300);
+    border: 1px dashed rgba(125,211,252,.5); border-radius: 4px; padding: 1px 5px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal chooser — board-first grouping (rework v2)</h1>
+<p class="meta">Design step for task e967c4fc · REWORK of the rejected liveness-first design · builds on Requirements v2 · 2026-09-01<br/>
+Nick's rejection of v1: board affiliation must be the PRIMARY grouping for the whole chooser — all of this board's sessions (running and recent) before anything from another board.<br/>
+Next step: human Design Review gate. Nothing here is built yet.</p>
+
+<h2>1 · Design decision in one paragraph</h2>
+<p>
+The whole chooser now sorts by <strong>board first, liveness second</strong>. Everything belonging to the
+board you're on — sessions still running <em>and</em> sessions that ended in the last 48 hours — sits above
+anything from another board. Four sections, in this fixed order:
+<strong>Running now — this board</strong> → <strong>Recent — this board</strong> →
+<strong>Running now — other boards</strong> → <strong>Recent — other boards</strong>.
+Every heading is the same shipped <code>ChooserSection</code> text treatment (no colour-only separation);
+empty sections render nothing. Rows, per-row actions (Reconnect / Open board &amp; reconnect / Resume),
+the takeover warning, rename, dedupe, the 48h window, the 10-row recent cap, and the Start-new block are
+all <strong>unchanged</strong> — the visible diff is section order plus one new heading string.
+</p>
+
+<h2>2 · Full four-section layout (populated) — the reordering, visible</h2>
+<p>Sample state: 1 live on this board (“VibeCodes”), 2 recent here, 1 live elsewhere, 2 recent elsewhere.
+Note the deliberate consequence of Nick's rule: <strong>“Chooser board-split requirements” (an <em>ended</em>
+session on this board) now sits ABOVE “Recipe Roulette · 9f2c” (a session <em>running right now</em> on
+another board)</strong>. Board wins over liveness — that is the point of the rework.
+Amber “NEW” tags and the dashed sky “initial focus” marker are annotation only — not part of the UI.</p>
+
+<div class="mock-frame">
+<div class="chooser">
+  <div class="startnew">
+    <div class="startnew-row">
+      <button class="btn btn-new">▸_ Start new session</button>
+      <span class="hint">Up to 3 sessions at once</span>
+    </div>
+    <p class="modelline">New sessions start on Sonnet · platform default</p>
+  </div>
+
+  <div class="sec">Running now — this board</div>
+  <div class="row">
+    <div class="row-main focus-anno">
+      <div class="row-title"><span>Fix relay reconnect loop</span><span class="chip">VibeCodes</span><span class="badge">was open in this tab</span></div>
+      <div class="row-id">Nicks-MBP.home.local · /Users/nickball/projects/vibe-coding-ideas · started 2h ago</div>
+      <div class="row-note">If this session is open somewhere else, reconnecting here takes it over.</div>
+      <span class="focus-tag">⌖ initial focus (shipped rule, unchanged)</span>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-sky focus-ring">⟳ Reconnect</button>
+  </div>
+
+  <div class="sec">Recent — this board · ended in the last 48h<span class="new-tag">new</span></div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>Chooser board-split requirements</span><span class="chip">VibeCodes</span></div>
+      <div class="row-id">/Users/nickball/projects/vibe-coding-ideas · ended 3h ago</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-emerald">Resume</button>
+  </div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>VibeCodes · 41d0</span></div>
+      <div class="row-id">/Users/nickball/projects/vibe-coding-ideas · ended 26h ago</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-emerald">Resume</button>
+  </div>
+
+  <div class="sec">Running now — other boards</div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>Recipe Roulette · 9f2c</span></div>
+      <div class="row-id">Nicks-MBP.home.local · /Users/nickball/projects/recipe-roulette · started 4h ago</div>
+      <div class="row-note">If this session is open somewhere else, reconnecting here takes it over.</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-sky">⟳ Open board &amp; reconnect</button>
+  </div>
+
+  <div class="sec">Recent — other boards · ended in the last 48h<span class="new-tag">new</span></div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>Menu importer spike</span><span class="chip">Recipe Roulette</span></div>
+      <div class="row-id">/Users/nickball/projects/recipe-roulette · ended 5h ago</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-emerald">Resume</button>
+  </div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>Band Practice Log · c7aa</span></div>
+      <div class="row-id">/Users/nickball/projects/band-practice-log · ended 44h ago</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-emerald">Resume</button>
+  </div>
+
+  <div class="footer"><button class="btn btn-ghost">✕ Close</button></div>
+</div>
+</div>
+<p class="figcap">Fig. 1 — the full chooser in the new board-first order. This board's ended sessions
+(“Recent — this board”) outrank another board's live one (“Running now — other boards”). All headings use
+the same shipped <code>ChooserSection</code> treatment.</p>
+
+<h2>3 · ⚠ Flagged for review: the initial-focus rule vs. the new order</h2>
+<div class="callout warn">
+<p style="margin:0 0 8px"><strong>This is a real visual/behavioural quirk we are shipping knowingly — please read before approving.</strong></p>
+<p style="margin:0 0 8px">
+The shipped focus rule is <em>unchanged</em> in v1 (a Requirements v2 decision, not an oversight):
+when the chooser opens, keyboard focus lands on the first <strong>live</strong> session's action —
+prioritising a row badged “was open in this tab”, wherever it is. A task-scoped open still focuses the
+“already running for this task” banner first, and with no live rows at all, focus falls to “Start new session”.
+</p>
+<p style="margin:0 0 8px">
+Under the old order that focused row was always at or near the top. Under the new order, a live session on
+<strong>another</strong> board now renders in section 3 — <em>below</em> “Recent — this board”. So when your
+only live session is elsewhere (Fig. 2), <strong>focus lands mid-list while the eye naturally lands on this
+board's recent sessions at the top</strong>. Pressing Enter immediately reconnects the elsewhere session —
+correct per the rule, but no longer where the user is looking. On a tall chooser the browser may also
+auto-scroll to bring the focused row into view, skipping the reader past the top sections.
+</p>
+<p style="margin:0">
+Requirements v2 decided: <strong>keep the current focus targets for v1</strong> — don't invent a new focus
+rule as part of a reordering card. If field use shows people Enter-ing into the wrong session, a follow-up
+card can revisit the rule (e.g. “focus the first row of the first rendered section”); that is deliberately
+NOT designed here.
+</p>
+</div>
+
+<div class="mock-frame">
+<div class="chooser small">
+  <div class="startnew"><div class="startnew-row"><button class="btn btn-new">▸_ Start new session</button></div></div>
+  <div class="sec">Recent — this board · ended in the last 48h<span class="new-tag">new</span></div>
+  <div class="row">
+    <div class="row-main">
+      <div class="row-title"><span>Chooser board-split requirements</span><span class="chip">VibeCodes</span></div>
+      <div class="row-id">/Users/nickball/projects/vibe-coding-ideas · ended 3h ago</div>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-emerald">Resume</button>
+  </div>
+  <div class="sec">Running now — other boards</div>
+  <div class="row">
+    <div class="row-main focus-anno">
+      <div class="row-title"><span>Recipe Roulette · 9f2c</span><span class="badge">was open in this tab</span></div>
+      <div class="row-id">Nicks-MBP.home.local · /Users/nickball/projects/recipe-roulette · started 4h ago</div>
+      <div class="row-note">If this session is open somewhere else, reconnecting here takes it over.</div>
+      <span class="focus-tag">⌖ initial focus lands HERE — below the recent rows the eye reads first</span>
+    </div>
+    <span class="pencil">✎</span>
+    <button class="btn btn-xs-sky focus-ring">⟳ Open board &amp; reconnect</button>
+  </div>
+  <div class="footer"><button class="btn btn-ghost">✕ Close</button></div>
+</div>
+</div>
+<p class="figcap">Fig. 2 — the flagged quirk, concretely: nothing live on this board, one recent row here,
+one live session elsewhere. The eye starts at the top (“Recent — this board”); focus starts two rows down,
+on the elsewhere session's Reconnect.</p>
+
+<h2>4 · The heading treatment, exactly</h2>
+<p>All four headings reuse the existing <code>ChooserSection</code> component in
+<code>terminal-session-chooser.tsx</code> with <strong>zero style changes</strong>:</p>
+<div class="scrollx"><table>
+  <tr><th>Property</th><th>Value (existing shipped classes)</th></tr>
+  <tr><td>Container</td><td><code>border-t border-zinc-800 bg-[#111114] px-3.5 py-1.5</code></td></tr>
+  <tr><td>Text</td><td><code>text-[10.5px] font-bold uppercase tracking-wide text-zinc-500</code></td></tr>
+  <tr><td>Section 1</td><td><code>Running now — this board</code> (existing label, unchanged)</td></tr>
+  <tr><td>Section 2</td><td><code>Recent — this board · ended in the last 48h</code> (new)</td></tr>
+  <tr><td>Section 3</td><td><code>Running now — other boards</code> (existing label, unchanged)</td></tr>
+  <tr><td>Section 4</td><td><code>Recent — other boards · ended in the last 48h</code> (new)</td></tr>
+</table></div>
+<ul>
+  <li><strong>Text, not colour:</strong> section membership is carried by the visible heading string, exactly as the live split does today. Nothing added depends on hue alone (WCAG-safe, matches the existing constraint).</li>
+  <li><strong>The “ended in the last 48h” qualifier stays</strong> on both Recent headings (Requirements v2 decision — it explains why an older session has vanished, which matters more now that “Recent — this board” sits in the prime slot 2 position). It rides after a mid-dot so the scannable part — <em>Recent — this board</em> — still leads, mirroring the “Running now — …” shape (Gestalt similarity: the 2×2 of “Running now / Recent” × “this board / other boards” parses at a glance once either axis is learned).</li>
+  <li><strong>Board name on other-board rows</strong>: unchanged, already satisfied by the existing chip/dedupe logic — named rows show the muted idea-title chip (“Menu importer spike <span class="chip">Recipe Roulette</span>”), and fallback-named rows carry the board name inside the label (“Band Practice Log · c7aa”), where <code>isFallbackSessionName</code> correctly suppresses the redundant chip.</li>
+</ul>
+
+<h2>5 · Empty-state behaviour under the new order</h2>
+<p>Same rule as shipped: <strong>an empty section renders nothing — no heading, no divider, no placeholder</strong>.
+The case that matters most under the new order is slot 2 going empty: “Running now — this board” is then
+followed <em>directly</em> by “Running now — other boards”, with no gap and no “nothing recent here” filler.
+The chooser never manufactures blank space to preserve the four-slot rhythm.</p>
+
+<div class="empty-grid">
+  <div>
+    <div class="chooser small">
+      <div class="startnew"><div class="startnew-row"><button class="btn btn-new">▸_ Start new session</button></div></div>
+      <div class="sec">Running now — this board</div>
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title"><span>Fix relay reconnect loop</span><span class="chip">VibeCodes</span></div>
+          <div class="row-id">Nicks-MBP.home.local · …/vibe-coding-ideas · started 2h ago</div>
+          <div class="row-note">If this session is open somewhere else, reconnecting here takes it over.</div>
+        </div>
+        <button class="btn btn-xs-sky">⟳ Reconnect</button>
+      </div>
+      <div class="sec">Running now — other boards</div>
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title"><span>Recipe Roulette · 9f2c</span></div>
+          <div class="row-id">Nicks-MBP.home.local · …/recipe-roulette · started 4h ago</div>
+          <div class="row-note">If this session is open somewhere else, reconnecting here takes it over.</div>
+        </div>
+        <button class="btn btn-xs-sky">⟳ Open board &amp; reconnect</button>
+      </div>
+      <div class="footer"><button class="btn btn-ghost">✕ Close</button></div>
+    </div>
+    <p class="figcap">Fig. 3 — “Recent — this board” is empty: sections 1 and 3 stack directly.<br/>No gap, no placeholder, no held-open slot.</p>
+  </div>
+  <div>
+    <div class="chooser small">
+      <div class="startnew"><div class="startnew-row"><button class="btn btn-new">▸_ Start new session</button></div></div>
+      <div class="sec">Recent — other boards · ended in the last 48h<span class="new-tag">new</span></div>
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title"><span>Menu importer spike</span><span class="chip">Recipe Roulette</span></div>
+          <div class="row-id">/Users/nickball/projects/recipe-roulette · ended 5h ago</div>
+        </div>
+        <button class="btn btn-xs-emerald">Resume</button>
+      </div>
+      <div class="footer"><button class="btn btn-ghost">✕ Close</button></div>
+    </div>
+    <p class="figcap">Fig. 4 — nothing on this board at all, nothing live anywhere: only “Recent — other boards” renders. When both Recent subsections are empty the chooser looks byte-identical to today's no-recent state.</p>
+  </div>
+</div>
+<p>Emptiness is judged on the <em>display-filtered</em> rows (after <code>visibleRecentRows</code> drops
+null-folder rows), matching how the single Recent section decides to show itself today — a subsection whose
+only rows are unresumable renders nothing.</p>
+
+<div class="callout warn">
+<strong>Accepted v1 limitation, now more visible:</strong> the 10-row recent cap and dedupe apply
+<em>before</em> the board split. A busy day on other boards can therefore leave “Recent — this board”
+empty (Fig. 3's shape) even though this board had older ended sessions — the cap ate them. Under the old
+order that gap hid in slot 3/4; now it is slot 2, right under the live rows, where its absence is
+noticeable. Requirements v2 accepts this for v1; a per-board cap or reserve is a possible follow-up,
+deliberately not designed here.
+</div>
+
+<h2>6 · What implements this (for the build step)</h2>
+<ul>
+  <li><strong><code>src/lib/terminal/chooser-data.ts</code></strong> — <code>ChooserSections</code> gains two
+    NEW fields, <code>recentHere</code> and <code>recentElsewhere</code> (partitioned by
+    <code>row.ideaId === currentIdeaId</code>, preserving the newest-ended-first order), <em>alongside</em> the
+    existing <code>recent</code> field, which stays exactly as derived today. Additive on purpose: every
+    existing consumer of <code>recent</code> (<code>findTaskSessionMatch</code>, <code>chooserHeaderCounts</code>,
+    <code>entry-decision.ts</code>'s underlying invariants) is untouched. All existing rules — 48h window,
+    <code>RECENT_MAX</code>=10, dedupe, null-cwd handling, machine-identity filtering — apply before the split,
+    unchanged.</li>
+  <li><strong><code>src/components/board/terminal-session-chooser.tsx</code></strong> — the render becomes four
+    conditional <code>ChooserSection</code> blocks in the new order:
+    <code>liveHere</code> → <code>visibleRecentRows(recentHere)</code> → <code>liveElsewhere</code> →
+    <code>visibleRecentRows(recentElsewhere)</code>. <code>LiveRow</code>/<code>RecentRow</code>, actions,
+    confirms, rename, takeover copy, and the focus refs (<code>firstFocusRef</code>/<code>wasOpenSid</code>
+    wiring) are all unchanged — the elsewhere live rows simply render later in the document.</li>
+  <li><strong>Focus rule</strong> — no code change (see §3). The only behavioural difference is positional:
+    the same button that gets focus today can now be further down the page.</li>
+</ul>
+
+<h2>7 · Fidelity + accessibility check</h2>
+<ul>
+  <li>Mock colours/spacing are the app's shipped zinc/sky/emerald/amber tokens lifted from the component's own classes (<code>#111114</code> section bars, <code>zinc-800</code> hairlines, sky reconnect / emerald resume buttons) — dark theme, matching the dock.</li>
+  <li>Headings are real text in the DOM (screen-reader visible), not colour or spacing alone; the reorder adds no new interactive elements, so tab order simply follows the new visual order — with the one focus caveat flagged in §3.</li>
+  <li>Heading contrast: <code>zinc-500</code> on <code>#111114</code> is the existing shipped treatment; the two new headings are no worse than the two approved ones, and row/action text stays <code>zinc-100</code> on near-black at well over 4.5:1.</li>
+  <li>375px: rows already wrap their title/chip cluster (<code>flex-wrap</code>) and truncate the mono identity line; the longer Recent headings (“· ended in the last 48h”) remain single short strings at 10.5px and fit a 375px panel without wrapping.</li>
+</ul>
+
+</div>
+</body>
+</html>

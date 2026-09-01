@@ -14,7 +14,13 @@ import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 
 afterEach(cleanup);
 
-const EMPTY: ChooserSections = { liveHere: [], liveElsewhere: [], recent: [] };
+const EMPTY: ChooserSections = {
+  liveHere: [],
+  liveElsewhere: [],
+  recent: [],
+  recentHere: [],
+  recentElsewhere: [],
+};
 
 function sections(overrides: Partial<ChooserSections>): ChooserSections {
   return { ...EMPTY, ...overrides };
@@ -205,7 +211,7 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [row] })}
+        sections={sections({ recentHere: [row] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={onResume}
@@ -247,7 +253,7 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [row] })}
+        sections={sections({ recentHere: [row] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={onResume}
@@ -258,7 +264,7 @@ describe("TerminalSessionChooser", () => {
     expect(screen.queryByText(/Can.t resume/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
     // No cwd-having rows either → the whole section is gone, header included.
-    expect(screen.queryByText("Recent — ended in the last 48h")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent — this board (ended in the last 48h)")).not.toBeInTheDocument();
   });
 
   it("Recent list: excludes a no-cwd row while still including one that DOES have a folder", () => {
@@ -288,7 +294,7 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [noCwdRow, withCwdRow] })}
+        sections={sections({ recentHere: [noCwdRow, withCwdRow] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={vi.fn()}
@@ -297,7 +303,7 @@ describe("TerminalSessionChooser", () => {
     );
     // Section renders (at least one visible row) and shows only the
     // cwd-having one.
-    expect(screen.getByText("Recent — ended in the last 48h")).toBeInTheDocument();
+    expect(screen.getByText("Recent — this board (ended in the last 48h)")).toBeInTheDocument();
     expect(screen.getByText(/~\/projects\/vibecodes/)).toBeInTheDocument();
     expect(screen.queryByText(/no recorded folder/)).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Resume" })).toHaveLength(1);
@@ -322,14 +328,14 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [row] })}
+        sections={sections({ recentHere: [row] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={vi.fn()}
         onStartNew={vi.fn()}
       />,
     );
-    expect(screen.queryByText("Recent — ended in the last 48h")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent — this board (ended in the last 48h)")).not.toBeInTheDocument();
   });
 
   it("Recent row with a tracked claudeSessionId: the confirm copy promises the EXACT conversation (rework 5)", () => {
@@ -348,7 +354,7 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [row] })}
+        sections={sections({ recentHere: [row] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={onResume}
@@ -376,7 +382,7 @@ describe("TerminalSessionChooser", () => {
     };
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [row] })}
+        sections={sections({ recentHere: [row] })}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
         onResume={onResume}
@@ -421,7 +427,7 @@ describe("TerminalSessionChooser", () => {
   it("Recent row: hides the limit line when comfortably under the session cap", () => {
     render(
       <TerminalSessionChooser
-        sections={sections({ recent: [recentRow], liveHere: [liveRow("live-1")] })}
+        sections={sections({ recentHere: [recentRow], liveHere: [liveRow("live-1")] })}
         cap={5}
         onReconnectHere={vi.fn()}
         onOpenBoardAndReconnect={vi.fn()}
@@ -437,7 +443,7 @@ describe("TerminalSessionChooser", () => {
     render(
       <TerminalSessionChooser
         sections={sections({
-          recent: [recentRow],
+          recentHere: [recentRow],
           liveHere: [liveRow("live-1"), liveRow("live-2")],
           liveElsewhere: [liveRow("live-3"), liveRow("live-4")],
         })}
@@ -697,7 +703,7 @@ describe("TerminalSessionChooser", () => {
     it("hides the pencil on every row when no onRenameSession is supplied", () => {
       render(
         <TerminalSessionChooser
-          sections={sections({ liveHere: [liveRow("live-1")], recent: [recentRow] })}
+          sections={sections({ liveHere: [liveRow("live-1")], recentHere: [recentRow] })}
           onReconnectHere={vi.fn()}
           onOpenBoardAndReconnect={vi.fn()}
           onResume={vi.fn()}
@@ -739,7 +745,7 @@ describe("TerminalSessionChooser", () => {
       const onRenameSession = vi.fn().mockResolvedValue({ ok: true, displayName: "Stripe webhook spike" });
       render(
         <TerminalSessionChooser
-          sections={sections({ recent: [recentRow] })}
+          sections={sections({ recentHere: [recentRow] })}
           onReconnectHere={vi.fn()}
           onOpenBoardAndReconnect={vi.fn()}
           onResume={vi.fn()}
@@ -763,7 +769,7 @@ describe("TerminalSessionChooser", () => {
       const onRenameSession = vi.fn().mockResolvedValue({ ok: false });
       render(
         <TerminalSessionChooser
-          sections={sections({ recent: [recentRow] })}
+          sections={sections({ recentHere: [recentRow] })}
           onReconnectHere={vi.fn()}
           onOpenBoardAndReconnect={vi.fn()}
           onResume={vi.fn()}
@@ -792,7 +798,7 @@ describe("TerminalSessionChooser", () => {
     it("Resume hides on a Recent row while it is being renamed", () => {
       render(
         <TerminalSessionChooser
-          sections={sections({ recent: [recentRow] })}
+          sections={sections({ recentHere: [recentRow] })}
           onReconnectHere={vi.fn()}
           onOpenBoardAndReconnect={vi.fn()}
           onResume={vi.fn()}
@@ -802,6 +808,70 @@ describe("TerminalSessionChooser", () => {
       );
       fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
       expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    });
+  });
+
+  // Terminal chooser board split (this card): board affiliation is the
+  // PRIMARY sort, liveness secondary — the four sections must render in the
+  // order live-here, recent-here, live-elsewhere, recent-elsewhere, and an
+  // empty section (zero rows) must render neither a heading nor a placeholder,
+  // same as the existing live sections already behaved.
+  describe("board-split section order (this card)", () => {
+    it("renders all four sections in order: live-here, recent-here, live-elsewhere, recent-elsewhere", () => {
+      render(
+        <TerminalSessionChooser
+          sections={sections({
+            liveHere: [liveRow("live-here-1")],
+            recentHere: [{ ...recentRow, sid: "recent-here-1" }],
+            liveElsewhere: [liveRow("live-elsewhere-1")],
+            recentElsewhere: [{ ...recentRow, sid: "recent-elsewhere-1" }],
+          })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+        />,
+      );
+      const headings = screen.getAllByText(/^Running now|^Recent —/);
+      expect(headings.map((h) => h.textContent)).toEqual([
+        "Running now — this board",
+        "Recent — this board (ended in the last 48h)",
+        "Running now — other boards",
+        "Recent — other boards (ended in the last 48h)",
+      ]);
+    });
+
+    it("renders no heading and no placeholder for an empty recent-elsewhere section", () => {
+      render(
+        <TerminalSessionChooser
+          sections={sections({
+            liveHere: [liveRow("live-here-1")],
+            recentHere: [{ ...recentRow, sid: "recent-here-1" }],
+          })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+        />,
+      );
+      expect(screen.queryByText("Running now — other boards")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Recent — other boards/)).not.toBeInTheDocument();
+    });
+
+    it("renders no heading for an empty recent-here section even when recent-elsewhere has rows", () => {
+      render(
+        <TerminalSessionChooser
+          sections={sections({
+            recentElsewhere: [{ ...recentRow, sid: "recent-elsewhere-1" }],
+          })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+        />,
+      );
+      expect(screen.queryByText(/Recent — this board/)).not.toBeInTheDocument();
+      expect(screen.getByText("Recent — other boards (ended in the last 48h)")).toBeInTheDocument();
     });
   });
 });

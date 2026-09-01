@@ -9,6 +9,7 @@ import {
   findLiveSessionForConversation,
   liveSessionsElsewhereOnThisBoard,
   visibleRecentRows,
+  partitionRecentByBoard,
   type ChooserRegistryRow,
   type ChooserRecentRow,
 } from "./chooser-data";
@@ -683,6 +684,123 @@ describe("visibleRecentRows", () => {
   it("returns an empty array when every row is no-cwd", () => {
     const recent = [recentRow({ sid: "a", cwd: null }), recentRow({ sid: "b", cwd: null })];
     expect(visibleRecentRows(recent)).toEqual([]);
+  });
+});
+
+// Terminal chooser board split (this card): board affiliation is the PRIMARY
+// sort in the chooser, liveness secondary. `partitionRecentByBoard` is the
+// pure helper that splits an already-finished `recent` list (post-window,
+// post-cap, post-dedupe) into this-board vs. other-boards halves, preserving
+// order. It never re-derives anything — see `deriveChooserSections`'s own
+// coverage below for proof it runs AFTER the cap.
+describe("partitionRecentByBoard", () => {
+  function recentRow(overrides: Partial<ChooserRecentRow> & { sid: string }): ChooserRecentRow {
+    return {
+      ideaId: IDEA_A,
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: null,
+      machineLabel: null,
+      claudeSessionId: null,
+      endedAt: new Date(NOW - 60_000).toISOString(),
+      displayName: null,
+      ...overrides,
+    };
+  }
+
+  it("returns two empty arrays for an empty input", () => {
+    expect(partitionRecentByBoard([], IDEA_A)).toEqual({ recentHere: [], recentElsewhere: [] });
+  });
+
+  it("puts every row in recentHere when none belong to another board", () => {
+    const recent = [recentRow({ sid: "a", ideaId: IDEA_A }), recentRow({ sid: "b", ideaId: IDEA_A })];
+    const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, IDEA_A);
+    expect(recentHere.map((r) => r.sid)).toEqual(["a", "b"]);
+    expect(recentElsewhere).toEqual([]);
+  });
+
+  it("puts every row in recentElsewhere when none belong to the current board", () => {
+    const recent = [recentRow({ sid: "a", ideaId: IDEA_B }), recentRow({ sid: "b", ideaId: IDEA_B })];
+    const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, IDEA_A);
+    expect(recentHere).toEqual([]);
+    expect(recentElsewhere.map((r) => r.sid)).toEqual(["a", "b"]);
+  });
+
+  it("splits a mixed list, preserving each half's relative (newest-ended-first) order", () => {
+    const recent = [
+      recentRow({ sid: "here-1", ideaId: IDEA_A }),
+      recentRow({ sid: "elsewhere-1", ideaId: IDEA_B }),
+      recentRow({ sid: "here-2", ideaId: IDEA_A }),
+      recentRow({ sid: "elsewhere-2", ideaId: IDEA_B }),
+    ];
+    const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, IDEA_A);
+    expect(recentHere.map((r) => r.sid)).toEqual(["here-1", "here-2"]);
+    expect(recentElsewhere.map((r) => r.sid)).toEqual(["elsewhere-1", "elsewhere-2"]);
+  });
+
+  // Partition runs on top of the FINISHED (already-capped) list, never
+  // instead of the cap — deriveChooserSections proves this end-to-end below,
+  // but pin it here too against a future caller that partitions raw rows.
+  it("partitions an already-capped list without re-applying or bypassing the cap itself", () => {
+    const recent = Array.from({ length: RECENT_MAX }, (_, i) =>
+      recentRow({ sid: `row-${i}`, ideaId: i % 2 === 0 ? IDEA_A : IDEA_B }),
+    );
+    const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, IDEA_A);
+    expect(recentHere.length + recentElsewhere.length).toBe(RECENT_MAX);
+  });
+});
+
+describe("deriveChooserSections — board-split recent (this card)", () => {
+  it("splits recentHere/recentElsewhere by currentIdeaId while leaving the combined `recent` untouched", () => {
+    const rows = [
+      row({
+        sid: "here",
+        ideaId: IDEA_A,
+        status: "ended",
+        cwd: "~/projects/here",
+        endedAt: new Date(NOW - 60_000).toISOString(),
+      }),
+      row({
+        sid: "elsewhere",
+        ideaId: IDEA_B,
+        status: "ended",
+        cwd: "~/projects/elsewhere",
+        endedAt: new Date(NOW - 30_000).toISOString(),
+      }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(sections.recent.map((r) => r.sid)).toEqual(["elsewhere", "here"]); // unchanged combined list, newest-ended first
+    expect(sections.recentHere.map((r) => r.sid)).toEqual(["here"]);
+    expect(sections.recentElsewhere.map((r) => r.sid)).toEqual(["elsewhere"]);
+  });
+
+  it("applies the split AFTER the RECENT_MAX cap and existing dedupe/window logic, not before", () => {
+    // 12 ended rows on the current board and 1 on another — RECENT_MAX (10)
+    // caps the newest 10 overall before the split ever runs, so the 11th and
+    // 12th "here" rows (and the "elsewhere" row, which is oldest of all) must
+    // never appear in either half.
+    const hereRows = Array.from({ length: RECENT_MAX + 2 }, (_, i) =>
+      row({
+        sid: `here-${i}`,
+        ideaId: IDEA_A,
+        status: "ended",
+        cwd: `~/projects/here-${i}`,
+        endedAt: new Date(NOW - i * 60_000).toISOString(), // here-0 is newest
+      }),
+    );
+    const elsewhereRow = row({
+      sid: "elsewhere-oldest",
+      ideaId: IDEA_B,
+      status: "ended",
+      cwd: "~/projects/elsewhere",
+      endedAt: new Date(NOW - (RECENT_MAX + 5) * 60_000).toISOString(), // oldest of all
+    });
+    const sections = deriveChooserSections([...hereRows, elsewhereRow], IDEA_A, NOW);
+    expect(sections.recent).toHaveLength(RECENT_MAX);
+    expect(sections.recentHere).toHaveLength(RECENT_MAX);
+    expect(sections.recentElsewhere).toEqual([]);
+    expect(sections.recentHere.some((r) => r.sid === "elsewhere-oldest")).toBe(false);
   });
 });
 
