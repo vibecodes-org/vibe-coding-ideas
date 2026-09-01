@@ -28,6 +28,7 @@ import type {
 } from "./use-terminal-session";
 import { RELAY_CLOSE, PREEMPTED_CLOSE_REASON, type TerminalConnectionState } from "@/lib/terminal/connection";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
+import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 
 vi.mock("./use-terminal-session", () => ({
   useTerminalSession: vi.fn(),
@@ -103,6 +104,46 @@ function installMockSession() {
 // effect (use-terminal-session.test.ts covers that timing logic directly)
 // decided. This file only checks TerminalSessionView renders the right
 // body for a given `pairingTimedOut` value and wires Retry correctly.
+// Terminal P2 (E2EE) — same shape as installMockSession, but with a
+// caller-supplied `notEncryptedYet`, standing in for whatever the real hook
+// decided (use-terminal-session.test.ts covers that logic directly). Used to
+// prove the chip/nudge actually key off this flag rather than always being
+// on or off.
+function installMockSessionWithE2eeState(notEncryptedYet: boolean) {
+  mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    lastContainerRef = containerRef;
+    return {
+      state: {
+        status: "connected",
+        sessionId: "sess-1",
+        errorKind: null,
+        endedReason: null,
+        closeCode: null,
+        closeReason: null,
+        refusalCap: null,
+      },
+      launchPhase: "idle",
+      peerDegraded: false,
+      helperVersion: null,
+      notEncryptedYet,
+      e2eeActive: false,
+      pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
+      readOnly: false,
+      autoAccept: false,
+      inputEnabled: true,
+      platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+      paired: true,
+      xtermReady: true,
+      containerRef,
+      pairingTimedOut: false,
+      actions: mockActions(),
+    };
+  });
+}
+
 function installMockWaitingSession(pairingTimedOut: boolean) {
   const actions = mockActions();
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
@@ -965,5 +1006,67 @@ describe("TerminalSessionView — helper download affordances run the Update-now
     expect(screen.queryByRole("link", { name: /Download for Mac/ })).not.toBeInTheDocument();
     fireEvent.click(download);
     expect(screen.getByText(/Your 1 running session will end first/)).toBeInTheDocument();
+  });
+});
+
+// Terminal P2 (E2EE) — every scenario elsewhere in this file stubs
+// `notEncryptedYet: false`, so the chip/nudge branch itself (terminal-
+// session-view.tsx's `{notEncryptedYet && ...}` blocks) was never actually
+// exercised true. This closes that gap: proves the chip/nudge render when
+// the flag is true, and that they disappear the moment a rerender flips it
+// back to false (the real hook does this once the bridge confirms e2ee).
+describe("TerminalSessionView — 'not encrypted yet' chip (Terminal P2 E2EE)", () => {
+  it("shows the chip and dismissable nudge when notEncryptedYet is true", () => {
+    installMockSessionWithE2eeState(true);
+    renderView(false);
+
+    expect(screen.getByTitle(E2EE_COPY.chip.notE2eeTooltip)).toBeInTheDocument();
+    expect(screen.getByText(E2EE_COPY.chip.notE2ee)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(E2EE_COPY.nudge.body);
+  });
+
+  it("hides the chip and nudge when notEncryptedYet is false", () => {
+    installMockSessionWithE2eeState(false);
+    renderView(false);
+
+    expect(screen.queryByTitle(E2EE_COPY.chip.notE2eeTooltip)).not.toBeInTheDocument();
+    expect(screen.queryByText(E2EE_COPY.chip.notE2ee)).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("the chip and nudge disappear on rerender once the bridge confirms e2ee (notEncryptedYet flips true → false)", () => {
+    installMockSessionWithE2eeState(true);
+    const { rerender } = renderView(false);
+    expect(screen.getByText(E2EE_COPY.chip.notE2ee)).toBeInTheDocument();
+
+    installMockSessionWithE2eeState(false);
+    rerender(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        poppedOut={false}
+        onBringBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(E2EE_COPY.chip.notE2ee)).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("dismissing the nudge does not hide the persistent chip above it", () => {
+    installMockSessionWithE2eeState(true);
+    renderView(false);
+
+    fireEvent.click(screen.getByLabelText("Dismiss not-encrypted notice"));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText(E2EE_COPY.chip.notE2ee)).toBeInTheDocument();
   });
 });
