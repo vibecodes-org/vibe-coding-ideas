@@ -440,6 +440,10 @@ describe("useTerminalSession", () => {
     });
 
     expect(result.current.state.status).toBe("error");
+    // Ghost-sessions fix C: the cap refusal must reach the reducer's
+    // errorKind (not just the toast) so the persistent pane can render
+    // cap-specific copy instead of the generic "check your connection".
+    expect(result.current.state.errorKind).toBe("cap-reached");
     expect(mockSockets).toHaveLength(0);
     expect(toastError).toHaveBeenCalled();
     const [title, opts] = toastError.mock.calls[0];
@@ -472,6 +476,9 @@ describe("useTerminalSession", () => {
     });
 
     expect(result.current.state.status).toBe("error");
+    // Unlike the cap refusal above, a rate limit keeps the generic errorKind
+    // — ending a session wouldn't even be the right advice here.
+    expect(result.current.state.errorKind).toBe("session-mint-failed");
     expect(toastError).toHaveBeenCalledWith("You're starting terminals too fast — wait a moment and try again.");
     expect(onCapExceeded).not.toHaveBeenCalled();
   });

@@ -80,6 +80,7 @@ import {
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
+import { capRefusalMessage } from "@/lib/terminal/session-cap";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -1314,6 +1315,12 @@ function errorTitle(state: TerminalConnectionState): string {
       return "Couldn't reach your machine";
     case "session-mint-failed":
       return "Couldn't start a session";
+    case "cap-reached":
+      // Ghost-sessions fix C: previously a cap refusal (409 cap_exceeded)
+      // dispatched the same generic "session-mint-failed" as a network/relay
+      // failure, so this pane always said "check your connection" — flatly
+      // wrong when the real reason was "you're already running the max".
+      return "You're at your session limit";
     default:
       return "Something went wrong";
   }
@@ -1333,6 +1340,11 @@ function errorMessage(state: TerminalConnectionState): string {
       return "We couldn't set up the secure link. Check your connection, then try again.";
     case "session-mint-failed":
       return "The session request didn't go through. Check your connection and try again.";
+    case "cap-reached":
+      // Reuses the mint route's own copy (session-cap.ts → capRefusalMessage)
+      // so the cap number is single-sourced with the server-side enforcement
+      // and the toast this same refusal already fires.
+      return `${capRefusalMessage()} Find it in My sessions.`;
     default:
       return "The terminal session didn't start. Try launching again.";
   }

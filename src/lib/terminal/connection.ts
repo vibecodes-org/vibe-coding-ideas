@@ -60,6 +60,7 @@ export type TerminalErrorKind =
   | "connect-timeout"
   | "relay-unreachable"
   | "session-mint-failed"
+  | "cap-reached"
   | "unknown";
 
 export type EndedReason = "user" | "remote" | "idle" | "max-duration" | "reconnect-failed";
@@ -85,7 +86,7 @@ export interface TerminalConnectionState {
 export type TerminalEvent =
   | { type: "connect" }
   | { type: "session-created"; sessionId: string }
-  | { type: "session-mint-failed" }
+  | { type: "session-mint-failed"; refusal?: "cap" }
   | { type: "relay-open" }
   | { type: "data" }
   | { type: "user-end" }
@@ -126,6 +127,21 @@ export function mapCloseCode(
     case RELAY_CLOSE.OWNER_MISMATCH:
       return { status: "error", errorKind: "owner-mismatch", endedReason: null };
     case RELAY_CLOSE.BAD_TOKEN:
+      // A grace-window reattach reuses the ORIGINAL token, no re-mint (see
+      // RECONNECT_GRACE_MS's doc above) — while still handshaking, `priorStatus`
+      // stays "disconnected" for the whole reattach loop (use-terminal-session.ts's
+      // scheduleReconnect / reconnectNow's grace-reconnect branch never dispatch
+      // "connect", by design, so isHandshaking(priorStatus) is false here). If the
+      // relay has already torn the session down by the time that reattach lands
+      // (e.g. a Mac sleep's grace window expired — ghost-sessions fix A), the SAME
+      // 4006 fires for an honest "this ended while you were away", not a genuine
+      // bad/tampered token. Only a first establishment (still handshaking) gets the
+      // scary verify-error copy; a refused RECONNECT gets the calm ended copy —
+      // reusing "reconnect-failed"'s existing "We couldn't reattach in time…"
+      // messaging, which already says exactly this.
+      if (!isHandshaking(priorStatus)) {
+        return { status: "session-ended", errorKind: null, endedReason: "reconnect-failed" };
+      }
       return { status: "error", errorKind: "bad-token", endedReason: null };
     case RELAY_CLOSE.DUP_BROWSER:
     case RELAY_CLOSE.DUP_BRIDGE:
@@ -232,7 +248,20 @@ export function terminalReducer(
       return { ...state, sessionId: event.sessionId };
 
     case "session-mint-failed":
-      return { ...state, status: "error", errorKind: "session-mint-failed", closeCode: null, closeReason: null };
+      // Fix C (ghost-sessions): a mint refused for the per-user session cap
+      // (`code: "cap_exceeded"` — see reportMintFailure/isCapRefusalMessage
+      // in use-terminal-session.ts) gets its own errorKind so the PERSISTENT
+      // pane can say what actually happened ("you're at your limit") instead
+      // of the generic "check your connection" copy, which was flatly wrong
+      // for a refusal that has nothing to do with connectivity. Every other
+      // mint failure keeps the pre-existing generic errorKind.
+      return {
+        ...state,
+        status: "error",
+        errorKind: event.refusal === "cap" ? "cap-reached" : "session-mint-failed",
+        closeCode: null,
+        closeReason: null,
+      };
 
     case "relay-open":
       // Relay reached; the bridge may not have attached yet → waiting-to-pair.

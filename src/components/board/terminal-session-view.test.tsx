@@ -448,6 +448,33 @@ describe("TerminalSessionView — same-owner takeover state", () => {
     expect(screen.getByText("This session is already open elsewhere")).toBeInTheDocument();
     expect(screen.queryByText("Taken over")).not.toBeInTheDocument();
   });
+
+  // Ghost-sessions fix B: a genuine bad/tampered token during FIRST
+  // establishment must still show the scary verify error — only a refused
+  // RECONNECT to a previously-live session (see the "reconnect-failed" ended
+  // copy above) gets the calm treatment.
+  it("still shows the verify-error copy for a genuine bad-token failure (first establishment)", () => {
+    installMockErrorSession({ errorKind: "bad-token", closeCode: RELAY_CLOSE.BAD_TOKEN, closeReason: null });
+    renderErrorView();
+
+    expect(screen.getByText("Couldn't verify this session")).toBeInTheDocument();
+    expect(screen.getByText("The session couldn't be verified. Launch again to start a fresh one.")).toBeInTheDocument();
+  });
+
+  // Ghost-sessions fix C: a cap refusal (409 cap_exceeded) used to dispatch the
+  // same generic errorKind as any other mint failure, so the persistent pane
+  // always said "check your connection" — wrong when the real reason was
+  // "you're already running the max". Pins the pane's own copy, separate from
+  // the toast (covered in use-terminal-session.test.ts).
+  it("renders cap-specific copy — not the generic connection-check message — for errorKind cap-reached", () => {
+    installMockErrorSession({ errorKind: "cap-reached", closeCode: null, closeReason: null });
+    renderErrorView();
+
+    expect(screen.getByText("You're at your session limit")).toBeInTheDocument();
+    expect(screen.getByText(/end one to start another/i)).toBeInTheDocument();
+    expect(screen.getByText(/My sessions/)).toBeInTheDocument();
+    expect(screen.queryByText(/check your connection/i)).not.toBeInTheDocument();
+  });
 });
 
 // Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a timed-out
@@ -573,6 +600,25 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     renderEndedView(vi.fn(), onBrowseSessions);
 
     expect(screen.getByRole("button", { name: /View my other sessions/ })).toBeInTheDocument();
+  });
+
+  // Ghost-sessions fix B: a wake-reconnect refused 4006 now maps to
+  // endedReason "reconnect-failed" (connection.ts's mapCloseCode) instead of
+  // errorKind "bad-token" — this pins that the ended panel renders the calm
+  // "ended while you were away" copy for it, not the scary verify-error copy
+  // ("Couldn't verify this session", pinned separately below for the genuine
+  // first-establishment case).
+  it("renders the calm 'reconnect-failed' copy, not a scary verify-error, for a refused wake-reconnect", () => {
+    installMockEndedSession({ endedReason: "reconnect-failed", cwd: null, claudeSessionId: null });
+    renderEndedView();
+
+    expect(screen.getByText("This session ended")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We couldn't reattach in time after the connection dropped. Your saved work is safe — start a new session to pick things back up.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't verify this session")).not.toBeInTheDocument();
   });
 
   it("omits the link entirely when onBrowseSessions isn't wired (matches the optional-callback-gated-UI pattern used elsewhere in this file)", () => {

@@ -129,6 +129,20 @@ describe("terminalReducer — ending & failures", () => {
     expect(s.errorKind).toBe("session-mint-failed");
   });
 
+  // Ghost-sessions fix C: a mint refused for hitting the per-user cap must
+  // get its own errorKind so the persistent pane can say what actually
+  // happened instead of the generic "check your connection" copy.
+  it("session-mint-failed with refusal 'cap' → error with errorKind cap-reached", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: "cap" }]);
+    expect(s.status).toBe("error");
+    expect(s.errorKind).toBe("cap-reached");
+  });
+
+  it("session-mint-failed with no refusal keeps the generic errorKind (unrelated mint failure)", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed", refusal: undefined }]);
+    expect(s.errorKind).toBe("session-mint-failed");
+  });
+
   it("reconnect-exhausted → honest session-ended (reconnect-failed), from a live drop", () => {
     // connect → live → drop (disconnected) → grace window / token lapses.
     const dropped = run([
@@ -171,8 +185,24 @@ describe("mapCloseCode", () => {
     });
   });
 
-  it("4006 → bad-token error", () => {
+  it("4006 during first establishment (still handshaking) → bad-token error", () => {
     expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "connecting").errorKind).toBe("bad-token");
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "waiting-to-pair").errorKind).toBe("bad-token");
+  });
+
+  // Ghost-sessions fix B: a Mac sleep drops both legs; the grace-window reattach
+  // (use-terminal-session.ts's scheduleReconnect / reconnectNow) reopens with the
+  // ORIGINAL token while priorStatus stays "disconnected" (it never dispatches
+  // "connect" — see that file's grace-reconnect branch). If the relay already tore
+  // the session down by then, that reattach gets refused 4006 too — but this is an
+  // honest "ended while you were away", not a genuinely bad/tampered token, so it
+  // must render the calm ended copy, not the scary verify error.
+  it("4006 refusing a RECONNECT (priorStatus disconnected) → calm session-ended, not an error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected")).toEqual({
+      status: "session-ended",
+      errorKind: null,
+      endedReason: "reconnect-failed",
+    });
   });
 
   it("4001 / 4002 → duplicate error", () => {
