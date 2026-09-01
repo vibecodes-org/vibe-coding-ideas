@@ -39,7 +39,13 @@ export const dynamic = "force-dynamic";
 
 const BodySchema = z.object({
   sid: z.string().min(1).max(128),
-  reason: z.enum(["idle_timeout", "time_limit"]).optional(),
+  // "peer_gone" (ghost-sessions fix A): the reconnect grace window (both legs
+  // dropped, e.g. a Mac sleeping with the dock open) expired without a full
+  // reattach — see terminal/relay/src/index.js's endGrace(). Deploy ordering:
+  // this route must accept the new reason BEFORE the relay is deployed to
+  // start sending it, or the callback 400s and the registry row stays a ghost
+  // exactly as before this fix.
+  reason: z.enum(["idle_timeout", "time_limit", "peer_gone"]).optional(),
 });
 
 export async function POST(req: Request) {

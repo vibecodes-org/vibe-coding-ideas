@@ -942,8 +942,9 @@ export class TerminalRelay {
         await this.armAlarm(now);
         return;
       }
-      this.log("reconnect grace expired — tearing down", { });
-      return this.endGrace();
+      const sid = await this.state.storage.get("sid");
+      this.log("reconnect grace expired — tearing down", { sid });
+      return this.endGrace(sid);
     }
 
     // Idle only governs a WHOLE session; a held (degraded) session has stale activity
@@ -995,7 +996,7 @@ export class TerminalRelay {
    * elsewhere as a best-effort mirror (design doc §9, R2), so a failed
    * callback here just leaves it exactly as stale as it always could be
    * before this fix, self-correcting on the next lazy reap.
-   * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|undefined} reasonCode
+   * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|"peer_gone"|undefined} reasonCode
    */
   async notifyAppSessionClosed(sid, reasonCode) {
     const appUrl = this.env.VIBECODES_APP_URL;
@@ -1026,14 +1027,27 @@ export class TerminalRelay {
     }
   }
 
-  /** Grace window elapsed without a full reattach → the original teardown: any
-   *  survivor gets PEER_GONE (4004) and all session state is released. */
-  async endGrace() {
+  /**
+   * Grace window elapsed without a full reattach → the original teardown: any
+   * survivor gets PEER_GONE (4004) and all session state is released.
+   *
+   * Card (ghost-sessions fix A): previously this path never told the app —
+   * only `endSession`'s idle/max branches did — so a Mac sleeping with the
+   * dock open (which drops both legs, opens the grace window, then expires
+   * it here) left the Supabase registry row "active" for up to 4h (the
+   * max-duration reap), filling the 5-session cap with ghosts. Mirrors
+   * `endSession`'s `notifyApp` call with reasonCode `"peer_gone"` — best-
+   * effort, same as every other branch of this callback (see
+   * notifyAppSessionClosed's doc).
+   * @param {string|undefined} sid
+   */
+  async endGrace(sid) {
     for (const ws of this.state.getWebSockets()) {
       try {
         ws.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
       } catch { /* already closing */ }
     }
+    await this.notifyAppSessionClosed(sid, "peer_gone");
     await this.clearSessionState();
   }
 
