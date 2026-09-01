@@ -41,6 +41,7 @@ function createChain(resolveWith: unknown = null) {
   chain.eq = vi.fn(() => chain);
   chain.is = vi.fn(() => chain);
   chain.in = vi.fn(() => chain);
+  chain.neq = vi.fn(() => chain);
   chain.not = vi.fn(() => chain);
   chain.insert = vi.fn(() => chain);
   chain.update = vi.fn(() => chain);
@@ -387,6 +388,7 @@ describe("moveTask — column optimistic-concurrency guard", () => {
   // Regression guard: moveTask previously had no pre-read of the task's
   // current column at all, so a stale move couldn't even be detected.
   it("blocks a stale move when the task's column no longer matches what was read", async () => {
+    const siblingsChain = createChain([]);
     const readChain = createChain({ column_id: COLUMN_A_ID });
     const columnChain = createChain({ title: "In Progress", is_done_column: false });
     // The guarded UPDATE (.eq on column_id) matches no row: a "concurrent"
@@ -398,7 +400,9 @@ describe("moveTask — column optimistic-concurrency guard", () => {
       switch (table) {
         case "board_tasks":
           boardTasksCalls += 1;
-          return boardTasksCalls === 1 ? readChain : writeChain;
+          if (boardTasksCalls === 1) return siblingsChain;
+          if (boardTasksCalls === 2) return readChain;
+          return writeChain;
         case "board_columns":
           return columnChain;
         default:
@@ -410,7 +414,7 @@ describe("moveTask — column optimistic-concurrency guard", () => {
       task_id: TASK_ID,
       idea_id: IDEA_ID,
       column_id: COLUMN_B_ID,
-      position: 500,
+      position: "bottom",
     });
 
     await expect(moveTask(makeContext(fromFn), params)).rejects.toThrow(
@@ -425,6 +429,7 @@ describe("moveTask — column optimistic-concurrency guard", () => {
   });
 
   it("succeeds for an ordinary single-caller move (no race)", async () => {
+    const siblingsChain = createChain([]);
     const readChain = createChain({ column_id: COLUMN_A_ID });
     const columnChain = createChain({ title: "In Progress", is_done_column: false });
     const writeChain = createChain({ id: TASK_ID });
@@ -435,7 +440,9 @@ describe("moveTask — column optimistic-concurrency guard", () => {
       switch (table) {
         case "board_tasks":
           boardTasksCalls += 1;
-          return boardTasksCalls === 1 ? readChain : writeChain;
+          if (boardTasksCalls === 1) return siblingsChain;
+          if (boardTasksCalls === 2) return readChain;
+          return writeChain;
         case "board_columns":
           return columnChain;
         case "board_task_activity":
@@ -449,14 +456,15 @@ describe("moveTask — column optimistic-concurrency guard", () => {
       task_id: TASK_ID,
       idea_id: IDEA_ID,
       column_id: COLUMN_B_ID,
-      position: 500,
+      position: "bottom",
     });
 
     const result = await moveTask(makeContext(fromFn), params);
 
     expect(result.success).toBe(true);
     expect(result.column).toBe("In Progress");
-    expect(result.position).toBe(500);
+    // Empty target column -> bottom insert lands at 0 (computeBottomInsertPosition([])).
+    expect(result.position).toBe(0);
   });
 
   it("throws 'Task not found' — not the generic DB error — when the task no longer exists", async () => {
@@ -470,11 +478,304 @@ describe("moveTask — column optimistic-concurrency guard", () => {
       task_id: TASK_ID,
       idea_id: IDEA_ID,
       column_id: COLUMN_B_ID,
-      position: 500,
+      position: "bottom",
     });
 
     await expect(moveTask(makeContext(fromFn), params)).rejects.toThrow(
       `Task not found: ${TASK_ID}`
     );
+  });
+});
+
+describe("moveTask — relative placement (top/bottom/before/after)", () => {
+  // Regression coverage for the position-guessing bug: move_task used to take
+  // a raw absolute position number the caller had no way to choose correctly.
+  // These lock in that the new relative placements resolve to the correct
+  // absolute value, and that get_board would list them in that order.
+
+  it("'top' lands strictly below the current lowest position in the target column", async () => {
+    const siblingsChain = createChain([{ position: 1000 }, { position: 2000 }]);
+    const readChain = createChain({ column_id: COLUMN_A_ID });
+    const columnChain = createChain({ title: "To Do", is_done_column: false });
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingsChain;
+          if (boardTasksCalls === 2) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      position: "top",
+    });
+
+    const result = await moveTask(makeContext(fromFn), params);
+
+    expect(result.position).toBe(0); // 1000 - POSITION_GAP
+    expect(
+      asMock(writeChain.update).mock.calls.some(
+        (call: unknown[]) => (call[0] as Record<string, unknown>).position === 0
+      )
+    ).toBe(true);
+  });
+
+  it("'bottom' lands strictly above the current highest position in the target column", async () => {
+    const siblingsChain = createChain([{ position: 1000 }, { position: 2000 }]);
+    const readChain = createChain({ column_id: COLUMN_A_ID });
+    const columnChain = createChain({ title: "To Do", is_done_column: false });
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingsChain;
+          if (boardTasksCalls === 2) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      position: "bottom",
+    });
+
+    const result = await moveTask(makeContext(fromFn), params);
+
+    expect(result.position).toBe(3000); // 2000 + POSITION_GAP
+  });
+
+  it("before_task_id splits the gap to the next-lower sibling", async () => {
+    const SIBLING_ID = "00000000-0000-4000-a000-000000000070";
+    // Sibling sits at 2000; another task sits at 1000 below it -> split to 1500.
+    const siblingLookupChain = createChain({
+      id: SIBLING_ID,
+      column_id: COLUMN_B_ID,
+      position: 2000,
+    });
+    const otherPositionsChain = createChain([{ position: 1000 }]);
+    const readChain = createChain({ column_id: COLUMN_A_ID });
+    const columnChain = createChain({ title: "To Do", is_done_column: false });
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingLookupChain;
+          if (boardTasksCalls === 2) return otherPositionsChain;
+          if (boardTasksCalls === 3) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      before_task_id: SIBLING_ID,
+    });
+
+    const result = await moveTask(makeContext(fromFn), params);
+
+    expect(result.position).toBe(1500);
+  });
+
+  it("after_task_id splits the gap to the next-higher sibling, and steps a full gap past a last sibling", async () => {
+    const SIBLING_ID = "00000000-0000-4000-a000-000000000071";
+    const siblingLookupChain = createChain({
+      id: SIBLING_ID,
+      column_id: COLUMN_B_ID,
+      position: 3000,
+    });
+    // Sibling is last in the column -> no higher neighbor to split against.
+    const otherPositionsChain = createChain([{ position: 1000 }, { position: 2000 }]);
+    const readChain = createChain({ column_id: COLUMN_A_ID });
+    const columnChain = createChain({ title: "To Do", is_done_column: false });
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingLookupChain;
+          if (boardTasksCalls === 2) return otherPositionsChain;
+          if (boardTasksCalls === 3) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      after_task_id: SIBLING_ID,
+    });
+
+    const result = await moveTask(makeContext(fromFn), params);
+
+    expect(result.position).toBe(4000); // 3000 + POSITION_GAP
+  });
+
+  it("rejects before_task_id that isn't in the target column", async () => {
+    const SIBLING_ID = "00000000-0000-4000-a000-000000000072";
+    const siblingLookupChain = createChain({
+      id: SIBLING_ID,
+      column_id: COLUMN_A_ID, // not COLUMN_B_ID, the move target
+      position: 2000,
+    });
+    const fromFn = vi.fn((table: string) => {
+      if (table === "board_tasks") return siblingLookupChain;
+      return createChain(null);
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      before_task_id: SIBLING_ID,
+    });
+
+    await expect(moveTask(makeContext(fromFn), params)).rejects.toThrow(
+      "before_task_id must reference a task already in the target column"
+    );
+  });
+
+  it("rejects more than one of position/before_task_id/after_task_id", async () => {
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      position: "top",
+      after_task_id: TASK_ID,
+    });
+
+    await expect(moveTask(makeContext(vi.fn(() => createChain(null))), params)).rejects.toThrow(
+      "Provide at most one of position, before_task_id, after_task_id."
+    );
+  });
+
+  it("rebalances the column and retries when repeated before_task_id splits exhaust the integer gap", async () => {
+    // Regression coverage for the float-midpoint collision bug:
+    // computeAdjacentInsertPosition used to divide (siblingPosition + neighbor) / 2
+    // with no floor/rebalance, so enough same-spot "before" inserts eventually
+    // produced a fractional position that Postgres would silently round on
+    // write into a collision with an existing sibling. Here the sibling sits
+    // at 1000 with a neighbor one integer below it (999) — no integer split
+    // is possible, so resolveMovePosition must rebalance the column to clean
+    // gap-spaced integers and retry, landing at a whole number with no collision.
+    const SIBLING_ID = "00000000-0000-4000-a000-000000000073";
+    const OTHER_ID = "00000000-0000-4000-a000-000000000074";
+
+    const siblingLookupChain = createChain({
+      id: SIBLING_ID,
+      column_id: COLUMN_B_ID,
+      position: 1000,
+    });
+    const otherPositionsChain = createChain([{ position: 999 }]);
+    const rebalanceReadChain = createChain([
+      { id: OTHER_ID, position: 999 },
+      { id: SIBLING_ID, position: 1000 },
+    ]);
+    const updateOtherChain = createChain(null);
+    const updateSiblingChain = createChain(null);
+    const readChain = createChain({ column_id: COLUMN_A_ID });
+    const columnChain = createChain({ title: "To Do", is_done_column: false });
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingLookupChain;
+          if (boardTasksCalls === 2) return otherPositionsChain;
+          if (boardTasksCalls === 3) return rebalanceReadChain;
+          if (boardTasksCalls === 4) return updateOtherChain;
+          if (boardTasksCalls === 5) return updateSiblingChain;
+          if (boardTasksCalls === 6) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+
+    const params = moveTaskSchema.parse({
+      task_id: TASK_ID,
+      idea_id: IDEA_ID,
+      column_id: COLUMN_B_ID,
+      before_task_id: SIBLING_ID,
+    });
+
+    const result = await moveTask(makeContext(fromFn), params);
+
+    // Rebalance assigns clean POSITION_GAP-spaced integers in current order:
+    // OTHER_ID (was 999, sorts first) -> 1000, SIBLING_ID (was 1000) -> 2000.
+    // Splitting before the rebalanced sibling (2000) against its new
+    // neighbor (1000) lands at 1500 — a whole number, distinct from both.
+    expect(result.position).toBe(1500);
+    expect(Number.isInteger(result.position)).toBe(true);
+
+    expect(
+      asMock(updateOtherChain.update).mock.calls.some(
+        (call: unknown[]) => (call[0] as Record<string, unknown>).position === 1000
+      )
+    ).toBe(true);
+    expect(
+      asMock(updateSiblingChain.update).mock.calls.some(
+        (call: unknown[]) => (call[0] as Record<string, unknown>).position === 2000
+      )
+    ).toBe(true);
+
+    // The final write for the moved task itself lands on yet another value —
+    // no two tasks in the column share a position after this sequence.
+    const finalPositions = new Set([1000, 2000, result.position]);
+    expect(finalPositions.size).toBe(3);
   });
 });

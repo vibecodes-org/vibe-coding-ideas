@@ -3,6 +3,13 @@ import { POSITION_GAP } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
 import { checkAndApplyAutoRules } from "../../../src/lib/workflow-helpers";
+import {
+  computeTopInsertPosition,
+  computeBottomInsertPosition,
+  computeAdjacentInsertPosition,
+  rebalanceColumnPositions,
+  PositionGapExhaustedError,
+} from "../../../src/lib/board-position";
 import { applyWorkflowTemplate } from "./workflows";
 
 /** Auto-add a user as collaborator on an idea if they aren't already (author or collaborator). */
@@ -309,15 +316,174 @@ export const moveTaskSchema = z.object({
   task_id: z.string().uuid().describe("The task ID"),
   idea_id: z.string().uuid().describe("The idea ID"),
   column_id: z.string().uuid().describe("Target column ID"),
-  position: z.coerce
-    .number()
+  position: z
+    .enum(["top", "bottom"])
     .optional()
-    .describe("Target position (auto-calculated if omitted)"),
+    .describe(
+      'Place at the very "top" or "bottom" of the target column. Mutually exclusive with ' +
+        "before_task_id/after_task_id. Defaults to \"bottom\" when none of position, " +
+        "before_task_id or after_task_id is given."
+    ),
+  before_task_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Place immediately above this sibling task, which must already be in the target " +
+        "column. Mutually exclusive with position and after_task_id."
+    ),
+  after_task_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Place immediately below this sibling task, which must already be in the target " +
+        "column. Mutually exclusive with position and before_task_id."
+    ),
 });
 
+/**
+ * Reads every other task's position in a column (the task being moved
+ * excluded) — the input `computeTopInsertPosition` / `computeBottomInsertPosition`
+ * / `computeAdjacentInsertPosition` need to place a task relative to its
+ * new siblings without the caller ever seeing (or guessing) a raw position number.
+ */
+async function getSiblingPositions(
+  ctx: McpContext,
+  columnId: string,
+  ideaId: string,
+  excludeTaskId: string
+): Promise<number[]> {
+  const { data, error } = await ctx.supabase
+    .from("board_tasks")
+    .select("position")
+    .eq("column_id", columnId)
+    .eq("idea_id", ideaId)
+    .neq("id", excludeTaskId);
+
+  if (error) throw new Error(`Failed to read column positions: ${error.message}`);
+  return (data ?? []).map((r: { position: number }) => r.position);
+}
+
+/**
+ * Rebalances every task position in a column back to clean, evenly-spaced
+ * integers (preserving current order), writing the new values to Supabase.
+ * Used to recover when `computeAdjacentInsertPosition` reports the gap
+ * between two neighbors has been split so many times there's no integer
+ * left (`PositionGapExhaustedError`) — repeated same-spot before/after
+ * inserts narrow a gap geometrically (1500 -> 1250 -> 1125 -> ...) until a
+ * fractional position would silently get rounded by Postgres's `integer`
+ * column and collide with an existing sibling.
+ *
+ * Each write is guarded on the row's own previous position (mirrors the
+ * `.eq("status", expected)` concurrency pattern used elsewhere in this repo)
+ * so a concurrent edit to one task doesn't get silently clobbered — it's
+ * simply skipped and the rebalance proceeds with the rest, since this is a
+ * low-contention, single-column operation and worst case just means another
+ * rebalance triggers again later.
+ *
+ * Returns the rebalanced positions so the caller can immediately resolve
+ * the original insert against the fresh gaps.
+ */
+async function rebalanceColumn(
+  ctx: McpContext,
+  columnId: string,
+  ideaId: string,
+  excludeTaskId: string
+): Promise<Map<string, number>> {
+  const { data, error } = await ctx.supabase
+    .from("board_tasks")
+    .select("id, position")
+    .eq("column_id", columnId)
+    .eq("idea_id", ideaId)
+    .neq("id", excludeTaskId)
+    .order("position")
+    .order("id");
+  if (error) throw new Error(`Failed to read column for rebalance: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{ id: string; position: number }>;
+  const rebalanced = rebalanceColumnPositions(rows.map((r) => r.id));
+
+  await Promise.all(
+    rows.map((row) => {
+      const newPosition = rebalanced.get(row.id)!;
+      if (newPosition === row.position) return Promise.resolve();
+      return ctx.supabase
+        .from("board_tasks")
+        .update({ position: newPosition })
+        .eq("id", row.id)
+        .eq("idea_id", ideaId)
+        .eq("position", row.position);
+    })
+  );
+
+  return rebalanced;
+}
+
+/**
+ * Resolves move_task's relative placement (top/bottom/before/after) into the
+ * absolute gap-based `position` value the DB column actually stores. This is
+ * the fix for the "position guessing" bug: callers used to pass small
+ * absolute numbers (1, 0, 100) that landed wherever they happened to fall in
+ * the internal POSITION_GAP-spaced numbering, not at the top of the column.
+ */
+async function resolveMovePosition(
+  ctx: McpContext,
+  params: z.infer<typeof moveTaskSchema>
+): Promise<number> {
+  const placementCount = [params.position, params.before_task_id, params.after_task_id].filter(
+    (v) => v !== undefined
+  ).length;
+  if (placementCount > 1) {
+    throw new Error("Provide at most one of position, before_task_id, after_task_id.");
+  }
+
+  if (params.before_task_id || params.after_task_id) {
+    const side: "before" | "after" = params.before_task_id ? "before" : "after";
+    const siblingId = (params.before_task_id ?? params.after_task_id)!;
+
+    const { data: sibling, error } = await ctx.supabase
+      .from("board_tasks")
+      .select("id, column_id, position")
+      .eq("id", siblingId)
+      .eq("idea_id", params.idea_id)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to read sibling task: ${error.message}`);
+    if (!sibling) throw new Error(`Sibling task not found: ${siblingId}`);
+    if (sibling.column_id !== params.column_id) {
+      throw new Error(
+        `${side === "before" ? "before_task_id" : "after_task_id"} must reference a task already in the target column`
+      );
+    }
+
+    const others = await getSiblingPositions(ctx, params.column_id, params.idea_id, params.task_id);
+    try {
+      return computeAdjacentInsertPosition(sibling.position, side, others);
+    } catch (err) {
+      if (!(err instanceof PositionGapExhaustedError)) throw err;
+
+      // The gap on this side of the sibling is exhausted — rebalance the
+      // column to clean, evenly-spaced integers and retry against the fresh
+      // positions. The sibling's own position may have changed too, so
+      // re-read it from the rebalanced map.
+      const rebalanced = await rebalanceColumn(ctx, params.column_id, params.idea_id, params.task_id);
+      const rebalancedSiblingPosition = rebalanced.get(siblingId);
+      if (rebalancedSiblingPosition === undefined) {
+        throw new Error(`Sibling task disappeared during rebalance: ${siblingId}`);
+      }
+      const rebalancedOthers = Array.from(rebalanced.entries())
+        .filter(([id]) => id !== siblingId)
+        .map(([, position]) => position);
+      return computeAdjacentInsertPosition(rebalancedSiblingPosition, side, rebalancedOthers);
+    }
+  }
+
+  const existing = await getSiblingPositions(ctx, params.column_id, params.idea_id, params.task_id);
+  return params.position === "top" ? computeTopInsertPosition(existing) : computeBottomInsertPosition(existing);
+}
+
 export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskSchema>) {
-  const position =
-    params.position ?? (await getNextPosition(ctx, params.column_id, params.idea_id));
+  const position = await resolveMovePosition(ctx, params);
 
   // Read the task's CURRENT column (not just the target one, which is fetched
   // below purely for the activity log / done-column check) so the write can

@@ -128,7 +128,12 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
       "*, users!board_tasks_assignee_id_fkey(id, full_name), board_task_labels(label_id, board_labels(id, name, color))"
     )
     .eq("idea_id", params.idea_id)
-    .order("position");
+    // Secondary tiebreaker: two tasks can share a position (e.g. both moved
+    // to the same column's top in quick succession before move_task's
+    // gap-based placement existed), and a bare .order("position") then
+    // resolves ties to an undefined order. .order("id") makes it deterministic.
+    .order("position")
+    .order("id");
 
   if (!params.include_archived) {
     taskQuery = taskQuery.eq("archived", false);
