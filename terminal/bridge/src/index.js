@@ -818,6 +818,13 @@ async function main() {
             shutdown(1, "e2ee-verify-failed");
             return;
           }
+          // `null` = an in-flight frame from a browser attach we have since
+          // moved past (the browser re-attached and rekeyed; this frame was
+          // encrypted under its previous attach). Not input — drop it.
+          if (plaintext === null) {
+            log("debug", "dropped stale-attach e2ee frame");
+            return;
+          }
           bytesIn += plaintext.length;
           if (term) term.write(plaintext.toString("utf8"));
           return;
@@ -845,7 +852,24 @@ async function main() {
         return;
       }
       if (isPeerReattachedFrame(text)) {
-        log("debug", "relay reports pair reattached");
+        // Terminal P2 (E2EE) reconnect fix (1–2 Sep 2026 incident): the pair
+        // is whole again — which includes the BROWSER having re-attached on
+        // its own (tab wake, watchdog, Wi-Fi blip, hard refresh) while this
+        // bridge kept running. The browser builds a fresh decryptor per
+        // attach, so our OUTBOUND stream must restart at a fresh attachId +
+        // counter 0 or every frame we send from here is rejected as out of
+        // order. Our INBOUND decryptor is rebuilt too: the browser's new
+        // encryptor starts a new attach, and a fresh decryptor follows it
+        // cleanly (frames still in flight under its previous attach are
+        // dropped by FrameDecryptor, never fatal). No-op when this session
+        // never collected a key (Phase A plaintext).
+        if (E2EE_KEY) {
+          e2eeEnc = new FrameEncryptor(E2EE_KEY, "b2w", SESSION);
+          e2eeDec = new FrameDecryptor(E2EE_KEY, "w2b", SESSION);
+          log("info", "relay reports pair reattached — e2ee rekeyed for the new attach");
+        } else {
+          log("debug", "relay reports pair reattached");
+        }
         return;
       }
       // TEXT control frame (resize). Never written to the PTY as input.

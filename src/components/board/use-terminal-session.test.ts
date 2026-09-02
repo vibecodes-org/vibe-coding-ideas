@@ -16,6 +16,22 @@ import {
 } from "./use-terminal-session";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 
+// Reattach-without-relaunch (1–2 Sep 2026): a reattach now waits
+// RELAUNCH_IF_BRIDGE_SILENT_MS for proof of a live bridge before firing the
+// resume deep link. The existing deep-link tests below don't care about the
+// wait, so it's 0 by default; the dedicated describe at the end of this file
+// raises it to exercise the cancel-on-evidence path under fake timers.
+const relaunchWait = vi.hoisted(() => ({ ms: 0 }));
+vi.mock("@/lib/terminal/connection", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/terminal/connection")>();
+  return {
+    ...actual,
+    get RELAUNCH_IF_BRIDGE_SILENT_MS() {
+      return relaunchWait.ms;
+    },
+  };
+});
+
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // Tracks every mock Terminal instance created — used by the scrollback
 // transfer tests below to inspect reset()/write() calls, the same way
@@ -1154,9 +1170,15 @@ describe("useTerminalSession", () => {
           },
         });
 
-        // No extra wait/flush beyond rerender's own (synchronous) act() —
-        // proving the fire happens in the SAME pass, unchanged from before
-        // this fix, because termRef/fitRef were already populated.
+        // Reattach-without-relaunch (1–2 Sep 2026): the fire now sits behind
+        // the RELAUNCH_IF_BRIDGE_SILENT_MS wait for bridge evidence (0 ms in
+        // this file — one macrotask). Nothing arrives, so it fires straight
+        // through — termRef/fitRef were already populated, no xterm-init
+        // deferral involved (the point of this test).
+        expect(result.current.launchPhase).toBe("idle");
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0));
+        });
         expect(result.current.launchPhase).toBe("opening");
         const iframes = document.querySelectorAll("iframe");
         expect(iframes).toHaveLength(1);
@@ -2169,4 +2191,136 @@ describe("useTerminalSession", () => {
       expect(onKeyboardFocusChange).not.toHaveBeenCalled();
     });
   });
+
+// ── reattach-without-relaunch (1–2 Sep 2026 incident) ─────────────────────────
+// A reattach carrying a bridgeToken used to fire the resume deep link
+// unconditionally, so the helper forked a SECOND bridge for a session whose
+// bridge was still live — the relay preempted the original and its claude was
+// killed and resumed on every hard refresh / Reconnect. Now the browser leg
+// attaches first and the relaunch waits RELAUNCH_IF_BRIDGE_SILENT_MS for proof
+// the bridge is live; the relay's bridge-version replay / peer-reattached
+// broadcast / first PTY bytes cancel it.
+describe("reattach-without-relaunch (RELAUNCH_IF_BRIDGE_SILENT_MS)", () => {
+  const attachExisting = {
+    sessionId: "sid-live",
+    browserToken: "live-browser-token",
+    bridgeToken: "live-bridge-token",
+    helperToken: "live-helper-token",
+  };
+
+  async function mountUnderFakeTimers(result: { current: ReturnType<typeof useTerminalSession> }) {
+    // Same stand-in for the consumer's `<div ref={containerRef} />` as the
+    // squashed-reattach block's mountContainer (scoped to that describe).
+    result.current.containerRef.current = document.createElement("div");
+    // The mocked xterm import resolves through promises, not timers.
+    for (let i = 0; i < 20 && mockTerminals.length === 0; i++) await flushEffects();
+    expect(mockTerminals.length).toBeGreaterThan(0);
+    await flushEffects();
+  }
+
+  beforeEach(() => {
+    relaunchWait.ms = 3_000;
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    relaunchWait.ms = 0;
+  });
+
+  it("does NOT relaunch when the relay replays the bridge-version frame (bridge is live)", async () => {
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting,
+      }),
+    );
+    await mountUnderFakeTimers(result);
+    act(() => latestSocket().simulateOpen());
+    // Proof of a live bridge arrives well inside the wait.
+    act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.9" }) }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+    expect(result.current.launchPhase).toBe("idle");
+    expect(document.querySelectorAll("iframe")).toHaveLength(0);
+    // The browser leg itself attached normally.
+    expect(mockSockets).toHaveLength(1);
+  });
+
+  it("does NOT relaunch when PTY bytes arrive (bridge is live and streaming)", async () => {
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting,
+      }),
+    );
+    await mountUnderFakeTimers(result);
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+    expect(result.current.state.status).toBe("connected");
+    expect(document.querySelectorAll("iframe")).toHaveLength(0);
+  });
+
+  it("DOES relaunch (resume-shaped) once the wait passes with no proof of a bridge", async () => {
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting: { ...attachExisting, cwd: "/Users/nick/proj", claudeSessionId: "0bc13560-640f-4a32-b391-5bb830ddf038" },
+      }),
+    );
+    await mountUnderFakeTimers(result);
+    act(() => latestSocket().simulateOpen());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_900);
+    });
+    expect(document.querySelectorAll("iframe")).toHaveLength(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(result.current.launchPhase).toBe("opening");
+    const src = document.querySelector("iframe")?.getAttribute("src") ?? "";
+    expect(src.startsWith("vibecodes://launch?")).toBe(true);
+    expect(src).toContain("session=sid-live");
+    expect(src).toContain(`token=${encodeURIComponent("live-bridge-token")}`);
+    expect(src).toContain("resume_id=0bc13560-640f-4a32-b391-5bb830ddf038");
+  });
+
+  it("a superseding attach cancels the earlier attach's pending relaunch (no double fire)", async () => {
+    const { result, rerender } = renderHook(
+      ({ ae }: { ae: AttachExistingPair }) =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand: vi.fn(),
+          autoConnectWhenExpanded: false,
+          attachExisting: ae,
+        }),
+      { initialProps: { ae: attachExisting } },
+    );
+    await mountUnderFakeTimers(result);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    rerender({ ae: { ...attachExisting, sessionId: "sid-live-2", bridgeToken: "live-bridge-token-2" } });
+    await flushEffects();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+    const iframes = document.querySelectorAll("iframe");
+    expect(iframes).toHaveLength(1);
+    expect(iframes[0].getAttribute("src") ?? "").toContain("session=sid-live-2");
+  });
+});
 });

@@ -877,6 +877,17 @@ export class TerminalRelay {
       return;
     }
 
+    // Session already ended (endSession/endGrace → clearSessionState): the
+    // sockets they closed still fire webSocketClose afterwards. Without this
+    // gate each of those detaches re-armed a fresh 90 s grace on a session
+    // that no longer exists, and 90 s later the alarm logged "grace expired —
+    // tearing down" with a null sid and skipped the closed-callback (seen in
+    // the 2 Sep 2026 relay tail). Nothing to hold — the session is gone.
+    if ((await this.state.storage.get("sessionStartedAt")) == null) {
+      this.log("detach after session end — nothing to hold", { role, why });
+      return;
+    }
+
     const now = Date.now();
     // Open (or keep) the grace hold; the grace alarm governs teardown from here.
     if ((await this.state.storage.get("graceDeadline")) == null) {
@@ -949,6 +960,20 @@ export class TerminalRelay {
       const st = await this.computeAttachState();
       if (st.bridge && st.browser) {
         // Defensive: became whole without fetch clearing the hold — recover, don't tear.
+        await this.state.storage.delete("graceDeadline");
+        await this.armAlarm(now);
+        return;
+      }
+      if (st.bridge && !st.browser) {
+        // Backgrounded-tab fix: the bridge (the user's machine, running the real
+        // PTY) is still attached and healthy — only the browser leg dropped.
+        // That is now the accepted steady state, not a countdown to death:
+        // release the grace hold and fall through to the ordinary idle/max-
+        // duration caps. lastActivityAt already keeps advancing off real PTY
+        // output (see webSocketMessage), so a working Claude session naturally
+        // keeps pushing the idle deadline out on its own.
+        const sid = await this.state.storage.get("sid");
+        this.log("reconnect grace expired — bridge alone survives, releasing hold", { sid });
         await this.state.storage.delete("graceDeadline");
         await this.armAlarm(now);
         return;

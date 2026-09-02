@@ -187,7 +187,34 @@ export class FrameEncryptor {
   }
 }
 
-/** Decrypts one direction's PTY-data frames for the lifetime of a single WS attach. */
+/**
+ * How many superseded attachIds a decryptor remembers, so a replayed frame 0
+ * of an attach it has already moved past is rejected instead of re-pinned.
+ */
+export const RECENT_ATTACH_IDS_MAX = 8;
+
+/**
+ * Decrypts one direction's PTY-data frames. Follows the PEER's attaches: the
+ * sender starts a fresh attachId + counter 0 on every (re)connect of its own
+ * AND whenever the relay reports the pair whole again (peer-reattached), so a
+ * one-sided reconnect — browser tab wakes and re-links while the bridge keeps
+ * running, or vice versa — must not be fatal (incident 1–2 Sep 2026: the old
+ * "pin once, reject everything else" rule turned every such reconnect into a
+ * frozen terminal and, on the next keystroke, a killed claude).
+ *
+ * Rules (per direction, per frame) — mirrored byte-for-byte in
+ * src/lib/terminal/pty-crypto.ts:
+ *   - same attachId as pinned → counters must be strictly sequential (a gap or
+ *     repeat is a replay/reorder → throws).
+ *   - a NEW attachId at counter 0 → the peer rekeyed: verify under the new
+ *     subkey, then re-pin. A counter-0 frame for an attachId this decryptor has
+ *     ALREADY moved past is a replay → throws.
+ *   - any other attachId at counter > 0 → an in-flight frame from a superseded
+ *     attach (sent before the peer learned we re-attached). Dropped: `null`.
+ *     Callers must treat `null` as "nothing to write", never as an error.
+ *   - AEAD failure (tamper / wrong key / wrong session or direction) → throws.
+ *     Fail closed, exactly as before.
+ */
 export class FrameDecryptor {
   /**
    * @param {Buffer} sessionKey
@@ -202,13 +229,30 @@ export class FrameDecryptor {
     this.sessionKey = sessionKey;
     this.direction = direction;
     this.sessionId = sessionId;
-    /** @type {Buffer|null} pinned on the first verified frame */
+    /** @type {Buffer|null} the peer's CURRENT attach (re-pinned on each rekey) */
     this.pinnedAttachId = null;
     this.subkey = null;
     this.expectedCounter = 0n;
+    /** @type {Buffer[]} superseded attachIds, newest last (bounded) */
+    this.recentAttachIds = [];
   }
 
-  /** @param {Buffer} frame @returns {Buffer} plaintext — throws PtyCryptoError on any failure */
+  /** @param {Buffer} attachId */
+  isRecentAttachId(attachId) {
+    return this.recentAttachIds.some((seen) => timingSafeEqual(seen, attachId));
+  }
+
+  /** @param {Buffer} attachId */
+  rememberAttachId(attachId) {
+    this.recentAttachIds.push(Buffer.from(attachId));
+    if (this.recentAttachIds.length > RECENT_ATTACH_IDS_MAX) this.recentAttachIds.shift();
+  }
+
+  /**
+   * @param {Buffer} frame
+   * @returns {Buffer|null} plaintext, or `null` when the frame belongs to a
+   *   superseded attach and was dropped — throws PtyCryptoError on any real failure
+   */
   decrypt(frame) {
     if (!Buffer.isBuffer(frame) || frame.length < HEADER_LEN + TAG_LEN) {
       throw new PtyCryptoError("frame too short");
@@ -222,28 +266,31 @@ export class FrameDecryptor {
     const ciphertext = body.subarray(0, body.length - TAG_LEN);
     const tag = body.subarray(body.length - TAG_LEN);
 
-    if (this.pinnedAttachId === null) {
-      // First frame on this attach — pin it and derive this attach's subkey.
-      this.pinnedAttachId = Buffer.from(attachId);
-      this.subkey = deriveAttachSubkey(this.sessionKey, this.pinnedAttachId, this.direction);
-      this.expectedCounter = 0n;
-    } else if (!timingSafeEqual(attachId, this.pinnedAttachId)) {
-      // A different attachId on an already-pinned decryptor is either a stale
-      // frame from a prior attach or a cross-session frame — reject, never
-      // silently re-pin (that would reopen the replay window this pin exists
-      // to close).
-      throw new PtyCryptoError("attachId mismatch — stale or foreign attach");
-    }
-
-    if (counter !== this.expectedCounter) {
-      throw new PtyCryptoError(
-        `out-of-order or replayed frame: expected counter ${this.expectedCounter}, got ${counter}`,
-      );
+    const samePin = this.pinnedAttachId !== null && timingSafeEqual(attachId, this.pinnedAttachId);
+    let subkey;
+    let rekeying = false;
+    if (samePin) {
+      if (counter !== this.expectedCounter) {
+        throw new PtyCryptoError(
+          `out-of-order or replayed frame: expected counter ${this.expectedCounter}, got ${counter}`,
+        );
+      }
+      subkey = this.subkey;
+    } else if (counter === 0n) {
+      if (this.isRecentAttachId(attachId)) {
+        throw new PtyCryptoError("replayed frame from a superseded attach");
+      }
+      subkey = deriveAttachSubkey(this.sessionKey, Buffer.from(attachId), this.direction);
+      rekeying = true;
+    } else {
+      // In-flight frame from an attach whose start we never saw (or have moved
+      // past). Not an attack — the peer had not yet learned we re-attached.
+      return null;
     }
 
     const nonce = buildNonce(counter);
-    const aad = buildAad(this.sessionId, this.direction, this.pinnedAttachId, counter);
-    const decipher = createDecipheriv("aes-256-gcm", this.subkey, nonce);
+    const aad = buildAad(this.sessionId, this.direction, attachId, counter);
+    const decipher = createDecipheriv("aes-256-gcm", subkey, nonce);
     decipher.setAAD(aad);
     decipher.setAuthTag(tag);
     let plaintext;
@@ -254,7 +301,13 @@ export class FrameDecryptor {
       // direction) — GCM auth failed. Fail closed; do not advance state.
       throw new PtyCryptoError("AEAD verification failed — tampered, replayed, or wrong key");
     }
-    // Only advance the expected counter once verification actually succeeded.
+    // Only commit state once verification actually succeeded.
+    if (rekeying) {
+      if (this.pinnedAttachId !== null) this.rememberAttachId(this.pinnedAttachId);
+      this.pinnedAttachId = Buffer.from(attachId);
+      this.subkey = subkey;
+      this.expectedCounter = 0n;
+    }
     this.expectedCounter += 1n;
     return plaintext;
   }

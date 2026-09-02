@@ -56,7 +56,9 @@ import {
   CONNECT_TIMEOUT_MS,
   HEARTBEAT_INTERVAL_MS,
   LINK_SILENT_CHECK_MS,
+  LINK_SILENT_PROBE_MS,
   RECONNECT_GRACE_MS,
+  RELAUNCH_IF_BRIDGE_SILENT_MS,
   buildRelayUrl,
   claimConnectGeneration,
   decideReconnectNow,
@@ -77,6 +79,7 @@ import {
   parseBridgeVersionConv,
   parseBridgeVersionE2ee,
   relayBaseUrl,
+  shouldDeclareAfterProbe,
   shouldDeclareLinkSilent,
   terminalReducer,
   type TerminalConnectionState,
@@ -787,6 +790,23 @@ export function useTerminalSession(
   // otherwise two sessions + two bridges race and the relay tears both down
   // (single-attach / peer-gone). This is the fix for the "connect fires twice" bug.
   const connectGenRef = useRef(0);
+  // Reattach-without-relaunch (see RELAUNCH_IF_BRIDGE_SILENT_MS's doc): the
+  // timer that fires a reattach's resume deep link ONLY if the relay gave no
+  // proof of a live bridge in time. Cancelled by the first bridge-version /
+  // peer-reattached / PTY frame of the new attach.
+  const relaunchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPendingRelaunch = useCallback((evidence: string) => {
+    if (relaunchTimerRef.current) {
+      clearTimeout(relaunchTimerRef.current);
+      relaunchTimerRef.current = null;
+      logger.info("Terminal reattach: bridge is live — relaunch not needed", { evidence });
+    }
+    // A relaunch already queued behind xterm-init (the timer fired before the
+    // terminal mounted) is dropped too — same evidence, same conclusion.
+    if (pendingDeepLinkRef.current?.opts.trigger === "attach-existing") {
+      pendingDeepLinkRef.current = null;
+    }
+  }, []);
   // Grace-window reconnect bookkeeping. `reconnectDeadlineRef.current === 0` means
   // "healthy, not reconnecting"; it's set on the first transient drop and cleared
   // once a byte proves the link healthy again. The pair (sid + retained tokens) is
@@ -1732,6 +1752,11 @@ export function useTerminalSession(
             return;
           }
           if (isBridgeVersionFrame(ev.data)) {
+            // The relay only replays this to a browser leg while a bridge is
+            // genuinely attached — proof the bridge is live, so a pending
+            // reattach relaunch must not fire (it would fork a 2nd bridge and
+            // kill this one).
+            cancelPendingRelaunch("bridge-version");
             // The bridge announced its helper version (2a) — never written to the
             // xterm; the dock decides whether it's stale enough to nudge
             // (src/lib/terminal/helper-version.ts). A malformed `v` parses to null,
@@ -1811,10 +1836,24 @@ export function useTerminalSession(
             // The pair is whole again inside the window — resume. Proves the pipe is
             // restored even before the next byte, so drop back to connected + reset
             // the reconnect budget (a scenario-1 already-connected leg no-ops).
+            cancelPendingRelaunch("peer-reattached");
             clearDegradeTimer();
             setPeerDegraded(false);
             reconnectDeadlineRef.current = 0;
             reconnectAttemptRef.current = 0;
+            // Terminal P2 (E2EE) reconnect fix (1–2 Sep 2026 incident): the
+            // pair became whole again, which includes the BRIDGE having
+            // reconnected on its own (missed pongs, Wi-Fi blip) while this
+            // socket stayed up — it rekeyed to a fresh attachId, and so must
+            // we: a fresh encryptor so the bridge's fresh decryptor follows
+            // us, a fresh decryptor so we follow it. The bridge does the same
+            // on this frame. Frames still in flight under the previous attach
+            // are dropped by FrameDecryptor, never fatal. Only once this
+            // attach has actually negotiated E2EE (both objects exist).
+            if (e2eeDecRef.current && e2eeEncRef.current && sessionKeyBytesRef.current) {
+              e2eeEncRef.current = new FrameEncryptor(sessionKeyBytesRef.current, DIRECTION_BROWSER_TO_BRIDGE, sessionId);
+              e2eeDecRef.current = new FrameDecryptor(sessionKeyBytesRef.current, DIRECTION_BRIDGE_TO_BROWSER, sessionId);
+            }
             dispatch({ type: "data" });
           }
           return;
@@ -1823,6 +1862,7 @@ export function useTerminalSession(
         // Clear the launch nudges, mark paired on first success, and reset every
         // reconnect/degrade timer + budget so a later drop starts a fresh window.
         const markLinkHealthyAndWrite = (plaintext: Uint8Array) => {
+          cancelPendingRelaunch("pty-bytes");
           clearHelperTimer();
           removeLaunchIframe();
           setLaunchPhase("idle");
@@ -1851,7 +1891,13 @@ export function useTerminalSession(
           const dec = e2eeDecRef.current;
           void dec
             .decrypt(new Uint8Array(ev.data as ArrayBuffer))
-            .then(markLinkHealthyAndWrite)
+            .then((plaintext) => {
+              // `null` = an in-flight frame from a bridge attach this decryptor
+              // has moved past (the bridge rekeyed after a reconnect; this
+              // frame predates it). Nothing to write — and NOT a failure.
+              if (plaintext === null) return;
+              markLinkHealthyAndWrite(plaintext);
+            })
             .catch((err) => {
               logger.error("Terminal E2EE frame verification failed — closing session", {
                 sessionId,
@@ -1957,12 +2003,42 @@ export function useTerminalSession(
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeHeartbeatFrame());
     };
+    // Probe-before-declare (see LINK_SILENT_PROBE_MS's doc): a hidden tab's
+    // throttled timers make >45 s of silence routine on a healthy socket, so a
+    // crossed threshold first sends ONE heartbeat and waits LINK_SILENT_PROBE_MS
+    // for anything inbound before the link is declared dead. `probeSentAt` is
+    // 0 while no probe is outstanding; any inbound frame after it proves the
+    // link (the next check sees lastInboundAt >= probeSentAt and clears it).
+    let probeSentAt = 0;
+    let probeTimer: ReturnType<typeof setTimeout> | null = null;
     const check = () => {
       if (statusRef.current !== "connected") return;
-      if (shouldDeclareLinkSilent(lastInboundAtRef.current, Date.now(), hbArmedRef.current)) {
-        logger.warn("Terminal link silent — declaring dead, reattaching", {
-          silentMs: Date.now() - lastInboundAtRef.current,
+      const now = Date.now();
+      if (!shouldDeclareLinkSilent(lastInboundAtRef.current, now, hbArmedRef.current)) {
+        probeSentAt = 0;
+        if (probeTimer) {
+          clearTimeout(probeTimer);
+          probeTimer = null;
+        }
+        return;
+      }
+      if (probeSentAt === 0) {
+        probeSentAt = now;
+        logger.info("Terminal link quiet — probing before declaring it dead", {
+          silentMs: now - lastInboundAtRef.current,
         });
+        sendHeartbeat();
+        // Re-check exactly when the probe window ends, not just on the next
+        // (possibly throttled) interval tick.
+        probeTimer = setTimeout(check, LINK_SILENT_PROBE_MS + 50);
+        return;
+      }
+      if (shouldDeclareAfterProbe(lastInboundAtRef.current, probeSentAt, now)) {
+        logger.warn("Terminal link silent — probe unanswered, declaring dead, reattaching", {
+          silentMs: now - lastInboundAtRef.current,
+          probeMs: now - probeSentAt,
+        });
+        probeSentAt = 0;
         declareLinkSilent();
       }
     };
@@ -1981,6 +2057,7 @@ export function useTerminalSession(
     return () => {
       clearInterval(sendTimer);
       clearInterval(checkTimer);
+      if (probeTimer) clearTimeout(probeTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("online", check);
       window.removeEventListener("offline", check);
@@ -2325,49 +2402,61 @@ export function useTerminalSession(
       // passing them here forces this relaunch to always be resume-shaped
       // for a genuinely live session, instead of depending on a ref that's
       // reliably empty in exactly this path.
+      //
+      // Reattach-without-relaunch (1–2 Sep 2026 incident, see
+      // RELAUNCH_IF_BRIDGE_SILENT_MS's doc): that relaunch ALSO used to fire
+      // for a bridge that was still perfectly alive — the helper forks a
+      // brand-new bridge with no liveness check, the relay lets it preempt
+      // the original, and the running claude was killed and resumed on every
+      // hard refresh / Reconnect. So the browser leg attaches FIRST (below)
+      // and the relaunch is armed on a timer; the relay's bridge-version
+      // replay / peer-reattached broadcast / first PTY bytes all prove the
+      // bridge is live and cancel it (cancelPendingRelaunch). Only a bridge
+      // that stays silent for the whole window gets relaunched.
+      if (relaunchTimerRef.current) clearTimeout(relaunchTimerRef.current);
+      relaunchTimerRef.current = null;
       if (p.bridgeToken) {
         const deepLinkOpts = {
           trigger: "attach-existing" as const,
           forceResumeCwd: p.cwd,
           forceResumeId: p.claudeSessionId,
         };
-        // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up): on a
-        // FRESH mount (hard refresh, or a brand-new tab with no pristine
-        // slot to reuse) xterm is still loading via the async import() above
-        // — termRef/fitRef are guaranteed null at this exact point, so
-        // firing straight through would make currentLaunchDims() return
-        // null every time, spawning the remote PTY at the bridge's narrow
-        // 80x24 fallback (the squash). Mirrors pendingInitialBufferRef's own
-        // pattern a few lines above for the identical not-yet-mounted
-        // problem: fire immediately if xterm is already up (the fast path —
-        // e.g. a same-tab Reconnect reusing a pristine slot whose xterm was
-        // already showing something), otherwise queue and let the
-        // xterm-init effect's flush (see pendingDeepLinkRef's doc) fire it
-        // once real dims are actually readable.
-        if (termRef.current && fitRef.current) {
-          logger.info("Terminal reattach firing relaunch deep link", {
-            sessionId: p.sessionId,
-            hasResumeCwd: !!(p.cwd && p.cwd.trim()),
-            hasClaudeSessionId: !!p.claudeSessionId,
-            promptPartsPopulated: !!promptPartsRef.current,
-          });
-          fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken, deepLinkOpts);
-        } else {
-          logger.info("Terminal reattach relaunch deferred — xterm not mounted yet", {
-            sessionId: p.sessionId,
-          });
-          pendingDeepLinkRef.current = {
-            gen,
-            sessionId: p.sessionId,
-            bridgeToken: p.bridgeToken,
-            helperToken: p.helperToken,
-            opts: deepLinkOpts,
-          };
-        }
+        const { sessionId, bridgeToken, helperToken } = p;
+        const hasResumeCwd = !!(p.cwd && p.cwd.trim());
+        const hasClaudeSessionId = !!p.claudeSessionId;
+        relaunchTimerRef.current = setTimeout(() => {
+          relaunchTimerRef.current = null;
+          // A newer connect()/attachToExisting superseded this attempt while
+          // we waited — its own timer (or evidence) governs now.
+          if (isConnectSuperseded(gen, connectGenRef.current)) return;
+          // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up): on a
+          // FRESH mount (hard refresh, or a brand-new tab with no pristine
+          // slot to reuse) xterm may still be loading via the async import()
+          // above — termRef/fitRef null here would make currentLaunchDims()
+          // return null, spawning the remote PTY at the bridge's narrow 80x24
+          // fallback (the squash). Mirrors pendingInitialBufferRef's pattern
+          // for the identical not-yet-mounted problem: fire immediately if
+          // xterm is already up, otherwise queue and let the xterm-init
+          // effect's flush (see pendingDeepLinkRef's doc) fire it once real
+          // dims are actually readable.
+          if (termRef.current && fitRef.current) {
+            logger.info("Terminal reattach firing relaunch deep link — no live bridge seen", {
+              sessionId,
+              waitedMs: RELAUNCH_IF_BRIDGE_SILENT_MS,
+              hasResumeCwd,
+              hasClaudeSessionId,
+              promptPartsPopulated: !!promptPartsRef.current,
+            });
+            fireLaunchDeepLinkRef.current(sessionId, bridgeToken, helperToken, deepLinkOpts);
+          } else {
+            logger.info("Terminal reattach relaunch deferred — xterm not mounted yet", { sessionId });
+            pendingDeepLinkRef.current = { gen, sessionId, bridgeToken, helperToken, opts: deepLinkOpts };
+          }
+        }, RELAUNCH_IF_BRIDGE_SILENT_MS);
       }
       openBrowserLeg(p.sessionId, p.browserToken);
     },
-    [teardownSocket, clearHelperTimer, removeLaunchIframe, fireLaunchDeepLink, openBrowserLeg],
+    [teardownSocket, clearHelperTimer, removeLaunchIframe, openBrowserLeg],
   );
 
   // Fire attachToExisting once per distinct transferred session id — the
@@ -2524,6 +2613,15 @@ export function useTerminalSession(
   useEffect(() => () => teardownSocket(), [teardownSocket]);
   useEffect(() => () => clearHelperTimer(), [clearHelperTimer]);
   useEffect(() => () => removeLaunchIframe(), [removeLaunchIframe]);
+  // A reattach relaunch still waiting on bridge evidence must not fire into a
+  // dead hook (it would fork a bridge nobody is attached to).
+  useEffect(
+    () => () => {
+      if (relaunchTimerRef.current) clearTimeout(relaunchTimerRef.current);
+      relaunchTimerRef.current = null;
+    },
+    [],
+  );
 
   // The carried payload is scoped to ONE launch intent: it survives Retry (same
   // intent, fresh session/token) but is dropped once the session ENDS (user End

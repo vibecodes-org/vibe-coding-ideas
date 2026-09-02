@@ -92,16 +92,24 @@ test("replayed frame is rejected on second delivery", () => {
   assert.throws(() => dec.decrypt(frame), PtyCryptoError);
 });
 
-test("out-of-order (skipped counter) frame is rejected", () => {
+test("out-of-order (skipped counter) frame is rejected within a pinned attach", () => {
+  const { enc, dec } = pair();
+  const frame0 = enc.encrypt(Buffer.from("frame 0"));
+  const frame1 = enc.encrypt(Buffer.from("frame 1"));
+  const frame2 = enc.encrypt(Buffer.from("frame 2"));
+  dec.decrypt(frame0);
+  assert.throws(() => dec.decrypt(frame2), PtyCryptoError);
+  // A rejected reorder does not advance state — the in-order frame still works.
+  assert.deepEqual(dec.decrypt(frame1), Buffer.from("frame 1"));
+});
+
+test("a mid-stream frame reaching a decryptor that never saw the attach start is dropped (null), not fatal", () => {
+  // Reconnect fix (1–2 Sep 2026): exactly a browser that re-attached while the
+  // bridge kept counting — see pty-crypto.reconnect.test.mjs.
   const { enc, dec } = pair();
   enc.encrypt(Buffer.from("frame 0"));
   const frame1 = enc.encrypt(Buffer.from("frame 1"));
-  const frame2 = enc.encrypt(Buffer.from("frame 2"));
-  // Deliver frame 2 before frame 1 (frame 0 never delivered either).
-  assert.throws(() => dec.decrypt(frame2), PtyCryptoError);
-  // The decryptor's expected counter never advanced on the rejected frame,
-  // so frame 1 (counter 1, but decryptor still expects 0) also fails.
-  assert.throws(() => dec.decrypt(frame1), PtyCryptoError);
+  assert.equal(dec.decrypt(frame1), null);
 });
 
 test("a reordered-then-replayed frame cannot be smuggled back in after rejection", () => {
@@ -132,13 +140,22 @@ test("a frame minted for a different session id is rejected (AAD binds sessionId
   assert.throws(() => dec.decrypt(frame), PtyCryptoError);
 });
 
-test("a frame carrying a foreign attachId is rejected once this decryptor has pinned its own", () => {
+test("a foreign attachId mid-stream is dropped; a foreign attachId at counter 0 is the peer rekeying and is followed", () => {
+  // Reconnect fix (1–2 Sep 2026): the sender starts a fresh attach on every
+  // (re)connect of its own AND on the relay's peer-reattached, so the
+  // decryptor must follow a new attach — but only from its first frame.
   const key = generateSessionKey();
   const encA = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID);
   const encB = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID); // a different attach
   const dec = new FrameDecryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID);
   dec.decrypt(encA.encrypt(Buffer.from("from attach A, frame 0")));
-  assert.throws(() => dec.decrypt(encB.encrypt(Buffer.from("from attach B, frame 0"))), PtyCryptoError);
+  const b0 = encB.encrypt(Buffer.from("B frame 0"));
+  const b1 = encB.encrypt(Buffer.from("B frame 1"));
+  assert.equal(dec.decrypt(b1), null);
+  assert.deepEqual(dec.decrypt(b0), Buffer.from("B frame 0"));
+  assert.deepEqual(dec.decrypt(b1), Buffer.from("B frame 1"));
+  // Attach A is now superseded: its stragglers are dropped.
+  assert.equal(dec.decrypt(encA.encrypt(Buffer.from("A straggler"))), null);
 });
 
 test("malformed/short frames are rejected without throwing an unrelated error", () => {

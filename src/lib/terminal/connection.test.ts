@@ -19,6 +19,9 @@ import {
   parseBridgeVersionConv,
   parseBridgeVersionE2ee,
   shouldDeclareLinkSilent,
+  shouldDeclareAfterProbe,
+  LINK_SILENT_PROBE_MS,
+  RELAUNCH_IF_BRIDGE_SILENT_MS,
   buildRelayUrl,
   encodeResizeMessage,
   decideResize,
@@ -808,5 +811,37 @@ describe("decideReconnectNow (fix/terminal-bringback-state-reset)", () => {
 
   it("status disconnected with a pair, deadline already spent → full-connect (grace window exhausted)", () => {
     expect(decideReconnectNow("disconnected", true, 5000, 1000)).toBe("full-connect");
+  });
+});
+
+// ── probe-before-declare (1–2 Sep 2026 incident) ─────────────────────────────
+// A hidden tab's throttled timers make >45 s of silence routine on a healthy
+// socket; the watchdog now sends one heartbeat and waits LINK_SILENT_PROBE_MS
+// for ANY inbound frame before declaring the link dead.
+describe("silent-link watchdog — probe before declaring", () => {
+  const probeSentAt = 100_000;
+
+  it("does not declare while the probe window is still open, even with nothing inbound", () => {
+    expect(shouldDeclareAfterProbe(probeSentAt - LINK_SILENT_AFTER_MS - 1, probeSentAt, probeSentAt + LINK_SILENT_PROBE_MS - 1)).toBe(false);
+  });
+
+  it("declares once the probe window has elapsed with nothing inbound since the probe", () => {
+    expect(shouldDeclareAfterProbe(probeSentAt - LINK_SILENT_AFTER_MS - 1, probeSentAt, probeSentAt + LINK_SILENT_PROBE_MS)).toBe(true);
+  });
+
+  it("never declares when anything arrived after the probe (an ack or PTY bytes prove the link)", () => {
+    expect(shouldDeclareAfterProbe(probeSentAt + 10, probeSentAt, probeSentAt + LINK_SILENT_PROBE_MS * 5)).toBe(false);
+    // Arriving in the same millisecond as the probe counts too.
+    expect(shouldDeclareAfterProbe(probeSentAt, probeSentAt, probeSentAt + LINK_SILENT_PROBE_MS * 5)).toBe(false);
+  });
+
+  it("the probe window is short enough not to hide a genuinely dead link for long", () => {
+    expect(LINK_SILENT_PROBE_MS).toBeLessThanOrEqual(10_000);
+  });
+
+  it("a reattach waits a bounded, token-safe time for bridge evidence before relaunching", () => {
+    // Bridge tokens live DEFAULT_TTL_SECONDS; the wait must be a small fraction of that.
+    expect(RELAUNCH_IF_BRIDGE_SILENT_MS).toBeGreaterThanOrEqual(1_000);
+    expect(RELAUNCH_IF_BRIDGE_SILENT_MS).toBeLessThan(DEFAULT_TTL_SECONDS * 1000 / 10);
   });
 });
