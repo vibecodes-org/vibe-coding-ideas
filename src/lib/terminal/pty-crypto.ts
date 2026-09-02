@@ -229,8 +229,25 @@ export class FrameDecryptor {
   /**
    * @returns plaintext, or `null` when the frame belongs to a superseded attach
    * and was dropped — throws PtyCryptoError on any real failure (fail closed, FR-5)
+   *
+   * Calls are serialised: WebCrypto's decrypt is asynchronous, so two frames
+   * arriving back-to-back used to race — the second checked `expectedCounter`
+   * before the first had advanced it and was rejected as out-of-order. Frames
+   * are processed strictly in call order, one at a time.
    */
-  async decrypt(frame: Uint8Array): Promise<Uint8Array | null> {
+  decrypt(frame: Uint8Array): Promise<Uint8Array | null> {
+    const run = this.chain.then(() => this.decryptOne(frame));
+    // Keep the chain alive past a rejection (a failed frame must not wedge the stream).
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private chain: Promise<void> = Promise.resolve();
+
+  private async decryptOne(frame: Uint8Array): Promise<Uint8Array | null> {
     if (frame.length < HEADER_LEN + TAG_LEN) throw new PtyCryptoError("frame too short");
     if (frame[0] !== FRAME_VERSION) throw new PtyCryptoError(`unsupported frame version: ${frame[0]}`);
 

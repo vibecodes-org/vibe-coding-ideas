@@ -138,3 +138,28 @@ describe("pty-crypto — one-sided reconnect", () => {
     expect(await fresh.decrypt(mid)).toBeNull();
   });
 });
+
+// WebCrypto decrypt is async; back-to-back WebSocket messages used to race the
+// counter check (the 2nd frame saw a not-yet-advanced expectedCounter and was
+// rejected as out-of-order → 4010 integrity panel on a healthy stream).
+describe("pty-crypto — concurrent decrypts are serialised", () => {
+  test("frames of one attach decrypted concurrently all succeed, in order", async () => {
+    const key = generateSessionKey();
+    const enc = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, "sess-race");
+    const dec = new FrameDecryptor(key, DIRECTION_BRIDGE_TO_BROWSER, "sess-race");
+    const frames: Uint8Array[] = [];
+    for (let i = 0; i < 8; i++) frames.push(await enc.encrypt(new TextEncoder().encode(`f${i}`)));
+    const out = await Promise.all(frames.map((f) => dec.decrypt(f)));
+    expect(out.map((b) => (b === null ? null : new TextDecoder().decode(b)))).toEqual(frames.map((_, i) => `f${i}`));
+  });
+
+  test("a rejected frame does not wedge the frames queued behind it", async () => {
+    const key = generateSessionKey();
+    const enc = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, "sess-race");
+    const dec = new FrameDecryptor(key, DIRECTION_BRIDGE_TO_BROWSER, "sess-race");
+    const f0 = await enc.encrypt(new TextEncoder().encode("f0"));
+    const f1 = await enc.encrypt(new TextEncoder().encode("f1"));
+    const results = await Promise.allSettled([dec.decrypt(f0), dec.decrypt(f0), dec.decrypt(f1)]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "rejected", "fulfilled"]);
+  });
+});

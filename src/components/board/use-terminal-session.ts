@@ -59,6 +59,7 @@ import {
   LINK_SILENT_PROBE_MS,
   RECONNECT_GRACE_MS,
   RELAUNCH_IF_BRIDGE_SILENT_MS,
+  E2EE_CLOSE,
   buildRelayUrl,
   claimConnectGeneration,
   decideReconnectNow,
@@ -459,6 +460,13 @@ export interface AttachExistingPair {
 
 export interface PairInfo {
   sessionId: string;
+  /**
+   * Pop-out fix (2 Sep 2026): the session's base64 E2EE key, retained
+   * alongside the browser token so the dock can hand it to a popped-out
+   * window (whose attach is a FRESH socket and needs the key just like a
+   * reattach). Undefined when the session has none.
+   */
+  sessionKey?: string;
   /**
    * Undefined for a session this window ATTACHED to (attachExisting) rather
    * than minted — a popped-out window never received the bridge token (it
@@ -1813,6 +1821,20 @@ export function useTerminalSession(
               setBridgeE2ee(true);
               e2eeEncRef.current = new FrameEncryptor(sessionKeyBytesRef.current, DIRECTION_BROWSER_TO_BRIDGE, sessionId);
               e2eeDecRef.current = new FrameDecryptor(sessionKeyBytesRef.current, DIRECTION_BRIDGE_TO_BROWSER, sessionId);
+            } else if (e2ee && !sessionKeyBytesRef.current) {
+              // Pop-out fix (2 Sep 2026): the bridge encrypts everything, and
+              // this attach has no key (a hand-off that dropped it — the
+              // pre-fix pop-out payload did exactly that). Running on would
+              // paint raw ciphertext into xterm and, worse, send the next
+              // keystroke as plaintext, which the bridge treats as a
+              // verification failure and shuts claude down. Fail closed here
+              // instead, with the "couldn't set up the secure link" state.
+              logger.error("Terminal bridge announced E2EE but this attach has no session key — closing", { sessionId });
+              try {
+                wsRef.current?.close(E2EE_CLOSE.REQUIRED_NEGOTIATION_FAILED, "e2ee-key-missing");
+              } catch {
+                /* already closing */
+              }
             }
             return;
           }
@@ -2234,6 +2256,10 @@ export function useTerminalSession(
       sessionId: data.sessionId,
       bridgeToken: data.bridgeToken,
       browserToken: data.browserToken,
+      // Pop-out fix (2 Sep 2026): the popped window opens its OWN fresh
+      // attach and needs the same key, so the dock must be able to hand it
+      // over (terminal-dock.tsx handlePopOut → PopoutPayload.sessionKey).
+      sessionKey: typeof data.sessionKey === "string" && data.sessionKey.length > 0 ? data.sessionKey : undefined,
     });
     // Terminal P2 (E2EE, FR-1/FR-6): decode once, keep in memory only. A
     // malformed/missing key (old app, or the feature simply unavailable) is
@@ -2337,7 +2363,7 @@ export function useTerminalSession(
       // Same guarantee connect() relies on across its own await gap.
       dispatch({ type: "connect" });
       dispatch({ type: "session-created", sessionId: p.sessionId });
-      setPair({ sessionId: p.sessionId, browserToken: p.browserToken });
+      setPair({ sessionId: p.sessionId, browserToken: p.browserToken, sessionKey: p.sessionKey });
       // Bug cbe60db5-followup: mirror connect()'s cwd/claudeSessionId seeding
       // (lines ~1443/1452 above) so a reload-reattach / instant-continue /
       // chooser-Reconnect / pop-out bring-back can still resume once this
