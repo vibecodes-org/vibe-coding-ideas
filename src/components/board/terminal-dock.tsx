@@ -53,7 +53,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Pencil, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Pencil, Plus, Terminal as TerminalIcon, Undo2, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import {
@@ -70,6 +70,7 @@ import {
 } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
@@ -308,6 +309,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // this tab last left it expanded, so the entry-decision (instant-continue
   // or chooser) still runs exactly as if the reload never happened.
   const [expanded, setExpanded] = useState(false);
+  // Bug a9c37241: the violet "popped out" chip's own popover — see its
+  // render site below for why this had to become an explicit menu instead
+  // of a click-to-switch button.
+  const [poppedOutMenuOpen, setPoppedOutMenuOpen] = useState(false);
   // Session entry chooser (card cbe60db5, F1): the dock no longer seeds a
   // pristine tab unconditionally at page load — whether it does at all (and
   // whether the chooser renders instead) depends on `entryDecision`, which
@@ -435,6 +440,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // from the moment "Pop out" is clicked until either "Bring back" or the
   // popped window's own close-signal).
   const [poppedOutKeys, setPoppedOutKeys] = useState<Set<string>>(() => new Set());
+  // The chip (and its Popover) unmount the moment nothing is popped out —
+  // if that happens via a route other than the menu's own button (the tab
+  // placeholder, or the popped window closing) the open flag would survive
+  // and the NEXT pop-out would mount the menu already open. Reset it here.
+  useEffect(() => {
+    if (poppedOutKeys.size === 0) setPoppedOutMenuOpen(false);
+  }, [poppedOutKeys]);
   const popoutChannelsRef = useRef<Map<string, DockPopoutEntry>>(new Map());
   // Mirrors so `deliverLaunch` (used by both the launch-bus subscription and
   // "+") can read the CURRENT list/summaries without depending on them — that
@@ -3128,24 +3140,64 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               // Applies whenever split renders (the one visible ≤2-session
               // change from shipped v1, §10.0).
               const poppedOutEntries = sessions.filter((s) => poppedOutKeys.has(s.key));
-              const poppedOutChip = splitActive && poppedOutEntries.length > 0 && (
-                <button
-                  type="button"
-                  aria-label={formatPoppedOutChipAriaLabel(poppedOutEntries.map((s) => labelFor(s.key)))}
-                  title={`Popped out: ${poppedOutEntries.map((s) => labelFor(s.key)).join(", ")}`}
-                  onClick={() => {
-                    // Same affordance a popped-out tab already gives in
-                    // tabbed mode — switch to it (its own placeholder offers
-                    // "Bring back to dock"). No cross-window focus API is
-                    // wired up beyond what's already shipped.
-                    setExpanded(true);
-                    setActiveKey(poppedOutEntries[0].key);
-                  }}
-                  className="flex h-[38px] flex-none items-center gap-1 border-l border-zinc-800 px-2 text-[11px] font-bold text-violet-400 hover:bg-zinc-800/60"
-                >
-                  <span aria-hidden="true">⧉</span>
-                  {poppedOutEntries.length}
-                </button>
+              // Bug a9c37241 (Nick's field report, 2 Sep 2026): while split
+              // view is active a popped-out session can never claim a pane
+              // (`eligiblePaneKeys`, split-view.ts), so `isEntryVisible`
+              // never goes true for it and its own "Bring back to dock"
+              // placeholder (terminal-session-view.tsx) is unreachable —
+              // switching `activeKey` to it, as this chip used to do, was a
+              // no-op. The chip is now a popover that offers the SAME
+              // "Bring back to dock" action directly, one row per popped-out
+              // session, so the action is reachable regardless of layout —
+              // it's shown in tabbed mode too (the tab-strip placeholder
+              // there is unaffected and still works on its own).
+              const poppedOutChip = poppedOutEntries.length > 0 && (
+                <Popover open={poppedOutMenuOpen} onOpenChange={setPoppedOutMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={formatPoppedOutChipAriaLabel(poppedOutEntries.map((s) => labelFor(s.key)))}
+                      title={`Popped out: ${poppedOutEntries.map((s) => labelFor(s.key)).join(", ")}`}
+                      aria-haspopup="dialog"
+                      className="flex h-[38px] flex-none items-center gap-1 border-l border-zinc-800 px-2 text-[11px] font-bold text-violet-400 hover:bg-zinc-800/60"
+                    >
+                      <span aria-hidden="true">⧉</span>
+                      {poppedOutEntries.length}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    aria-label="Popped-out terminals"
+                    data-testid="popped-out-menu"
+                    className="w-64 border-zinc-800 bg-[#141417] p-2 text-zinc-100"
+                  >
+                    <div className="flex flex-col gap-1">
+                      {poppedOutEntries.map((s) => {
+                        const label = labelFor(s.key);
+                        return (
+                          <div
+                            key={s.key}
+                            className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                          >
+                            <span className="min-w-0 truncate text-zinc-300">{label}</span>
+                            <Button
+                              size="xs"
+                              className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400"
+                              aria-label={`Bring back to dock: ${label}`}
+                              data-testid={`bring-back-${s.key}`}
+                              onClick={() => {
+                                bringBackToDock(s.key);
+                                setPoppedOutMenuOpen(false);
+                              }}
+                            >
+                              <Undo2 className="h-3.5 w-3.5" /> Bring back to dock
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               );
               const stripControls = (
                 <>
