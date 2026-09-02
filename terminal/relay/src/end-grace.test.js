@@ -122,3 +122,74 @@ test("endGrace with no sid skips the callback (best-effort, matches notifyAppSes
   assert.equal(calls.length, 0, "no sid → notifyAppSessionClosed's guard skips the fetch entirely");
   assert.equal(await storage.get("owner"), undefined, "teardown still happens even when the callback is skipped");
 });
+
+// ── alarm() grace-expiry branch: bridge-alone-survives must NOT call endGrace ──
+// Regression test for "backgrounding the tab ~2 min kills a healthy running
+// session": the old alarm() code only special-cased "both legs whole again"
+// and fell through to endGrace() (PEER_GONE) whenever the bridge alone was
+// still attached — killing a perfectly healthy session just because the
+// browser tab went away. This exercises `TerminalRelay.alarm()` directly with
+// a fake DO state carrying one live "role:bridge" hibernatable socket and a
+// stale `graceDeadline` already in the past.
+function makeFakeAlarmState(storage, sockets) {
+  return {
+    storage,
+    // Real DurableObjectState.getWebSockets(tag) filters by the tag recorded
+    // in serializeAttachment; this fake just filters the fixed `role` field
+    // the same way computeAttachState()/findPeer() consume it in index.js.
+    getWebSockets(tag) {
+      if (tag == null) return sockets;
+      const role = tag === "role:bridge" ? "bridge" : tag === "role:browser" ? "browser" : null;
+      return sockets.filter((s) => s.role === role);
+    },
+  };
+}
+
+test("alarm(): grace expired + bridge alone survives → does NOT call endGrace, clears graceDeadline, re-arms", async () => {
+  const sid = "sess-alarm-bridge-alone";
+  const now = Date.now();
+  const bridgeSocket = { role: "bridge", close() { throw new Error("must not be closed"); } };
+  const storage = makeFakeStorage({
+    owner: "user-A",
+    sid,
+    sessionStartedAt: now - 1000,
+    lastActivityAt: now - 1000,
+    graceDeadline: now - 1, // already expired
+  });
+  const state = makeFakeAlarmState(storage, [bridgeSocket]);
+  const env = { VIBECODES_APP_URL: "https://app.example.test", TERMINAL_SESSION_SECRET: SECRET };
+  const relay = new TerminalRelay(state, env);
+
+  let endGraceCalled = false;
+  relay.endGrace = async () => { endGraceCalled = true; };
+  let armAlarmCalled = false;
+  relay.armAlarm = async () => { armAlarmCalled = true; };
+
+  await relay.alarm();
+
+  assert.equal(endGraceCalled, false, "bridge-alone survival must not tear the session down");
+  assert.equal(await storage.get("graceDeadline"), undefined, "grace hold is released once the bridge-alone steady state is reached");
+  assert.equal(armAlarmCalled, true, "falls through to the idle/max-duration alarm instead of leaving nothing scheduled");
+});
+
+test("alarm(): grace expired + BOTH legs gone → still calls endGrace (unchanged)", async () => {
+  const sid = "sess-alarm-both-gone";
+  const now = Date.now();
+  const storage = makeFakeStorage({
+    owner: "user-A",
+    sid,
+    sessionStartedAt: now - 1000,
+    lastActivityAt: now - 1000,
+    graceDeadline: now - 1,
+  });
+  const state = makeFakeAlarmState(storage, []); // no live sockets at all
+  const env = { VIBECODES_APP_URL: "https://app.example.test", TERMINAL_SESSION_SECRET: SECRET };
+  const relay = new TerminalRelay(state, env);
+
+  let endGraceCalledWith = null;
+  relay.endGrace = async (calledSid) => { endGraceCalledWith = calledSid; };
+
+  await relay.alarm();
+
+  assert.equal(endGraceCalledWith, sid, "both legs gone must still tear the session down via endGrace");
+});

@@ -110,6 +110,12 @@ export interface SessionSummary {
    * before a session exists (nothing to pop out).
    */
   browserToken: string | null;
+  /**
+   * Pop-out fix (2 Sep 2026): the session's base64 E2EE key, mirrored the same
+   * way as `browserToken` so the pop-out payload can hand it to the popped
+   * window's own fresh attach. `null` before mint / when the session has none.
+   */
+  sessionKey: string | null;
   /** Mirrored so a pop-out payload can carry the CURRENT read-only toggle across into the popped window (D1). */
   readOnly: boolean;
   /**
@@ -278,6 +284,19 @@ interface TerminalSessionViewProps {
    * (undefined) is always safe, it's exactly today's behaviour.
    */
   lastHelperStatus?: { connected: boolean; checkedAt: number } | null;
+  /**
+   * Card dccd6c95 (sleep/resume routing), Fix 2: the dock's wake-recheck
+   * (`src/lib/terminal/wake-recheck.ts`) noticed — on tab visibility/online
+   * regain — that THIS tab's sid is now `ended` server-side even though the
+   * socket itself may still be sitting in "error" (a dead bridge behind a
+   * hidden tab never fires a clean close). Carries the resume material the
+   * registry has for that sid so the error panel's Resume affordance (Fix 1,
+   * `canResumeFromError`) can light up even when this tab's OWN hook state
+   * never learned a cwd (e.g. it was minted with none). Falls back to the
+   * hook's own `cwd`/`claudeSessionId` when omitted or when this tab already
+   * knows its own — never overrides a value the tab already has.
+   */
+  wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
 }
 
 export function TerminalSessionView({
@@ -307,6 +326,7 @@ export function TerminalSessionView({
   dragActiveRef,
   onPaneFocusChange,
   lastHelperStatus,
+  wakeResume,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -397,6 +417,9 @@ export function TerminalSessionView({
       platformSupported: platform.supported,
       paired,
       browserToken: pair?.browserToken ?? null,
+      // Pop-out fix (2 Sep 2026): the popped window's own attach needs the
+      // session's E2EE key — handed over via the dock's PopoutPayload.
+      sessionKey: pair?.sessionKey ?? null,
       readOnly,
       autoAccept,
     });
@@ -503,13 +526,37 @@ export function TerminalSessionView({
   // one, e.g. pre-0.3.3).
   const canResume =
     view === "session-ended" && state.endedReason !== "user" && !!sessionCwd && !!onResumeEndedSession;
+  // Sleep/resume routing fix (card dccd6c95): the generic error panel (view
+  // === "error", not the same-owner "Taken over" branch) used to be a dead
+  // end — its only action re-mints an unrelated session via "Try again". If
+  // this tab still knows its own cwd (set once by connect()/attach and never
+  // cleared on error — see use-terminal-session.ts's `setSessionCwd` call
+  // sites), the exact same Resume machinery the session-ended panel already
+  // uses (`onResumeEndedSession`/`handleResume` below) applies here too.
+  // Never offered for `owner-mismatch` — resuming there would just repeat
+  // the mismatch, and the copy already tells the user to switch accounts.
+  // Fix 2's wake-recheck material only fills in what this tab's own hook
+  // state doesn't already have — a tab that knows its own cwd never defers
+  // to the registry's (possibly stale-by-comparison) view of it.
+  const resumeCwd = sessionCwd ?? wakeResume?.cwd ?? null;
+  const resumeClaudeSessionId = sessionCwd ? claudeSessionId : wakeResume?.claudeSessionId ?? null;
+  const canResumeFromError =
+    view === "error" &&
+    !takenOver &&
+    state.errorKind !== "owner-mismatch" &&
+    // A capped mint can't be resumed into — nothing new ever connected, so
+    // "Resume" would just re-fire the identical refused mint. The cap
+    // pane's own "View my sessions" button (below) is the correct action.
+    state.errorKind !== "cap-reached" &&
+    !!resumeCwd &&
+    !!onResumeEndedSession;
   const handleResume = () => {
-    if (!sessionCwd) return;
+    if (!resumeCwd) return;
     onResumeEndedSession?.(
       {
-        resume: claudeSessionId ? undefined : true,
-        resumeId: claudeSessionId ?? undefined,
-        cwd: sessionCwd,
+        resume: resumeClaudeSessionId ? undefined : true,
+        resumeId: resumeClaudeSessionId ?? undefined,
+        cwd: resumeCwd,
         taskId: entry.taskId,
         taskTitle: entry.taskTitle,
         // Terminal sessions need names that stick (card 3bf262ac): carry a
@@ -861,6 +908,7 @@ export function TerminalSessionView({
               canLaunch={canLaunch}
               takenOver={takenOver}
               canResume={canResume}
+              canResumeFromError={canResumeFromError}
               pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true })}
               onDownloadHelper={helperUpdate.start}
@@ -998,6 +1046,7 @@ function StateOverlay({
   canLaunch,
   takenOver,
   canResume,
+  canResumeFromError,
   pairingTimedOut,
   onConnect,
   onRetry,
@@ -1018,6 +1067,8 @@ function StateOverlay({
   takenOver: boolean;
   /** Card cbe60db5 rework 9 (Bug A) — see the same-named const in TerminalSessionView. */
   canResume: boolean;
+  /** Card dccd6c95 (sleep/resume routing) — see the same-named const in TerminalSessionView. */
+  canResumeFromError: boolean;
   /**
    * Card cbe60db5 rework 10 (stuck-pairing watchdog): the hook's
    * legacy-waiting session has sat unpaired for a full RECONNECT_GRACE_MS
@@ -1249,6 +1300,18 @@ function StateOverlay({
               View my sessions
             </Button>
           )}
+          {/* Card dccd6c95 (sleep/resume routing): a generic error ("This
+              session is already open elsewhere", a relay hiccup, etc.) used
+              to be a dead end whose only action mints an unrelated fresh
+              session. When we still know this tab's own conversation
+              (`canResumeFromError`), offer the SAME Resume machinery and
+              EXACT copy the session-ended panel already uses, as the primary
+              action above "Try again" — never replacing it. */}
+          {canResumeFromError && (
+            <Button className="bg-emerald-500 text-sm font-semibold text-emerald-950 hover:bg-emerald-400" onClick={onResume}>
+              <RefreshCw className="h-4 w-4" /> Resume this conversation
+            </Button>
+          )}
           {canLaunch && state.errorKind !== "owner-mismatch" && (
             <Button
               variant="outline"
@@ -1258,6 +1321,23 @@ function StateOverlay({
             >
               <RotateCw className="h-3.5 w-3.5" /> Try again
             </Button>
+          )}
+          {/* Card dccd6c95: the same tertiary escape hatch the ended/
+              integrity-failed panels already have — see onBrowseSessions'
+              doc on TerminalSessionViewProps. Never shown for the
+              "Taken over" branch above (that has its own calm copy) or when
+              the caller omits the callback (the pop-out window). Also
+              skipped on cap-reached when the dedicated "View my sessions"
+              button above is rendering — that button already covers what
+              this link promises here, and showing both is redundant. */}
+          {onBrowseSessions && !(state.errorKind === "cap-reached" && onCapExceeded) && (
+            <button
+              type="button"
+              className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
+              onClick={onBrowseSessions}
+            >
+              View my other sessions
+            </button>
           )}
         </>
       )}

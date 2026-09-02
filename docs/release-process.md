@@ -15,6 +15,8 @@
 > Everything else here (local setup, migrations, Docker, env vars) is still
 > useful — it is specifically the branching strategy that is out of date.
 > `CLAUDE.md`'s Deployment section is the authority.
+>
+> It also covers the batching guideline for same-scope merges — see Deployment → Batching Merges.
 
 This document explains the branching strategy, release workflow, and local development setup for VibeCodes. It's written for someone who uses Claude Code for all coding work and wants to understand how code gets from an idea to production.
 

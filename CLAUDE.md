@@ -258,6 +258,20 @@ Staging (`staging.vibecodes.co.uk`) is not part of the flow either; its database
 is known-broken — see the board card "Recreate staging database properly (via
 Supabase Branching off prod)".
 
+### Batching Merges
+
+Every merge to `master` triggers one paid production build — cost scales with
+merge *count*, not diff size. Batch same-area fixes (same conventional-commit
+scope) when nobody is waiting: if you're about to open a second PR in the same
+scope within about an hour of the first, and neither is urgent, put them in
+one PR as separate commits instead.
+
+Ship immediately, no batching, when: Nick is waiting to test it live; it fixes
+something broken for users right now or reverts a regression; it's
+release-coupled (helper version bump, relay deploy, migration); or it's a
+different scope from the fix you're already holding. Never sit on a finished
+fix more than an hour waiting for a batch-mate — when in doubt, ship it.
+
 - Migrations: manual production trigger with approval gate (the develop→staging
   auto-apply path in `migrations.yml` no longer fires, since nothing lands on
   `develop`)

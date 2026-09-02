@@ -173,7 +173,33 @@ export class FrameEncryptor {
   }
 }
 
-/** Decrypts one direction's PTY-data frames for the lifetime of a single WS attach. */
+/**
+ * How many superseded attachIds a decryptor remembers, so a replayed frame 0
+ * of an attach it has already moved past is rejected instead of re-pinned.
+ */
+export const RECENT_ATTACH_IDS_MAX = 8;
+
+/**
+ * Decrypts one direction's PTY-data frames. Follows the PEER's attaches: the
+ * sender starts a fresh attachId + counter 0 on every (re)connect of its own
+ * AND whenever the relay reports the pair whole again (peer-reattached), so a
+ * one-sided reconnect — browser tab wakes and re-links while the bridge keeps
+ * running, or vice versa — must not be fatal (incident 1–2 Sep 2026: the old
+ * "pin once, reject everything else" rule turned every such reconnect into a
+ * frozen terminal and, on the next keystroke, a killed claude).
+ *
+ * Rules (per direction, per frame):
+ *   - same attachId as pinned → counters must be strictly sequential (unchanged;
+ *     a gap or repeat is a replay/reorder → throws).
+ *   - a NEW attachId at counter 0 → the peer rekeyed: verify under the new
+ *     subkey, then re-pin. A counter-0 frame for an attachId this decryptor has
+ *     ALREADY moved past is a replay → throws.
+ *   - any other attachId at counter > 0 → an in-flight frame from a superseded
+ *     attach (sent before the peer learned we re-attached). Dropped: `null`.
+ *     Callers must treat `null` as "nothing to write", never as an error.
+ *   - AEAD failure (tamper / wrong key / wrong session or direction) → throws.
+ *     Fail closed, exactly as before.
+ */
 export class FrameDecryptor {
   private readonly sessionKey: Uint8Array;
   private readonly direction: PtyDirection;
@@ -181,6 +207,7 @@ export class FrameDecryptor {
   private pinnedAttachId: Uint8Array | null = null;
   private subkey: CryptoKey | null = null;
   private expectedCounter = BigInt(0);
+  private readonly recentAttachIds: Uint8Array[] = [];
 
   constructor(sessionKey: Uint8Array, direction: PtyDirection, sessionId: string) {
     if (!(direction in DIRECTION_BYTES)) throw new PtyCryptoError(`invalid direction: ${String(direction)}`);
@@ -190,8 +217,37 @@ export class FrameDecryptor {
     this.sessionId = sessionId;
   }
 
-  /** @returns plaintext — throws PtyCryptoError on any failure (fail closed, FR-5) */
-  async decrypt(frame: Uint8Array): Promise<Uint8Array> {
+  private isRecentAttachId(attachId: Uint8Array): boolean {
+    return this.recentAttachIds.some((seen) => timingSafeEqual(seen, attachId));
+  }
+
+  private rememberAttachId(attachId: Uint8Array): void {
+    this.recentAttachIds.push(attachId.slice());
+    if (this.recentAttachIds.length > RECENT_ATTACH_IDS_MAX) this.recentAttachIds.shift();
+  }
+
+  /**
+   * @returns plaintext, or `null` when the frame belongs to a superseded attach
+   * and was dropped — throws PtyCryptoError on any real failure (fail closed, FR-5)
+   *
+   * Calls are serialised: WebCrypto's decrypt is asynchronous, so two frames
+   * arriving back-to-back used to race — the second checked `expectedCounter`
+   * before the first had advanced it and was rejected as out-of-order. Frames
+   * are processed strictly in call order, one at a time.
+   */
+  decrypt(frame: Uint8Array): Promise<Uint8Array | null> {
+    const run = this.chain.then(() => this.decryptOne(frame));
+    // Keep the chain alive past a rejection (a failed frame must not wedge the stream).
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private chain: Promise<void> = Promise.resolve();
+
+  private async decryptOne(frame: Uint8Array): Promise<Uint8Array | null> {
     if (frame.length < HEADER_LEN + TAG_LEN) throw new PtyCryptoError("frame too short");
     if (frame[0] !== FRAME_VERSION) throw new PtyCryptoError(`unsupported frame version: ${frame[0]}`);
 
@@ -199,29 +255,44 @@ export class FrameDecryptor {
     const counter = readUint64BE(frame.subarray(1 + ATTACH_ID_LEN, HEADER_LEN));
     const ciphertext = frame.subarray(HEADER_LEN);
 
-    if (this.pinnedAttachId === null) {
-      this.pinnedAttachId = attachId.slice();
-      this.subkey = await deriveAttachSubkey(this.sessionKey, this.pinnedAttachId, this.direction);
-      this.expectedCounter = BigInt(0);
-    } else if (!timingSafeEqual(attachId, this.pinnedAttachId)) {
-      throw new PtyCryptoError("attachId mismatch — stale or foreign attach");
-    }
-
-    if (counter !== this.expectedCounter) {
-      throw new PtyCryptoError(`out-of-order or replayed frame: expected counter ${this.expectedCounter}, got ${counter}`);
+    const samePin = this.pinnedAttachId !== null && timingSafeEqual(attachId, this.pinnedAttachId);
+    let subkey: CryptoKey;
+    let rekeying = false;
+    if (samePin) {
+      if (counter !== this.expectedCounter) {
+        throw new PtyCryptoError(`out-of-order or replayed frame: expected counter ${this.expectedCounter}, got ${counter}`);
+      }
+      subkey = this.subkey as CryptoKey;
+    } else if (counter === BigInt(0)) {
+      if (this.isRecentAttachId(attachId)) {
+        throw new PtyCryptoError("replayed frame from a superseded attach");
+      }
+      subkey = await deriveAttachSubkey(this.sessionKey, attachId, this.direction);
+      rekeying = true;
+    } else {
+      // In-flight frame from an attach whose start we never saw (or have moved
+      // past). Not an attack — the peer had not yet learned we re-attached.
+      return null;
     }
 
     const nonce = buildNonce(counter);
-    const aad = buildAad(this.sessionId, this.direction, this.pinnedAttachId, counter);
+    const aad = buildAad(this.sessionId, this.direction, attachId, counter);
     let plaintext: ArrayBuffer;
     try {
       plaintext = await subtle().decrypt(
         { name: "AES-GCM", iv: nonce as BufferSource, additionalData: aad as BufferSource, tagLength: TAG_LEN * 8 },
-        this.subkey as CryptoKey,
+        subkey,
         ciphertext as BufferSource,
       );
     } catch {
       throw new PtyCryptoError("AEAD verification failed — tampered, replayed, or wrong key");
+    }
+    // Only commit state once verification actually succeeded.
+    if (rekeying) {
+      if (this.pinnedAttachId !== null) this.rememberAttachId(this.pinnedAttachId);
+      this.pinnedAttachId = attachId.slice();
+      this.subkey = subkey;
+      this.expectedCounter = BigInt(0);
     }
     this.expectedCounter += BigInt(1);
     return new Uint8Array(plaintext);

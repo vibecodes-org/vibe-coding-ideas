@@ -503,7 +503,22 @@ export function startStandinRelay(opts = {}) {
       if (sessions.get(session) !== legs) return;
       if (!legs.graceTimer) {
         clearTimeout(legs.idleTimer); // idle is suspended while degraded
-        legs.graceTimer = setTimeout(() => endGrace(session), graceMs);
+        legs.graceTimer = setTimeout(() => {
+          const cur = sessions.get(session);
+          if (!cur) return;
+          if (cur.bridge && !cur.browser) {
+            // Backgrounded-tab fix: the bridge (running the real PTY) is still
+            // attached and healthy — only the browser dropped. That's now the
+            // accepted steady state, not a countdown to death: release the
+            // grace hold and fall back to the ordinary idle/max-duration caps
+            // instead of tearing the session down via endGrace().
+            cur.graceTimer = null;
+            bumpIdle(session, cur);
+            log("reconnect grace expired — bridge alone survives, releasing hold", { session });
+            return;
+          }
+          endGrace(session);
+        }, graceMs);
         legs.graceTimer.unref?.();
       }
       const peer = role === "bridge" ? legs.browser : legs.bridge;

@@ -20,6 +20,10 @@ interface AddCollaboratorPopoverProps {
   existingCollaboratorIds: string[];
 }
 
+/** Shape of the search results — matches the explicit column list below, not
+ *  the full `User` row (see the select() comment for why). */
+type UserSearchResult = Pick<User, "id" | "full_name" | "avatar_url" | "email" | "is_bot">;
+
 export function AddCollaboratorPopover({
   ideaId,
   authorId,
@@ -27,7 +31,7 @@ export function AddCollaboratorPopover({
 }: AddCollaboratorPopoverProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<User[]>([]);
+  const [results, setResults] = useState<UserSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [addedIds, setAddedIds] = useState<string[]>([]);
@@ -59,9 +63,13 @@ export function AddCollaboratorPopover({
       const excludeIds = [authorId, ...existingCollaboratorIds, ...addedIds];
       const searchTerm = `%${query.trim().replace(/^@/, "")}%`;
 
+      // Column list, not select("*") — only id/full_name/avatar_url/email are
+      // rendered in the results list; is_bot is selected because it's used as
+      // a query filter below (Postgres requires SELECT privilege on any
+      // referenced column, not just ones in the output list).
       const { data } = await supabase
         .from("users")
-        .select("*")
+        .select("id, full_name, avatar_url, email, is_bot")
         .or(`full_name.ilike.${searchTerm},email.ilike.${searchTerm}`)
         .not("id", "in", `(${excludeIds.join(",")})`)
         .eq("is_bot", false)
@@ -75,7 +83,7 @@ export function AddCollaboratorPopover({
     return () => clearTimeout(timer);
   }, [query, authorId, existingCollaboratorIds, addedIds, supabase]);
 
-  const handleSelect = useCallback((user: User) => {
+  const handleSelect = useCallback((user: UserSearchResult) => {
     setAddedIds((prev) => [...prev, user.id]);
     setResults((prev) => prev.filter((u) => u.id !== user.id));
     startTransition(async () => {

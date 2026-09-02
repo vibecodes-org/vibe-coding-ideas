@@ -74,7 +74,10 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
       const supabase = createClient();
       const { data } = await supabase
         .from("board_task_activity")
-        .select("*, actor:users!board_task_activity_actor_id_fkey(*)")
+        // Actor join column-scoped to what this file renders: full_name/email
+        // (via displayName()), is_bot (badge), id (botRoles lookup). No avatar
+        // is rendered for the actor here.
+        .select("*, actor:users!board_task_activity_actor_id_fkey(id, full_name, email, is_bot)")
         .eq("task_id", taskId)
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
@@ -114,7 +117,10 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
           // Fetch the full row with actor join
           const { data } = await supabase
             .from("board_task_activity")
-            .select("*, actor:users!board_task_activity_actor_id_fkey(*)")
+            // Actor join column-scoped to what this file renders: full_name/email
+        // (via displayName()), is_bot (badge), id (botRoles lookup). No avatar
+        // is rendered for the actor here.
+        .select("*, actor:users!board_task_activity_actor_id_fkey(id, full_name, email, is_bot)")
             .eq("id", payload.new.id)
             .single();
 

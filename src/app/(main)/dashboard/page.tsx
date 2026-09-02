@@ -70,10 +70,11 @@ export default async function DashboardPage() {
     onboardingKitsResult,
     aiAccessResult,
   ] = await Promise.all([
-    // My ideas (limit 5)
+    // My ideas (limit 5) — author join is column-scoped (id/full_name/
+    // avatar_url/is_admin), not select("*"): that's everything IdeaCard renders.
     supabase
       .from("ideas")
-      .select("*, author:users!ideas_author_id_fkey(*)")
+      .select("*, author:users!ideas_author_id_fkey(id, full_name, avatar_url, is_admin)")
       .eq("author_id", user.id)
       .order("updated_at", { ascending: false })
       .limit(5),
@@ -111,11 +112,14 @@ export default async function DashboardPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(15),
-    // Tasks assigned to user (exclude archived and tasks in done columns)
+    // Tasks assigned to user (exclude archived and tasks in done columns).
+    // The assignee join is scoped to `id` only — this is "my tasks", so the
+    // assignee is always the current user and MyTasksList never renders it;
+    // `id` is kept purely to satisfy the DashboardTask.assignee shape.
     supabase
       .from("board_tasks")
       .select(
-        "*, column:board_columns!board_tasks_column_id_fkey(id, title, is_done_column), idea:ideas!board_tasks_idea_id_fkey(id, title), assignee:users!board_tasks_assignee_id_fkey(*)"
+        "*, column:board_columns!board_tasks_column_id_fkey(id, title, is_done_column), idea:ideas!board_tasks_idea_id_fkey(id, title), assignee:users!board_tasks_assignee_id_fkey(id)"
       )
       .eq("assignee_id", user.id)
       .eq("archived", false),
@@ -201,11 +205,11 @@ export default async function DashboardPage() {
 
   // Phase 2: Dependent queries
   const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, botWorkflowStepsResult, displayedTaskCountsResult, activeDiscussionsResult] = await Promise.all([
-    // Collaboration idea details
+    // Collaboration idea details — same column-scoped author join as "my ideas" above.
     collabIdeaIds.length > 0
       ? supabase
           .from("ideas")
-          .select("*, author:users!ideas_author_id_fkey(*)")
+          .select("*, author:users!ideas_author_id_fkey(id, full_name, avatar_url, is_admin)")
           .in("id", collabIdeaIds)
           .order("created_at", { ascending: false })
           .limit(5)

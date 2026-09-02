@@ -125,6 +125,7 @@ vi.mock("./terminal-session-view", () => ({
     autoConnectWhenExpanded,
     isActive,
     poppedOut,
+    wakeResume,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
@@ -140,6 +141,13 @@ vi.mock("./terminal-session-view", () => ({
     // needing the real TerminalSessionView's placeholder markup.
     isActive?: boolean;
     poppedOut?: boolean;
+    // Card dccd6c95 (sleep/resume routing, wake recheck): the dock's own
+    // `computeWakeRecheck` derivation is exercised directly by
+    // wake-recheck.test.ts; this stub only needs to prove the dock actually
+    // THREADS the result down to the right tab's view, via a data attribute
+    // a test can read (mirrors every other "surfaced as a data attribute"
+    // prop in this stub, e.g. `autoConnectWhenExpanded` above).
+    wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
     // Task 9f30ae15: the real prop the dock always passes — wired here (not
     // just accepted and dropped) so requestClose's `actionsMapRef.current
     // .get(key)?.end()` has a real spy to resolve, keyed exactly like the
@@ -196,6 +204,7 @@ vi.mock("./terminal-session-view", () => ({
         data-auto-connect-when-expanded={autoConnectWhenExpanded ? "true" : "false"}
         data-active={isActive ? "true" : "false"}
         data-popped-out={poppedOut ? "true" : "false"}
+        data-wake-resume-cwd={wakeResume?.cwd ?? ""}
       >
         <button
           data-testid={`resume-ended-${entry.key}`}
@@ -232,6 +241,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: null,
+              sessionKey: null,
               readOnly: false,
               autoAccept: false,
             })
@@ -259,6 +269,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: null,
+              sessionKey: null,
               readOnly: false,
               autoAccept: false,
             })
@@ -282,6 +293,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: `token-for-${entry.key}`,
+              sessionKey: `key-for-${entry.key}`,
               readOnly: false,
               autoAccept: false,
             })
@@ -399,6 +411,21 @@ import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
 import { rememberLastTabSid, rememberTabSid, saveSessionSnapshot } from "@/lib/terminal/session-snapshot";
 import { toast } from "sonner";
+
+// Pop-out fix (2 Sep 2026): capture the dock's hand-off payload builder so a
+// test can assert exactly what the popped window would be sent, without
+// depending on BroadcastChannel delivery semantics in jsdom/node.
+const capturedPopout = vi.hoisted(() => ({ getPayload: null as null | (() => unknown) }));
+vi.mock("@/lib/terminal/popout-channel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/terminal/popout-channel")>();
+  return {
+    ...actual,
+    createDockPopoutMessageHandler: (opts: Parameters<typeof actual.createDockPopoutMessageHandler>[0]) => {
+      capturedPopout.getPayload = opts.getPayload;
+      return actual.createDockPopoutMessageHandler(opts);
+    },
+  };
+});
 
 function deferredRegistryResponse() {
   let resolve!: (rows: ChooserRegistryRow[]) => void;
@@ -2289,11 +2316,174 @@ describe("TerminalDock — closing a non-last tab must not collapse the panel (f
   });
 });
 
+// Sleep/resume routing fix (card dccd6c95): the dock never re-checked
+// anything once a tab's session died behind a hidden tab or a slept Mac —
+// `refreshRegistry` only ran once, on mount. This proves the wiring, not the
+// pure derivation itself (that's wake-recheck.test.ts): a visibilitychange
+// event re-fetches the registry, and once it reports this tab's own sid
+// `ended`, the resume material reaches THAT tab's view via the `wakeResume`
+// prop (surfaced here as `data-wake-resume-cwd` — see the mock above).
+describe("TerminalDock — wake recheck on tab visibility regain (card dccd6c95)", () => {
+  it("re-fetches the registry on visibilitychange and feeds an ended tab's own resume material to its view", async () => {
+    let registryCallCount = 0;
+    let endedSid = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          registryCallCount += 1;
+          // First call (mount): nothing live or recent — seeds a pristine
+          // tab (F1's "empty-launch"). Every later call (the wake recheck)
+          // reports that same tab's own sid as ended, with resume material.
+          if (registryCallCount === 1 || !endedSid) {
+            return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              sessions: [
+                {
+                  sid: endedSid,
+                  ideaId: "idea-1",
+                  ideaTitle: "My Idea",
+                  taskId: null,
+                  taskTitle: null,
+                  machineLabel: null,
+                  cwd: "/Users/nick/projects/here",
+                  claudeSessionId: "claude-conv-abc",
+                  displayName: null,
+                  createdAt: new Date().toISOString(),
+                  status: "ended",
+                  endedAt: new Date().toISOString(),
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Empty registry on mount seeds one pristine tab directly (no chooser
+    // click needed — see entryDecision's "empty-launch" branch).
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key!;
+    endedSid = `sid-for-${key}`;
+
+    // This tab learns its own sid (mirrors the real hook's `pair.sessionId`,
+    // set once by connect()/attach and never cleared on error).
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+
+    const callsBeforeWake = registryCallCount;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(callsBeforeWake));
+    await waitFor(() =>
+      expect(screen.getByTestId("session-view").dataset.wakeResumeCwd).toBe("/Users/nick/projects/here"),
+    );
+  });
+
+  it("re-fetches on 'online' too, and never offers resume material for a tab whose sid is still active", async () => {
+    let registryCallCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          registryCallCount += 1;
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+
+    const callsBeforeWake = registryCallCount;
+    fireEvent(window, new Event("online"));
+
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(callsBeforeWake));
+    // The registry never reported anything ended — no material to offer.
+    expect(screen.getByTestId("session-view").dataset.wakeResumeCwd).toBe("");
+  });
+});
+
 // Multi-terminal reload restore (Nick's field report 2026-08-22): two dock
 // tabs open → hard refresh → only one came back, and the orphaned live
 // session was then mislabelled "open in another tab". The tab now remembers
 // EVERY sid it holds (session-snapshot.ts's readTabSids) and instant-continue
 // reattaches each one.
+// Pop-out fix (2 Sep 2026, field report): with two live tabs, popping one out
+// (1) left the popped tab active so the panel shrank to its content-sized
+// placeholder ("the dock collapsed"), and (2) the hand-off payload carried no
+// E2EE session key, so the popped window painted ciphertext and its first
+// keystroke went out as plaintext — the bridge rejected it and shut claude
+// down ("bring-back hangs").
+describe("TerminalDock — pop-out with a second live tab (2 Sep 2026 fix)", () => {
+  async function mintTwo(): Promise<[string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    return [firstKey, keys.find((k) => k !== firstKey) as string];
+  }
+
+  function tabEl(key: string): HTMLElement {
+    const el = document.getElementById(`terminal-tab-${key}`);
+    if (!el) throw new Error(`no tab element for ${key}`);
+    return el;
+  }
+
+  it("moves the active tab to the other live tab, and hands the popped window the session key", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    capturedPopout.getPayload = null;
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwo();
+    // Make A the active tab, and both tabs minted-and-connected.
+    fireEvent.click(tabEl(keyA));
+    await waitFor(() => expect(tabEl(keyA)).toHaveAttribute("aria-selected", "true"));
+    fireEvent.click(screen.getByTestId(`report-connected-${keyA}`));
+    fireEvent.click(screen.getByTestId(`report-connected-${keyB}`));
+
+    fireEvent.click(screen.getByTestId(`pop-out-${keyA}`));
+
+    // (1) focus leaves the popped tab for the tab that is still docked.
+    await waitFor(() => expect(tabEl(keyB)).toHaveAttribute("aria-selected", "true"));
+    expect(tabEl(keyA)).toHaveAttribute("aria-selected", "false");
+
+    // (2) the payload the popped window is answered with carries the key.
+    expect(capturedPopout.getPayload).not.toBeNull();
+    const payload = capturedPopout.getPayload!() as { sid: string; browserToken: string; sessionKey?: string };
+    expect(payload.sid).toBe(`sid-for-${keyA}`);
+    expect(payload.browserToken).toBe(`token-for-${keyA}`);
+    expect(payload.sessionKey).toBe(`key-for-${keyA}`);
+  });
+
+  it("popping out the ONLY tab keeps it active (placeholder behaviour unchanged)", async () => {
+    stubFetch(Promise.resolve([]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key as string;
+    fireEvent.click(screen.getByRole("button", { name: "Expand terminal panel" }));
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(screen.getByTestId(`pop-out-${key}`));
+    expect(tabEl(key)).toHaveAttribute("aria-selected", "true");
+  });
+});
+
 describe("TerminalDock — multi-terminal reload restore", () => {
   it("reattaches EVERY remembered live sid on load, with no 'other tabs' strip and no chooser", async () => {
     rememberTabSid("own-sid-1");

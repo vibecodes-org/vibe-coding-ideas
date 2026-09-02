@@ -144,6 +144,45 @@ test("(c) grace expiry with no reattach → survivor closed PEER_GONE 4004 + sta
   console.log(`[ra/c] PASS — grace expired: survivor PEER_GONE, state cleared (reason=${JSON.stringify(browser.closed[1])})`);
 });
 
+// ── (c2) grace expires with the BRIDGE alone surviving → session stays alive ──
+// Regression test for the "backgrounding the tab kills a healthy session" bug:
+// the opposite direction from (c) above. When the BROWSER drops and the
+// BRIDGE (running the real PTY) is still attached and healthy, letting the
+// grace window expire must NOT tear the session down — the bridge surviving
+// alone is now the accepted steady state, not a countdown to death.
+test("(c2) grace expiry with the bridge alone surviving → session stays alive, bridge is NOT closed, browser can reattach after", { timeout: 15000 }, async (t) => {
+  const session = `ra-c2-${Math.random().toString(36).slice(2, 8)}`;
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const relay = await startStandinRelay({ port: 0, secret: SECRET, graceMs: 250 });
+  t.after(() => relay.close());
+  const tokens = await mintSessionTokens({ sub: owner, idea: "idea-RA", sid: session, secret: SECRET });
+
+  const browser = await openRawLeg(relay.url, session, "browser", tokens.browser);
+  const bridge = await openRawLeg(relay.url, session, "bridge", tokens.bridge);
+  t.after(() => { try { bridge.ws.terminate(); } catch { /* */ } });
+
+  browser.ws.terminate(); // browser gone (tab backgrounded/closed) — bridge stays live
+
+  // Give the grace window (250ms) plenty of time to elapse.
+  await new Promise((r) => setTimeout(r, 600));
+
+  // The bridge must NOT be closed — no PEER_GONE, session still tracked.
+  assert.equal(bridge.ws.readyState, WebSocket.OPEN, "bridge must stay open after grace expiry");
+  assert.equal(bridge.closed, null, "bridge received no close frame");
+  assert.ok(relay.sessions.has(session), "session state is retained — not torn down");
+
+  // A reconnecting browser (same sid + owner) can still attach and resume.
+  const reattachedBrowser = await openRawLeg(relay.url, session, "browser", tokens.browser);
+  t.after(() => { try { reattachedBrowser.ws.terminate(); } catch { /* */ } });
+  await waitFor(() => hasFrame(reattachedBrowser, isPeerReattachedFrame), 5000, "peer-reattached to the new browser leg");
+  await waitFor(() => hasFrame(bridge, isPeerReattachedFrame), 5000, "peer-reattached to the surviving bridge");
+
+  const tok = `RESUME-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  bridge.ws.send(Buffer.from(tok, "utf8"), { binary: true });
+  await waitFor(() => reattachedBrowser.binary.includes(tok), 5000, "post-reattach byte flow");
+  console.log("[ra/c2] PASS — bridge survived grace expiry, browser reattached and resumed");
+});
+
 // ── (d) both legs drop, then one returns within grace → held, waits for the other ──
 test("(d) both legs drop then one returns within grace → session held, waits; whole again on the second", { timeout: 15000 }, async (t) => {
   const session = `ra-d-${Math.random().toString(36).slice(2, 8)}`;

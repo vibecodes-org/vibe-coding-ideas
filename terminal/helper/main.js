@@ -447,6 +447,8 @@ let controlReconnectTimer = null;
 let controlReconnectAttempt = 0;
 const CONTROL_RECONNECT_BASE_MS = 2000;
 const CONTROL_RECONNECT_MAX_MS = 30_000;
+/** The relay's BAD_TOKEN close (terminal/shared/session-token.mjs RELAY_CLOSE) — auth, never transient. */
+const CONTROL_AUTH_REJECTED_CLOSE_CODE = 4006;
 
 /** Best-effort: send a goodbye frame if the control connection is currently open. */
 async function sendGoodbye(reason) {
@@ -524,10 +526,21 @@ async function connectControl(relayBase, token) {
   ws.on("error", (err) => {
     log("warn", "control connection error", { err: String(err?.message || err) });
   });
-  ws.on("close", () => {
+  ws.on("close", (code, reasonBuf) => {
     if (controlWs !== ws) return; // superseded by a newer connect
     controlWs = null;
     if (quitting) return; // an intentional close during quit — never reconnect
+    // The relay REJECTED this credential (4006 BAD_TOKEN — expired/forged):
+    // retrying with the same token can only be rejected again. Seen live on
+    // 2 Sep 2026: once the 5-minute helperToken lapsed, this loop hammered
+    // the relay every 2 s (the accept-then-close counts as a successful
+    // "open", which reset the backoff each time). Stop here; the next deep
+    // link carries a fresh token and connectControl() runs again.
+    if (code === CONTROL_AUTH_REJECTED_CLOSE_CODE) {
+      const reason = reasonBuf ? String(reasonBuf) : "";
+      log("warn", "control credential rejected by relay — not retrying until a new token arrives", { code, reason });
+      return;
+    }
     scheduleControlReconnect(relayBase, token);
   });
 }
