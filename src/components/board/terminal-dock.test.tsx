@@ -123,12 +123,23 @@ vi.mock("./terminal-session-view", () => ({
     grabFocus,
     onPaneFocusChange,
     autoConnectWhenExpanded,
+    isActive,
+    poppedOut,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
+    // Bug a9c37241 (Nick's field report, 2 Sep 2026): a popped-out session in
+    // split view can never surface its "Bring back to dock" placeholder,
+    // because `isActive` never goes true for it there (see terminal-dock.tsx's
+    // `isEntryVisible` and split-view.ts's `eligiblePaneKeys`, which excludes
+    // popped-out keys from every pane). Surfacing both flags here lets a test
+    // assert on the DOCK's computed visibility for a popped-out entry without
+    // needing the real TerminalSessionView's placeholder markup.
+    isActive?: boolean;
+    poppedOut?: boolean;
     // Task 9f30ae15: the real prop the dock always passes — wired here (not
     // just accepted and dropped) so requestClose's `actionsMapRef.current
     // .get(key)?.end()` has a real spy to resolve, keyed exactly like the
@@ -183,6 +194,8 @@ vi.mock("./terminal-session-view", () => ({
         data-task-id={entry.taskId ?? ""}
         data-idea-id={entry.ideaId ?? ""}
         data-auto-connect-when-expanded={autoConnectWhenExpanded ? "true" : "false"}
+        data-active={isActive ? "true" : "false"}
+        data-popped-out={poppedOut ? "true" : "false"}
       >
         <button
           data-testid={`resume-ended-${entry.key}`}
@@ -2364,4 +2377,143 @@ describe("TerminalDock — multi-terminal reload restore", () => {
     await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
     expect(reattached).toEqual(["own-sid-1"]);
   });
+});
+
+// Bug a9c37241 (Nick's field report, 2 Sep 2026): with 3 terminals open in
+// split view, popping one out leaves no way back in — the violet "⧉ 1" chip
+// in the tab strip appeared to do nothing. Root cause: the chip's onClick
+// only called `setExpanded(true)` + `setActiveKey(poppedOutEntries[0].key)`,
+// but a popped-out session can never be a pane (`eligiblePaneKeys` in
+// src/lib/terminal/split-view.ts excludes it), and while split is active
+// `isEntryVisible = inPane` (terminal-dock.tsx) — so the popped session's
+// `isActive` never goes true and its "Bring back to dock" placeholder (only
+// rendered while `isActive`, terminal-session-view.tsx) was unreachable.
+//
+// Agreed fix (Nick's decision, option 1): the chip is now a popover listing
+// every popped-out session, each with its own "Bring back to dock" button
+// that calls the dock's existing `bringBackToDock`. It doesn't touch pane
+// membership at all, so it works in both split and tabbed layouts.
+describe("TerminalDock — popped-out chip popover (bug a9c37241)", () => {
+  async function mintSessions(count: number): Promise<string[]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+
+    for (let i = 1; i < count; i++) {
+      act(() => {
+        requestBrowserLaunch();
+      });
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId("chooser-start-new"));
+      await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(i + 1));
+    }
+    return screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+  }
+
+  function enterSplitView() {
+    fireEvent.click(screen.getByRole("button", { name: /^Split view/ }));
+  }
+
+  function popOut(key: string) {
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(screen.getByTestId(`pop-out-${key}`));
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("in split view, offers a bring-back row for the popped-out session and restores its pane", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const keys = await mintSessions(3);
+    enterSplitView();
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(3));
+
+    const [keyToPop] = keys;
+    popOut(keyToPop);
+
+    // Popping one out drops the pane count to 2 (it can no longer claim a
+    // pane) and shows the violet chip.
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(2));
+    const chip = screen.getByTitle(/^Popped out:/);
+
+    fireEvent.click(chip);
+    await waitFor(() => expect(screen.getByTestId("popped-out-menu")).toBeInTheDocument());
+    expect(screen.getByTestId(`bring-back-${keyToPop}`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`bring-back-${keyToPop}`));
+
+    // The popover closes, the session is no longer popped out, and split
+    // view has a pane for it again (the dock's own `bringBackToDock` — no
+    // reply arrives on the popout channel in this test, so it proceeds on
+    // the hand-off timeout with the dock's own buffer, same as a real
+    // window that never replies).
+    await waitFor(() => expect(screen.queryByTestId("popped-out-menu")).not.toBeInTheDocument());
+    await waitFor(() => {
+      const view = screen.getAllByTestId("session-view").find((el) => el.dataset.key === keyToPop);
+      expect(view?.dataset.poppedOut).toBe("false");
+    });
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(3));
+  }, 10000);
+
+  it("lists one row per popped-out session, and each button brings back only its own session", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const keys = await mintSessions(3);
+    enterSplitView();
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(3));
+
+    const [keyA, keyB] = keys;
+    popOut(keyA);
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(2));
+    popOut(keyB);
+    // Only one eligible (non-popped-out) session is left — split view can't
+    // render 1 pane (`panesForDockCount` only ever yields 0/2/3), so it
+    // falls back to tabbed mode on its own; that's the SAME shipped
+    // behaviour this fix leaves untouched. What matters here is that both
+    // popped-out sessions still get their own row in the popover.
+    await waitFor(() => expect(screen.getByTitle(/^Popped out:/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTitle(/^Popped out:/));
+    await waitFor(() => expect(screen.getByTestId("popped-out-menu")).toBeInTheDocument());
+    expect(screen.getByTestId(`bring-back-${keyA}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`bring-back-${keyB}`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`bring-back-${keyA}`));
+
+    await waitFor(() => {
+      const view = screen.getAllByTestId("session-view").find((el) => el.dataset.key === keyA);
+      expect(view?.dataset.poppedOut).toBe("false");
+    });
+    // keyB is still popped out — only keyA came back.
+    const viewB = screen.getAllByTestId("session-view").find((el) => el.dataset.key === keyB);
+    expect(viewB?.dataset.poppedOut).toBe("true");
+  }, 10000);
+
+  it("also offers the popover in tabbed mode (not just split view)", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const keys = await mintSessions(2);
+    const [keyToPop] = keys;
+    popOut(keyToPop);
+
+    const chip = await screen.findByTitle(/^Popped out:/);
+    fireEvent.click(chip);
+    await waitFor(() => expect(screen.getByTestId("popped-out-menu")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId(`bring-back-${keyToPop}`));
+
+    await waitFor(() => expect(screen.queryByTestId("popped-out-menu")).not.toBeInTheDocument());
+    await waitFor(() => {
+      const view = screen.getAllByTestId("session-view").find((el) => el.dataset.key === keyToPop);
+      expect(view?.dataset.poppedOut).toBe("false");
+    });
+  }, 10000);
 });
