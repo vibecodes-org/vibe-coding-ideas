@@ -110,6 +110,12 @@ export interface SessionSummary {
    * before a session exists (nothing to pop out).
    */
   browserToken: string | null;
+  /**
+   * Pop-out fix (2 Sep 2026): the session's base64 E2EE key, mirrored the same
+   * way as `browserToken` so the pop-out payload can hand it to the popped
+   * window's own fresh attach. `null` before mint / when the session has none.
+   */
+  sessionKey: string | null;
   /** Mirrored so a pop-out payload can carry the CURRENT read-only toggle across into the popped window (D1). */
   readOnly: boolean;
   /**
@@ -411,6 +417,9 @@ export function TerminalSessionView({
       platformSupported: platform.supported,
       paired,
       browserToken: pair?.browserToken ?? null,
+      // Pop-out fix (2 Sep 2026): the popped window's own attach needs the
+      // session's E2EE key — handed over via the dock's PopoutPayload.
+      sessionKey: pair?.sessionKey ?? null,
       readOnly,
       autoAccept,
     });

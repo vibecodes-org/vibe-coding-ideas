@@ -15,6 +15,7 @@ import {
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
+import { FrameEncryptor, generateSessionKey, DIRECTION_BRIDGE_TO_BROWSER } from "@/lib/terminal/pty-crypto";
 
 // Reattach-without-relaunch (1–2 Sep 2026): a reattach now waits
 // RELAUNCH_IF_BRIDGE_SILENT_MS for proof of a live bridge before firing the
@@ -2191,6 +2192,86 @@ describe("useTerminalSession", () => {
       expect(onKeyboardFocusChange).not.toHaveBeenCalled();
     });
   });
+
+// ── pop-out hand-off carries the E2EE key (2 Sep 2026) ─────────────────────────
+// The popped window opens its OWN fresh attach; without the session key it
+// painted ciphertext and sent its first keystroke as plaintext, which the
+// bridge rejects and shuts claude down ("bring-back hangs").
+describe("attachExisting + E2EE session key (pop-out fix)", () => {
+  function b64(bytes: Uint8Array): string {
+    return btoa(String.fromCharCode(...bytes));
+  }
+  async function mountTerminal(result: { current: ReturnType<typeof useTerminalSession> }) {
+    result.current.containerRef.current = document.createElement("div");
+    await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+    await flushEffects();
+  }
+
+  it("with the key handed over, the popped window decrypts the bridge's frames", async () => {
+    const key = generateSessionKey();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token", sessionKey: b64(key) },
+      }),
+    );
+    await mountTerminal(result);
+    const terminalsBefore = mockTerminals.length;
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.9", e2ee: true }) }));
+
+    const bridgeEnc = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, "sid-popped");
+    const frame = await bridgeEnc.encrypt(new TextEncoder().encode("hello from claude"));
+    act(() => latestSocket().simulateBinaryMessage(frame));
+    // xterm is handed decrypted BYTES (Uint8Array), not a string — decode for the assertion.
+    const writtenText = () =>
+      (mockTerminals[terminalsBefore - 1].written as unknown as (string | Uint8Array)[])
+        .map((w) => (typeof w === "string" ? w : new TextDecoder().decode(w)))
+        .join("");
+    await waitFor(() => expect(writtenText()).toContain("hello from claude"));
+    expect(result.current.state.status).toBe("connected");
+    expect(result.current.e2eeActive).toBe(true);
+    expect(latestSocket().readyState).toBe(MockWebSocket.OPEN);
+  });
+
+  it("with NO key and an encrypting bridge, the attach fails closed (4011) instead of painting ciphertext / sending plaintext", async () => {
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+      }),
+    );
+    await mountTerminal(result);
+    act(() => latestSocket().simulateOpen());
+    const socket = latestSocket();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.9", e2ee: true }) }));
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.errorKind).toBe("e2ee-required");
+    expect(result.current.state.closeCode).toBe(4011);
+  });
+
+  it("the retained pair carries the key so the dock can hand it to a popped window", async () => {
+    const key = generateSessionKey();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token", sessionKey: b64(key) },
+      }),
+    );
+    await flushEffects();
+    expect(result.current.pair).toEqual({ sessionId: "sid-popped", browserToken: "popped-browser-token", sessionKey: b64(key) });
+  });
+});
 
 // ── reattach-without-relaunch (1–2 Sep 2026 incident) ─────────────────────────
 // A reattach carrying a bridgeToken used to fire the resume deep link

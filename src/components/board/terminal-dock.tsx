@@ -891,6 +891,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         cur.platformSupported === summary.platformSupported &&
         cur.paired === summary.paired &&
         cur.browserToken === summary.browserToken &&
+        cur.sessionKey === summary.sessionKey &&
         cur.readOnly === summary.readOnly
       ) {
         return prev;
@@ -1522,6 +1523,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         identity,
         readOnly: summary.readOnly,
         autoAccept: summary.autoAccept,
+        // Pop-out fix (2 Sep 2026): the popped window opens its OWN attach
+        // (attachToExisting → a fresh socket), so it needs the session's E2EE
+        // key just like a reattach does. Without it, it painted ciphertext
+        // and its first keystroke went out as plaintext — which the bridge
+        // rejects and shuts claude down (the "bring-back hangs" report).
+        sessionKey: summary.sessionKey ?? undefined,
       };
       channel.onmessage = createDockPopoutMessageHandler({
         getEntry: () => popoutChannelsRef.current.get(key),
@@ -1541,6 +1548,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
       posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
       setPoppedOutKeys((prev) => new Set(prev).add(key));
+      // Pop-out fix (2 Sep 2026): leaving the popped tab ACTIVE meant the
+      // whole panel shrank to its content-sized "Popped out" placeholder
+      // (terminal-session-view.tsx, card 534d2049) — which, with a second
+      // live session open, read as "the dock collapsed". Move focus to the
+      // nearest tab that is still docked, exactly like removeEntry does for a
+      // closed tab; a lone session keeps the placeholder as before.
+      setActiveKey((cur) => {
+        if (cur !== key) return cur;
+        const all = sessionsRef.current;
+        const idx = all.findIndex((s) => s.key === key);
+        const docked = (s: { key: string }) => s.key !== key && !poppedOutKeysRef.current.has(s.key);
+        const neighbor =
+          all.slice(0, Math.max(idx, 0)).reverse().find(docked) ?? all.slice(idx + 1).find(docked) ?? null;
+        return neighbor ? neighbor.key : cur;
+      });
     },
     [ideaId, ideaTitle, applyBufferAndReattach],
   );

@@ -228,6 +228,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: null,
+              sessionKey: null,
               readOnly: false,
               autoAccept: false,
             })
@@ -255,6 +256,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: null,
+              sessionKey: null,
               readOnly: false,
               autoAccept: false,
             })
@@ -278,6 +280,7 @@ vi.mock("./terminal-session-view", () => ({
               platformSupported: true,
               paired: true,
               browserToken: `token-for-${entry.key}`,
+              sessionKey: `key-for-${entry.key}`,
               readOnly: false,
               autoAccept: false,
             })
@@ -395,6 +398,21 @@ import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
 import { rememberLastTabSid, rememberTabSid, saveSessionSnapshot } from "@/lib/terminal/session-snapshot";
 import { toast } from "sonner";
+
+// Pop-out fix (2 Sep 2026): capture the dock's hand-off payload builder so a
+// test can assert exactly what the popped window would be sent, without
+// depending on BroadcastChannel delivery semantics in jsdom/node.
+const capturedPopout = vi.hoisted(() => ({ getPayload: null as null | (() => unknown) }));
+vi.mock("@/lib/terminal/popout-channel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/terminal/popout-channel")>();
+  return {
+    ...actual,
+    createDockPopoutMessageHandler: (opts: Parameters<typeof actual.createDockPopoutMessageHandler>[0]) => {
+      capturedPopout.getPayload = opts.getPayload;
+      return actual.createDockPopoutMessageHandler(opts);
+    },
+  };
+});
 
 function deferredRegistryResponse() {
   let resolve!: (rows: ChooserRegistryRow[]) => void;
@@ -2385,6 +2403,74 @@ describe("TerminalDock — wake recheck on tab visibility regain (card dccd6c95)
 // session was then mislabelled "open in another tab". The tab now remembers
 // EVERY sid it holds (session-snapshot.ts's readTabSids) and instant-continue
 // reattaches each one.
+// Pop-out fix (2 Sep 2026, field report): with two live tabs, popping one out
+// (1) left the popped tab active so the panel shrank to its content-sized
+// placeholder ("the dock collapsed"), and (2) the hand-off payload carried no
+// E2EE session key, so the popped window painted ciphertext and its first
+// keystroke went out as plaintext — the bridge rejected it and shut claude
+// down ("bring-back hangs").
+describe("TerminalDock — pop-out with a second live tab (2 Sep 2026 fix)", () => {
+  async function mintTwo(): Promise<[string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    return [firstKey, keys.find((k) => k !== firstKey) as string];
+  }
+
+  function tabEl(key: string): HTMLElement {
+    const el = document.getElementById(`terminal-tab-${key}`);
+    if (!el) throw new Error(`no tab element for ${key}`);
+    return el;
+  }
+
+  it("moves the active tab to the other live tab, and hands the popped window the session key", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    capturedPopout.getPayload = null;
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwo();
+    // Make A the active tab, and both tabs minted-and-connected.
+    fireEvent.click(tabEl(keyA));
+    await waitFor(() => expect(tabEl(keyA)).toHaveAttribute("aria-selected", "true"));
+    fireEvent.click(screen.getByTestId(`report-connected-${keyA}`));
+    fireEvent.click(screen.getByTestId(`report-connected-${keyB}`));
+
+    fireEvent.click(screen.getByTestId(`pop-out-${keyA}`));
+
+    // (1) focus leaves the popped tab for the tab that is still docked.
+    await waitFor(() => expect(tabEl(keyB)).toHaveAttribute("aria-selected", "true"));
+    expect(tabEl(keyA)).toHaveAttribute("aria-selected", "false");
+
+    // (2) the payload the popped window is answered with carries the key.
+    expect(capturedPopout.getPayload).not.toBeNull();
+    const payload = capturedPopout.getPayload!() as { sid: string; browserToken: string; sessionKey?: string };
+    expect(payload.sid).toBe(`sid-for-${keyA}`);
+    expect(payload.browserToken).toBe(`token-for-${keyA}`);
+    expect(payload.sessionKey).toBe(`key-for-${keyA}`);
+  });
+
+  it("popping out the ONLY tab keeps it active (placeholder behaviour unchanged)", async () => {
+    stubFetch(Promise.resolve([]));
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key as string;
+    fireEvent.click(screen.getByRole("button", { name: "Expand terminal panel" }));
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(screen.getByTestId(`pop-out-${key}`));
+    expect(tabEl(key)).toHaveAttribute("aria-selected", "true");
+  });
+});
+
 describe("TerminalDock — multi-terminal reload restore", () => {
   it("reattaches EVERY remembered live sid on load, with no 'other tabs' strip and no chooser", async () => {
     rememberTabSid("own-sid-1");
