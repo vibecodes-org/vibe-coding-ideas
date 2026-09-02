@@ -218,9 +218,11 @@ export async function fetchBoardRefreshData(
       { data: suggestionRows, error: suggestionsError },
     ] = await Promise.all([
       supabase.from("board_columns").select("*").eq("idea_id", ideaId).order("position", { ascending: true }),
+      // Assignee join column-scoped to what board-task-card.tsx / task-detail-dialog.tsx
+      // render — must mirror the board page RSC's select() above exactly (see file header).
       supabase
         .from("board_tasks")
-        .select("*, assignee:users!board_tasks_assignee_id_fkey(*)")
+        .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
         .eq("idea_id", ideaId)
         .order("position", { ascending: true }),
       supabase.from("board_labels").select("*").eq("idea_id", ideaId).order("created_at", { ascending: true }),

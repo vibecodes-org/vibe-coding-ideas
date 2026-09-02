@@ -53,10 +53,11 @@ export default async function DiscussionsPage({ params }: PageProps) {
 
   const isTeamMember = isAuthor || !!collab;
 
-  // Fetch discussions with author info
+  // Fetch discussions with author info — column-scoped to what
+  // discussion-list.tsx renders (avatar, displayName()/full_name, bot badge).
   const { data: discussions } = await supabase
     .from("idea_discussions")
-    .select("*, author:users!idea_discussions_author_id_fkey(*)")
+    .select("*, author:users!idea_discussions_author_id_fkey(id, full_name, email, avatar_url, is_bot)")
     .eq("idea_id", ideaId)
     .order("last_activity_at", { ascending: false });
 

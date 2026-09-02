@@ -61,9 +61,14 @@ export default async function FeedPage({
     collaboratingIdeaIds = collabs?.map((c) => c.idea_id) ?? [];
   }
 
+  // Column list on the embedded author join, not select("*") — only
+  // id/full_name/avatar_url/is_admin are rendered by IdeaCard.
   let query = supabase
     .from("ideas")
-    .select("*, author:users!ideas_author_id_fkey(*)", { count: "exact" })
+    .select(
+      "*, author:users!ideas_author_id_fkey(id, full_name, avatar_url, is_admin)",
+      { count: "exact" }
+    )
     .not("title", "like", "[E2E]%");
 
   // View filter

@@ -34,12 +34,22 @@ export async function getIdeaTeam(
   currentUserId?: string
 ): Promise<IdeaTeamResult> {
   // Parallel fetch: author, collaborators, idea agents pool
+  //
+  // Column list (not `select("*")`) — every field `teamMembers`/`allMentionable`
+  // consumers actually read: id/full_name/avatar_url/email (assignee-select,
+  // markdown @mentions, board-toolbar), is_bot (assignee-select bot grouping,
+  // bot badge rendering), notification_preferences (mention-notification
+  // gating in comment-form.tsx/task-detail-dialog.tsx/task-comments-section.tsx).
+  // Excludes encrypted_anthropic_key and every other sensitive column
+  // `authenticated` no longer has SELECT on (migration 00165) — this result
+  // flows to every idea team member/collaborator, not just the caller.
+  const TEAM_USER_COLUMNS = "id, full_name, avatar_url, email, is_bot, notification_preferences";
   const [{ data: author }, { data: collabs }, { data: rawIdeaAgents }] =
     await Promise.all([
-      supabase.from("users").select("*").eq("id", authorId).maybeSingle(),
+      supabase.from("users").select(TEAM_USER_COLUMNS).eq("id", authorId).maybeSingle(),
       supabase
         .from("collaborators")
-        .select("user:users!collaborators_user_id_fkey(*)")
+        .select(`user:users!collaborators_user_id_fkey(${TEAM_USER_COLUMNS})`)
         .eq("idea_id", ideaId),
       supabase
         .from("idea_agents")
@@ -86,7 +96,7 @@ export async function getIdeaTeam(
   if (botIds.length > 0) {
     const { data: botUsers } = await supabase
       .from("users")
-      .select("*")
+      .select(TEAM_USER_COLUMNS)
       .in("id", botIds);
 
     ideaAgents = (botUsers ?? []).map((u) => ({
