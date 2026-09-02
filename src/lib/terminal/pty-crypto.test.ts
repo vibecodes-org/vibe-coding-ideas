@@ -30,8 +30,10 @@ function toHex(bytes: Uint8Array): string {
 // WebCrypto's ArrayBuffer results cross a realm boundary) — vitest's `toEqual`
 // treats that prototype mismatch as inequality even when the bytes match, so
 // byte-content assertions compare via plain arrays instead.
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  return toHex(a) === toHex(b);
+function bytesEqual(a: Uint8Array | null, b: Uint8Array): boolean {
+  // decrypt() now returns null for a dropped superseded-attach frame — never
+  // "equal" to real plaintext.
+  return a !== null && toHex(a) === toHex(b);
 }
 
 describe("pty-crypto (browser/WebCrypto)", () => {
@@ -102,13 +104,24 @@ describe("pty-crypto (browser/WebCrypto)", () => {
     await expect(dec.decrypt(frame)).rejects.toThrow(PtyCryptoError);
   });
 
-  test("out-of-order (skipped counter) frame is rejected", async () => {
+  test("out-of-order (skipped counter) frame is rejected within a pinned attach", async () => {
+    const { enc, dec } = pair();
+    const frame0 = await enc.encrypt(new TextEncoder().encode("frame 0"));
+    const frame1 = await enc.encrypt(new TextEncoder().encode("frame 1"));
+    const frame2 = await enc.encrypt(new TextEncoder().encode("frame 2"));
+    await dec.decrypt(frame0);
+    await expect(dec.decrypt(frame2)).rejects.toThrow(PtyCryptoError);
+    // A rejected reorder does not advance state — the in-order frame still works.
+    expect(bytesEqual((await dec.decrypt(frame1)) as Uint8Array, new TextEncoder().encode("frame 1"))).toBe(true);
+  });
+
+  test("a mid-stream frame reaching a decryptor that never saw the attach start is dropped (null), not fatal", async () => {
+    // Reconnect fix (1–2 Sep 2026): this is exactly a browser that re-attached
+    // while the bridge kept counting — see pty-crypto.reconnect.test.ts.
     const { enc, dec } = pair();
     await enc.encrypt(new TextEncoder().encode("frame 0"));
     const frame1 = await enc.encrypt(new TextEncoder().encode("frame 1"));
-    const frame2 = await enc.encrypt(new TextEncoder().encode("frame 2"));
-    await expect(dec.decrypt(frame2)).rejects.toThrow(PtyCryptoError);
-    await expect(dec.decrypt(frame1)).rejects.toThrow(PtyCryptoError);
+    expect(await dec.decrypt(frame1)).toBeNull();
   });
 
   test("a frame from the wrong direction cannot be reflected into this decryptor", async () => {
@@ -127,13 +140,22 @@ describe("pty-crypto (browser/WebCrypto)", () => {
     await expect(dec.decrypt(frame)).rejects.toThrow(PtyCryptoError);
   });
 
-  test("a frame carrying a foreign attachId is rejected once this decryptor has pinned its own", async () => {
+  test("a foreign attachId mid-stream is dropped; a foreign attachId at counter 0 is the peer rekeying and is followed", async () => {
+    // Reconnect fix (1–2 Sep 2026): the sender starts a fresh attach on every
+    // (re)connect of its own AND on the relay's peer-reattached, so the
+    // decryptor must follow a new attach — but only from its first frame.
     const key = generateSessionKey();
     const encA = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID);
     const encB = new FrameEncryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID);
     const dec = new FrameDecryptor(key, DIRECTION_BRIDGE_TO_BROWSER, SID);
     await dec.decrypt(await encA.encrypt(new TextEncoder().encode("from attach A")));
-    await expect(dec.decrypt(await encB.encrypt(new TextEncoder().encode("from attach B")))).rejects.toThrow(PtyCryptoError);
+    const b0 = await encB.encrypt(new TextEncoder().encode("B frame 0"));
+    const b1 = await encB.encrypt(new TextEncoder().encode("B frame 1"));
+    expect(await dec.decrypt(b1)).toBeNull();
+    expect(bytesEqual((await dec.decrypt(b0)) as Uint8Array, new TextEncoder().encode("B frame 0"))).toBe(true);
+    expect(bytesEqual((await dec.decrypt(b1)) as Uint8Array, new TextEncoder().encode("B frame 1"))).toBe(true);
+    // Attach A is now superseded: its stragglers are dropped, its first frame is a replay.
+    expect(await dec.decrypt(await encA.encrypt(new TextEncoder().encode("A straggler")))).toBeNull();
   });
 
   test("malformed/short frames are rejected", async () => {

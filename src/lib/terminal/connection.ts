@@ -613,6 +613,40 @@ export function shouldDeclareLinkSilent(lastInboundAt: number, now: number, arme
   return armed && now - lastInboundAt > LINK_SILENT_AFTER_MS;
 }
 
+/**
+ * Probe-before-declare (1–2 Sep 2026 incident): a HIDDEN tab's `setInterval`s are
+ * throttled by Chrome/Brave to roughly once a minute, so the 15 s heartbeat can
+ * legitimately go unsent for longer than LINK_SILENT_AFTER_MS while the socket is
+ * perfectly healthy. Declaring the link dead the instant the tab is visible again
+ * (or on the first throttled tick) closed good sockets and forced a needless
+ * reattach on every tab switch. Instead: when silence crosses the threshold, send
+ * one heartbeat and give its ack this long to arrive; only then declare.
+ */
+export const LINK_SILENT_PROBE_MS = 5_000;
+
+/**
+ * Second half of the watchdog verdict, pure: the probe was sent at `probeSentAt`;
+ * declare the link dead only if NOTHING inbound has arrived since the probe
+ * (any inbound frame — an ack or PTY bytes — proves the link) and the probe
+ * window has fully elapsed.
+ */
+export function shouldDeclareAfterProbe(lastInboundAt: number, probeSentAt: number, now: number): boolean {
+  return lastInboundAt < probeSentAt && now - probeSentAt >= LINK_SILENT_PROBE_MS;
+}
+
+/**
+ * Reattach-without-relaunch (1–2 Sep 2026 incident): a reattach used to fire the
+ * resume deep link unconditionally, so the local helper forked a SECOND bridge
+ * for a session whose bridge was still live — the relay preempted the original
+ * and its claude was killed and resumed on every hard refresh / Reconnect. The
+ * browser now attaches first and waits this long for proof the bridge is live
+ * (the relay replays the bridge-version announcement and broadcasts
+ * peer-reattached the moment the pair is whole; PTY bytes count too). Only if
+ * nothing arrives does the relaunch fire. Bridge tokens live 5 minutes, so the
+ * wait costs nothing.
+ */
+export const RELAUNCH_IF_BRIDGE_SILENT_MS = 3_000;
+
 // ── helper-version announcement (release-gate rework 2a) ──────────────────────
 //
 // The relay forwards the BRIDGE's own announced version to the BROWSER leg as a
