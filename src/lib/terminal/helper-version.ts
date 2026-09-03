@@ -44,7 +44,7 @@
  *  change, so this bump is what actually nudges users to it. 0.3.8
  *  (task 6d7a50ab): first helper that speaks the PTY end-to-end
  *  encryption protocol — an older helper negotiates plaintext only. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.9";
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.10";
 
 export type HelperVersionParts = readonly [number, number, number];
 
