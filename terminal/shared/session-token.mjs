@@ -79,9 +79,13 @@ export const DEFAULT_TTL_SECONDS = 300;
  * live session, a token whose `iat` is older than this can never be a legitimate
  * reattach — the relay's max-duration cap (same default, see
  * relay/src/pairing.js → DEFAULT_MAX_MS) would have ended the session already.
- * Callers pass the relay's configured maxMs; this default (4h) applies if absent.
+ * Callers pass the relay's configured maxMs; this default (24h) applies if
+ * absent. It is owner-bound (the waiver only ever applies when `sub` matches
+ * the session's bound owner), so widening it from 4h to 24h alongside the max
+ * cap is safe — it MUST stay a fixed constant, though, never derived from the
+ * live session's actual age, or a runaway session could extend its own waiver.
  */
-export const DEFAULT_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
+export const DEFAULT_MAX_SESSION_MS = 24 * 60 * 60 * 1000;
 
 const ROLES = Object.freeze(["bridge", "browser", "control", "helper", "notify"]);
 
@@ -95,7 +99,7 @@ export const CONTROL_TTL_SECONDS = 60;
  * "control": where a control token authorizes the APP calling the RELAY's
  * `/end`, a notify token authorizes the RELAY calling the APP's
  * `POST /api/terminal/session/closed` the instant a DO alarm force-closes a
- * session (hard 4h max-duration, or 30min idle) — telling the Supabase
+ * session (24h max-duration backstop, or 30min idle) — telling the Supabase
  * registry the session died in REAL TIME instead of leaving it to guess via
  * its own mirrored `expires_at` and reconcile lazily on the next unrelated
  * request. That lazy-guess window was the exact race behind bug 9fb9fced: a
@@ -256,7 +260,7 @@ export async function verifyToken(token, secret, opts = {}) {
  *           now?: number, boundOwner?: string|null, maxSessionMs?: number }} args
  *   `boundOwner` — the live session's bound owner (`sub`), or null when the
  *   session has no owner binding (virgin / already torn down). Default null.
- *   `maxSessionMs` — the relay's max session age; bounds the waiver (default 4h).
+ *   `maxSessionMs` — the relay's max session age; bounds the waiver (default 24h).
  * @returns {Promise<{ ok: true, sub: string, claims: SessionClaims, expired?: true } | { ok: false, reason: string }>}
  */
 export async function authorizeAttach({

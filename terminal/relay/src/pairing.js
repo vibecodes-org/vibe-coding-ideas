@@ -183,8 +183,19 @@ export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
 //
 // Two server-side caps end a forgotten session cleanly so a DO can't live (and
 // bill) forever:
-//   - idle:         no traffic for IDLE_MS → close both legs.
-//   - max-duration: total session age ≥ MAX_MS → close both legs.
+//   - idle:         no traffic for IDLE_MS → close both legs. This is the
+//                    mechanism that actually ends a FORGOTTEN session — a tab
+//                    left open with nothing happening in it — and is unchanged.
+//   - max-duration: total session age ≥ MAX_MS → close both legs. Originally a
+//                    4h "you shouldn't need longer than this" ceiling, this hit
+//                    real working sessions (a long build, a long-running agent)
+//                    that were still very much alive by the idle measure. It is
+//                    now a 24h BACKSTOP against a session that never goes idle
+//                    (e.g. runaway output) rather than a bound on a normal
+//                    working day — long enough that a human doing ordinary work
+//                    should never hit it. Unlike the idle cap, it does NOT slide
+//                    on activity: it's measured from session start, on purpose,
+//                    so a truly runaway session is still guaranteed to end.
 // Both close with the NORMAL code 1000 + a reason string. The reason text is the
 // SINGLE SOURCE OF TRUTH the browser dock classifies on (see
 // src/lib/terminal/connection.ts → parseEndedReason): it looks for the substrings
@@ -213,8 +224,8 @@ export const RECONNECT_GRACE_MS = 90_000;
 
 /** Default idle cap: 30 minutes of no traffic. Overridable via env TERMINAL_IDLE_MS. */
 export const DEFAULT_IDLE_MS = 30 * 60 * 1000;
-/** Default hard cap on total session age: 4 hours. Overridable via env TERMINAL_MAX_MS. */
-export const DEFAULT_MAX_MS = 4 * 60 * 60 * 1000;
+/** Default backstop cap on total session age: 24 hours. Overridable via env TERMINAL_MAX_MS. */
+export const DEFAULT_MAX_MS = 24 * 60 * 60 * 1000;
 
 /** Normal-closure reason for an idle-timeout end. MUST contain "idle". */
 export function idleCloseReason(idleMs = DEFAULT_IDLE_MS) {

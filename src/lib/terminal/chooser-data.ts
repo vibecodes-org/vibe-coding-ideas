@@ -380,13 +380,27 @@ export function findLiveSessionForTask(
  * layer carries a live row's `claudeSessionId` (the chooser's live rows don't
  * need it for display). Ended rows never match — an ended session isn't
  * running anything — and a null/undefined id never matches anything.
+ *
+ * `excludeSid` (staleness fix, in-app terminal): `registryRows` is a snapshot
+ * that only refreshes on mount / visibilitychange / online / failed reattach
+ * / chooser fallback — a tab whose OWN session just ended can still see its
+ * own sid in that snapshot with `status: "active"`, and without this
+ * exclusion Resume would try to reattach a session to itself and get the
+ * relay's "already ended" rejection instead of minting fresh. Callers pass
+ * the tab's own last-known sid so a stale self-match is skipped in favor of
+ * either a genuinely different live row or, failing that, a fresh mint.
  */
 export function findLiveSessionForConversation(
   rows: readonly ChooserRegistryRow[],
   claudeSessionId: string | null | undefined,
+  excludeSid?: string | null,
 ): ChooserRegistryRow | null {
   if (!claudeSessionId) return null;
-  return rows.find((r) => r.status === "active" && r.claudeSessionId === claudeSessionId) ?? null;
+  return (
+    rows.find(
+      (r) => r.status === "active" && r.claudeSessionId === claudeSessionId && r.sid !== excludeSid,
+    ) ?? null
+  );
 }
 
 /**

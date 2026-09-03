@@ -151,7 +151,7 @@ cd terminal/bridge && RELAY_URL=ws://127.0.0.1:8787 SESSION_ID=a3f9 \
 | `--cwd <dir>` | `BRIDGE_CWD` | cwd | PTY working directory |
 | — (via `--launch-url`'s `model` param) | `BRIDGE_MODEL` | — | appended as `--model <value>` on a FRESH spawn only (task c4ca2d95); never on `--resume`/`--continue`/`--cmd` — see resume-cmd.js |
 | — (via `--launch-url`'s `worktree` param) | `BRIDGE_WORKTREE` | — | when set (`worktree=1` / `BRIDGE_WORKTREE=1`), appends `--worktree <session-id>` on a FRESH spawn only (concurrent-terminal isolation, Claude Code's native worktree flag); never on `--resume`/`--continue`/`--cmd` — see resume-cmd.js |
-| `--max-seconds <n>` | `BRIDGE_MAX_SECONDS` | `28800` | hard self-kill safety cap |
+| `--max-seconds <n>` | `BRIDGE_MAX_SECONDS` | `90000` (25h) | hard self-kill safety cap — 1h above the relay's 24h backstop |
 | `--connect-timeout-ms <n>` | — | `30000` | fail if relay never opens |
 
 ## Session lifecycle limits (slice 6)
@@ -161,9 +161,12 @@ API** (so an idle DO is evicted from memory and stops billing duration) plus DO
 **alarms** for two caps:
 
 - **idle** — no traffic for `TERMINAL_IDLE_MS` (default 30 min) → both legs close
-  `1000` with reason `idle-timeout: …`.
-- **max-duration** — total session age ≥ `TERMINAL_MAX_MS` (default 4 h) → both
-  legs close `1000` with reason `max-duration: …`.
+  `1000` with reason `idle-timeout: …`. This is the mechanism that ends a
+  forgotten session — it's the one that slides on activity.
+- **max-duration** — total session age ≥ `TERMINAL_MAX_MS` (default 24 h) → both
+  legs close `1000` with reason `max-duration: …`. A backstop against a session
+  that never goes idle (e.g. runaway output), not a bound on a normal working
+  day — it does not slide on activity, unlike the idle cap.
 
 Both reasons are classified by the dock (`src/lib/terminal/connection.ts`) into the
 calm idle / max-duration copy. Override the caps via env (`[vars]` in

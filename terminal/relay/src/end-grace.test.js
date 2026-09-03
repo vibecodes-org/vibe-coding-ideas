@@ -3,7 +3,7 @@
 // branches already do (card 9fb9fced, Fix 2) — see index.js's endGrace() doc
 // for why: previously a Mac sleeping with the dock open (which drops BOTH
 // legs, opening the grace window, then letting it expire here) left the
-// Supabase registry row "active" for up to 4h, filling the 5-session cap
+// Supabase registry row "active" for up to 24h, filling the 5-session cap
 // with ghosts.
 //
 // This exercises `TerminalRelay` directly (not through a WebSocket) with a

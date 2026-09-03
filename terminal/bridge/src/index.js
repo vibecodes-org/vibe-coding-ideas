@@ -29,7 +29,9 @@
 //                        precedence over the individual --relay/--session/--token/--cwd
 //                        flags. `--launch-url` MUST come before `--cmd` (which swallows
 //                        the rest of argv). Default spawned command stays "claude".
-//   --max-seconds <n>    hard self-kill safety cap       [BRIDGE_MAX_SECONDS] default 28800 (8h)
+//   --max-seconds <n>    hard self-kill safety cap       [BRIDGE_MAX_SECONDS] default 90000 (25h —
+//                        the relay's 24h backstop plus a 1h margin so the bridge never self-kills
+//                        before the relay ends the session first)
 //   --connect-timeout-ms <n>  fail if relay not open in time  [default 30000]
 
 import os from "node:os";
@@ -288,7 +290,7 @@ async function fetchE2eeSessionKey() {
   }
 }
 
-const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
+const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
 // giving up (prompt launches only). An OLD relay never sends it → clean exit, no
@@ -679,7 +681,11 @@ async function main() {
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop
-  // must never reset it). BRIDGE_MAX_SECONDS is preserved exactly.
+  // must never reset it). BRIDGE_MAX_SECONDS is preserved exactly. Its default
+  // (25h) sits 1h above the relay's own 24h backstop so the bridge is never the
+  // one to end a long-running session first — the relay's alarm fires, tells the
+  // bridge honestly via a real close, and this timer only matters if that somehow
+  // doesn't happen.
   maxTimer = setTimeout(() => {
     log("warn", "max-duration cap reached — ending session", { seconds: MAX_SECONDS });
     shutdown(0, "max-duration");

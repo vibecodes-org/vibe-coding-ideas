@@ -28,7 +28,7 @@
 // only on the row being active and unexpired (mirrors decideReattach's own
 // check), never on "already read once". The row is cleared to null only when
 // the session itself ends (session/end, session/closed, session-reap.ts),
-// with the registry TTL (~4h, REGISTRY_SESSION_TTL_MS) as the backstop even
+// with the registry TTL (~24h, REGISTRY_SESSION_TTL_MS) as the backstop even
 // if an explicit clear is missed.
 
 import { NextResponse } from "next/server";

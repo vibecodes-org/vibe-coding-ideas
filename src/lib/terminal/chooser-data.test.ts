@@ -925,4 +925,18 @@ describe("live-conversation guard (card 0301fe8e)", () => {
     expect(findLiveSessionForConversation(rows, undefined)).toBeNull();
     expect(findLiveSessionForConversation([], CONV)).toBeNull();
   });
+
+  it("findLiveSessionForConversation excludes a stale self-match via excludeSid, falling back to another live row", () => {
+    const rows = [
+      // A tab's own just-ended session — still "active" in a stale snapshot.
+      row({ sid: "self-sid", status: "active", claudeSessionId: CONV }),
+      row({ sid: "other-live", ideaId: IDEA_B, status: "active", claudeSessionId: CONV }),
+    ];
+    expect(findLiveSessionForConversation(rows, CONV, "self-sid")?.sid).toBe("other-live");
+  });
+
+  it("findLiveSessionForConversation with excludeSid returns null when the excluded row is the only match", () => {
+    const rows = [row({ sid: "self-sid", status: "active", claudeSessionId: CONV })];
+    expect(findLiveSessionForConversation(rows, CONV, "self-sid")).toBeNull();
+  });
 });
