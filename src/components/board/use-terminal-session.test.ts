@@ -1778,10 +1778,12 @@ describe("useTerminalSession", () => {
       );
     });
 
-    it("keeps the folder and shrinks the prompt when the full prompt + folder overflow the cap (the personal-finance-board repro)", async () => {
-      // The real shape: a 67-char folder and a 55-char board title. With the
-      // full "find work" step the link overflows by a few dozen chars; the
-      // compact work step rides instead and the folder stays.
+    it("keeps the folder and fits the prompt when the full prompt + folder used to overflow the cap (the personal-finance-board repro)", async () => {
+      // The real shape: a 67-char folder and a 55-char board title. With
+      // %20-encoded spaces the full "find work" step overflowed by a few
+      // dozen chars and only the compact work step rode. Since 3 Sep 2026
+      // the prompt's spaces ride as `+` (encodePromptParam), which frees
+      // ~340 chars — the folder stays AND the full work step fits.
       const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
       const { result } = renderHook(() =>
         useTerminalSession(
@@ -1805,11 +1807,87 @@ describe("useTerminalSession", () => {
       const src = iframes[0].getAttribute("src") ?? "";
       expect(src.length).toBeLessThanOrEqual(2048);
       expect(src).toContain(`cwd=${encodeURIComponent(realPath)}`);
-      const prompt = decodeURIComponent(src.split("prompt=")[1] ?? "");
-      // The agent still knows which board and to ask first — even if only
-      // the compact form of the work step made it.
+      // Decode exactly as the helper/bridge do (URLSearchParams: `+` → space).
+      const prompt = new URL(src).searchParams.get("prompt") ?? "";
+      expect(src).not.toContain("%20"); // spaces ride as `+`, never %20
       expect(prompt).toContain(`get_board (idea_id ${descriptor.ideaId})`);
       expect(prompt).toContain("ASK first");
+      // The FULL work step, not the compact fallback — and the directory
+      // echo too. This is the headroom the `+` encoding bought.
+      expect(prompt).toContain("NOT get_my_tasks");
+      expect(prompt).toContain(`You should already be in ${realPath}`);
+    });
+
+    // Nick, 3 Sep 2026: a task-card launch went out with NO work step at all
+    // — new-project mode (stale folder snapshot) + both real 283-char tokens
+    // left assembleAtomicTail at its head-only rung. The helperToken is the
+    // one optional thing on the link (the helper re-establishes its control
+    // connection from persisted credentials by itself), so when the work
+    // step doesn't survive alongside it, the link is rebuilt without it.
+    it("drops the helperToken rather than the work step when both can't fit (new-project mode, long title, real-length tokens)", async () => {
+      // 283 is a real token's length; the test relay URL / param set here is
+      // ~80 chars shorter than production's, so pad the tokens by that much
+      // to land the link at the same real-world squeeze.
+      const realToken = "x".repeat(283 + 40);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => mintResponse({ bridgeToken: realToken, helperToken: realToken })),
+      );
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            ideaTitle: "A".repeat(80) + " extra words past the eighty char header cap",
+            recordedProjectPaths: [], // nothing recorded → "new project" prompt (mkdir step)
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src).toContain(`token=${encodeURIComponent(realToken)}`); // the bridge token always rides
+      expect(src).not.toContain("helperToken=");
+      const prompt = new URL(src).searchParams.get("prompt") ?? "";
+      expect(prompt).toContain("mkdir -p");
+      expect(prompt).toContain("record_project_path");
+      expect(prompt).toContain("NOT get_my_tasks"); // the FULL work step
+    });
+
+    it("keeps the helperToken when the work step already fits alongside it (short title, existing folder)", async () => {
+      const realToken = "x".repeat(283 + 40);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => mintResponse({ bridgeToken: realToken, helperToken: realToken })),
+      );
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: "/Users/nick/projects/recipes", hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      expect(src).toContain(`helperToken=${encodeURIComponent(realToken)}`);
+      const prompt = new URL(src).searchParams.get("prompt") ?? "";
+      expect(prompt).toContain("NOT get_my_tasks");
     });
 
     it("still fires --worktree for the ordinary case: a short recorded folder that fits the cwd param AND another session is already live on the board", async () => {

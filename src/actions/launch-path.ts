@@ -194,3 +194,36 @@ export async function migrateLaunchPathPin(
   if (!result.ok) return { ok: false, action: "error" };
   return { ok: true, action: decision.action, recorded: result.recorded };
 }
+
+/**
+ * The CURRENT recorded folders for this idea + the signed-in user, one row per
+ * machine — the same rows the board page loads server-side into
+ * `recordedProjectPaths` on first render. The launch button calls this at
+ * click time (Nick, 3 Sep 2026): the page's copy is a one-shot SSR snapshot,
+ * so a folder the agent recorded during the PREVIOUS session on the same page
+ * (record_project_path over MCP) was invisible to the next launch until a
+ * reload — which sent that launch down the "new project" path with no `cwd=`
+ * and a prompt too long to keep its task. Returns null when the read fails
+ * (signed out, RLS, network) so the caller can fall back to its snapshot.
+ */
+export async function listRecordedProjectPaths(
+  ideaId: string
+): Promise<RecordedProjectPath[] | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("idea_project_paths")
+    .select("absolute_path, hostname")
+    .eq("idea_id", ideaId)
+    .eq("owner_user_id", user.id);
+
+  if (error) {
+    logger.warn("launch-path list failed", { ideaId, error: error.message });
+    return null;
+  }
+  return (data ?? []).map((r) => ({ hostname: r.hostname, absolute_path: r.absolute_path }));
+}

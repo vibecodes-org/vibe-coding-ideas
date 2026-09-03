@@ -104,6 +104,7 @@ import { type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import {
   buildBoundedDeepLink,
   buildCompactPromptEssentials,
+  formEncodedLength,
   resolveAppUrl,
   resolveDefaultLaunchState,
   resolveEffectiveLaunchTarget,
@@ -623,6 +624,23 @@ export interface UseTerminalSessionResult {
    */
   pairingTimedOut: boolean;
   actions: TerminalSessionActions;
+}
+
+/**
+ * Whether the fired link's `prompt=` param still carries the FULL work step
+ * (`essentials.work`) — decoded exactly as the helper/bridge decode it
+ * (URLSearchParams: `+` → space). Used by fireLaunchDeepLink to decide whether
+ * dropping the optional helperToken would rescue the work step (Nick, 3 Sep
+ * 2026). A caller with no `work` breakdown can't be checked → true.
+ */
+function promptCarriesWorkStep(url: string, work: string | undefined): boolean {
+  if (work === undefined) return true;
+  try {
+    const prompt = new URL(url).searchParams.get("prompt") ?? "";
+    return prompt.includes(work);
+  } catch {
+    return false;
+  }
 }
 
 export function useTerminalSession(
@@ -1520,6 +1538,7 @@ export function useTerminalSession(
       let urlChars = 0;
       let hasCwd = false;
       let droppedCwd = false;
+      let helperTokenDroppedForBudget = false;
       try {
         const { essentials, cwd } = resolveLaunchPromptParts();
         if (!essentials) {
@@ -1540,7 +1559,7 @@ export function useTerminalSession(
         // vibecodes:// `prompt=` param key is only present once the prompt is
         // non-empty, so `promptKeyOverhead` reserves room for it up front
         // (mirrors the manual `- "&prompt=".length` this replaces).
-        const result = buildBoundedDeepLink({
+        const buildWithHelperToken = (linkHelperToken: string | undefined) => buildBoundedDeepLink({
           essentials,
           cwd,
           cap: MAX_LAUNCH_URL_LENGTH,
@@ -1554,12 +1573,17 @@ export function useTerminalSession(
           // (compact work step, then head only) and a path that can't fit at
           // all gets the "path too long" toast below instead of a launch.
           cwdPolicy: "keep",
+          // Nick, 3 Sep 2026: buildLaunchDeepLink encodes `prompt=` with
+          // spaces as `+` (encodePromptParam), so measure candidates the same
+          // way — otherwise the ladder degrades against a ~340-char-larger
+          // estimate and still drops the work step it now has room for.
+          promptMeasure: formEncodedLength,
           buildLink: ({ prompt, cwd: linkCwd }) =>
             buildLaunchDeepLink({
               relay: relayBaseUrl(),
               session: sessionId,
               token: bridgeToken,
-              helperToken: effectiveHelperToken,
+              helperToken: linkHelperToken,
               cwd: linkCwd,
               prompt,
               cols: dims?.cols,
@@ -1601,6 +1625,25 @@ export function useTerminalSession(
               worktree: essentials.isolate && !!linkCwd && opts?.isolate === true,
             }),
         });
+        let result = buildWithHelperToken(effectiveHelperToken);
+        // Nick, 3 Sep 2026: a task-card launch went out with NO "Work this
+        // task" step — the prompt had degraded to head-only around both
+        // 283-char tokens. The helperToken is the one optional, ~290-char
+        // thing on this link: it only (re)establishes the helper's standing
+        // control connection, which the helper also does on its own from
+        // its persisted credentials (2s→30s backoff). Losing the task id has
+        // no recovery path at all. So if the work step didn't survive WITH
+        // the helper token, rebuild without it before accepting any prompt
+        // degradation — deterministic, unlike the <30s status-freshness
+        // skip above, which made the same click succeed or fail depending
+        // on how recently the dock had polled the helper.
+        if (result.ok && effectiveHelperToken && !promptCarriesWorkStep(result.url, essentials.work)) {
+          const withoutHelperToken = buildWithHelperToken(undefined);
+          if (withoutHelperToken.ok) {
+            result = withoutHelperToken;
+            helperTokenDroppedForBudget = true;
+          }
+        }
         if (!result.ok) {
           logger.error("Terminal deep-link build failed", {
             reason: "path_too_long",
@@ -1632,7 +1675,9 @@ export function useTerminalSession(
         // Launch-link size fix (board task d40ce211): whether this fire
         // omitted `helperToken` because the helper was recently confirmed
         // connected — see shouldSkipHelperToken's doc.
-        helperTokenOmitted: skipHelperToken,
+        helperTokenOmitted: skipHelperToken || helperTokenDroppedForBudget,
+        // Nick, 3 Sep 2026: omitted specifically to keep the work step whole.
+        helperTokenDroppedForBudget,
       });
       if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
     },
