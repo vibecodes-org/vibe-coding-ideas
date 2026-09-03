@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildLaunchDeepLink,
+  encodePromptParam,
   parseLaunchDeepLink,
   redactDeepLinkToken,
   LAUNCH_SCHEME,
@@ -70,8 +71,15 @@ const HOSTILE_PROMPT =
 test("build ⇄ parse round-trips a prompt (incl. hostile characters, verbatim)", () => {
   const withPrompt = { ...SAMPLE, prompt: HOSTILE_PROMPT };
   const url = buildLaunchDeepLink(withPrompt);
-  assert.ok(url.endsWith(`prompt=${encodeURIComponent(HOSTILE_PROMPT)}`), "prompt is the LAST param");
+  assert.ok(url.endsWith(`prompt=${encodePromptParam(HOSTILE_PROMPT)}`), "prompt is the LAST param");
   assert.deepEqual(parseLaunchDeepLink(url), withPrompt);
+});
+
+test("prompt spaces ride as `+` (URLSearchParams decodes them), a literal `+` stays %2B", () => {
+  assert.equal(encodePromptParam("a b+c  d"), "a+b%2Bc++d");
+  const url = buildLaunchDeepLink({ ...SAMPLE, prompt: "a b+c  d" });
+  assert.ok(url.endsWith("prompt=a+b%2Bc++d"));
+  assert.equal(parseLaunchDeepLink(url).prompt, "a b+c  d");
 });
 
 test("promptless links keep today's exact shape — no prompt key, no prompt param", () => {

@@ -197,8 +197,25 @@ export function buildLaunchDeepLink({
   // permissionMode. Only ever the literal "1"; omitted entirely when falsy
   // (no version-skew risk for an old bridge/helper).
   if (worktree) parts.push(`worktree=1`);
-  if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
+  if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
+}
+
+/**
+ * Encode the `prompt` param value. Identical to encodeURIComponent EXCEPT that
+ * spaces ride as `+` (one char) instead of `%20` (three) — the
+ * application/x-www-form-urlencoded convention, which `URLSearchParams.get`
+ * (what parseLaunchDeepLink in terminal/shared/deep-link.mjs, and therefore
+ * every installed helper/bridge, decodes with) already turns back into a
+ * space. A literal `+` in the prompt is still `%2B`, so decoding is
+ * unambiguous. Nick, 3 Sep 2026: the bootstrap prompt is ~170 spaces, so this
+ * frees ~340 chars of a 2048-char cap that was so tight a task-card launch
+ * lost its "work this task" step entirely (see launch-claude-code.ts's
+ * assembleAtomicTail ladder). Mirrored byte-for-byte in the shared .mjs
+ * builder (drift-tested in deep-link.test.ts).
+ */
+export function encodePromptParam(prompt: string): string {
+  return encodeURIComponent(prompt).replace(/%20/g, "+");
 }
 
 /** A terminal dimension must be a positive, finite, sane integer — mirrors

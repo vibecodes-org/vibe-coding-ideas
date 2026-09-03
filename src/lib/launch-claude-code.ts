@@ -1,3 +1,5 @@
+import { encodePromptParam } from "./terminal/deep-link";
+
 /**
  * Launch Claude Code — pure logic for deep links, prompt builders, and per-idea
  * path persistence. See docs/launch-claude-code-design.html (approved design).
@@ -115,6 +117,22 @@ function encodedLength(s: string): number {
 }
 
 /**
+ * How a prompt-fitting caller measures a candidate prompt: the number of URL
+ * chars the prompt costs once it's a param value. Defaults everywhere to
+ * `encodedLength` (plain encodeURIComponent — the claude-cli:// `q=` param).
+ * The in-browser vibecodes:// link encodes its `prompt=` param with spaces as
+ * `+` (see encodePromptParam in src/lib/terminal/deep-link.ts), and passes
+ * `formEncodedLength` so the budget ladder below sees the ~340 chars that
+ * encoding frees instead of degrading against a stale, larger estimate.
+ */
+export type PromptLengthMeasure = (s: string) => number;
+
+/** `PromptLengthMeasure` for a `prompt=` param encoded by encodePromptParam. */
+export function formEncodedLength(s: string): number {
+  return encodePromptParam(s).length;
+}
+
+/**
  * The trailing marker enforcePromptLength appends whenever it trims anything
  * (head OR tail). Hoisted to a module constant (was a local inside
  * enforcePromptLength) so fitEssentialHead (BUG B fix, below) can reserve the
@@ -159,10 +177,11 @@ const TRUNCATION_MARKER = "\n…(truncated)";
 export function enforcePromptLength(
   head: string,
   tail: string,
-  cap: number = MAX_DEEP_LINK_PROMPT_LENGTH
+  cap: number = MAX_DEEP_LINK_PROMPT_LENGTH,
+  measure: PromptLengthMeasure = encodedLength
 ): string {
   const full = head + tail;
-  if (encodedLength(full) <= cap) return full;
+  if (measure(full) <= cap) return full;
 
   const ellipsis = TRUNCATION_MARKER;
 
@@ -172,13 +191,13 @@ export function enforcePromptLength(
   // (below) can never rescue this — the tail can shrink to nothing and the
   // marker is still there — so trim the HEAD too: the largest prefix whose
   // encoded `(prefix + ellipsis)` fits `cap`.
-  if (encodedLength(head + ellipsis) > cap) {
+  if (measure(head + ellipsis) > cap) {
     let lo = 0;
     let hi = head.length;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
       const candidate = head.slice(0, mid) + ellipsis;
-      if (encodedLength(candidate) <= cap) {
+      if (measure(candidate) <= cap) {
         lo = mid;
       } else {
         hi = mid - 1;
@@ -196,7 +215,7 @@ export function enforcePromptLength(
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     const candidate = head + tail.slice(0, mid) + ellipsis;
-    if (encodedLength(candidate) <= cap) {
+    if (measure(candidate) <= cap) {
       lo = mid;
     } else {
       hi = mid - 1;
@@ -1357,19 +1376,20 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
  */
 export function fitCompactEssentials(
   essentials: CompactPromptEssentials,
-  budget: number
+  budget: number,
+  measure: PromptLengthMeasure = encodedLength
 ): string {
-  const head = resolveEssentialHead(essentials, budget);
+  const head = resolveEssentialHead(essentials, budget, measure);
 
   if (essentials.work === undefined) {
     // Back-compat path — no atomic work-step breakdown supplied. Preserve the
     // exact pre-fix behaviour: the whole tail is one char-trimmable blob.
     const { tail } = essentials;
-    const withoutTail = enforcePromptLength(head, tail, budget);
-    return encodedLength(withoutTail) <= budget ? withoutTail : "";
+    const withoutTail = enforcePromptLength(head, tail, budget, measure);
+    return measure(withoutTail) <= budget ? withoutTail : "";
   }
 
-  return assembleAtomicTail(essentials, head, budget);
+  return assembleAtomicTail(essentials, head, budget, measure);
 }
 
 /**
@@ -1404,7 +1424,8 @@ export function fitCompactEssentials(
 function assembleAtomicTail(
   essentials: CompactPromptEssentials,
   head: string,
-  budget: number
+  budget: number,
+  measure: PromptLengthMeasure = encodedLength
 ): string {
   const { directoryEcho, isolationNote, work, workCompact, headSteps } = essentials;
   const stepOffset = headSteps?.length ?? 0;
@@ -1422,25 +1443,25 @@ function assembleAtomicTail(
   };
 
   const full = `${head}${buildTail(true, true, work as string)}`;
-  if (encodedLength(full) <= budget) return full;
+  if (measure(full) <= budget) return full;
 
   const withoutDirectoryEcho = `${head}${buildTail(false, true, work as string)}`;
-  if (encodedLength(withoutDirectoryEcho) <= budget) return withoutDirectoryEcho;
+  if (measure(withoutDirectoryEcho) <= budget) return withoutDirectoryEcho;
 
   const workOnly = `${head}${buildTail(false, false, work as string)}`;
-  if (encodedLength(workOnly) <= budget) return workOnly;
+  if (measure(workOnly) <= budget) return workOnly;
 
   if (workCompact) {
     const compactOnly = `${head}${buildTail(false, false, workCompact)}`;
-    if (encodedLength(compactOnly) <= budget) return compactOnly;
+    if (measure(compactOnly) <= budget) return compactOnly;
   }
 
   // Even the work step alone doesn't fit alongside the head — omit it rather
   // than fragment it. `head` itself already fits `budget` (resolveEssentialHead
   // guarantees this), so this is a genuine no-op in practice; the
   // enforcePromptLength pass is defensive belt-and-suspenders only.
-  const headOnly = enforcePromptLength(head, "", budget);
-  return encodedLength(headOnly) <= budget ? headOnly : "";
+  const headOnly = enforcePromptLength(head, "", budget, measure);
+  return measure(headOnly) <= budget ? headOnly : "";
 }
 
 /**
@@ -1452,9 +1473,13 @@ function assembleAtomicTail(
  * synthetic test fixture) — enforcePromptLength's own char-level head-trim
  * remains that caller's (documented, pre-existing) belt-and-suspenders.
  */
-function resolveEssentialHead(essentials: CompactPromptEssentials, budget: number): string {
+function resolveEssentialHead(
+  essentials: CompactPromptEssentials,
+  budget: number,
+  measure: PromptLengthMeasure = encodedLength
+): string {
   if (!essentials.headSteps) return essentials.head;
-  return fitEssentialHead(essentials.header ?? "", essentials.headSteps, budget);
+  return fitEssentialHead(essentials.header ?? "", essentials.headSteps, budget, measure);
 }
 
 /**
@@ -1471,14 +1496,19 @@ function resolveEssentialHead(essentials: CompactPromptEssentials, budget: numbe
  * Every included step is present in its FULL text, verbatim — never a
  * fragment; an omitted step is cleanly absent, never partially there.
  */
-function fitEssentialHead(header: string, steps: string[], budget: number): string {
-  const reserve = encodedLength(TRUNCATION_MARKER);
+function fitEssentialHead(
+  header: string,
+  steps: string[],
+  budget: number,
+  measure: PromptLengthMeasure = encodedLength
+): string {
+  const reserve = measure(TRUNCATION_MARKER);
   const included: string[] = [];
   for (const step of steps) {
     const candidateSteps = [...included, step];
     const numbered = candidateSteps.map((s, i) => `${i + 1}. ${s}`).join("\n");
     const candidateHead = `${header}\n\n${numbered}\n`;
-    if (encodedLength(candidateHead) + reserve > budget) break;
+    if (measure(candidateHead) + reserve > budget) break;
     included.push(step);
   }
   const numbered = included.map((s, i) => `${i + 1}. ${s}`).join("\n");
@@ -1563,6 +1593,14 @@ export interface BoundedDeepLinkArgs {
    *    the VibeCodes checkout.
    */
   cwdPolicy?: "degrade" | "keep";
+  /**
+   * How to measure a candidate prompt's URL cost — must match how `buildLink`
+   * actually encodes the `prompt` value, or the ladder degrades against the
+   * wrong number. Defaults to plain encodeURIComponent length (claude-cli://
+   * `q=`); the vibecodes:// caller passes `formEncodedLength` (spaces as `+`,
+   * see encodePromptParam in src/lib/terminal/deep-link.ts).
+   */
+  promptMeasure?: PromptLengthMeasure;
 }
 
 export type BoundedDeepLinkResult =
@@ -1618,6 +1656,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   const { essentials, cwd, cap, buildLink } = args;
   const overhead = args.promptKeyOverhead ?? 0;
   const keepCwd = args.cwdPolicy === "keep";
+  const measure = args.promptMeasure ?? encodedLength;
 
   // Tier 1 — cwd rides its own URL param. Under the default "degrade" policy
   // this is accepted only when it doesn't cost any essentials degradation (see
@@ -1630,7 +1669,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   const baseWithCwd = buildLink({ prompt: "", cwd });
   const budgetWithCwd = cap - baseWithCwd.length - overhead;
   if (budgetWithCwd > 0) {
-    const prompt = fitCompactEssentials(essentials, budgetWithCwd);
+    const prompt = fitCompactEssentials(essentials, budgetWithCwd, measure);
     const url = buildLink({ prompt, cwd });
     if (url.length <= cap && (keepCwd || essentialsSurviveWhole(essentials, prompt))) {
       return { ok: true, url, droppedCwd: false };
@@ -1662,7 +1701,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
     // path-length-independent budget back.
     const cdLine = buildCdLine(cwd);
     const withCd = foldCdIntoEssentials(essentials, cdLine);
-    const prompt = fitCompactEssentials(withCd, budgetNoCwd);
+    const prompt = fitCompactEssentials(withCd, budgetNoCwd, measure);
     if (prompt.includes(cwd) && essentialsSurviveWhole(essentials, prompt)) {
       const url = buildLink({ prompt });
       if (url.length <= cap) return { ok: true, url, droppedCwd: true };
@@ -1670,7 +1709,7 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   }
 
   // Tier 3 — folder-less minimal launch: essentials only, no directory info.
-  const prompt = fitCompactEssentials(essentials, budgetNoCwd);
+  const prompt = fitCompactEssentials(essentials, budgetNoCwd, measure);
   const url = buildLink({ prompt });
   if (url.length <= cap) return { ok: true, url, droppedCwd: !!cwd };
 

@@ -230,8 +230,24 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // permissionMode — before `prompt`. Only ever the literal "1"; a falsy
   // value is omitted entirely (no version-skew risk for an old bridge).
   if (worktree) parts.push(`worktree=1`);
-  if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
+  if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
+}
+
+/**
+ * Encode the `prompt` param value: encodeURIComponent, but with spaces as `+`
+ * (one char) rather than `%20` (three). `URLSearchParams.get` — what
+ * parseLaunchDeepLink below decodes with — already maps `+` back to a space,
+ * and a literal `+` in the prompt is still `%2B`, so the round-trip is
+ * unambiguous. Saves ~340 chars of the 2048-char launch-URL cap on the real
+ * bootstrap prompt. Mirrors src/lib/terminal/deep-link.ts's encodePromptParam
+ * exactly (drift-tested from the app side).
+ *
+ * @param {string} prompt
+ * @returns {string}
+ */
+export function encodePromptParam(prompt) {
+  return encodeURIComponent(prompt).replace(/%20/g, "+");
 }
 
 /**

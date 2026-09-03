@@ -33,6 +33,7 @@ import {
   resolveLaunchCwd,
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
+import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
@@ -88,15 +89,24 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // load of `recordedProjectPaths`. Merged into the recorded set below.
   const [manualPin, setManualPin] = useState<RecordedProjectPath | null>(null);
 
+  // The recorded folders re-read from the server at launch-click time (see
+  // resolveFreshLaunch below). `recordedProjectPaths` is the board page's
+  // one-shot SSR snapshot; a folder the agent records DURING a session on this
+  // page (record_project_path over MCP) isn't in it until the next reload.
+  // Nick, 3 Sep 2026: that gap sent a relaunch down the "new project" path —
+  // no `cwd=`, a prompt too long to keep its task — moments after the previous
+  // session had recorded the folder. Null until the first launch click.
+  const [freshPaths, setFreshPaths] = useState<RecordedProjectPath[] | null>(null);
+
   // This browser's real machine hostname, as announced by a bridge on a previous
   // terminal session. Lets the resolver below pick the recorded folder keyed to
   // THIS machine when several are on file with different paths — without it,
   // that case resolves to nothing and the user is asked every launch. Lazily
-  // initialised like savedState above; getMachineIdentity is SSR-safe (null on
-  // the server) and no product flow ever clears it, so it never needs
-  // refreshing mid-session — a first-ever bridge announcement lands before the
-  // next page load, which is when a recorded path would first exist anyway.
-  const [realHostname] = useState<string | null>(() => getMachineIdentity());
+  // initialised like savedState above (getMachineIdentity is SSR-safe — null on
+  // the server) and re-read at launch-click time alongside the recorded
+  // folders: a bridge that announced during THIS page's previous session has
+  // updated it since mount.
+  const [realHostname, setRealHostname] = useState<string | null>(() => getMachineIdentity());
 
   // Re-read localStorage (call after a dialog save or when the dropdown opens, so
   // we never show a stale new-mode path).
@@ -105,8 +115,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   }, [ideaId]);
 
   const effectiveRecordedPaths = useMemo(
-    () => mergeRecordedPath(recordedProjectPaths, manualPin),
-    [recordedProjectPaths, manualPin]
+    () => mergeRecordedPath(freshPaths ?? recordedProjectPaths, manualPin),
+    [freshPaths, recordedProjectPaths, manualPin]
   );
 
   // Single source of truth for DISPLAY + LAUNCH cwd — server-recorded paths
@@ -139,6 +149,38 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, effectiveTarget),
     [ideaId, ideaTitle, ideaGithubUrl, effectiveTarget]
   );
+
+  // The launch-time counterpart of resolveState (Nick, 3 Sep 2026): re-read
+  // the recorded folders from the server AND this machine's identity RIGHT
+  // NOW, then resolve the launch state + cwd from those — so a folder recorded
+  // by the previous session on this very page (see `freshPaths`) is honoured
+  // without a reload. Falls back to the render-time snapshot when the read
+  // fails, so a launch is never blocked on it. Both destinations (terminal
+  // window and in-browser) go through this.
+  const resolveFreshLaunch = useCallback(async (): Promise<{
+    state: LaunchPathState;
+    cwd: string | undefined;
+  }> => {
+    const hostname = getMachineIdentity();
+    if (hostname !== realHostname) setRealHostname(hostname);
+    let paths = effectiveRecordedPaths;
+    try {
+      const fresh = await listRecordedProjectPaths(ideaId);
+      if (fresh) {
+        setFreshPaths(fresh);
+        paths = mergeRecordedPath(fresh, manualPin);
+      }
+    } catch {
+      // Keep the snapshot — a stale folder list beats no launch at all.
+    }
+    const target = resolveEffectiveLaunchTarget({
+      hasRepo: !!ideaGithubUrl,
+      recordedPaths: paths,
+      realHostname: hostname,
+    });
+    const state = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, target);
+    return { state, cwd: resolveLaunchCwd(state, target.cwd) };
+  }, [ideaId, ideaTitle, ideaGithubUrl, effectiveRecordedPaths, manualPin, realHostname]);
 
   const buildPrompt = useCallback(
     (state: LaunchPathState): string => {
@@ -252,7 +294,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   );
 
   const openInClaudeCode = useCallback(
-    (state: LaunchPathState) => {
+    (state: LaunchPathState, freshCwd?: string) => {
       // Ignore re-entry while a launch is mid-flight (double-click / Enter+click).
       if (launchingRef.current) return;
       launchingRef.current = true;
@@ -275,7 +317,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // path was already known — that's the bug this fix corrects. The
       // in-browser launch payload uses the same rule, so both destinations
       // open in the same folder.
-      const cwd = resolveLaunchCwd(state, effectiveTarget.cwd);
+      // `freshCwd` is resolveFreshLaunch's launch-time answer (handleLaunch);
+      // the dialog-save path (handleSaved) has no fresher read and uses the
+      // render-time target.
+      const cwd = freshCwd ?? resolveLaunchCwd(state, effectiveTarget.cwd);
       const repo = ideaGithubUrl ?? undefined;
 
       // Budget the prompt against the claude-cli:// URL ceiling via
@@ -369,8 +414,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // Primary action: always launch. No path needed — repo-backed ideas resolve via
   // the `repo` param; repo-less ideas default to a new ~/projects/<slug> the agent creates.
   const handleLaunch = useCallback(() => {
-    openInClaudeCode(resolveState());
-  }, [resolveState, openInClaudeCode]);
+    // Ignore re-entry while a launch is mid-flight (openInClaudeCode has the
+    // same guard, but the fresh read below is async — a second click during
+    // it would otherwise queue a second launch).
+    if (launchingRef.current) return;
+    void resolveFreshLaunch().then(({ state, cwd }) => openInClaudeCode(state, cwd));
+  }, [resolveFreshLaunch, openInClaudeCode]);
 
   const handleCopy = useCallback(() => {
     void copyCommand(resolveState());
@@ -398,18 +447,19 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     // destination, unlike claude-cli://, is our own bridge, so it can act on
     // it). cwd rides the payload so a pinned/recorded existing folder is
     // honoured in the browser too.
-    const state = resolveState();
-    const essentials = buildCompactEssentials(state);
-    requestBrowserLaunch({
-      essentials,
-      cwd: resolveLaunchCwd(state, effectiveTarget.cwd),
-      // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
-      // variants carry a task identity — a board-level launch never does, so
-      // B10's dedupe never mistakes two board launches for the same task.
-      taskId: props.variant === "board" ? undefined : props.taskId,
-      taskTitle: props.variant === "board" ? undefined : props.taskTitle,
+    void resolveFreshLaunch().then(({ state, cwd }) => {
+      const essentials = buildCompactEssentials(state);
+      requestBrowserLaunch({
+        essentials,
+        cwd,
+        // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
+        // variants carry a task identity — a board-level launch never does, so
+        // B10's dedupe never mistakes two board launches for the same task.
+        taskId: props.variant === "board" ? undefined : props.taskId,
+        taskTitle: props.variant === "board" ? undefined : props.taskTitle,
+      });
     });
-  }, [posthog, buildCompactEssentials, resolveState, effectiveTarget.cwd, props]);
+  }, [posthog, buildCompactEssentials, resolveFreshLaunch, props]);
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);

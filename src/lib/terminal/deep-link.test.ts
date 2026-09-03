@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildLaunchDeepLink,
+  encodePromptParam,
   redactDeepLinkToken,
   LAUNCH_SCHEME,
   LAUNCH_HOST,
@@ -298,10 +299,36 @@ const HOSTILE_PROMPT =
   "Set up $(rm -rf ~) `hostname` \"double\" 'single' ; & | > < \\ %20 + \n second line $HOME";
 
 describe("buildLaunchDeepLink with a prompt", () => {
-  it("appends prompt as the LAST param, url-encoded", () => {
+  it("appends prompt as the LAST param, url-encoded with spaces as `+`", () => {
     const url = buildLaunchDeepLink({ ...SAMPLE, prompt: "hello world" });
-    expect(url.endsWith(`prompt=${encodeURIComponent("hello world")}`)).toBe(true);
+    expect(url.endsWith("prompt=hello+world")).toBe(true);
+    expect(url.endsWith(`prompt=${encodePromptParam("hello world")}`)).toBe(true);
     expect(url).not.toContain("hello world"); // the space must be encoded
+  });
+
+  // Nick, 3 Sep 2026: the 2048-char cap was so tight a task-card launch lost
+  // its work step. Spaces as `+` (1 char) instead of `%20` (3) buys ~340 chars
+  // on the real bootstrap prompt — and only works because the helper/bridge
+  // parse via URLSearchParams, which maps `+` back to a space. A literal `+`
+  // must therefore still be `%2B`, or the round-trip would corrupt it.
+  it("encodes spaces as `+` and a literal `+` as %2B, and the shared parser restores both", () => {
+    const prompt = "a b+c  d";
+    expect(encodePromptParam(prompt)).toBe("a+b%2Bc++d");
+    const url = buildLaunchDeepLink({ ...SAMPLE, prompt });
+    expect(parseLaunchDeepLink(url)?.prompt).toBe(prompt);
+    // Everything except the space is encoded exactly as encodeURIComponent
+    // would — `+`-for-space is the ONLY difference.
+    expect(encodePromptParam(HOSTILE_PROMPT)).toBe(
+      encodeURIComponent(HOSTILE_PROMPT).replace(/%20/g, "+")
+    );
+  });
+
+  it("the `+` encoding is measurably shorter than %20 on a real-shaped prompt", () => {
+    const prompt = "1. Connect the board tools (if they're already available, skip this step): run it";
+    expect(encodePromptParam(prompt).length).toBeLessThan(encodeURIComponent(prompt).length);
+    expect(encodeURIComponent(prompt).length - encodePromptParam(prompt).length).toBe(
+      2 * (prompt.split(" ").length - 1)
+    );
   });
 
   it("omits prompt entirely when absent — promptless links keep today's exact shape (AC8)", () => {

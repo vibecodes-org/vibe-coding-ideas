@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +33,17 @@ vi.mock("@/lib/terminal/launch-mode", () => ({
 
 vi.mock("@/lib/terminal/connection", () => ({
   isTerminalEnabled: () => true,
+}));
+
+// The launch-time re-read of the recorded folders (Nick, 3 Sep 2026 — see
+// resolveFreshLaunch in the component). Resolves to null by default ("read
+// failed, keep the snapshot"); individual tests override it.
+const mockListRecordedProjectPaths = vi.fn(
+  async (_ideaId: string): Promise<{ hostname: string; absolute_path: string }[] | null> => null
+);
+vi.mock("@/actions/launch-path", () => ({
+  listRecordedProjectPaths: (ideaId: string) => mockListRecordedProjectPaths(ideaId),
+  saveManualProjectPath: vi.fn(),
 }));
 
 import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
@@ -100,28 +111,78 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     expect(items[1]).toHaveTextContent("Beta");
   });
 
-  it("clicking the browser item calls requestBrowserLaunch and does not navigate", () => {
+  it("clicking the browser item calls requestBrowserLaunch and does not navigate", async () => {
     const location = stubLocationAssign();
 
     renderMenuItem();
     fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
 
-    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
     expect(location.assign).not.toHaveBeenCalled();
 
     location.restore();
   });
 
-  it("carries the task id in the browser-launch payload", () => {
+  it("carries the task id in the browser-launch payload", async () => {
     renderMenuItem({ taskId: "task-abc-789" });
     fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
 
-    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
     const payload = mockRequestBrowserLaunch.mock.calls[0][0] as {
       essentials: { head: string; tail: string };
     };
     const promptText = `${payload.essentials.head}\n${payload.essentials.tail}`;
     expect(promptText).toContain("task-abc-789");
+  });
+
+  // Nick, 3 Sep 2026: the board page's recorded-folder list is a one-shot SSR
+  // snapshot. A folder the agent recorded during the PREVIOUS session on this
+  // page was invisible to the next launch until a reload, so that launch went
+  // out as a "new project" (no cwd, mkdir prompt) — and the longer prompt
+  // then cost it the task step. The click now re-reads the folders first.
+  describe("launch-time re-read of the recorded folders", () => {
+    it("re-reads the recorded folders on click and launches into a folder the page snapshot didn't have", async () => {
+      mockListRecordedProjectPaths.mockResolvedValueOnce([
+        { hostname: "Nicks-MacBook-Pro.local", absolute_path: "/Users/nickball/projects/favourites" },
+      ]);
+      renderMenuItem(); // no recordedProjectPaths prop at all — the stale-page shape
+      fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
+
+      await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+      expect(mockListRecordedProjectPaths).toHaveBeenCalledWith("idea-1");
+      const payload = mockRequestBrowserLaunch.mock.calls[0][0] as {
+        cwd?: string;
+        essentials: { head: string; tail: string; directoryEcho?: string };
+      };
+      expect(payload.cwd).toBe("/Users/nickball/projects/favourites");
+      // Existing-folder prompt, not the create-new one.
+      expect(payload.essentials.head).not.toContain("mkdir");
+      expect(payload.essentials.directoryEcho).toContain("/Users/nickball/projects/favourites");
+    });
+
+    it("falls back to the page snapshot when the re-read fails, and still launches", async () => {
+      mockListRecordedProjectPaths.mockRejectedValueOnce(new Error("offline"));
+      renderMenuItem();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
+
+      await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+      const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { cwd?: string };
+      expect(payload.cwd).toBeUndefined();
+    });
+
+    it("the terminal-window launch re-reads too, and carries the fresh folder as cwd", async () => {
+      const location = stubLocationAssign();
+      mockListRecordedProjectPaths.mockResolvedValueOnce([
+        { hostname: "Nicks-MacBook-Pro.local", absolute_path: "/Users/nickball/projects/favourites" },
+      ]);
+      renderMenuItem();
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Launch in Claude Code/i }));
+
+      await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+      const link = location.assign.mock.calls[0][0] as string;
+      expect(link).toContain(`cwd=${encodeURIComponent("/Users/nickball/projects/favourites")}`);
+      location.restore();
+    });
   });
 
   it("renders only the terminal item, with no Beta text, when the flag is off", () => {
@@ -135,14 +196,14 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     expect(screen.queryByText(/Launch in browser terminal/i)).toBeNull();
   });
 
-  it("terminal item's onSelect is unchanged: clicking it does not call requestBrowserLaunch", () => {
+  it("terminal item's onSelect is unchanged: clicking it does not call requestBrowserLaunch", async () => {
     const location = stubLocationAssign();
 
     renderMenuItem();
     fireEvent.click(screen.getByRole("menuitem", { name: "Launch in Claude Code" }));
 
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
     expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
-    expect(location.assign).toHaveBeenCalledTimes(1);
 
     location.restore();
   });
@@ -209,7 +270,7 @@ describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:/
     return match ? decodeURIComponent(match[1]) : "";
   }
 
-  it("terminal-window launch (claude-cli://) fires a link whose prompt contains the isolation note", () => {
+  it("terminal-window launch (claude-cli://) fires a link whose prompt contains the isolation note", async () => {
     const location = stubLocationAssign();
     renderBoardButton({
       ideaGithubUrl: "https://github.com/acme/widgets",
@@ -218,14 +279,14 @@ describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:/
 
     fireEvent.click(screen.getByRole("button", { name: /Launch Claude Code/i }));
 
-    expect(location.assign).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
     const url = location.assign.mock.calls[0][0] as string;
     expect(decodeQ(url)).toContain("git worktree add");
 
     location.restore();
   });
 
-  it("in-browser launch (vibecodes://) payload carries isolate:true but NO isolation note text (the dock fires the real --worktree flag instead)", () => {
+  it("in-browser launch (vibecodes://) payload carries isolate:true but NO isolation note text (the dock fires the real --worktree flag instead)", async () => {
     renderBoardButton({
       ideaGithubUrl: "https://github.com/acme/widgets",
       recordedProjectPaths,
@@ -236,7 +297,7 @@ describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:/
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("menuitem", { name: /In the browser/i }));
 
-    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
     const payload = mockRequestBrowserLaunch.mock.calls[0][0] as {
       essentials: { head: string; tail: string; isolate?: boolean };
     };
