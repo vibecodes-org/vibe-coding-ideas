@@ -50,7 +50,7 @@ npx wrangler secret put TERMINAL_SESSION_SECRET
 loaded automatically by `wrangler dev` — never used in production.)
 
 The idle / max-duration limits ship as plain `[vars]` in `wrangler.toml`
-(`TERMINAL_IDLE_MS = 1800000` / `TERMINAL_MAX_MS = 86400000` → 30 min / 24 h — the
+(`TERMINAL_IDLE_MS = 7200000` / `TERMINAL_MAX_MS = 86400000` → 2 h / 24 h — the
 idle cap is what ends a forgotten session, the max-duration cap is only a
 backstop against one that never goes idle). Tune them there and re-`deploy`;
 they are not secrets. If absent, the DO falls back to the same defaults in code.
