@@ -3,7 +3,7 @@
 // two raw WebSocket legs at the actual Cloudflare runtime and proves an idle
 // session is closed by the DO ALARM with code 1000 + an "idle" reason.
 //
-// Start the relay with a SHORT idle so the test is fast (overrides the 30-min
+// Start the relay with a SHORT idle so the test is fast (overrides the 2-hour
 // default; `--var` injects an env binding the DO reads as env.TERMINAL_IDLE_MS):
 //
 //   cd terminal/relay && npx wrangler dev --port 8787 --var TERMINAL_IDLE_MS:3000

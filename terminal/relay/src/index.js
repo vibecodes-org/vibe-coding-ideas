@@ -191,7 +191,7 @@ export class TerminalRelay {
     // dock's `{"t":"hb"}` liveness probe with `{"t":"hb-ack"}` WITHOUT waking the
     // DO (hibernation-safe auto-response). Deliberately NOT routed through
     // webSocketMessage: a heartbeat is never forwarded to the peer and never
-    // stamps lastActivityAt, so the 30-min idle cap is unaffected by an
+    // stamps lastActivityAt, so the 2-hour idle cap is unaffected by an
     // open-but-idle dock. If the runtime lacks auto-response, the belt-and-braces
     // intercept in webSocketMessage below still answers (with a DO wake).
     try {
@@ -760,7 +760,7 @@ export class TerminalRelay {
     // doing this per forwarded message was ~5 DO ops/message (1 put + armAlarm's
     // 3 gets + 1 setAlarm), which blows through the 100k-req/day + 100k-rows/day
     // free caps at chat speed. `lastActivityAt` only feeds the idle-timeout alarm
-    // (30-min default) — a few seconds of staleness is harmless, so we only
+    // (2-hour default) — a few seconds of staleness is harmless, so we only
     // persist + re-arm once per activityThrottleMs() (default 5s). Heartbeats
     // never reach here (handled above) and are unaffected either way.
     const now = Date.now();

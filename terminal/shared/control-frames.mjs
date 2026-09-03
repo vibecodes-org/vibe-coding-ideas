@@ -42,7 +42,7 @@
 // are invisible to browser JS:
 //   - `{"t":"hb"}`     — sent BY the browser dock every ~15s while connected.
 //   - `{"t":"hb-ack"}` — echoed BY the relay, to the SENDING leg only. Never
-//     forwarded to the peer and never counted as session activity (the 30-min
+//     forwarded to the peer and never counted as session activity (the 2-hour
 //     idle cap is unaffected). On Cloudflare this is a hibernation-safe
 //     setWebSocketAutoResponse pair — zero DO wakes.
 // Skew-safe both ways: an OLD relay forwards the hb to the bridge, which

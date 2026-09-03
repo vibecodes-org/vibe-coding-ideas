@@ -57,7 +57,7 @@ const NORMAL_CLOSURE = 1000;
  *           graceMs?: number, sendAttachedFrame?: boolean,
  *           log?: (msg:string, extra?:object)=>void }} [opts]
  *   `secret` — TERMINAL_SESSION_SECRET used to verify leg tokens (defaults to env).
- *   `idleMs` / `maxMs` — lifecycle caps (default 30 min / 24 h); tests pass small values.
+ *   `idleMs` / `maxMs` — lifecycle caps (default 2 h / 24 h); tests pass small values.
  *   `graceMs` — reconnect grace window (default 90s); tests pass small values.
  *   `sendAttachedFrame` — default true (mirrors the real DO's R1 confirmation to
  *   the bridge leg); tests pass false to simulate an OLD relay for skew coverage.

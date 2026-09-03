@@ -160,7 +160,7 @@ The relay now ends forgotten sessions itself. It uses the **WebSocket Hibernatio
 API** (so an idle DO is evicted from memory and stops billing duration) plus DO
 **alarms** for two caps:
 
-- **idle** — no traffic for `TERMINAL_IDLE_MS` (default 30 min) → both legs close
+- **idle** — no traffic for `TERMINAL_IDLE_MS` (default 2 h) → both legs close
   `1000` with reason `idle-timeout: …`. This is the mechanism that ends a
   forgotten session — it's the one that slides on activity.
 - **max-duration** — total session age ≥ `TERMINAL_MAX_MS` (default 24 h) → both

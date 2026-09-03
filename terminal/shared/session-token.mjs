@@ -99,7 +99,7 @@ export const CONTROL_TTL_SECONDS = 60;
  * "control": where a control token authorizes the APP calling the RELAY's
  * `/end`, a notify token authorizes the RELAY calling the APP's
  * `POST /api/terminal/session/closed` the instant a DO alarm force-closes a
- * session (24h max-duration backstop, or 30min idle) — telling the Supabase
+ * session (24h max-duration backstop, or 2 h idle) — telling the Supabase
  * registry the session died in REAL TIME instead of leaving it to guess via
  * its own mirrored `expires_at` and reconcile lazily on the next unrelated
  * request. That lazy-guess window was the exact race behind bug 9fb9fced: a

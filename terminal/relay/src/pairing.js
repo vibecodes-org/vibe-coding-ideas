@@ -222,8 +222,8 @@ export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
 // the waiver dies with it) and the UX falls back to a clean fresh launch.
 export const RECONNECT_GRACE_MS = 90_000;
 
-/** Default idle cap: 30 minutes of no traffic. Overridable via env TERMINAL_IDLE_MS. */
-export const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+/** Default idle cap: 2 hours of no traffic (was 30 min until 3 Sep 2026 — Nick steps away for an hour or more and an idle session costs nothing: the DO hibernates, heartbeats are auto-answered without waking it). Overridable via env TERMINAL_IDLE_MS. */
+export const DEFAULT_IDLE_MS = 2 * 60 * 60 * 1000;
 /** Default backstop cap on total session age: 24 hours. Overridable via env TERMINAL_MAX_MS. */
 export const DEFAULT_MAX_MS = 24 * 60 * 60 * 1000;
 
