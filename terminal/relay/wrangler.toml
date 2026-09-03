@@ -35,13 +35,16 @@ new_sqlite_classes = ["TerminalRelay"]
 # Two server-side caps end a forgotten session cleanly so a DO can't live (and
 # bill) forever. Both are read by the DO as env vars; the values below are the
 # production defaults and may be tuned WITHOUT a code change. The DO falls back to
-# the SAME defaults (30 min / 4 h) if these are absent, so they are documentation
+# the SAME defaults (30 min / 24 h) if these are absent, so they are documentation
 # as much as configuration.
-#   TERMINAL_IDLE_MS — close the session after this many ms of NO traffic.
-#   TERMINAL_MAX_MS  — hard cap on total session age, regardless of traffic.
+#   TERMINAL_IDLE_MS — close the session after this many ms of NO traffic. This
+#                       is what actually ends a forgotten session.
+#   TERMINAL_MAX_MS  — backstop cap on total session age, regardless of traffic
+#                       (a session that never goes idle, e.g. runaway output) —
+#                       long enough that a human never hits it in a working day.
 [vars]
 TERMINAL_IDLE_MS = "1800000"   # 30 minutes
-TERMINAL_MAX_MS  = "14400000"  # 4 hours
+TERMINAL_MAX_MS  = "86400000"  # 24 hours
 
 # Card 9fb9fced, Fix 2 — session-closed callback: the base URL the relay POSTs
 # `{ sid, reason }` to (via `/api/terminal/session/closed`) the instant a DO

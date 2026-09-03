@@ -1070,7 +1070,7 @@ export class TerminalRelay {
    * Card (ghost-sessions fix A): previously this path never told the app —
    * only `endSession`'s idle/max branches did — so a Mac sleeping with the
    * dock open (which drops both legs, opens the grace window, then expires
-   * it here) left the Supabase registry row "active" for up to 4h (the
+   * it here) left the Supabase registry row "active" for up to 24h (the
    * max-duration reap), filling the 5-session cap with ghosts. Mirrors
    * `endSession`'s `notifyApp` call with reasonCode `"peer_gone"` — best-
    * effort, same as every other branch of this callback (see
