@@ -14,6 +14,7 @@ import {
   type AttachExistingPair,
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
+import { buildCompactPromptEssentials } from "@/lib/launch-claude-code";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 import { FrameEncryptor, generateSessionKey, DIRECTION_BRIDGE_TO_BROWSER } from "@/lib/terminal/pty-crypto";
 
@@ -105,6 +106,16 @@ vi.mock("@xterm/addon-serialize", () => ({
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
+// Nick, 3 Sep 2026: connect() re-reads the recorded folders before a
+// hook-initiated mint (see refreshRecordedPaths). Null by default = "read
+// failed / nothing recorded, keep the descriptor snapshot".
+const mockListRecordedProjectPaths = vi.fn(
+  async (_ideaId: string): Promise<{ hostname: string; absolute_path: string }[] | null> => null,
+);
+vi.mock("@/actions/launch-path", () => ({
+  listRecordedProjectPaths: (ideaId: string) => mockListRecordedProjectPaths(ideaId),
+}));
+
 vi.mock("sonner", () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
@@ -1860,6 +1871,64 @@ describe("useTerminalSession", () => {
       expect(prompt).toContain("mkdir -p");
       expect(prompt).toContain("record_project_path");
       expect(prompt).toContain("NOT get_my_tasks"); // the FULL work step
+    });
+
+    // Nick, 3 Sep 2026 (dock counterpart of the launch button's fresh read):
+    // a hook-initiated launch used the descriptor's page-load folder list, so
+    // a folder recorded by an earlier session on this page was invisible to
+    // it. connect() now re-reads the folders first.
+    it("a hook-initiated connect re-reads the recorded folders and launches into a folder the page snapshot didn't have", async () => {
+      mockListRecordedProjectPaths.mockResolvedValueOnce([
+        { hostname: "nicks-mac", absolute_path: "/Users/nickball/projects/favourites" },
+      ]);
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          { ...descriptor, recordedProjectPaths: [] }, // the stale-page shape
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      expect(mockListRecordedProjectPaths).toHaveBeenCalledWith("idea-1");
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      expect(src).toContain(`cwd=${encodeURIComponent("/Users/nickball/projects/favourites")}`);
+      const prompt = new URL(src).searchParams.get("prompt") ?? "";
+      expect(prompt).not.toContain("mkdir");
+      expect(prompt).toContain("You should already be in /Users/nickball/projects/favourites");
+      expect(result.current.cwd).toBe("/Users/nickball/projects/favourites");
+    });
+
+    it("a launch carried from the button (payload on the bus) does not re-read — the button already did", async () => {
+      mockListRecordedProjectPaths.mockClear();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand: vi.fn() }),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      act(() => {
+        result.current.actions.launchFromBus({
+          essentials: buildCompactPromptEssentials({
+            appUrl: "https://vibecodes.co.uk",
+            ideaId: "idea-1",
+            ideaTitle: "Recipe Saver",
+            mode: "existing",
+            repoUrl: null,
+            existingPath: "/Users/nick/projects/recipes",
+          }),
+          cwd: "/Users/nick/projects/recipes",
+        });
+      });
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+      expect(mockListRecordedProjectPaths).not.toHaveBeenCalled();
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      expect(src).toContain(`cwd=${encodeURIComponent("/Users/nick/projects/recipes")}`);
     });
 
     it("keeps the helperToken when the work step already fits alongside it (short title, existing folder)", async () => {

@@ -100,6 +100,7 @@ import {
   redactDeepLinkToken,
 } from "@/lib/terminal/deep-link";
 import { shouldSkipHelperToken } from "@/lib/terminal/helper-row";
+import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import {
   buildBoundedDeepLink,
@@ -1271,6 +1272,26 @@ export function useTerminalSession(
     if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
   }, []);
 
+  // Nick, 3 Sep 2026 (dock counterpart of the launch button's
+  // resolveFreshLaunch): the descriptor's `recordedProjectPaths` is the board
+  // page's one-shot SSR snapshot. A folder the agent recorded during an
+  // earlier session on this page is invisible to it until a reload, so a
+  // hook-initiated launch (dock auto-connect, Retry with no carried payload)
+  // used to go out as "new project" — no `cwd=`, and a prompt long enough to
+  // lose its work step. `connect()` awaits refreshRecordedPaths() before a
+  // hook-initiated mint; resolveLaunchPromptParts then prefers the fresh
+  // list. Keyed by ideaId so a board switch can never reuse another board's
+  // folders. Best-effort: a failed read keeps the snapshot.
+  const freshRecordedPathsRef = useRef<{ ideaId: string; paths: RecordedProjectPath[] } | null>(null);
+  const refreshRecordedPaths = useCallback(async () => {
+    try {
+      const paths = await listRecordedProjectPaths(ideaId);
+      if (paths) freshRecordedPathsRef.current = { ideaId, paths };
+    } catch {
+      /* keep the snapshot */
+    }
+  }, [ideaId]);
+
   // The compact bootstrap prompt ESSENTIALS + cwd for THIS launch: the payload
   // the launch button put on the bus (its exact resolved state — task- or
   // board-level) or, for hook-initiated launches (paired auto-connect / Retry),
@@ -1292,9 +1313,12 @@ export function useTerminalSession(
   const resolveLaunchPromptParts = useCallback((): BrowserLaunchPayload => {
     const carried = promptPartsRef.current;
     if (carried) return carried;
+    const fresh = freshRecordedPathsRef.current;
     const effectiveTarget = resolveEffectiveLaunchTarget({
       hasRepo: !!ideaGithubUrl,
-      recordedPaths: recordedProjectPaths,
+      // The launch-time re-read (refreshRecordedPaths) wins over the
+      // descriptor's page-load snapshot when it has run for THIS idea.
+      recordedPaths: fresh && fresh.ideaId === ideaId ? fresh.paths : recordedProjectPaths,
       // Read fresh rather than captured: this runs at launch time, and a bridge
       // may have announced this machine's hostname earlier in THIS session (see
       // setMachineIdentity below) — the button's render-time snapshot can't see
@@ -2211,6 +2235,16 @@ export function useTerminalSession(
     setHelperVersion(null);
     dispatch({ type: "connect" });
 
+    // Hook-initiated launch (no payload carried from the launch button, which
+    // already did its own fresh read): re-read the recorded folders now so the
+    // prompt + cwd below reflect a folder recorded since the page loaded.
+    if (!promptPartsRef.current) {
+      await refreshRecordedPaths();
+      // A newer connect() started while we awaited the read → it owns the
+      // outcome; don't mint a session nobody is waiting on.
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
+    }
+
     let data: {
       sessionId: string;
       browserToken: string;
@@ -2375,6 +2409,7 @@ export function useTerminalSession(
     clearHelperTimer,
     removeLaunchIframe,
     requestExpand,
+    refreshRecordedPaths,
     resolveLaunchPromptParts,
     fireLaunchDeepLink,
     openBrowserLeg,
