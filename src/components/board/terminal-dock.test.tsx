@@ -101,6 +101,37 @@ const { registeredActionsByKey } = vi.hoisted(() => ({
   registeredActionsByKey: new Map<string, MockTerminalSessionActions>(),
 }));
 
+// Card c0b790d6 (ended panel's Resume reattaching to its own stale registry
+// row): lets a test drive `report-ended-${key}` to report a SPECIFIC sid
+// (matching a real registry row a test seeded) instead of the default
+// per-key `sid-for-${key}` — needed to prove the dock patches THAT exact
+// row's status locally when this tab's own session reaches session-ended.
+// Reset to null (falls back to the default) in `afterEach` below.
+const { reportEndedSidOverride } = vi.hoisted(() => ({
+  reportEndedSidOverride: { current: null as string | null },
+}));
+
+// Card c0b790d6: lets a test give the "resume-ended-" button's payload a
+// `resumeId` (the ended row's own `claudeSessionId`) so a click actually
+// exercises `reconnectIfConversationLive` — without this the payload never
+// carries one, matching every test that predates this fix. Reset in
+// `afterEach` below.
+const { resumeEndedConvOverride } = vi.hoisted(() => ({
+  resumeEndedConvOverride: { current: undefined as string | undefined },
+}));
+
+// Card c0b790d6: lets a test change the sid the "resume-ended-" button
+// passes as its OWN tab's last-known session id (2nd arg to
+// `onResumeEndedSession`) away from the fixed default every pre-existing
+// test relies on — needed to isolate the registry-row-patch fix from the
+// separate `excludeSid` fix: a test can mark a DIFFERENT sid ended locally
+// and then Resume with an excludeSid that does NOT match it, so a match
+// would only be prevented by the row's patched status, not by exclusion.
+// Reset to the shared default in `afterEach` below.
+const { resumeEndedOwnSidOverride } = vi.hoisted(() => ({
+  resumeEndedOwnSidOverride: { current: "sid-ended-own-tab" },
+}));
+
 // Renders just enough of a real TerminalSessionView for the test to see HOW
 // MANY tabs actually got minted, and with what payload — the real component
 // (and the hook underneath it) is exercised elsewhere. The `resume-ended-*`
@@ -128,7 +159,10 @@ vi.mock("./terminal-session-view", () => ({
     wakeResume,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
-    onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
+    onResumeEndedSession?: (
+      payload: { cwd?: string; taskId?: string; ideaId?: string; resumeId?: string },
+      sid: string | null,
+    ) => void;
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
@@ -210,8 +244,13 @@ vi.mock("./terminal-session-view", () => ({
           data-testid={`resume-ended-${entry.key}`}
           onClick={() =>
             onResumeEndedSession?.(
-              { cwd: "/Users/nick/projects/here", taskId: entry.taskId, ideaId: entry.ideaId },
-              "sid-ended-own-tab",
+              {
+                cwd: "/Users/nick/projects/here",
+                taskId: entry.taskId,
+                ideaId: entry.ideaId,
+                resumeId: resumeEndedConvOverride.current,
+              },
+              resumeEndedOwnSidOverride.current,
             )
           }
         >
@@ -235,7 +274,7 @@ vi.mock("./terminal-session-view", () => ({
           onClick={() =>
             onReportSummary(entry.key, {
               status: "session-ended",
-              sessionId: `sid-for-${entry.key}`,
+              sessionId: reportEndedSidOverride.current ?? `sid-for-${entry.key}`,
               errorKind: null,
               launchPhase: "idle",
               platformSupported: true,
@@ -591,6 +630,9 @@ afterEach(() => {
   // straight from sessionStorage on mount — clear it so one test's tab state
   // never leaks into the next.
   window.sessionStorage.clear();
+  reportEndedSidOverride.current = null;
+  resumeEndedConvOverride.current = undefined;
+  resumeEndedOwnSidOverride.current = "sid-ended-own-tab";
 });
 
 describe("TerminalDock — launch-bus race with the still-loading registry (Bug B)", () => {
@@ -1327,6 +1369,152 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
     // place, not replaced by a new one leaving the ended tab behind.
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
     expect(screen.getByTestId("session-view").dataset.key).toBe(key);
+  });
+});
+
+// Card c0b790d6 (investigation: Sentinel; fix: Atlas). Root cause: an ended
+// tab's "Resume this conversation" asks `reconnectIfConversationLive` before
+// minting, but `registryRowsRef` is a SNAPSHOT that only refreshes on mount
+// / visibilitychange / online / failed reattach / chooser fallback — a tab
+// whose own session just ended can still see ITS OWN sid in that snapshot
+// reading `status: "active"`. Without the fix, Resume "reconnects" to that
+// stale row (i.e. itself), hits the relay's real 409 "This session has
+// ended", and the user sees a reattach failure instead of a fresh session.
+describe("TerminalDock — ended panel's Resume never reattaches to its own stale registry row (card c0b790d6)", () => {
+  it("excludes a stale self-match and mints fresh instead of reattaching", async () => {
+    let registryCallCount = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/terminal/session/list") {
+        registryCallCount += 1;
+        if (registryCallCount === 1) {
+          // Mount: nothing live/recent — seeds a pristine tab (F1).
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+        }
+        // Every later call (the wake-recheck refresh below) reports a STALE
+        // "active" row for THIS TAB'S OWN sid, carrying the conversation id
+        // its own "Resume" button is about to ask for — the bug's exact
+        // precondition.
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sessions: [
+              {
+                sid: "sid-ended-own-tab",
+                ideaId: "idea-1",
+                ideaTitle: "My Idea",
+                taskId: null,
+                taskTitle: null,
+                machineLabel: null,
+                cwd: "/Users/nick/projects/here",
+                claudeSessionId: "conv-1",
+                displayName: null,
+                createdAt: new Date().toISOString(),
+                status: "active",
+                endedAt: null,
+              },
+            ],
+          }),
+        });
+      }
+      if (url === "/api/terminal/session/reattach") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ sessionId: "reattached-session-id", browserToken: "reattached-token" }),
+        });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key!;
+
+    // Load the stale "active" self-row into registryRows — any of the
+    // dock's own refresh triggers works; visibilitychange mirrors the
+    // wake-recheck tests above.
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(1));
+
+    // This tab's own "Resume this conversation" always fires sid
+    // "sid-ended-own-tab" (mirrors the real ended panel's `pair.sessionId`);
+    // give its payload the SAME conversation id the stale row carries.
+    resumeEndedConvOverride.current = "conv-1";
+    fireEvent.click(screen.getByTestId(`resume-ended-${key}`));
+
+    // Never reattaches to the stale self-match.
+    expect(fetchMock.mock.calls.some(([u]) => u === "/api/terminal/session/reattach")).toBe(false);
+    // Never shows the "already running — reconnecting" copy the live-match
+    // branch fires (that copy would be a lie here — it IS this tab).
+    expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining("already running"));
+    // Mints fresh in place instead — same tab reclaimed (its own sid
+    // matches), no navigation, no 2nd tab left behind.
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(screen.getByTestId("session-view").dataset.key).toBe(key);
+  });
+
+  it("a tab reaching session-ended marks its own registry row ended locally, so it stops reading live-active elsewhere too", async () => {
+    let registryCallCount = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/terminal/session/list") {
+        registryCallCount += 1;
+        if (registryCallCount === 1) {
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sessions: [
+              {
+                sid: "sid-ended-own-tab",
+                ideaId: "idea-1",
+                ideaTitle: "My Idea",
+                taskId: null,
+                taskTitle: null,
+                machineLabel: null,
+                cwd: "/Users/nick/projects/here",
+                claudeSessionId: "conv-1",
+                displayName: null,
+                createdAt: new Date().toISOString(),
+                status: "active",
+                endedAt: null,
+              },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key!;
+
+    // Load the "active" row for this tab's own sid into registryRows.
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(registryCallCount).toBeGreaterThan(1));
+
+    // This tab's OWN session now reaches session-ended, reporting that SAME
+    // sid — the dock must patch that row to "ended" locally, without an
+    // extra registry fetch (no 3rd `/api/terminal/session/list` call).
+    reportEndedSidOverride.current = "sid-ended-own-tab";
+    fireEvent.click(screen.getByTestId(`report-ended-${key}`));
+    expect(registryCallCount).toBe(2); // no refreshRegistry() fired by the patch itself
+
+    // Prove the patch, not `excludeSid`, is what stops a match: fire Resume
+    // with an excludeSid that does NOT equal the patched row's sid — if the
+    // row were still reading "active", this would find and reconnect to it.
+    resumeEndedOwnSidOverride.current = "sid-some-other-tab";
+    resumeEndedConvOverride.current = "conv-1";
+    fireEvent.click(screen.getByTestId(`resume-ended-${key}`));
+
+    expect(fetchMock.mock.calls.some(([u]) => u === "/api/terminal/session/reattach")).toBe(false);
+    expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining("already running"));
+    expect(mockRouterPush).not.toHaveBeenCalled();
   });
 });
 

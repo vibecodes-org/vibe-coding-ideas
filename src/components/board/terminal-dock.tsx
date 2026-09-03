@@ -910,6 +910,30 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       }
       return { ...prev, [key]: summary };
     });
+    // Mark this tab's own registry row ended LOCALLY the instant its status
+    // reaches session-ended (any reason) — the registryRows snapshot only
+    // refreshes on mount / visibilitychange / online / failed reattach /
+    // chooser fallback, so without this a stale "active" row for a tab's own
+    // just-ended session can survive long enough for that SAME tab's own
+    // Resume click to match it (see reconnectIfConversationLive's excludeSid
+    // and findLiveSessionForConversation in chooser-data.ts — this patch is
+    // the belt to that braces: fixing it here stops the row from EVER
+    // reading stale-active for other consumers of the snapshot too, not just
+    // the excludeSid call site). A full refreshRegistry() here would be a
+    // fetch storm on every tab that ends — the next visibility/online/
+    // failed-reattach refresh reconciles fully; this local patch only needs
+    // to hold until then.
+    if (summary.status === "session-ended" && summary.sessionId) {
+      const sid = summary.sessionId;
+      setRegistryRows((prev) => {
+        if (!prev) return prev;
+        const idx = prev.findIndex((r) => r.sid === sid);
+        if (idx === -1 || prev[idx].status === "ended") return prev;
+        const next = prev.slice();
+        next[idx] = { ...next[idx], status: "ended", endedAt: next[idx].endedAt ?? new Date().toISOString() };
+        return next;
+      });
+    }
   }, []);
 
   const announce = useCallback((text: string) => setAnnouncement(text), []);
@@ -1961,6 +1985,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        // Diagnosability for the stale-registry-row Resume bug (card
+        // c0b790d6): this is the ONLY signal a refused reattach leaves behind
+        // — the toast tells the user, this tells a future investigation WHICH
+        // sid/status/error the relay refused with, instead of the toast text
+        // being the only trace.
+        logger.warn("Terminal reattach refused", { sid, status: res.status, error: body?.error });
         toast.error(body?.error || "Couldn't reconnect — the session may have just ended.", {
           action: { label: "Retry", onClick: () => void performReattach(sid, opts) },
         });
@@ -2154,8 +2184,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [ideaId, performReattach, router],
   );
   const reconnectIfConversationLive = useCallback(
-    (claudeSessionId: string | null | undefined): boolean => {
-      const live = findLiveSessionForConversation(registryRowsRef.current ?? [], claudeSessionId);
+    (claudeSessionId: string | null | undefined, excludeSid?: string | null): boolean => {
+      // `excludeSid`: registryRowsRef is a snapshot that only refreshes on
+      // mount / visibilitychange / online / failed reattach / chooser
+      // fallback (see refreshRegistry's callers) — a tab whose OWN session
+      // just ended can still see its own sid in that snapshot as "active".
+      // Skipping it here stops Resume from trying to reattach a session to
+      // itself and hitting the relay's "already ended" rejection instead of
+      // minting fresh (see handleResumeEndedSession's call site).
+      const live = findLiveSessionForConversation(registryRowsRef.current ?? [], claudeSessionId, excludeSid);
       if (!live) return false;
       toast.info("That conversation is already running — reconnecting to it instead of starting another copy.");
       reconnectToLiveSession(live.sid, live.ideaId);
@@ -2390,7 +2427,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // Card 0301fe8e: the ended tab's own Resume button is the path Nick's
       // duplicate most likely came through — a tab that ended (or looked
       // ended) while its conversation was already re-opened elsewhere.
-      if (reconnectIfConversationLive(payload.resumeId)) return;
+      if (reconnectIfConversationLive(payload.resumeId, sid)) return;
       if (payload.ideaId && payload.ideaId !== ideaId && sid) {
         router.push(`/ideas/${payload.ideaId}/board?resume=${encodeURIComponent(sid)}`);
         return;
