@@ -9,13 +9,14 @@
 // over these + the DB calls.
 
 /**
- * Mint sets `expires_at = created_at + 4h`, mirroring the relay's own
- * max-duration horizon (terminal/relay/src/pairing.js → DEFAULT_MAX_MS). A row
- * can never legitimately still be "active" once this passes, so the mint
- * route's reap step (R2 mitigation) uses this to mark stale rows ended WITHOUT
- * ever having to ask the relay.
+ * Mint sets `expires_at = created_at + 24h`, mirroring the relay's own
+ * max-duration horizon (terminal/relay/src/pairing.js → DEFAULT_MAX_MS) — a
+ * backstop against a session that never goes idle, not a bound on a normal
+ * working day. A row can never legitimately still be "active" once this
+ * passes, so the mint route's reap step (R2 mitigation) uses this to mark
+ * stale rows ended WITHOUT ever having to ask the relay.
  */
-export const REGISTRY_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+export const REGISTRY_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** The trailing window the mint rate limit (E2) counts recent mints over. */
 export const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
@@ -54,7 +55,7 @@ export interface ReapUpdate {
  * The reap step's pure decision (R2 mitigation, card cbe60db5; rework 8:
  * tells the truth about WHEN a row died). Given a batch of the caller's own
  * rows, returns the write each still-"active"-but-expired row needs: its
- * `ended_at` backdated to ITS OWN `expires_at` — the relay's 4h ceiling
+ * `ended_at` backdated to ITS OWN `expires_at` — the relay's 24h backstop ceiling
  * (REGISTRY_SESSION_TTL_MS) is the moment the session actually died, not
  * whenever a caller happened to notice (Nick's field evidence, 2026-08-12: a
  * row created 19:01, expires_at 23:01, reaped 03:58 the next day previously

@@ -6,7 +6,7 @@
 // inline copies that all wrote `ended_at: now()`. Nick's field evidence
 // (2026-08-12) showed that's a lie: a ghost session's row read "ended 0m
 // ago" when it actually died hours earlier, at its own `expires_at` (the
-// relay's 4h ceiling). This is now the ONE place any route reaps, so the
+// relay's 24h backstop ceiling). This is now the ONE place any route reaps, so the
 // timestamp truth (session-registry.ts's `selectReapUpdates`: ended_at =
 // the row's OWN expires_at) can never drift back out of sync between call
 // sites.

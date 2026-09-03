@@ -17,8 +17,8 @@ import {
 const NOW = Date.parse("2026-07-20T12:00:00.000Z");
 
 describe("computeSessionExpiresAt", () => {
-  it("adds the 4h TTL to the mint time", () => {
-    expect(REGISTRY_SESSION_TTL_MS).toBe(4 * 60 * 60 * 1000);
+  it("adds the 24h TTL to the mint time", () => {
+    expect(REGISTRY_SESSION_TTL_MS).toBe(24 * 60 * 60 * 1000);
     expect(computeSessionExpiresAt(NOW)).toBe(new Date(NOW + REGISTRY_SESSION_TTL_MS).toISOString());
   });
 
