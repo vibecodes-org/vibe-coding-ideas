@@ -223,11 +223,11 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     expect(payload.html).toContain("mentioned right in the post");
   });
 
-  it("status_change: quotes the idea description (the one type this is genuinely correct for)", async () => {
+  it("status_change: never quotes the idea description, and states the new status fetched from the idea row", async () => {
     mockFrom.mockImplementation((table: string) => {
       const fixtures: Record<string, TableRow> = {
         users: { ...recipientRow, ...actorRow },
-        ideas: { title: "Idea Title", description: "a real-time collaborative board" },
+        ideas: { title: "Idea Title", status: "in_progress" },
       };
       return makeChain(table, fixtures[table] ?? null);
     });
@@ -236,7 +236,83 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     expect(res.status).toBe(200);
 
     const payload = sentPayload();
-    expect(payload.html).toContain("a real-time collaborative board");
+    expect(payload.html).not.toContain("<blockquote");
+    expect(payload.html).toContain("has been updated to");
+    expect(payload.html).toContain("In Progress");
+    // Subject truncates the idea title like every other type now.
+    expect(payload.subject).toBe('Status updated: "Idea Title"');
+  });
+
+  it("status_change: degrades to the plain sentence when the idea's status can't be resolved", async () => {
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        users: { ...recipientRow, ...actorRow },
+        ideas: null,
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(req({ ...baseNotification, type: "status_change" }));
+    expect(res.status).toBe(200);
+
+    const payload = sentPayload();
+    expect(payload.html).toContain("has been updated.");
+    expect(payload.html).not.toContain("has been updated to");
+  });
+
+  it("discussion_reply: names the discussion in the subject, fetched from idea_discussions.title", async () => {
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        users: { ...recipientRow, ...actorRow },
+        ideas: { title: "Idea Title", status: "open" },
+        idea_discussions: { title: "Should we support dark mode?", body: "must not appear" },
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(
+      req({ ...baseNotification, type: "discussion_reply", discussion_id: "disc-1" })
+    );
+    expect(res.status).toBe(200);
+
+    const payload = sentPayload();
+    expect(payload.subject).toBe(
+      'Actor Name replied to "Should we support dark mode?" (Idea Title)'
+    );
+    expect(payload.html).not.toContain("must not appear");
+  });
+
+  it("task_mention: a notification row shaped the way the MCP server creates it (comment_id set on a real task comment) quotes the comment, not the description", async () => {
+    // This mirrors exactly what mcp-server/src/lib/mention-notify.ts inserts
+    // for add_task_comment after the P0 fix: type "task_mention" with a real
+    // comment_id. Before that fix, the MCP server never wrote comment_id, so
+    // every genuine task-comment mention took the "no comment_id" branch
+    // below and the email falsely said "the description of" the task.
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        users: { ...recipientRow, ...actorRow },
+        ideas: { title: "Idea Title", status: "open" },
+        board_tasks: { title: "Task Title", description: "must not appear — not the trigger" },
+        board_task_comments: { content: "great work, one nit: rename the prop" },
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(
+      req({
+        ...baseNotification,
+        type: "task_mention",
+        task_id: "task-1",
+        comment_id: "mcp-comment-1",
+      })
+    );
+    expect(res.status).toBe(200);
+
+    const payload = sentPayload();
+    expect(payload.html).toContain("great work, one nit: rename the prop");
+    expect(payload.html).toContain("mentioned you in a comment on");
+    expect(payload.html).not.toContain("mentioned you in the description of");
+    expect(payload.html).not.toContain("must not appear");
   });
 
   it("comment: queries the comments table by comment_id, never board_task_comments", async () => {

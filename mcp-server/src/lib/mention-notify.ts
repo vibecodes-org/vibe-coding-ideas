@@ -90,6 +90,17 @@ export interface NotifyMentionsArgs {
    * on ctx.userId/ctx.ownerUserId).
    */
   actorId?: string;
+  /**
+   * The id of the comment row that actually triggered this mention (e.g.
+   * board_task_comments.id for a task comment, workflow_step_comments.id for
+   * a step comment). Written as `comment_id` on the notification so the
+   * email route can quote the real comment instead of guessing — without it,
+   * a genuine comment mention is indistinguishable from a description-edit
+   * mention and the email misattributes the quote to "the description of"
+   * the task. Omit when there truly is no comment row (there is none today
+   * for this pipeline) — never invent one.
+   */
+  commentId?: string;
 }
 
 /**
@@ -121,6 +132,9 @@ export async function notifyMentions(ctx: McpContext, args: NotifyMentionsArgs):
     type: "task_mention" as const,
     idea_id: args.ideaId,
     task_id: args.taskId,
+    // Conditional spread (not `comment_id: args.commentId ?? null`) so call
+    // sites that omit commentId keep writing byte-identical rows.
+    ...(args.commentId ? { comment_id: args.commentId } : {}),
   }));
 
   const { error } = await ctx.supabase.from("notifications").insert(rows);

@@ -153,3 +153,48 @@ describe("notifyMentions — actorId (agent voice) self-suppression flip", () =>
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — commentId (P0 fix: a genuine task-comment mention must carry
+// comment_id, or the email route can't tell it apart from a description-edit
+// mention and quotes the wrong thing — docs/... see mention-notify.ts).
+// ---------------------------------------------------------------------------
+
+describe("notifyMentions — commentId", () => {
+  const COMMENT_ID = "00000000-0000-4000-a000-000000000099";
+
+  it("writes comment_id on the notification row when passed", async () => {
+    const { ctx, notificationsChain } = makeCtx();
+
+    await notifyMentions(ctx, {
+      ideaId: IDEA_ID,
+      taskId: TASK_ID,
+      content: "@Nick Ball can you take a look?",
+      commentId: COMMENT_ID,
+    });
+
+    expect(notificationsChain.insert).toHaveBeenCalledWith([
+      {
+        user_id: NICK_ID,
+        actor_id: HUMAN_ID,
+        type: "task_mention",
+        idea_id: IDEA_ID,
+        task_id: TASK_ID,
+        comment_id: COMMENT_ID,
+      },
+    ]);
+  });
+
+  it("omits comment_id entirely when not passed — byte-identical to before this fix", async () => {
+    const { ctx, notificationsChain } = makeCtx();
+
+    await notifyMentions(ctx, {
+      ideaId: IDEA_ID,
+      taskId: TASK_ID,
+      content: "@Nick Ball can you take a look?",
+    });
+
+    const inserted = (notificationsChain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(inserted[0]).not.toHaveProperty("comment_id");
+  });
+});

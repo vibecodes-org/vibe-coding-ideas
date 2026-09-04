@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { buildNotificationUrl } from "@/lib/notification-url";
 import { buildNotificationEmail, buildSnippet, selectSnippetSource } from "@/lib/notification-email";
+import { STATUS_CONFIG } from "@/lib/constants";
 import type { Database } from "@/types/database";
 
 type NotificationType =
@@ -123,18 +124,20 @@ export async function POST(request: Request) {
 
   const actorName = actor?.full_name || actor?.email || "Someone";
 
-  // Get idea title + description if applicable (description feeds the
-  // fallback snippet when there's no comment/reply to quote).
+  // Get idea title + current status. Status feeds status_change's "changed
+  // to X" sentence — the row itself never records the old/new values, but
+  // the idea's status is already updated by the time this fires, so the
+  // idea's CURRENT status is genuinely what it changed to.
   let ideaTitle: string | null = null;
-  let ideaDescription: string | null = null;
+  let ideaStatusLabel: string | null = null;
   if (notification.idea_id) {
     const { data: idea } = await supabase
       .from("ideas")
-      .select("title, description")
+      .select("title, status")
       .eq("id", notification.idea_id)
       .maybeSingle();
     ideaTitle = idea?.title || null;
-    ideaDescription = idea?.description || null;
+    ideaStatusLabel = idea?.status ? STATUS_CONFIG[idea.status]?.label ?? null : null;
   }
 
   // Get task title + description if applicable
@@ -183,13 +186,15 @@ export async function POST(request: Request) {
   // discussion_mention that has no reply_id (mentioned in the discussion
   // post itself, not a reply).
   let discussionBody: string | null = null;
+  let discussionTitle: string | null = null;
   if (notification.discussion_id) {
     const { data } = await supabase
       .from("idea_discussions")
-      .select("body")
+      .select("title, body")
       .eq("id", notification.discussion_id)
       .maybeSingle();
     discussionBody = data?.body ?? null;
+    discussionTitle = data?.title ?? null;
   }
 
   // Pick the source that genuinely triggered this notification — never a
@@ -203,7 +208,6 @@ export async function POST(request: Request) {
     commentBody,
     replyBody,
     taskDescription,
-    ideaDescription,
     discussionBody,
   });
   const snippet = buildSnippet(snippetRaw);
@@ -227,6 +231,8 @@ export async function POST(request: Request) {
     snippet,
     ctaUrl,
     snippetSource,
+    newStatusLabel: ideaStatusLabel,
+    discussionTitle,
   });
 
   if (!email) {

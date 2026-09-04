@@ -233,7 +233,7 @@ describe("buildNotificationEmail", () => {
     expect(mention!.html).toContain("worth looping you in here");
   });
 
-  it("includes the snippet for a status change (description fallback)", () => {
+  it("status_change never renders a quote block, even if a snippet were passed by mistake", () => {
     const email = buildNotificationEmail({
       type: "status_change",
       actorName: "Chris",
@@ -242,7 +242,35 @@ describe("buildNotificationEmail", () => {
       snippet: "a real-time collaborative board for teams",
       ctaUrl: CTA_URL,
     });
-    expect(email!.html).toContain("a real-time collaborative board for teams");
+    expect(email!.html).not.toContain("a real-time collaborative board for teams");
+    expect(email!.html).not.toContain("<blockquote");
+  });
+
+  it("status_change states the new status when available", () => {
+    const email = buildNotificationEmail({
+      type: "status_change",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+      newStatusLabel: "In Progress",
+    });
+    expect(email!.html).toContain("has been updated to");
+    expect(email!.html).toContain("In Progress");
+  });
+
+  it("status_change degrades to the plain sentence when the new status isn't available", () => {
+    const email = buildNotificationEmail({
+      type: "status_change",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+      newStatusLabel: null,
+    });
+    expect(email!.html).toContain("has been updated.");
   });
 
   it("degrades to the plain sentence when there is no snippet", () => {
@@ -312,7 +340,6 @@ describe("selectSnippetSource", () => {
     commentBody: "the comment text",
     replyBody: "the reply text",
     taskDescription: "the task description",
-    ideaDescription: "the idea description",
     discussionBody: "the discussion post body",
   };
 
@@ -375,10 +402,10 @@ describe("selectSnippetSource", () => {
     ).toEqual({ source: "discussion_body", raw: "the discussion post body" });
   });
 
-  it("status_change: quotes the idea description — this is the one type it's genuinely correct for", () => {
+  it("status_change: never quotes anything — the description isn't what changed", () => {
     expect(selectSnippetSource({ ...base, type: "status_change" })).toEqual({
-      source: "idea_description",
-      raw: "the idea description",
+      source: null,
+      raw: null,
     });
   });
 
@@ -457,7 +484,7 @@ describe("buildNotificationEmail: subject lines", () => {
     expect(email!.subject).toBe('Chris mentioned you in a comment on "Board Redesign"');
   });
 
-  it("discussion_reply and discussion_mention: include the idea title", () => {
+  it("discussion_reply: falls back to the idea title when there's no discussion title", () => {
     const reply = buildNotificationEmail({
       type: "discussion_reply",
       actorName: "Chris",
@@ -467,7 +494,37 @@ describe("buildNotificationEmail: subject lines", () => {
       ctaUrl: CTA_URL,
     });
     expect(reply!.subject).toBe('Chris replied to a discussion on "Board Redesign"');
+  });
 
+  it("discussion_reply: names the discussion when its title is available", () => {
+    const reply = buildNotificationEmail({
+      type: "discussion_reply",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+      discussionTitle: "Should we support dark mode?",
+    });
+    expect(reply!.subject).toBe(
+      'Chris replied to "Should we support dark mode?" (Board Redesign)'
+    );
+  });
+
+  it("discussion_reply: discussion title alone (no idea title)", () => {
+    const reply = buildNotificationEmail({
+      type: "discussion_reply",
+      actorName: "Chris",
+      ideaTitle: null,
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+      discussionTitle: "Should we support dark mode?",
+    });
+    expect(reply!.subject).toBe('Chris replied to "Should we support dark mode?"');
+  });
+
+  it("discussion_mention: includes the idea title", () => {
     const mention = buildNotificationEmail({
       type: "discussion_mention",
       actorName: "Chris",
@@ -491,6 +548,20 @@ describe("buildNotificationEmail: subject lines", () => {
     });
     // Truncated to the subject title cap (60) plus the ellipsis character.
     expect(email!.subject).toBe(`Chris commented on "${"A".repeat(60)}…"`);
+    expect(email!.subject.length).toBeLessThan(longTitle.length);
+  });
+
+  it("status_change: truncates a long idea title in the subject like every other type", () => {
+    const longTitle = "C".repeat(120);
+    const email = buildNotificationEmail({
+      type: "status_change",
+      actorName: "Chris",
+      ideaTitle: longTitle,
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe(`Status updated: "${"C".repeat(60)}…"`);
     expect(email!.subject.length).toBeLessThan(longTitle.length);
   });
 

@@ -4737,7 +4737,7 @@ describe("addStepComment — mentions", () => {
     expect(result.id).toBe("comment-1"); // raw row shape preserved
     expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
     expect(notificationsChain.insert).toHaveBeenCalledWith([
-      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
+      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
     ]);
   });
 
@@ -4858,7 +4858,7 @@ describe("addStepComment — mentions", () => {
       expect((commentChain as unknown as { inserted: { author_id: string } }).inserted.author_id).toBe(BOT_ID);
       expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
       expect(notificationsChain.insert).toHaveBeenCalledWith([
-        { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
+        { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
       ]);
     });
 

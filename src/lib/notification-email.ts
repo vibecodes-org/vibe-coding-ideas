@@ -83,7 +83,6 @@ const SNIPPET_ELIGIBLE_TYPES: NotificationType[] = [
   "comment_mention",
   "discussion_reply",
   "discussion_mention",
-  "status_change",
 ];
 
 /**
@@ -96,7 +95,6 @@ export type SnippetSource =
   | "comment"
   | "reply"
   | "task_description"
-  | "idea_description"
   | "discussion_body"
   | null;
 
@@ -109,7 +107,6 @@ export interface SnippetSourceInputs {
   commentBody: string | null;
   replyBody: string | null;
   taskDescription: string | null;
-  ideaDescription: string | null;
   discussionBody: string | null;
 }
 
@@ -139,7 +136,6 @@ export function selectSnippetSource({
   commentBody,
   replyBody,
   taskDescription,
-  ideaDescription,
   discussionBody,
 }: SnippetSourceInputs): SnippetSourceResult {
   switch (type) {
@@ -173,10 +169,13 @@ export function selectSnippetSource({
         ? { source: "reply", raw: replyBody }
         : { source: "discussion_body", raw: discussionBody };
 
-    // Never carries a comment/task/reply id — the idea description is
-    // genuinely what changed.
+    // The idea's description didn't change — its status did. Quoting the
+    // description here was the same misattribution bug as the others: real
+    // content that just happened to be fetchable, presented as if it were
+    // the thing that triggered the notification. There's nothing to quote;
+    // buildNotificationEmail states the new status directly instead.
     case "status_change":
-      return { source: "idea_description", raw: ideaDescription };
+      return { source: null, raw: null };
 
     default:
       return { source: null, raw: null };
@@ -211,6 +210,21 @@ export interface BuildNotificationEmailParams {
    * (e.g. task_mention: "in a comment" vs "in the description").
    */
   snippetSource?: SnippetSource;
+  /**
+   * Human-readable label for the idea's status at send time (e.g. "In
+   * Progress"), used only by status_change. The notification row itself
+   * never records what changed — this is the idea's CURRENT status, fetched
+   * by the route, which is correct because the row is updated before the
+   * notification fires. Null when unavailable — the sentence degrades to
+   * "has been updated" with no destination named, never a guess.
+   */
+  newStatusLabel?: string | null;
+  /**
+   * Discussion title, used only by discussion_reply so its subject can name
+   * the discussion instead of just the idea (see comment_mention/task_mention
+   * for the equivalent pattern). Null when unavailable.
+   */
+  discussionTitle?: string | null;
 }
 
 export function buildNotificationEmail({
@@ -221,6 +235,8 @@ export function buildNotificationEmail({
   snippet,
   ctaUrl,
   snippetSource = null,
+  newStatusLabel = null,
+  discussionTitle = null,
 }: BuildNotificationEmailParams): { subject: string; html: string } | null {
   const ideaDisplay = ideaTitle
     ? `<strong style="color:#fafafa;">${escapeHtml(ideaTitle)}</strong>`
@@ -263,17 +279,22 @@ export function buildNotificationEmail({
     }
 
     case "status_change": {
+      // No snippet: the description never changed, so there's nothing
+      // genuine to quote (see selectSnippetSource). State the new status
+      // directly when it's available instead.
+      const toClause = newStatusLabel
+        ? ` to <strong style="color:#fafafa;">${escapeHtml(newStatusLabel)}</strong>`
+        : "";
       return {
-        subject: ideaTitle
-          ? `Status updated: ${ideaTitle}`
+        subject: ideaSubjectFragment
+          ? `Status updated: "${ideaSubjectFragment}"`
           : "An idea you collaborate on was updated",
         html: buildEmailHtml({
           heading: "Idea status updated",
-          bodyHtml: `<p style="margin:0;">The status of ${ideaDisplay} has been updated.</p>${snippetHtml}`,
+          bodyHtml: `<p style="margin:0;">The status of ${ideaDisplay} has been updated${toClause}.</p>`,
           ctaText: "View Idea",
           ctaUrl,
           footerText: "You received this because you collaborate on this idea.",
-          preheaderText,
         }),
       };
     }
@@ -368,10 +389,19 @@ export function buildNotificationEmail({
     }
 
     case "discussion_reply": {
-      return {
-        subject: ideaSubjectFragment
+      // Name the discussion itself when its title is available (the row
+      // carries discussion_id but not which reply — see selectSnippetSource
+      // — so the title is the only real content the subject can offer).
+      const discussionSubjectFragment = discussionTitle
+        ? truncateForSubject(discussionTitle, SUBJECT_TITLE_MAX)
+        : null;
+      const subject = discussionSubjectFragment
+        ? `${actorName} replied to "${discussionSubjectFragment}"${ideaSubjectFragment ? ` (${truncateForSubject(ideaTitle!, SUBJECT_PAREN_MAX)})` : ""}`
+        : ideaSubjectFragment
           ? `${actorName} replied to a discussion on "${ideaSubjectFragment}"`
-          : `${actorName} replied to a discussion`,
+          : `${actorName} replied to a discussion`;
+      return {
+        subject,
         html: buildEmailHtml({
           heading: "New discussion reply",
           bodyHtml: `<p style="margin:0;">${escapeHtml(actorName)} replied to a discussion on ${ideaDisplay}.</p>${snippetHtml}`,

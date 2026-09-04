@@ -1860,6 +1860,13 @@ export async function addStepComment(
       content: params.content,
       mentionedUserIds: params.mentioned_user_ids,
       actorId: attribution?.authorId,
+      // data.id here is workflow_step_comments.id, not board_task_comments.id.
+      // The email route's task_mention branch only queries board_task_comments
+      // for comment_id, so this still won't produce a quoted snippet — but it
+      // correctly stops the email from claiming the mention came from "the
+      // description of" the task, which is what an omitted comment_id means
+      // today. Follow-up: teach the route to also check workflow_step_comments.
+      commentId: data.id,
     });
   }
 
