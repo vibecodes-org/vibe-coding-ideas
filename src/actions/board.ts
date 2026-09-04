@@ -655,16 +655,21 @@ export async function createTaskComment(
 
   content = validateComment(content);
 
-  const { error } = await supabase.from("board_task_comments").insert({
-    task_id: taskId,
-    idea_id: ideaId,
-    author_id: user.id,
-    content,
-  });
+  const { data, error } = await supabase
+    .from("board_task_comments")
+    .insert({
+      task_id: taskId,
+      idea_id: ideaId,
+      author_id: user.id,
+      content,
+    })
+    .select("id")
+    .single();
 
   if (error) throw new Error(error.message);
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
+  return { id: data.id as string };
 }
 
 export async function updateTaskComment(

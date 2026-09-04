@@ -114,7 +114,7 @@ export function CommentForm({
     const savedMentionedUserIds = new Set(mentionedUserIds);
     setIsSubmitting(true);
     try {
-      await createComment(ideaId, content.trim(), type, parentCommentId);
+      const created = await createComment(ideaId, content.trim(), type, parentCommentId);
 
       // Send mention notifications
       if (savedMentionedUserIds.size > 0 && currentUserId) {
@@ -131,6 +131,7 @@ export function CommentForm({
               actor_id: currentUserId,
               type: "comment_mention" as const,
               idea_id: ideaId,
+              comment_id: created?.id,
             })
             .then(({ error }) => {
               if (error) logger.error("Failed to send mention notification", { error: error.message, userId });

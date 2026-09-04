@@ -238,7 +238,7 @@ export function TaskCommentsSection({
     setSubmitting(true);
 
     try {
-      await createTaskComment(taskId, ideaId, text);
+      const created = await createTaskComment(taskId, ideaId, text);
       logTaskActivity(taskId, ideaId, currentUserId, "comment_added");
       // Send mention notifications with the saved set
       if (savedMentionedUserIds.size > 0) {
@@ -256,6 +256,7 @@ export function TaskCommentsSection({
               type: "task_mention" as const,
               idea_id: ideaId,
               task_id: taskId,
+              comment_id: created?.id,
             })
             .then(({ error }) => {
               if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
