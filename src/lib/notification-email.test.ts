@@ -52,10 +52,18 @@ describe("truncateSnippet", () => {
     expect(truncateSnippet("short text", 200)).toBe("short text");
   });
 
+  it("returns text unchanged (no ellipsis) one under the limit", () => {
+    const text = "a".repeat(199);
+    const result = truncateSnippet(text, 200);
+    expect(result).toBe(text);
+    expect(result.endsWith("…")).toBe(false);
+  });
+
   it("returns text unchanged when exactly at the limit", () => {
     const text = "a".repeat(200);
     expect(truncateSnippet(text, 200)).toBe(text);
     expect(truncateSnippet(text, 200).length).toBe(200);
+    expect(truncateSnippet(text, 200).endsWith("…")).toBe(false);
   });
 
   it("truncates and appends an ellipsis when over the limit", () => {
@@ -92,6 +100,70 @@ describe("buildSnippet", () => {
 describe("escapeHtml", () => {
   it("escapes all five special characters", () => {
     expect(escapeHtml(`< > & " '`)).toBe("&lt; &gt; &amp; &quot; &#039;");
+  });
+});
+
+describe("stripMarkdown + escapeHtml interaction (end-to-end snippet safety)", () => {
+  // Regression coverage for the highest-risk part of this fix: a comment is
+  // markdown (stripped) AND untrusted HTML (must be escaped) at the same
+  // time. buildSnippet only strips; callers must escape afterwards (via
+  // quoteBlock inside buildNotificationEmail) — never before, or stripping
+  // could re-expose markup that escaping already neutralized.
+
+  it("markdown formatting can unwrap to raw HTML, which must still be escaped afterwards", () => {
+    // Bold-wrapped script tag: stripMarkdown removes the ** markers and
+    // leaves the raw tag intact — it does not know about HTML.
+    const raw = "**<script>alert(1)</script>**";
+    const snippet = buildSnippet(raw);
+    expect(snippet).toBe("<script>alert(1)</script>");
+
+    // The email builder must escape what buildSnippet handed back.
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: null,
+      taskTitle: null,
+      snippet,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).not.toContain("<script>");
+    expect(email!.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+
+  it("a markdown link whose text is a raw tag collapses to the tag, then gets escaped", () => {
+    // [text](url) collapses to just the text — if that text is itself a
+    // tag, stripMarkdown has effectively "unwrapped" markup that a naive
+    // strip-after-escape order would have left inert.
+    const raw = "[<img src=x onerror=alert(1)>](https://evil.example)";
+    const snippet = buildSnippet(raw);
+    expect(snippet).toBe("<img src=x onerror=alert(1)>");
+
+    const email = buildNotificationEmail({
+      type: "task_mention",
+      actorName: "Chris",
+      ideaTitle: "Idea",
+      taskTitle: "Task",
+      snippet,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).not.toContain("<img src=x");
+    expect(email!.html).not.toMatch(/onerror=alert\(1\)>(?!;)/); // no live attribute in markup form
+    expect(email!.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("markdown fence content that is a script tag is escaped, not rendered", () => {
+    const raw = "```html\n<script>alert(document.cookie)</script>\n```";
+    const snippet = buildSnippet(raw);
+    const email = buildNotificationEmail({
+      type: "comment_mention",
+      actorName: "Chris",
+      ideaTitle: "Idea",
+      taskTitle: null,
+      snippet,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).not.toContain("<script>");
+    expect(email!.html).toContain("&lt;script&gt;alert(document.cookie)&lt;/script&gt;");
   });
 });
 
