@@ -30,8 +30,11 @@ import {
   addStepComment,
   addStepCommentSchema,
   resetWorkflow,
+  readLiveUnavailableModel,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
+import { SEED_PLATFORM_MODEL_DEFAULTS } from "../../../src/lib/platform-model-defaults";
+import { inferUnavailableFromSubstitution } from "./model-availability";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -4326,13 +4329,13 @@ describe("modelTierClause", () => {
   // Design-Review CONDITION 1 — exact directive string, verbatim.
   it("produces the exact MANDATORY MODEL directive string for the platform default (standard)", () => {
     expect(modelTierClause("standard")).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. If you cannot run the step at all because the model itself could not be reached (out of credits, overloaded, rate-limited, not on this plan), call fail_step with model_unavailable: true rather than reporting a plain failure — VibeCodes then returns this step to pending, re-runs it on the backup automatically, and routes later steps on this board away from the unavailable model for the rest of the day. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
   });
 
   it("produces the exact directive string for a user-overridden tier", () => {
     expect(modelTierClause("frontier", { frontier: "opus" })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. If you cannot run the step at all because the model itself could not be reached (out of credits, overloaded, rate-limited, not on this plan), call fail_step with model_unavailable: true rather than reporting a plain failure — VibeCodes then returns this step to pending, re-runs it on the backup automatically, and routes later steps on this board away from the unavailable model for the rest of the day. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
   });
 
@@ -4906,5 +4909,299 @@ describe("addStepComment — mentions", () => {
       );
       expect((commentChain as unknown as { insert: ReturnType<typeof vi.fn> }).insert).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ============================================================
+// Auto-switch to the configured backup model (card 5d0665a2)
+// ============================================================
+
+describe("modelTierClause — automatic model switch", () => {
+  it("is byte-for-byte unchanged when no model is marked unavailable (AC-6)", () => {
+    expect(modelTierClause("frontier", undefined, undefined, null)).toBe(modelTierClause("frontier"));
+    expect(modelTierClause("frontier", undefined, undefined, undefined)).toBe(modelTierClause("frontier"));
+  });
+
+  it("directs the step at the backup when the tier's model is marked unavailable (AC-2)", () => {
+    // Seed frontier resolves to opus, whose configured backup is fable.
+    const clause = modelTierClause("frontier", undefined, undefined, "opus");
+    expect(clause).toContain('model: "fable"');
+    expect(clause).toMatch(/AUTOMATIC MODEL SWITCH/);
+  });
+
+  it("says which model is down and why, not just what to run (AC-3)", () => {
+    const clause = modelTierClause("frontier", undefined, undefined, "opus");
+    expect(clause).toMatch(/"opus" was reported unavailable/);
+    expect(clause).toMatch(/end of the day/);
+  });
+
+  it("leaves a tier alone when the unavailable model isn't the one it directs at", () => {
+    // cheap resolves to haiku; a dead opus is no reason to move it.
+    expect(modelTierClause("cheap", undefined, undefined, "opus")).toBe(modelTierClause("cheap"));
+  });
+
+  it("respects a user override when deciding what is affected", () => {
+    // The user pinned frontier to fable, so a dead OPUS must not move it...
+    const pinned = { frontier: "fable" as const };
+    expect(modelTierClause("frontier", pinned, undefined, "opus")).toBe(modelTierClause("frontier", pinned));
+    // ...but a dead FABLE must.
+    expect(modelTierClause("frontier", pinned, undefined, "fable")).toContain("AUTOMATIC MODEL SWITCH");
+  });
+
+  it("adds nothing on an Auto step, switch or no switch", () => {
+    expect(modelTierClause(null, undefined, undefined, "opus")).toBe("");
+  });
+
+  it("still names a next resort after switching, so a second failure has somewhere to go", () => {
+    const clause = modelTierClause("frontier", undefined, undefined, "opus");
+    // Directed at fable, with opus named as the resort if fable is down too —
+    // credits can come back mid-day without waiting for the marker to expire.
+    expect(clause).toContain('use model: "opus"');
+  });
+});
+
+describe("readLiveUnavailableModel", () => {
+  /** Minimal stand-in for the single maybeSingle() marker query. */
+  function markerCtx(result: { data: unknown; error: { message: string } | null }) {
+    const filters: [string, unknown][] = [];
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn((col: string, val: unknown) => {
+      filters.push([col, val]);
+      return chain;
+    });
+    chain.gte = vi.fn((col: string, val: unknown) => {
+      filters.push([col, val]);
+      return chain;
+    });
+    chain.order = vi.fn(() => chain);
+    chain.limit = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(() => Promise.resolve(result));
+    const ctx = makeContext((() => chain) as unknown as McpContext["supabase"]["from"]);
+    return { ctx, filters };
+  }
+
+  it("resolves the marker's TIER to a concrete model — the marker stores no model itself", async () => {
+    // The regression this exists for: an agent whose model was unreachable
+    // usually has no model_used to report, so a marker that relied on
+    // executed_model would name nothing and the switch would silently no-op.
+    const { ctx } = markerCtx({ data: { model_tier: "frontier" }, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS)).resolves.toBe("opus");
+  });
+
+  it("honours the user's own tier override when naming the dead model", async () => {
+    const { ctx } = markerCtx({ data: { model_tier: "frontier" }, error: null });
+    await expect(
+      readLiveUnavailableModel(ctx, IDEA_ID, { frontier: "fable" }, SEED_PLATFORM_MODEL_DEFAULTS)
+    ).resolves.toBe("fable");
+  });
+
+  it("scopes to this board and to markers set today only", async () => {
+    const { ctx, filters } = markerCtx({ data: { model_tier: "frontier" }, error: null });
+    await readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS);
+    expect(filters).toContainEqual(["idea_id", IDEA_ID]);
+    expect(filters).toContainEqual(["model_unavailable", true]);
+    const dayBound = filters.find(([col]) => col === "updated_at");
+    expect(dayBound?.[1]).toBe(
+      new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
+      ).toISOString()
+    );
+  });
+
+  it("returns null when there is no marker", async () => {
+    const { ctx } = markerCtx({ data: null, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS)).resolves.toBeNull();
+  });
+
+  it("returns null for a marker on an Auto step (no tier to resolve)", async () => {
+    const { ctx } = markerCtx({ data: { model_tier: null }, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS)).resolves.toBeNull();
+  });
+
+  it("degrades to no switch on a query error rather than blocking the claim (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = markerCtx({ data: null, error: { message: "boom" } });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("degrades to no switch when the query throws (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const ctx = makeContext((() => {
+      throw new Error("connection reset");
+    }) as unknown as McpContext["supabase"]["from"]);
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("failStep — automatic switch to the backup model (card 5d0665a2)", () => {
+  function ctxFor(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep?: Record<string, unknown>;
+    userModelTierMap?: Record<string, unknown> | null;
+  }) {
+    const commentsInserted: Record<string, unknown>[] = [];
+    const runUpdates: Record<string, unknown>[] = [];
+    let lastStepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: opts.updatedStep ?? { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+            error: null,
+          })
+        );
+        lastStepChain = chain;
+        return chain.chain;
+      }
+      if (table === "users") return createChain({ model_tier_map: opts.userModelTierMap ?? null }).chain;
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.update = vi.fn((data: unknown) => {
+          runUpdates.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentsInserted.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getComments: () => commentsInserted,
+      getRunUpdates: () => runUpdates,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: RUN_ID,
+    step_order: 3,
+    idea_id: IDEA_ID,
+    bot_id: null,
+    agent_role: "developer",
+    status: "in_progress",
+    model_tier: "frontier",
+    model_unavailable: false,
+  };
+
+  it("returns the step to pending instead of leaving it failed (AC-1)", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "API error: credit balance too low",
+      model_unavailable: true,
+    });
+
+    const update = getUpdate();
+    expect(update.status).toBe("pending");
+    expect(update.completed_at).toBeNull();
+    expect(update.started_at).toBeNull();
+    expect(update.claimed_by).toBeNull();
+    expect(update.model_unavailable).toBe(true);
+  });
+
+  it("leaves the run running so the workflow carries on rather than stopping dead", async () => {
+    const { ctx, getRunUpdates } = ctxFor({ stepData: baseStep });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    expect(getRunUpdates()).toContainEqual({ status: "running" });
+  });
+
+  it("explains the switch in a step comment naming the dead model and the backup", async () => {
+    const { ctx, getComments } = ctxFor({ stepData: baseStep });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const notice = getComments().find((c) => c.type === "comment");
+    expect(notice).toBeDefined();
+    // Seed frontier -> opus, backup fable.
+    expect(notice!.content).toContain("opus");
+    expect(notice!.content).toContain("fable");
+  });
+
+  it("does not rescue the same step twice — a second failure stays failed (AC-1)", async () => {
+    const { ctx, getUpdate, getRunUpdates } = ctxFor({
+      stepData: { ...baseStep, model_unavailable: true },
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(update.completed_at).not.toBeNull();
+    // The marker itself is still recorded — later steps should still route around the model.
+    expect(update.model_unavailable).toBe(true);
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+  });
+
+  it("leaves an ordinary failure completely alone (AC-6)", async () => {
+    const { ctx, getUpdate, getRunUpdates } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: "tests failed" },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "tests failed" });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(update.model_unavailable).toBe(false);
+    expect(update.output).toBe("tests failed");
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+  });
+
+  it("keeps the failure text as a comment even though the rescued step's own output is cleared", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({ stepData: baseStep });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "API error: credit balance too low",
+      model_unavailable: true,
+    });
+
+    // A pending step showing a failure in its output column reads as broken;
+    // the text survives as the failure comment, which is also what
+    // claim_next_step hands back as rework_instructions.
+    expect(getUpdate().output).toBeUndefined();
+    const failure = getComments().find((c) => c.type === "failure");
+    expect(failure!.content).toBe("API error: credit balance too low");
+  });
+});
+
+describe("completeStep — infers unavailability from a self-reported substitution (AC-4)", () => {
+  it("marks the primary unavailable when the agent reports it ran the backup", () => {
+    // The directive already asks for exactly this self-report, so no new
+    // parameter and no new agent behaviour is required for the signal to flow.
+    expect(
+      inferUnavailableFromSubstitution("frontier", resolveModelTier("frontier"), "fable")
+    ).toBe(true);
+  });
+
+  it("marks nothing when the agent ran the model it was told to", () => {
+    expect(
+      inferUnavailableFromSubstitution("frontier", resolveModelTier("frontier"), "opus")
+    ).toBe(false);
   });
 });

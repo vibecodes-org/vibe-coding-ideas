@@ -28,6 +28,14 @@ import {
 import { notifyMentions } from "../lib/mention-notify";
 import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
+import {
+  applyModelAvailability,
+  modelSwitchNotice,
+  markerWindowStart,
+  shouldRescueStep,
+  inferUnavailableFromSubstitution,
+  rescueSentence,
+} from "./model-availability";
 import { mentionedUserIdsSchema } from "./comments";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
@@ -118,6 +126,66 @@ export function resolveModelTier(
 }
 
 /**
+ * The live half of the auto-switch (card 5d0665a2): has any step on this board
+ * reported, earlier today, that its directed model was unavailable?
+ *
+ * Returns the model to route AROUND, or null. Reads the most recent marker
+ * only — if two different models died today, the newest is the one still worth
+ * avoiding, and applyModelAvailability ignores it anyway unless it matches the
+ * tier being resolved.
+ *
+ * NEVER THROWS (AC-7). A resolution failure here must degrade to today's
+ * behaviour — a claim that cannot be served because a nice-to-have lookup
+ * failed is strictly worse than a claim served on the user's normal model.
+ */
+export async function readLiveUnavailableModel(
+  ctx: McpContext,
+  ideaId: string,
+  userModelTierMap: UserModelTierMap,
+  platformDefaults: PlatformModelDefaults
+): Promise<string | null> {
+  try {
+    const { data, error } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("model_tier")
+      .eq("idea_id", ideaId)
+      .eq("model_unavailable", true)
+      .gte("updated_at", markerWindowStart(new Date()))
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      logger.warn("model-availability marker lookup failed — directing at the usual model", {
+        ideaId,
+        error: error.message,
+      });
+      return null;
+    }
+    if (!data?.model_tier) return null;
+
+    // The dead model is DERIVED from the marker row's tier rather than stored
+    // alongside it. Two reasons. First, the obvious store — executed_model —
+    // is only populated when the orchestrator self-reports model_used, and an
+    // agent whose model was unreachable often has nothing to report, so the
+    // marker would name no model at all and the switch would silently no-op.
+    // Second, deriving it means a later config change (a new platform default,
+    // a user's own override) is picked up automatically instead of leaving a
+    // marker pointing at a model the tier no longer uses.
+    return (
+      resolveModelTier(data.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults)
+        ?.resolved ?? null
+    );
+  } catch (err) {
+    logger.warn("model-availability marker lookup threw — directing at the usual model", {
+      ideaId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
  * Mandatory model directive for a claimed step's spawn instruction — placed
  * FIRST in the join (Design-Review CONDITION 2), not appended. Returns "" for
  * null/undefined tier so callers can add it unconditionally without changing
@@ -126,13 +194,22 @@ export function resolveModelTier(
 export function modelTierClause(
   tier: string | null | undefined,
   userModelTierMap?: UserModelTierMap,
-  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
+  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS,
+  unavailableModel?: string | null
 ): string {
   if (!tier) return "";
   const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
   if (!resolution) return "";
-  const { resolved, fallback } = resolution;
-  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
+  // Auto-switch (card 5d0665a2): a same-day unavailability marker redirects
+  // this tier onto its configured backup BEFORE the directive is written, so
+  // the step is aimed at a model we have no evidence is down. With no marker
+  // this is the identity transform and the directive below is byte-for-byte
+  // what it has always been (AC-6).
+  const applied = applyModelAvailability(resolution, unavailableModel);
+  const resolved = applied.directed;
+  const fallback = applied.fallback;
+  const switchNotice = modelSwitchNotice(applied);
+  return `${switchNotice ? `${switchNotice} ` : ""}MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. If you cannot run the step at all because the model itself could not be reached (out of credits, overloaded, rate-limited, not on this plan), call fail_step with model_unavailable: true rather than reporting a plain failure — VibeCodes then returns this step to pending, re-runs it on the backup automatically, and routes later steps on this board away from the unavailable model for the rest of the day. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
 }
 
 // ============================================================
@@ -1099,6 +1176,7 @@ export async function claimNextStep(
   // parallel rather than serially.
   let userModelTierMap: { frontier?: string; standard?: string; cheap?: string } | null = null;
   let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
+  let unavailableModel: string | null = null;
   if (updated.model_tier) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
@@ -1110,8 +1188,17 @@ export async function claimNextStep(
     ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
     platformDefaults = resolvedPlatformDefaults;
+    // Sequential, not parallel with the two above: the marker only records a
+    // TIER, so resolving it to a concrete model needs the map and the defaults
+    // already in hand.
+    unavailableModel = await readLiveUnavailableModel(
+      ctx,
+      updated.idea_id,
+      userModelTierMap,
+      platformDefaults
+    );
   }
-  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap, platformDefaults);
+  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap, platformDefaults, unavailableModel);
 
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
   // the Auto path so .filter(Boolean) drops it and the instruction stays
@@ -1253,6 +1340,17 @@ export async function completeStep(
 
   // Token is single-use: clear both hashes as part of completion (design
   // §1.2 — work_token_hash is cleared everywhere claim_token_hash is).
+  // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that obeyed
+  // the directive's advisory line and substituted the backup has ALREADY told
+  // us the primary was unavailable — it reported model_used = the fallback.
+  // Recording that here is what lets the NEXT claim on this board skip the
+  // dead model without anyone passing a new parameter.
+  const substituted = inferUnavailableFromSubstitution(
+    step.model_tier,
+    resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults),
+    executedModel
+  );
+
   const updateFields: Record<string, unknown> = {
     status: newStatus,
     claimed_by: attributedTo,
@@ -1260,6 +1358,7 @@ export async function completeStep(
     work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
+    model_unavailable: substituted,
     persona_used: personaUsed,
     persona_honored: personaHonored,
     skills_used: params.skills_used ?? null,
@@ -1357,6 +1456,10 @@ export const failStepSchema = z.object({
   // unrecognised values are never rejected here, just logged if they mismatch.
   model_used: z.string().max(40).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it, or \"unknown\"/\"other\"). Omit if you don't know. Free text — a platform default can be a novel model family. VibeCodes records this to report tier adherence — it is not verified."),
+  model_unavailable: z.boolean().optional()
+    .describe(
+      "Set true when this step failed BECAUSE the directed model wasn't available — out of credits, overloaded, rate-limited, or not on this plan. It is not for ordinary failures (a bug, a bad prompt, a failing test): use it only when the model itself could not be reached. When true, VibeCodes returns this step to pending so it is automatically re-run on the tier's configured backup model, and directs later steps on this board away from the unavailable model until the end of the day. A step is auto-retried this way at most once — a second failure leaves it failed."
+    ),
   persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
     .describe(
       "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
@@ -1386,7 +1489,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, model_unavailable")
     .eq("id", params.step_id)
     .single();
 
@@ -1437,7 +1540,10 @@ export async function failStep(
   // (non-"unknown") model_used was passed.
   let userModelTierMap: UserModelTierMap = null;
   let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
-  if (step.model_tier && params.model_used && params.model_used !== "unknown") {
+  // Also needed (beyond tier adherence) when a model-unavailability rescue is
+  // in play: the rescue has to name the tier's configured backup, and an
+  // orchestrator reporting an unreachable model has no model_used to give.
+  if (step.model_tier && ((params.model_used && params.model_used !== "unknown") || params.model_unavailable)) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
         .from("users")
@@ -1455,18 +1561,44 @@ export async function failStep(
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
 
+  // Auto-switch, rescue half (card 5d0665a2, AC-1). A step that died because
+  // the model itself was unreachable hasn't been TRIED yet in any meaningful
+  // sense, so leaving it failed for a human to notice and retry is the wrong
+  // resting place — it goes straight back to pending, and the marker written
+  // below makes the next claim direct it at the configured backup.
+  //
+  // step.model_unavailable is read from the row as it stood BEFORE this write:
+  // already true means this step has had its one rescue, and a second failure
+  // is a real failure. Without that guard a step whose actual problem is
+  // anything else would bounce pending->failed forever, burning a model call
+  // every lap and never reaching a human.
+  const rescueDecision = shouldRescueStep(params.model_unavailable, step.model_unavailable);
+  const rescueResolution = params.model_unavailable
+    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults)
+    : null;
+
   const updateFields: Record<string, unknown> = {
-    status: "failed",
-    completed_at: new Date().toISOString(),
+    status: rescueDecision.rescue ? "pending" : "failed",
+    completed_at: rescueDecision.rescue ? null : new Date().toISOString(),
     claim_token_hash: null,
     work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
+    model_unavailable: params.model_unavailable === true,
     persona_used: personaUsed,
     persona_honored: personaHonored,
     skills_used: params.skills_used ?? null,
   };
-  if (params.output !== undefined) updateFields.output = params.output;
+  if (rescueDecision.rescue) {
+    // Mirror the cascade reset's shape so a rescued step is indistinguishable
+    // from any other re-claimable pending step. The failure text is not lost:
+    // it is preserved as the 'failure' comment posted below, which is also
+    // what claim_next_step hands back as rework_instructions.
+    updateFields.started_at = null;
+    updateFields.claimed_by = null;
+  } else if (params.output !== undefined) {
+    updateFields.output = params.output;
+  }
 
   const { data: updated, error: updateError } = await ctx.supabase
     .from("task_workflow_steps")
@@ -1481,6 +1613,31 @@ export async function failStep(
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
+
+  // Make the auto-switch visible in-product rather than leaving a step that
+  // silently un-failed itself (plain 'comment', like the tier-mismatch note).
+  if (rescueDecision.rescue && rescueResolution) {
+    logger.warn("workflow step auto-rescued onto backup model", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      unavailable: rescueResolution.resolved,
+      backup: rescueResolution.fallback,
+      ownerUserId: ctx.ownerUserId,
+    });
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "comment",
+      content: rescueSentence(rescueResolution.resolved, rescueResolution.fallback),
+    });
+  } else if (rescueDecision.reason === "already-rescued") {
+    logger.warn("workflow step failed again after a model-unavailability rescue — leaving it failed", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      ownerUserId: ctx.ownerUserId,
+    });
+  }
 
   // Auto-create a failure comment so the output is preserved as a comment
   // (especially important before cascade wipes the step's output column)
@@ -1594,11 +1751,12 @@ export async function failStep(
     }
   }
 
-  // Mark the run as running (cascade continues) or failed (no cascade)
+  // Mark the run as running (cascade continues, or the step was auto-rescued
+  // and is about to be re-run on the backup) or failed (no cascade).
   if (step.run_id) {
     await ctx.supabase
       .from("workflow_runs")
-      .update({ status: params.reset_to_step_id ? "running" : "failed" })
+      .update({ status: params.reset_to_step_id || rescueDecision.rescue ? "running" : "failed" })
       .eq("id", step.run_id);
   }
 
