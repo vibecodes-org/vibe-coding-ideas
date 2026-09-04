@@ -336,6 +336,7 @@ describe("selectSnippetSource", () => {
   const base: SnippetSourceInputs = {
     type: "comment",
     hasCommentId: false,
+    hasTaskCommentId: false,
     hasReplyId: false,
     commentBody: "the comment text",
     replyBody: "the reply text",
@@ -366,15 +367,24 @@ describe("selectSnippetSource", () => {
     ).toEqual({ source: "comment", raw: null });
   });
 
-  it("task_mention: with a comment_id, quotes the task comment", () => {
+  it("task_mention: with a task_comment_id, quotes the task comment", () => {
     expect(
-      selectSnippetSource({ ...base, type: "task_mention", hasCommentId: true })
+      selectSnippetSource({ ...base, type: "task_mention", hasTaskCommentId: true })
     ).toEqual({ source: "comment", raw: "the comment text" });
   });
 
-  it("task_mention: without a comment_id (description-edit mention), quotes the task description", () => {
+  it("task_mention: without a task_comment_id (description-edit mention), quotes the task description", () => {
     expect(
-      selectSnippetSource({ ...base, type: "task_mention", hasCommentId: false })
+      selectSnippetSource({ ...base, type: "task_mention", hasTaskCommentId: false })
+    ).toEqual({ source: "task_description", raw: "the task description" });
+  });
+
+  it("task_mention: a real (idea) comment_id is irrelevant — only task_comment_id gates the comment branch", () => {
+    // Guards against ever wiring the wrong FK id into this branch again: a
+    // notification could in principle carry a comment_id (it never does for
+    // task_mention today) but that must not flip this to the comment source.
+    expect(
+      selectSnippetSource({ ...base, type: "task_mention", hasCommentId: true, hasTaskCommentId: false })
     ).toEqual({ source: "task_description", raw: "the task description" });
   });
 

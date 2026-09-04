@@ -118,7 +118,7 @@ describe("addTaskComment — mentions", () => {
     expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
     expect(result.mentions.unresolved).toEqual([]);
     expect(notificationsChain.insert).toHaveBeenCalledWith([
-      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
+      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, task_comment_id: "comment-1" },
     ]);
   });
 
@@ -253,7 +253,7 @@ describe("addTaskComment — work_token attribution", () => {
     // Nick is notified even though ctx.userId (the JWT) posted it — the
     // mention self-suppression flip (decision 1, §7) keys on the agent.
     expect(notificationsChain.insert).toHaveBeenCalledWith([
-      { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
+      { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, task_comment_id: "comment-1" },
     ]);
   });
 

@@ -155,22 +155,26 @@ describe("notifyMentions — actorId (agent voice) self-suppression flip", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Tests — commentId (P0 fix: a genuine task-comment mention must carry
-// comment_id, or the email route can't tell it apart from a description-edit
-// mention and quotes the wrong thing — docs/... see mention-notify.ts).
+// Tests — taskCommentId (P0 rework: notifications.comment_id is FK'd to
+// `comments`, NOT `board_task_comments` — writing a board_task_comments.id
+// into it fails the constraint on a real database and the whole notification
+// insert is silently dropped, mocked Supabase can't see this. The fix is a
+// separate `task_comment_id` column FK'd to the right table — asserting the
+// COLUMN NAME here is the point: get it wrong again and this test catches it
+// even though the mock would happily accept either name.)
 // ---------------------------------------------------------------------------
 
-describe("notifyMentions — commentId", () => {
-  const COMMENT_ID = "00000000-0000-4000-a000-000000000099";
+describe("notifyMentions — taskCommentId", () => {
+  const TASK_COMMENT_ID = "00000000-0000-4000-a000-000000000099";
 
-  it("writes comment_id on the notification row when passed", async () => {
+  it("writes task_comment_id (NOT comment_id) on the notification row when passed", async () => {
     const { ctx, notificationsChain } = makeCtx();
 
     await notifyMentions(ctx, {
       ideaId: IDEA_ID,
       taskId: TASK_ID,
       content: "@Nick Ball can you take a look?",
-      commentId: COMMENT_ID,
+      taskCommentId: TASK_COMMENT_ID,
     });
 
     expect(notificationsChain.insert).toHaveBeenCalledWith([
@@ -180,12 +184,14 @@ describe("notifyMentions — commentId", () => {
         type: "task_mention",
         idea_id: IDEA_ID,
         task_id: TASK_ID,
-        comment_id: COMMENT_ID,
+        task_comment_id: TASK_COMMENT_ID,
       },
     ]);
+    const inserted = (notificationsChain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(inserted[0]).not.toHaveProperty("comment_id");
   });
 
-  it("omits comment_id entirely when not passed — byte-identical to before this fix", async () => {
+  it("omits task_comment_id entirely when not passed (e.g. the step-comment path, which has no valid id to write)", async () => {
     const { ctx, notificationsChain } = makeCtx();
 
     await notifyMentions(ctx, {
@@ -195,6 +201,7 @@ describe("notifyMentions — commentId", () => {
     });
 
     const inserted = (notificationsChain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(inserted[0]).not.toHaveProperty("task_comment_id");
     expect(inserted[0]).not.toHaveProperty("comment_id");
   });
 });

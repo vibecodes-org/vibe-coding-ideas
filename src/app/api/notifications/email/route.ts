@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       type: NotificationType;
       idea_id: string | null;
       comment_id: string | null;
+      task_comment_id: string | null;
       task_id: string | null;
       discussion_id: string | null;
       reply_id: string | null;
@@ -159,13 +160,24 @@ export async function POST(request: Request) {
   // shared "commentBody") so selectSnippetSource can tell them apart —
   // conflating them is what let a status/description body get quoted as
   // if it were someone's comment.
+  //
+  // task_mention rows carry the triggering comment in `task_comment_id`
+  // (board_task_comments — a table `comment_id` cannot legally point at,
+  // since it's FK'd to `comments`; see supabase/migrations/00166). Every
+  // other comment-quoting type still uses `comment_id` against `comments`.
   let commentBody: string | null = null;
-  if (notification.comment_id) {
-    // Task comments and mentions live in board_task_comments; idea comments
-    // and mentions live in comments.
-    const table = notification.type === "task_mention" ? "board_task_comments" : "comments";
+  if (notification.type === "task_mention") {
+    if (notification.task_comment_id) {
+      const { data } = await supabase
+        .from("board_task_comments")
+        .select("content")
+        .eq("id", notification.task_comment_id)
+        .maybeSingle();
+      commentBody = data?.content ?? null;
+    }
+  } else if (notification.comment_id) {
     const { data } = await supabase
-      .from(table)
+      .from("comments")
       .select("content")
       .eq("id", notification.comment_id)
       .maybeSingle();
@@ -204,6 +216,7 @@ export async function POST(request: Request) {
   const { source: snippetSource, raw: snippetRaw } = selectSnippetSource({
     type: notification.type,
     hasCommentId: !!notification.comment_id,
+    hasTaskCommentId: !!notification.task_comment_id,
     hasReplyId: !!notification.reply_id,
     commentBody,
     replyBody,

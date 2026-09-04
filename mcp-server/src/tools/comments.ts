@@ -80,7 +80,7 @@ export async function addTaskComment(
     content: params.content,
     mentionedUserIds: params.mentioned_user_ids,
     actorId: attribution?.authorId,
-    commentId: data.id,
+    taskCommentId: data.id,
   });
 
   return { success: true, comment: data, mentions };

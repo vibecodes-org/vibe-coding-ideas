@@ -100,8 +100,15 @@ export type SnippetSource =
 
 export interface SnippetSourceInputs {
   type: NotificationType;
-  /** Whether the notification row carries a real comment_id. */
+  /** Whether the notification row carries a real comment_id (idea comments — "comment"/"comment_mention" only). */
   hasCommentId: boolean;
+  /**
+   * Whether the notification row carries a real task_comment_id (a genuine
+   * board_task_comments mention — "task_mention" only). `comment_id` cannot
+   * carry this: it's FK'd to `comments`, not `board_task_comments` (see
+   * supabase/migrations/00166_notifications_task_comment_id.sql).
+   */
+  hasTaskCommentId: boolean;
   /** Whether the notification row carries a real reply_id. */
   hasReplyId: boolean;
   commentBody: string | null;
@@ -131,7 +138,12 @@ export interface SnippetSourceResult {
  */
 export function selectSnippetSource({
   type,
-  hasCommentId,
+  // hasCommentId (idea comments) intentionally unused here: no branch below
+  // needs it — "comment"/"comment_mention" always quote commentBody
+  // unconditionally, and "task_mention" now gates on hasTaskCommentId only.
+  // Kept in SnippetSourceInputs purely as documentation of what the route
+  // actually has available, and to keep the route's call site symmetric.
+  hasTaskCommentId,
   hasReplyId,
   commentBody,
   replyBody,
@@ -147,11 +159,14 @@ export function selectSnippetSource({
       return { source: "comment", raw: commentBody };
 
     case "task_mention":
-      // With a comment_id, this fired from an actual task comment mention.
-      // Without one, it fired from a task description edit (the "@mention
-      // in the description" path) — the description genuinely is what
-      // triggered it.
-      return hasCommentId
+      // With a task_comment_id, this fired from an actual task comment
+      // mention. Without one, it's either a task description edit (the
+      // "@mention in the description" path) or a workflow-step-comment
+      // mention that has no notifications column to carry its id (see
+      // workflows.ts) — those two are indistinguishable from the row alone,
+      // so both take the description branch; the step-comment case is a
+      // known, accepted inaccuracy (see workflows.ts's comment).
+      return hasTaskCommentId
         ? { source: "comment", raw: commentBody }
         : { source: "task_description", raw: taskDescription };
 

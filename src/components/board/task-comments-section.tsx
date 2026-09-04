@@ -256,7 +256,9 @@ export function TaskCommentsSection({
               type: "task_mention" as const,
               idea_id: ideaId,
               task_id: taskId,
-              comment_id: created?.id,
+              // board_task_comments.id — NOT comment_id, which is FK'd to the
+              // (idea) comments table and rejects this id outright (P0 fix).
+              task_comment_id: created?.id,
             })
             .then(({ error }) => {
               if (error) logger.error("Failed to send mention notification", { error: error.message, userId });

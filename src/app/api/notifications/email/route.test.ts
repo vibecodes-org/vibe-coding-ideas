@@ -58,6 +58,7 @@ const baseNotification = {
   actor_id: "actor-1",
   idea_id: "idea-1",
   comment_id: null,
+  task_comment_id: null,
   task_id: null,
   discussion_id: null,
   reply_id: null,
@@ -100,7 +101,7 @@ function sentPayload() {
 }
 
 describe("POST /api/notifications/email — snippet source seam", () => {
-  it("task_mention WITH a comment_id: queries board_task_comments (not comments) and quotes it", async () => {
+  it("task_mention WITH a task_comment_id: queries board_task_comments (not comments) and quotes it", async () => {
     mockFrom.mockImplementation((table: string) => {
       const fixtures: Record<string, TableRow> = {
         users: { ...recipientRow, ...actorRow },
@@ -113,7 +114,7 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     });
 
     const res = await POST(
-      req({ ...baseNotification, type: "task_mention", task_id: "task-1", comment_id: "c-1" })
+      req({ ...baseNotification, type: "task_mention", task_id: "task-1", task_comment_id: "tc-1" })
     );
     expect(res.status).toBe(200);
 
@@ -128,7 +129,32 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     expect(payload.html).not.toContain("idea desc");
   });
 
-  it("task_mention WITHOUT a comment_id (description-edit mention): quotes the task description, not idea description", async () => {
+  it("task_mention WITH only comment_id set (never happens today, but must not be trusted): still degrades to the description branch", async () => {
+    // Regression guard for the exact defect this rework fixes: comment_id is
+    // FK'd to `comments`, not `board_task_comments` — the route must key off
+    // task_comment_id for this type, never comment_id.
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        users: { ...recipientRow, ...actorRow },
+        ideas: { title: "Idea Title", description: "idea desc — must not appear" },
+        board_tasks: { title: "Task Title", description: "updated scope to include mobile" },
+        comments: { content: "WRONG — must never be queried for task_mention" },
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(
+      req({ ...baseNotification, type: "task_mention", task_id: "task-1", comment_id: "c-1", task_comment_id: null })
+    );
+    expect(res.status).toBe(200);
+
+    expect(calls.some((c) => c.table === "comments")).toBe(false);
+    const payload = sentPayload();
+    expect(payload.html).toContain("updated scope to include mobile");
+    expect(payload.html).not.toContain("WRONG");
+  });
+
+  it("task_mention WITHOUT a task_comment_id (description-edit mention, or an unresolvable step-comment mention): quotes the task description, not idea description", async () => {
     mockFrom.mockImplementation((table: string) => {
       const fixtures: Record<string, TableRow> = {
         users: { ...recipientRow, ...actorRow },
@@ -139,11 +165,11 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     });
 
     const res = await POST(
-      req({ ...baseNotification, type: "task_mention", task_id: "task-1", comment_id: null })
+      req({ ...baseNotification, type: "task_mention", task_id: "task-1", task_comment_id: null })
     );
     expect(res.status).toBe(200);
 
-    // Must never query board_task_comments/comments when there is no comment_id.
+    // Must never query board_task_comments/comments when there is no task_comment_id.
     expect(calls.some((c) => c.table === "board_task_comments")).toBe(false);
     expect(calls.some((c) => c.table === "comments")).toBe(false);
 
@@ -282,12 +308,15 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     expect(payload.html).not.toContain("must not appear");
   });
 
-  it("task_mention: a notification row shaped the way the MCP server creates it (comment_id set on a real task comment) quotes the comment, not the description", async () => {
+  it("task_mention: a notification row shaped the way the MCP server creates it (task_comment_id set on a real task comment) quotes the comment, not the description", async () => {
     // This mirrors exactly what mcp-server/src/lib/mention-notify.ts inserts
-    // for add_task_comment after the P0 fix: type "task_mention" with a real
-    // comment_id. Before that fix, the MCP server never wrote comment_id, so
-    // every genuine task-comment mention took the "no comment_id" branch
-    // below and the email falsely said "the description of" the task.
+    // for add_task_comment after this rework: type "task_mention" with a
+    // real task_comment_id. Before this rework, the MCP server (and the web
+    // composer) wrote board_task_comments.id into comment_id — which is
+    // FK'd to `comments`, not `board_task_comments`, so the insert was
+    // rejected outright on a real database and NO notification row (let
+    // alone an email) was ever created. This fixture is what a genuine,
+    // successfully-inserted task-comment mention looks like now.
     mockFrom.mockImplementation((table: string) => {
       const fixtures: Record<string, TableRow> = {
         users: { ...recipientRow, ...actorRow },
@@ -303,7 +332,7 @@ describe("POST /api/notifications/email — snippet source seam", () => {
         ...baseNotification,
         type: "task_mention",
         task_id: "task-1",
-        comment_id: "mcp-comment-1",
+        task_comment_id: "mcp-comment-1",
       })
     );
     expect(res.status).toBe(200);

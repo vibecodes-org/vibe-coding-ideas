@@ -4736,9 +4736,17 @@ describe("addStepComment — mentions", () => {
 
     expect(result.id).toBe("comment-1"); // raw row shape preserved
     expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
+    // workflow_step_comments.id (data.id, "comment-1") must NEVER be written
+    // as comment_id (FK'd to `comments`) or task_comment_id (FK'd to
+    // `board_task_comments`) — neither table has this row, so either would
+    // fail the constraint on a real database and silently drop the whole
+    // notification insert. This path writes neither id (see workflows.ts).
     expect(notificationsChain.insert).toHaveBeenCalledWith([
-      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
+      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
     ]);
+    const inserted = (notificationsChain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(inserted[0]).not.toHaveProperty("comment_id");
+    expect(inserted[0]).not.toHaveProperty("task_comment_id");
   });
 
   it("is independent of the `type` field", async () => {
@@ -4857,9 +4865,14 @@ describe("addStepComment — mentions", () => {
 
       expect((commentChain as unknown as { inserted: { author_id: string } }).inserted.author_id).toBe(BOT_ID);
       expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
+      // Same as the human-attributed case: workflow_step_comments.id must
+      // never be written as comment_id or task_comment_id.
       expect(notificationsChain.insert).toHaveBeenCalledWith([
-        { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID, comment_id: "comment-1" },
+        { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
       ]);
+      const inserted = (notificationsChain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(inserted[0]).not.toHaveProperty("comment_id");
+      expect(inserted[0]).not.toHaveProperty("task_comment_id");
     });
 
     it("wrong-step token (superseded by re-claim): rejects, comment never inserted", async () => {
