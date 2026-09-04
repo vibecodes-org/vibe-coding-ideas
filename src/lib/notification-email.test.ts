@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   buildNotificationEmail,
   buildSnippet,
+  selectSnippetSource,
   stripMarkdown,
   truncateSnippet,
   escapeHtml,
   SNIPPET_MAX_LENGTH,
+  type SnippetSourceInputs,
 } from "./notification-email";
 
 const CTA_URL = "https://vibecodes.co.uk/ideas/idea-1#comment-1";
@@ -179,7 +181,7 @@ describe("buildNotificationEmail", () => {
     });
 
     expect(email).not.toBeNull();
-    expect(email!.subject).toBe("Chris mentioned you in a task");
+    expect(email!.subject).toBe('Chris mentioned you in "Fix the header" (Board Redesign)');
     expect(email!.html).toContain("please take a look at this before Friday");
     expect(email!.html).toContain("<blockquote");
     expect(email!.html).toContain("Fix the header");
@@ -295,5 +297,271 @@ describe("buildNotificationEmail", () => {
       ctaUrl: CTA_URL,
     });
     expect(email).toBeNull();
+  });
+});
+
+describe("selectSnippetSource", () => {
+  // Baseline with everything fetched/present, so each case below only needs
+  // to override what's relevant to it — this is what lets the table stay
+  // readable as the thing under test (which source wins), not buried in
+  // boilerplate.
+  const base: SnippetSourceInputs = {
+    type: "comment",
+    hasCommentId: false,
+    hasReplyId: false,
+    commentBody: "the comment text",
+    replyBody: "the reply text",
+    taskDescription: "the task description",
+    ideaDescription: "the idea description",
+    discussionBody: "the discussion post body",
+  };
+
+  it("comment: always quotes the comment body", () => {
+    expect(selectSnippetSource({ ...base, type: "comment" })).toEqual({
+      source: "comment",
+      raw: "the comment text",
+    });
+  });
+
+  it("comment: a comment row that fails to resolve renders nothing, never the idea description", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "comment", commentBody: null })
+    ).toEqual({ source: "comment", raw: null });
+  });
+
+  it("comment_mention: always quotes the comment body, never the idea description on miss", () => {
+    expect(selectSnippetSource({ ...base, type: "comment_mention" })).toEqual({
+      source: "comment",
+      raw: "the comment text",
+    });
+    expect(
+      selectSnippetSource({ ...base, type: "comment_mention", commentBody: null })
+    ).toEqual({ source: "comment", raw: null });
+  });
+
+  it("task_mention: with a comment_id, quotes the task comment", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "task_mention", hasCommentId: true })
+    ).toEqual({ source: "comment", raw: "the comment text" });
+  });
+
+  it("task_mention: without a comment_id (description-edit mention), quotes the task description", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "task_mention", hasCommentId: false })
+    ).toEqual({ source: "task_description", raw: "the task description" });
+  });
+
+  it("discussion_reply: never quotes anything — the trigger records no reply_id to look up", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "discussion_reply", hasReplyId: false })
+    ).toEqual({ source: null, raw: null });
+    // Even if a reply_id were somehow present, discussion_reply ignores it —
+    // this type structurally never carries one (see the migration comment
+    // in the route), so there's nothing to gain from checking hasReplyId here.
+    expect(
+      selectSnippetSource({ ...base, type: "discussion_reply", hasReplyId: true })
+    ).toEqual({ source: null, raw: null });
+  });
+
+  it("discussion_mention: with a reply_id, quotes the reply body — this is the one case that already worked", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "discussion_mention", hasReplyId: true })
+    ).toEqual({ source: "reply", raw: "the reply text" });
+  });
+
+  it("discussion_mention: without a reply_id (mentioned in the post itself), quotes the discussion body — never the idea description", () => {
+    expect(
+      selectSnippetSource({ ...base, type: "discussion_mention", hasReplyId: false })
+    ).toEqual({ source: "discussion_body", raw: "the discussion post body" });
+  });
+
+  it("status_change: quotes the idea description — this is the one type it's genuinely correct for", () => {
+    expect(selectSnippetSource({ ...base, type: "status_change" })).toEqual({
+      source: "idea_description",
+      raw: "the idea description",
+    });
+  });
+
+  it("collaborator, collaboration_request, collaboration_response, discussion: no comment concept, nothing to quote", () => {
+    for (const type of [
+      "collaborator",
+      "collaboration_request",
+      "collaboration_response",
+      "discussion",
+    ] as const) {
+      expect(selectSnippetSource({ ...base, type })).toEqual({ source: null, raw: null });
+    }
+  });
+});
+
+describe("buildNotificationEmail: subject lines", () => {
+  it("comment: includes the idea title, truncated for the subject", () => {
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe('Chris commented on "Board Redesign"');
+  });
+
+  it("comment: falls back to the content-free subject when there's no idea title", () => {
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: null,
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe("Chris commented on your idea");
+  });
+
+  it("task_mention: includes both the task and idea title", () => {
+    const email = buildNotificationEmail({
+      type: "task_mention",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: "Fix the header",
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe('Chris mentioned you in "Fix the header" (Board Redesign)');
+  });
+
+  it("task_mention: description-edit mentions get accurate body wording, not 'a comment on'", () => {
+    const email = buildNotificationEmail({
+      type: "task_mention",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: "Fix the header",
+      snippet: "updated scope to include mobile",
+      snippetSource: "task_description",
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).toContain("mentioned you in the description of");
+    expect(email!.html).not.toContain("mentioned you in a comment on");
+  });
+
+  it("comment_mention: includes the idea title", () => {
+    const email = buildNotificationEmail({
+      type: "comment_mention",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe('Chris mentioned you in a comment on "Board Redesign"');
+  });
+
+  it("discussion_reply and discussion_mention: include the idea title", () => {
+    const reply = buildNotificationEmail({
+      type: "discussion_reply",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(reply!.subject).toBe('Chris replied to a discussion on "Board Redesign"');
+
+    const mention = buildNotificationEmail({
+      type: "discussion_mention",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(mention!.subject).toBe('Chris mentioned you in a discussion on "Board Redesign"');
+  });
+
+  it("truncates a very long idea title deliberately rather than letting the subject run on", () => {
+    const longTitle = "A".repeat(120);
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: longTitle,
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    // Truncated to the subject title cap (60) plus the ellipsis character.
+    expect(email!.subject).toBe(`Chris commented on "${"A".repeat(60)}…"`);
+    expect(email!.subject.length).toBeLessThan(longTitle.length);
+  });
+
+  it("truncates a long idea title more aggressively when it's the parenthetical part of a task_mention subject", () => {
+    const longIdeaTitle = "B".repeat(120);
+    const email = buildNotificationEmail({
+      type: "task_mention",
+      actorName: "Chris",
+      ideaTitle: longIdeaTitle,
+      taskTitle: "Fix the header",
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe(`Chris mentioned you in "Fix the header" (${"B".repeat(40)}…)`);
+  });
+
+  it("subject lines are plain text: special characters are not HTML-escaped", () => {
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris & Co",
+      ideaTitle: `Tom & Jerry's "Big" Idea`,
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.subject).toBe(`Chris & Co commented on "Tom & Jerry's "Big" Idea"`);
+    expect(email!.subject).not.toContain("&amp;");
+    expect(email!.subject).not.toContain("&#039;");
+  });
+});
+
+describe("buildNotificationEmail: preheader", () => {
+  it("carries the quoted snippet as a hidden preheader, first in the body", () => {
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: "great idea, one suggestion",
+      ctaUrl: CTA_URL,
+    });
+    // The preheader div must appear before the visible card content.
+    const preheaderIndex = email!.html.indexOf("great idea, one suggestion");
+    const headingIndex = email!.html.indexOf("New comment on your idea");
+    expect(preheaderIndex).toBeGreaterThan(-1);
+    expect(preheaderIndex).toBeLessThan(headingIndex);
+    expect(email!.html).toContain("display:none");
+  });
+
+  it("omits the preheader entirely when there's no snippet to show", () => {
+    const email = buildNotificationEmail({
+      type: "comment",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: null,
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).not.toContain("mso-hide:all");
+  });
+
+  it("does not add a preheader for types with no quote block at all", () => {
+    const email = buildNotificationEmail({
+      type: "collaborator",
+      actorName: "Chris",
+      ideaTitle: "Board Redesign",
+      taskTitle: null,
+      snippet: "should never surface here",
+      ctaUrl: CTA_URL,
+    });
+    expect(email!.html).not.toContain("mso-hide:all");
+    expect(email!.html).not.toContain("should never surface here");
   });
 });

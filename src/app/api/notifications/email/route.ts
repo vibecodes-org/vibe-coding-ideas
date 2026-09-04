@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { buildNotificationUrl } from "@/lib/notification-url";
-import { buildNotificationEmail, buildSnippet } from "@/lib/notification-email";
+import { buildNotificationEmail, buildSnippet, selectSnippetSource } from "@/lib/notification-email";
 import type { Database } from "@/types/database";
 
 type NotificationType =
@@ -150,8 +150,12 @@ export async function POST(request: Request) {
     taskDescription = task?.description || null;
   }
 
-  // Fetch the actual comment/reply text driving this notification, so the
-  // email can quote it instead of just naming the task/idea it landed on.
+  // Fetch the actual comment/reply/discussion text driving this
+  // notification, so the email can quote it instead of just naming the
+  // task/idea it landed on. Kept as separate fields (rather than one
+  // shared "commentBody") so selectSnippetSource can tell them apart —
+  // conflating them is what let a status/description body get quoted as
+  // if it were someone's comment.
   let commentBody: string | null = null;
   if (notification.comment_id) {
     // Task comments and mentions live in board_task_comments; idea comments
@@ -163,19 +167,46 @@ export async function POST(request: Request) {
       .eq("id", notification.comment_id)
       .maybeSingle();
     commentBody = data?.content ?? null;
-  } else if (notification.reply_id) {
+  }
+
+  let replyBody: string | null = null;
+  if (notification.reply_id) {
     const { data } = await supabase
       .from("idea_discussion_replies")
       .select("content")
       .eq("id", notification.reply_id)
       .maybeSingle();
-    commentBody = data?.content ?? null;
+    replyBody = data?.content ?? null;
   }
 
-  // Fall back to the task/idea description when there's no comment to quote
-  // (e.g. a status change, or a comment row that no longer resolves) — never
-  // let a missing snippet break the send, just degrade to the plain sentence.
-  const snippet = buildSnippet(commentBody ?? taskDescription ?? ideaDescription ?? null);
+  // The discussion's own body — only genuinely the trigger for a
+  // discussion_mention that has no reply_id (mentioned in the discussion
+  // post itself, not a reply).
+  let discussionBody: string | null = null;
+  if (notification.discussion_id) {
+    const { data } = await supabase
+      .from("idea_discussions")
+      .select("body")
+      .eq("id", notification.discussion_id)
+      .maybeSingle();
+    discussionBody = data?.body ?? null;
+  }
+
+  // Pick the source that genuinely triggered this notification — never a
+  // description/body that just happened to be fetchable. See
+  // selectSnippetSource for the per-type rule; never let a missing snippet
+  // break the send, just degrade to the plain sentence.
+  const { source: snippetSource, raw: snippetRaw } = selectSnippetSource({
+    type: notification.type,
+    hasCommentId: !!notification.comment_id,
+    hasReplyId: !!notification.reply_id,
+    commentBody,
+    replyBody,
+    taskDescription,
+    ideaDescription,
+    discussionBody,
+  });
+  const snippet = buildSnippet(snippetRaw);
 
   // Build email content based on notification type
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
@@ -195,6 +226,7 @@ export async function POST(request: Request) {
     taskTitle,
     snippet,
     ctaUrl,
+    snippetSource,
   });
 
   if (!email) {

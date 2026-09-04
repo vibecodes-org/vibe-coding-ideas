@@ -14,6 +14,16 @@ interface EmailTemplateOptions {
   ctaText?: string;
   ctaUrl?: string;
   footerText?: string;
+  /**
+   * Hidden preview text shown by the inbox next to the subject line, before
+   * the recipient opens the email. Without this, mail clients fall back to
+   * the first visible text in the body — our logo alt text and wordmark —
+   * so every notification email previews identically. Rendered as the
+   * first element of the body and hidden via the standard
+   * display:none + max-height:0 + overflow:hidden preheader technique, with
+   * trailing whitespace entities so it doesn't run into visible body text.
+   */
+  preheaderText?: string;
 }
 
 export function buildEmailHtml({
@@ -22,8 +32,13 @@ export function buildEmailHtml({
   ctaText,
   ctaUrl,
   footerText,
+  preheaderText,
 }: EmailTemplateOptions): string {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
+
+  const preheaderBlock = preheaderText
+    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#09090b;opacity:0;">${escapeHtml(preheaderText)}${"&nbsp;&zwnj;".repeat(20)}</div>`
+    : "";
 
   const ctaBlock =
     ctaText && ctaUrl
@@ -52,6 +67,7 @@ export function buildEmailHtml({
   <meta name="color-scheme" content="dark">
 </head>
 <body style="margin:0;padding:0;background-color:#09090b;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  ${preheaderBlock}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#09090b;padding:40px 20px;">
     <tr>
       <td align="center">
