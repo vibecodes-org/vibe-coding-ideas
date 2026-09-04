@@ -149,9 +149,9 @@ export async function readLiveUnavailableModel(
       .from("task_workflow_steps")
       .select("model_tier")
       .eq("idea_id", ideaId)
-      .eq("model_unavailable", true)
-      .gte("updated_at", markerWindowStart(new Date()))
-      .order("updated_at", { ascending: false })
+      .not("model_unavailable_at", "is", null)
+      .gte("model_unavailable_at", markerWindowStart(new Date()))
+      .order("model_unavailable_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -1358,7 +1358,7 @@ export async function completeStep(
     work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
-    model_unavailable: substituted,
+    model_unavailable_at: substituted ? new Date().toISOString() : null,
     persona_used: personaUsed,
     persona_honored: personaHonored,
     skills_used: params.skills_used ?? null,
@@ -1489,7 +1489,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, model_unavailable")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, model_unavailable_at")
     .eq("id", params.step_id)
     .single();
 
@@ -1567,12 +1567,14 @@ export async function failStep(
   // resting place — it goes straight back to pending, and the marker written
   // below makes the next claim direct it at the configured backup.
   //
-  // step.model_unavailable is read from the row as it stood BEFORE this write:
-  // already true means this step has had its one rescue, and a second failure
-  // is a real failure. Without that guard a step whose actual problem is
-  // anything else would bounce pending->failed forever, burning a model call
-  // every lap and never reaching a human.
-  const rescueDecision = shouldRescueStep(params.model_unavailable, step.model_unavailable);
+  // step.model_unavailable_at is read from the row as it stood BEFORE this
+  // write: already set means this step has had its one rescue, and a second
+  // failure is a real failure. Without that guard a step whose actual problem
+  // is anything else would bounce pending->failed forever, burning a model
+  // call every lap and never reaching a human. Deliberately "ever", not
+  // "today" — a step needing rescue on two separate days has a problem that
+  // is not the model.
+  const rescueDecision = shouldRescueStep(params.model_unavailable, step.model_unavailable_at !== null);
   const rescueResolution = params.model_unavailable
     ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults)
     : null;
@@ -1584,7 +1586,7 @@ export async function failStep(
     work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
-    model_unavailable: params.model_unavailable === true,
+    model_unavailable_at: params.model_unavailable === true ? new Date().toISOString() : null,
     persona_used: personaUsed,
     persona_honored: personaHonored,
     skills_used: params.skills_used ?? null,

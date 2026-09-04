@@ -29,6 +29,22 @@ export const CONNECT_TIMEOUT_MS = 30_000;
  */
 export const RECONNECT_GRACE_MS = 90_000;
 
+/**
+ * Bug (regression backfill, board card TBD): the minimum real time that must
+ * have elapsed since a disconnect began before a refused reconnect (BAD_TOKEN)
+ * is read as "this ended honestly while you were away" rather than a genuine
+ * error. The wire gives no way to tell the two apart directly — the relay
+ * sends the exact same generic reason for a legitimately expired grace window
+ * and for a live rejection right now (see mapCloseCode's BAD_TOKEN case) — so
+ * elapsed time is the best available signal: a real away-for-a-while gap
+ * (asleep, network down for a while) is measured in tens of seconds to
+ * minutes; a live bug or transient hiccup gets refused on the FIRST or second
+ * attempt, within a couple of seconds of the drop. Comfortably below
+ * RECONNECT_GRACE_MS so a genuine grace-expiry case still gets the calm
+ * copy well before the window itself runs out.
+ */
+export const BAD_TOKEN_CALM_THRESHOLD_MS = 20_000;
+
 /** Default dev relay (overridable via NEXT_PUBLIC_TERMINAL_RELAY_URL). */
 export const DEFAULT_RELAY_URL = "ws://127.0.0.1:8787";
 
@@ -120,7 +136,7 @@ export type TerminalEvent =
   | { type: "connect-timeout" }
   | { type: "reconnect-exhausted" }
   | { type: "link-silent" }
-  | { type: "closed"; code: number; reason?: string }
+  | { type: "closed"; code: number; reason?: string; sinceDisconnectMs?: number }
   | { type: "reset" };
 
 export const initialConnectionState: TerminalConnectionState = {
@@ -145,11 +161,16 @@ function isHandshaking(status: TerminalStatus): boolean {
  * `priorStatus` disambiguates the generic/abnormal codes: an abnormal close while
  * still handshaking means "we never reached your machine" (error), whereas the
  * same code after a live stream means "the link dropped" (recoverable disconnect).
+ *
+ * `sinceDisconnectMs` disambiguates BAD_TOKEN specifically — see that case's
+ * own doc. Defaults to 0 (never enough to earn the calm reading) so every
+ * existing call site that doesn't thread it through keeps today's behavior.
  */
 export function mapCloseCode(
   code: number,
   reason: string | undefined,
   priorStatus: TerminalStatus,
+  sinceDisconnectMs = 0,
 ): Pick<TerminalConnectionState, "status" | "errorKind" | "endedReason"> {
   switch (code) {
     case RELAY_CLOSE.OWNER_MISMATCH:
@@ -163,11 +184,23 @@ export function mapCloseCode(
       // relay has already torn the session down by the time that reattach lands
       // (e.g. a Mac sleep's grace window expired — ghost-sessions fix A), the SAME
       // 4006 fires for an honest "this ended while you were away", not a genuine
-      // bad/tampered token. Only a first establishment (still handshaking) gets the
-      // scary verify-error copy; a refused RECONNECT gets the calm ended copy —
-      // reusing "reconnect-failed"'s existing "We couldn't reattach in time…"
-      // messaging, which already says exactly this.
-      if (!isHandshaking(priorStatus)) {
+      // bad/tampered token.
+      //
+      // Bug fix (regression backfill): the wire gives NO way to tell "you were
+      // away for a while" apart from "something is wrong right now" — the relay
+      // sends the identical generic reason either way. The original version of
+      // this fix treated every refused reconnect (any BAD_TOKEN once no longer
+      // handshaking) as the calm case, which misreported a live freeze/drop as
+      // an honest clean ending and hid the fact that something was actually
+      // broken. Elapsed real time since the disconnect began is the best
+      // available signal: a genuine away-for-a-while gap is tens of seconds to
+      // minutes; a live bug or transient hiccup gets refused within the first
+      // one or two (fast, sub-10s) reconnect attempts. Only a refusal AT OR
+      // PAST that threshold — and only once past the initial handshake — gets
+      // the calm ended copy, reusing "reconnect-failed"'s existing "We
+      // couldn't reattach in time…" messaging; anything sooner still surfaces
+      // as a real, actionable error.
+      if (!isHandshaking(priorStatus) && sinceDisconnectMs >= BAD_TOKEN_CALM_THRESHOLD_MS) {
         return { status: "session-ended", errorKind: null, endedReason: "reconnect-failed" };
       }
       return { status: "error", errorKind: "bad-token", endedReason: null };
@@ -355,7 +388,7 @@ export function terminalReducer(
       if (state.status === "session-ended") {
         return { ...state, closeCode: event.code, closeReason: event.reason ?? null };
       }
-      const mapped = mapCloseCode(event.code, event.reason, state.status);
+      const mapped = mapCloseCode(event.code, event.reason, state.status, event.sinceDisconnectMs ?? 0);
       return { ...state, ...mapped, closeCode: event.code, closeReason: event.reason ?? null };
     }
 

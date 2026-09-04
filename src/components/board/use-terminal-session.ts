@@ -825,6 +825,26 @@ export function useTerminalSession(
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const degradeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bug fix (regression backfill): whenever the app itself concludes a session
+  // is over via any AUTOMATIC path (reconnect-exhausted, or a refused
+  // reconnect read as a genuine away-for-a-while ending — mapCloseCode's
+  // BAD_TOKEN case), tell the server immediately instead of waiting on the
+  // relay's own best-effort grace-alarm notification (ghost-sessions fix A),
+  // which can lag by up to the full RECONNECT_GRACE_MS. Without this, "My
+  // sessions" / the Launch-in-Browser chooser can show nothing for a session
+  // that has, from the user's point of view, already and unambiguously ended.
+  // Mirrors endSession's own fire-and-forget call to the same route — never
+  // awaited, never surfaced on failure — and is safe to call more than once
+  // (the route only touches rows still "active"). A ref (not useCallback) so
+  // every dispatch site above can call it without becoming a dependency.
+  const notifyRegistryEndedRef = useRef((sid: string | undefined) => {
+    if (!sid) return;
+    void fetch("/api/terminal/session/end", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sid }),
+    }).catch(() => {});
+  });
   const pairRef = useRef<PairInfo | null>(null);
   const scheduleReconnectRef = useRef<() => void>(() => {});
   // Reload-reattach instant-continue (card cbe60db5, design item 5): true
@@ -1847,6 +1867,7 @@ export function useTerminalSession(
                 degradeTimerRef.current = null;
                 setPeerDegraded(false);
                 dispatch({ type: "reconnect-exhausted" });
+                notifyRegistryEndedRef.current(pairRef.current?.sessionId);
                 try {
                   wsRef.current?.close(1000, "reconnect-grace-expired");
                 } catch {
@@ -1941,13 +1962,28 @@ export function useTerminalSession(
       ws.onclose = (ev) => {
         clearConnectTimer();
         wsRef.current = null;
-        dispatch({ type: "closed", code: ev.code, reason: ev.reason });
+        // Bug fix (regression backfill): how long we've actually been trying to
+        // reattach — the one signal mapCloseCode's BAD_TOKEN case has to tell a
+        // genuine away-for-a-while gap from a live refusal happening right now
+        // (see that case's own doc). 0 outside a reconnect loop (deadline unset).
+        const sinceDisconnectMs =
+          reconnectDeadlineRef.current > 0
+            ? Math.max(0, Date.now() - (reconnectDeadlineRef.current - RECONNECT_GRACE_MS))
+            : 0;
+        dispatch({ type: "closed", code: ev.code, reason: ev.reason, sinceDisconnectMs });
         // Grace-window reconnect: a transient drop AFTER a live stream (PEER_GONE /
         // abnormal 1006) is recoverable → keep reattaching within the window. Any
         // terminal / clean-end code maps to a non-disconnected state and stops here.
         // A teardown-initiated close nulled these handlers, so it never reaches this.
-        const mapped = mapCloseCode(ev.code, ev.reason, statusRef.current);
+        const mapped = mapCloseCode(ev.code, ev.reason, statusRef.current, sinceDisconnectMs);
         if (mapped.status === "disconnected") scheduleReconnectRef.current();
+        // Bug fix (regression backfill): a refused reconnect read as a genuine
+        // ended-while-away close (BAD_TOKEN past BAD_TOKEN_CALM_THRESHOLD_MS —
+        // see mapCloseCode) is just as much an automatic, non-user-initiated
+        // ending as reconnect-exhausted — tell the server now, same reasoning.
+        if (mapped.status === "session-ended" && mapped.endedReason === "reconnect-failed") {
+          notifyRegistryEndedRef.current(pairRef.current?.sessionId);
+        }
       };
     },
     [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer],
@@ -1969,6 +2005,7 @@ export function useTerminalSession(
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       dispatch({ type: "reconnect-exhausted" });
+      notifyRegistryEndedRef.current(p?.sessionId);
       return;
     }
     const attempt = reconnectAttemptRef.current++;
@@ -1980,6 +2017,7 @@ export function useTerminalSession(
         reconnectDeadlineRef.current = 0;
         reconnectAttemptRef.current = 0;
         dispatch({ type: "reconnect-exhausted" });
+        notifyRegistryEndedRef.current(pp?.sessionId);
         return;
       }
       openBrowserLeg(pp.sessionId, pp.browserToken, { reconnect: true });

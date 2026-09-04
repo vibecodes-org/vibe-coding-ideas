@@ -4971,7 +4971,11 @@ describe("readLiveUnavailableModel", () => {
       return chain;
     });
     chain.gte = vi.fn((col: string, val: unknown) => {
-      filters.push([col, val]);
+      filters.push(["gte:" + col, val]);
+      return chain;
+    });
+    chain.not = vi.fn((col: string, op: string) => {
+      filters.push(["not:" + col, op]);
       return chain;
     });
     chain.order = vi.fn(() => chain);
@@ -5000,13 +5004,27 @@ describe("readLiveUnavailableModel", () => {
     const { ctx, filters } = markerCtx({ data: { model_tier: "frontier" }, error: null });
     await readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS);
     expect(filters).toContainEqual(["idea_id", IDEA_ID]);
-    expect(filters).toContainEqual(["model_unavailable", true]);
-    const dayBound = filters.find(([col]) => col === "updated_at");
+    expect(filters).toContainEqual(["not:model_unavailable_at", "is"]);
+    // The day bound reads the marker's OWN timestamp, never the row's
+    // updated_at — see the "unrelated write" regression test below.
+    const dayBound = filters.find(([col]) => col === "gte:model_unavailable_at");
     expect(dayBound?.[1]).toBe(
       new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
       ).toISOString()
     );
+    expect(filters.some(([col]) => String(col).includes("updated_at"))).toBe(false);
+  });
+
+  it("never keys the marker off the row's updated_at (regression)", async () => {
+    // workflow_step_updated_at_trigger bumps updated_at on EVERY write to the
+    // row, and nothing clears the marker when a step is re-claimed, cascade-
+    // reset or reset_workflow'd. Keying the day bound off updated_at meant a
+    // step flagged on Tuesday and merely re-claimed on Thursday presented as a
+    // fresh Thursday marker and silently diverted that day's work.
+    const { ctx, filters } = markerCtx({ data: { model_tier: "frontier" }, error: null });
+    await readLiveUnavailableModel(ctx, IDEA_ID, null, SEED_PLATFORM_MODEL_DEFAULTS);
+    expect(filters.every(([col]) => !String(col).endsWith("updated_at"))).toBe(true);
   });
 
   it("returns null when there is no marker", async () => {
@@ -5099,7 +5117,7 @@ describe("failStep — automatic switch to the backup model (card 5d0665a2)", ()
     agent_role: "developer",
     status: "in_progress",
     model_tier: "frontier",
-    model_unavailable: false,
+    model_unavailable_at: null,
   };
 
   it("returns the step to pending instead of leaving it failed (AC-1)", async () => {
@@ -5117,7 +5135,7 @@ describe("failStep — automatic switch to the backup model (card 5d0665a2)", ()
     expect(update.completed_at).toBeNull();
     expect(update.started_at).toBeNull();
     expect(update.claimed_by).toBeNull();
-    expect(update.model_unavailable).toBe(true);
+    expect(update.model_unavailable_at).not.toBeNull();
   });
 
   it("leaves the run running so the workflow carries on rather than stopping dead", async () => {
@@ -5142,7 +5160,7 @@ describe("failStep — automatic switch to the backup model (card 5d0665a2)", ()
 
   it("does not rescue the same step twice — a second failure stays failed (AC-1)", async () => {
     const { ctx, getUpdate, getRunUpdates } = ctxFor({
-      stepData: { ...baseStep, model_unavailable: true },
+      stepData: { ...baseStep, model_unavailable_at: "2026-09-04T05:00:00.000Z" },
       updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
     });
 
@@ -5152,7 +5170,7 @@ describe("failStep — automatic switch to the backup model (card 5d0665a2)", ()
     expect(update.status).toBe("failed");
     expect(update.completed_at).not.toBeNull();
     // The marker itself is still recorded — later steps should still route around the model.
-    expect(update.model_unavailable).toBe(true);
+    expect(update.model_unavailable_at).not.toBeNull();
     expect(getRunUpdates()).toContainEqual({ status: "failed" });
   });
 
@@ -5166,7 +5184,7 @@ describe("failStep — automatic switch to the backup model (card 5d0665a2)", ()
 
     const update = getUpdate();
     expect(update.status).toBe("failed");
-    expect(update.model_unavailable).toBe(false);
+    expect(update.model_unavailable_at).toBeNull();
     expect(update.output).toBe("tests failed");
     expect(getRunUpdates()).toContainEqual({ status: "failed" });
   });

@@ -905,7 +905,7 @@ export type Database = {
           model_tier: string | null;
           executed_model: string | null;
           tier_honored: boolean | null;
-          model_unavailable: boolean;
+          model_unavailable_at: string | null;
           persona_used: string | null;
           persona_honored: boolean | null;
           skills_used: string[] | null;
@@ -933,7 +933,7 @@ export type Database = {
           model_tier?: string | null;
           executed_model?: string | null;
           tier_honored?: boolean | null;
-          model_unavailable?: boolean;
+          model_unavailable_at?: string | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
           skills_used?: string[] | null;
@@ -965,7 +965,7 @@ export type Database = {
           model_tier?: string | null;
           executed_model?: string | null;
           tier_honored?: boolean | null;
-          model_unavailable?: boolean;
+          model_unavailable_at?: string | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
           skills_used?: string[] | null;

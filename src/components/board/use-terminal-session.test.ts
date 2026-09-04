@@ -608,6 +608,56 @@ describe("useTerminalSession", () => {
 
     expect(result.current.state.status).toBe("session-ended");
     expect(result.current.state.endedReason).toBe("reconnect-failed");
+    // Bug fix (regression backfill): the app must tell the server this session
+    // is over the moment IT concludes that, rather than only relying on the
+    // relay's own best-effort grace-alarm notification — otherwise "My
+    // sessions" / the chooser can show nothing for a session that has, from
+    // here, unambiguously ended.
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/terminal/session/end",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ sid: "sid-abc123" }) }),
+    );
+  });
+
+  it("a reconnect refused (BAD_TOKEN) well past the calm threshold ends honestly AND tells the server", async () => {
+    vi.useFakeTimers();
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+    act(() => latestSocket().simulateAbnormalDrop());
+
+    // Burn well past BAD_TOKEN_CALM_THRESHOLD_MS (20s) via a few reconnect
+    // attempts, each dropping abnormally (once actually opened) so the loop
+    // keeps retrying.
+    await act(async () => {
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(9_000);
+        const ws = mockSockets[mockSockets.length - 1];
+        if (ws.readyState !== MockWebSocket.CLOSED) ws.simulateAbnormalDrop();
+      }
+    });
+
+    // Let the NEXT scheduled reconnect attempt actually open a fresh socket —
+    // THIS is the one the relay refuses outright (the exact case ghost-sessions
+    // fix A/B target: grace window already expired server-side).
+    const beforeRefusal = mockSockets.length;
+    await act(async () => {
+      vi.advanceTimersByTime(9_000);
+    });
+    expect(mockSockets.length).toBeGreaterThan(beforeRefusal);
+    await act(async () => {
+      mockSockets[mockSockets.length - 1].close(4006, "invalid, tampered, or expired session token");
+    });
+
+    expect(result.current.state.status).toBe("session-ended");
+    expect(result.current.state.endedReason).toBe("reconnect-failed");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/terminal/session/end",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ sid: "sid-abc123" }) }),
+    );
   });
 
   // Multi-session stage 2: `autoConnectWhenExpanded` stops a freshly-minted tab

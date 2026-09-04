@@ -14,29 +14,41 @@
 -- re-issue the step that died, and stop pointing later steps at a model we
 -- have same-day evidence is unavailable.
 --
--- Single boolean, deliberately: WHICH model was unavailable is derived at read
--- time from the row's model_tier, never stored. The obvious store —
--- executed_model — is only populated when the orchestrator self-reports
--- model_used, and an agent whose model was unreachable frequently has nothing
--- to report, so a stored marker would routinely name no model at all and the
--- switch would silently no-op. Deriving also means a later config change (a
--- new platform default, a user's own tier override) is picked up automatically
--- instead of stranding a marker that points at a model the tier no longer uses.
+-- A TIMESTAMP, NOT A BOOLEAN — and this is the whole point of the column.
+-- The first cut was a boolean, with the marker's age read from the row's
+-- updated_at. That is broken: workflow_step_updated_at_trigger bumps
+-- updated_at on EVERY update to the row, and nothing clears the flag when a
+-- step is re-claimed, cascade-reset, or reset_workflow'd. So a step flagged on
+-- Tuesday and merely re-claimed on Thursday would present as a fresh Thursday
+-- marker and silently divert that day's work onto the backup for no reason.
+-- A dedicated timestamp is written once, by the code that actually observed
+-- the failure, and is immune to every unrelated write to the row.
 --
--- The flag also doubles as the rescue-once guard. fail_step reads it BEFORE
--- writing: already true means this step has been auto-rescued once already,
--- so the second failure is left failed rather than looping the step back to
--- pending forever.
+-- WHICH model was unavailable is still derived at read time from the row's
+-- model_tier, never stored. The obvious store — executed_model — is only
+-- populated when the orchestrator self-reports model_used, and an agent whose
+-- model was unreachable frequently has nothing to report, so a stored marker
+-- would routinely name no model at all and the switch would silently no-op.
+-- Deriving also means a later config change (a new platform default, a user's
+-- own tier override) is picked up automatically instead of stranding a marker
+-- that points at a model the tier no longer uses.
+--
+-- The column also doubles as the rescue-once guard. fail_step reads it BEFORE
+-- writing: already set means this step has been auto-rescued once already, so
+-- the second failure is left failed rather than looping the step back to
+-- pending forever. That guard is deliberately "ever", not "today" — a step
+-- that needs rescuing on two separate days has a problem that is not the
+-- model.
 
 ALTER TABLE task_workflow_steps
-  ADD COLUMN model_unavailable BOOLEAN NOT NULL DEFAULT false;
+  ADD COLUMN model_unavailable_at TIMESTAMPTZ;
 
-COMMENT ON COLUMN task_workflow_steps.model_unavailable IS
-  'True when this step reported that its directed model was unavailable (out of credits, overloaded, not on the plan) — set by fail_step''s model_unavailable param, or inferred by complete_step when the self-reported model_used equals the tier''s configured fallback rather than its resolved model. WHICH model is not stored: it is resolved from this row''s model_tier at read time. Read two ways: (1) a same-UTC-day true row is the marker that makes claim_next_step resolve that user''s affected tier straight to the backup; (2) on the step itself it is the rescue-once guard — a step that is already true is never auto-returned to pending a second time. Self-reported, never verified, and it expires by time alone (queries bound on updated_at), so there is nothing to clear down.';
+COMMENT ON COLUMN task_workflow_steps.model_unavailable_at IS
+  'When this step reported that its directed model was unavailable (out of credits, overloaded, not on the plan) — set by fail_step''s model_unavailable param, or inferred by complete_step when the self-reported model_used equals the tier''s configured fallback rather than its resolved model. NULL = never reported. WHICH model is not stored: it is resolved from this row''s model_tier at read time. Read two ways: (1) a marker set earlier the same UTC day makes claim_next_step resolve that board''s affected tier straight to the backup; (2) on the step itself, non-NULL is the rescue-once guard — a step that has been auto-returned to pending once is never auto-rescued again. Deliberately its own timestamp rather than a boolean read against updated_at, which every unrelated write to the row would refresh. Self-reported, never verified, and it expires by time alone, so there is nothing to clear down.';
 
 -- The claim-time lookup is "any same-day unavailability marker on this board",
 -- a tiny and very selective slice — partial index so it costs nothing on the
--- overwhelmingly common false rows.
+-- overwhelmingly common NULL rows.
 --
 -- Scoped by idea_id, NOT by user. Credit exhaustion is really an account-level
 -- fact, so per-board is narrower than the truth — the first step on a second
@@ -47,5 +59,5 @@ COMMENT ON COLUMN task_workflow_steps.model_unavailable IS
 -- RLS. A board-local marker is wrong in the safe direction, and the paired
 -- rescue behaviour makes that one extra failure cost nothing.
 CREATE INDEX idx_workflow_steps_model_unavailable
-  ON task_workflow_steps (idea_id, updated_at DESC)
-  WHERE model_unavailable = true;
+  ON task_workflow_steps (idea_id, model_unavailable_at DESC)
+  WHERE model_unavailable_at IS NOT NULL;
