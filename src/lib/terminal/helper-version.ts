@@ -43,8 +43,13 @@
  *  `worktree` deep-link param, same as every prior unshipped bridge
  *  change, so this bump is what actually nudges users to it. 0.3.8
  *  (task 6d7a50ab): first helper that speaks the PTY end-to-end
- *  encryption protocol — an older helper negotiates plaintext only. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.10";
+ *  encryption protocol — an older helper negotiates plaintext only.
+ *  0.3.11 (task 5b8a3865, Nick 2026-09-05): a second session on a board
+ *  whose project folder has no commits yet (or isn't a git repo) no longer
+ *  dies with "Error creating worktree" — the bridge checks the folder before
+ *  appending `--worktree`, falls back to the main folder, and prints a
+ *  one-line note into the terminal. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.11";
 
 export type HelperVersionParts = readonly [number, number, number];
 
