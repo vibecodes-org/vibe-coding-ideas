@@ -45,6 +45,7 @@ import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveClaudeLaunch } from "./resume-cmd.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
+import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
@@ -180,7 +181,31 @@ const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSIO
 // resume/resumeId/explicitCmd never read it, same as MODEL/PERMISSION_MODE
 // above. `BRIDGE_WORKTREE` env mirrors their own dev/test convenience
 // fallback.
-const WORKTREE = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE === "1"));
+const WORKTREE_REQUESTED = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE === "1"));
+const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
+// Task 5b8a3865 (Nick, 5 Sep 2026): a requested worktree is only APPENDED when
+// the folder can actually take one. `claude --worktree` branches off HEAD, so
+// a git repo with no commits yet (or a folder that isn't a repo at all) made
+// Claude Code exit on the spot with "Error creating worktree: Failed to
+// resolve base branch HEAD" and the session was dead before the first
+// keystroke. Checked here, synchronously, ONLY when isolation was asked for
+// AND this is a genuinely fresh launch (resume/resumeId/explicitCmd never
+// append the flag anyway, so they never pay for the git calls). When the
+// folder can't host a worktree the launch proceeds in the main folder and
+// `WORKTREE_FALLBACK_BANNER` is written into the terminal ahead of Claude's
+// own output so the user knows the two sessions now share the folder.
+const WORKTREE_ELIGIBILITY =
+  WORKTREE_REQUESTED && !explicitCmd && !RESUME_ID && !RESUME
+    ? checkWorktreeEligibility(CWD, { run: runGitSync })
+    : { eligible: true, reason: /** @type {const} */ ("ok") };
+const WORKTREE = WORKTREE_REQUESTED && WORKTREE_ELIGIBILITY.eligible;
+const WORKTREE_FALLBACK_BANNER = WORKTREE_REQUESTED ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
+if (WORKTREE_FALLBACK_BANNER) {
+  log("warn", "worktree isolation requested but the folder can't host one — launching in the main folder", {
+    cwd: CWD,
+    reason: WORKTREE_ELIGIBILITY.reason,
+  });
+}
 const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
   explicitCmd,
   resumeId: RESUME_ID,
@@ -190,7 +215,6 @@ const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
   worktree: WORKTREE,
   mintId: () => crypto.randomUUID(),
 });
-const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
 // hard rules (see docs/terminal-bootstrap-prompt-ux.html + the shared deep-link
 // module):
@@ -367,6 +391,21 @@ function ensureSpawnHelperExecutable() {
   } catch (e) {
     log("warn", "could not chmod spawn-helper (continuing)", { err: String(e?.message || e) });
   }
+}
+
+// ── git probe for the worktree eligibility gate (task 5b8a3865) ──────────────
+// `git` on macOS lives at /usr/bin/git (the Xcode CLT shim), which is on even
+// the minimal LaunchServices PATH the helper inherits — so unlike `claude`
+// (see resolveSpawnEnv below) no login-shell PATH capture is needed here.
+// Bounded (3s) and never throws past the eligibility checker: a null status
+// plus `error` is how spawnSync reports "couldn't run at all" (ENOENT/timeout),
+// and the checker maps that to a fallback reason rather than a crash.
+function runGitSync(gitArgs) {
+  const r = require("node:child_process").spawnSync("git", gitArgs, {
+    timeout: 3000,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  return { status: r.status, error: r.error };
 }
 
 // ── PATH resolution for GUI-launched bridges ─────────────────────────────────
@@ -608,6 +647,16 @@ async function main() {
     // here — encrypting per-onData-chunk would let the batcher's coalescing
     // concatenate several independent AEAD frames into one WS message, which
     // the one-frame-per-message wire format can't represent.
+    // Task 5b8a3865: the "your sessions share this folder" note goes out FIRST,
+    // through the same batcher (so it's coalesced/encrypted like any other
+    // output and buffered pre-open like a startup banner), ahead of whatever
+    // Claude Code prints. Written once, only on a fallback launch.
+    if (WORKTREE_FALLBACK_BANNER) {
+      const banner = Buffer.from(WORKTREE_FALLBACK_BANNER, "utf8");
+      bytesOut += banner.length;
+      outputBatcher.queueBinary(banner);
+    }
+
     term.onData((data) => {
       const buf = Buffer.from(data, "utf8");
       bytesOut += buf.length;
