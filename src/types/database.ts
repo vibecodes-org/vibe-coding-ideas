@@ -1438,6 +1438,7 @@ export type Database = {
             | "step_compliance";
           idea_id: string | null;
           comment_id: string | null;
+          task_comment_id: string | null;
           task_id: string | null;
           collaboration_request_id: string | null;
           discussion_id: string | null;
@@ -1465,6 +1466,7 @@ export type Database = {
             | "step_compliance";
           idea_id?: string | null;
           comment_id?: string | null;
+          task_comment_id?: string | null;
           task_id?: string | null;
           collaboration_request_id?: string | null;
           discussion_id?: string | null;
@@ -1492,6 +1494,7 @@ export type Database = {
             | "step_compliance";
           idea_id?: string | null;
           comment_id?: string | null;
+          task_comment_id?: string | null;
           task_id?: string | null;
           collaboration_request_id?: string | null;
           discussion_id?: string | null;
@@ -1526,6 +1529,13 @@ export type Database = {
             columns: ["comment_id"];
             isOneToOne: false;
             referencedRelation: "comments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notifications_task_comment_id_fkey";
+            columns: ["task_comment_id"];
+            isOneToOne: false;
+            referencedRelation: "board_task_comments";
             referencedColumns: ["id"];
           },
           {

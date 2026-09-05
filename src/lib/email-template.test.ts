@@ -118,6 +118,41 @@ describe("buildEmailHtml", () => {
     expect(html).toContain("https://vibecodes.co.uk/apple-touch-icon.png");
   });
 
+  it("renders a hidden preheader before the visible body when provided", () => {
+    const html = buildEmailHtml({
+      heading: "Test Heading",
+      bodyHtml: "<p>Visible body content</p>",
+      preheaderText: "hidden preview text",
+    });
+
+    expect(html).toContain("hidden preview text");
+    expect(html).toContain("display:none");
+    const preheaderIndex = html.indexOf("hidden preview text");
+    const bodyIndex = html.indexOf("Visible body content");
+    expect(preheaderIndex).toBeGreaterThan(-1);
+    expect(preheaderIndex).toBeLessThan(bodyIndex);
+  });
+
+  it("omits the preheader block entirely when not provided", () => {
+    const html = buildEmailHtml({
+      heading: "Test Heading",
+      bodyHtml: "<p>Visible body content</p>",
+    });
+
+    expect(html).not.toContain("mso-hide:all");
+  });
+
+  it("escapes HTML in the preheader text", () => {
+    const html = buildEmailHtml({
+      heading: "Test",
+      bodyHtml: "<p>Body</p>",
+      preheaderText: '<script>alert("x")</script>',
+    });
+
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
   it("produces valid HTML structure", () => {
     const html = buildEmailHtml({
       heading: "Structure Test",

@@ -90,6 +90,24 @@ export interface NotifyMentionsArgs {
    * on ctx.userId/ctx.ownerUserId).
    */
   actorId?: string;
+  /**
+   * board_task_comments.id for the task comment that actually triggered this
+   * mention. Written as `task_comment_id` on the notification so the email
+   * route can quote the real comment instead of guessing — without it, a
+   * genuine comment mention is indistinguishable from a description-edit
+   * mention and the email misattributes the quote to "the description of"
+   * the task.
+   *
+   * MUST be a real `board_task_comments.id` — `notifications.task_comment_id`
+   * is FK'd to that table (ON DELETE CASCADE) and rejects anything else,
+   * silently killing the whole notification insert (this is exactly the P0
+   * this field exists to fix: `notifications.comment_id`, the column used
+   * before it, is FK'd to `comments`, not `board_task_comments`).
+   * `workflow_step_comments.id` is NOT valid here — that table has no FK
+   * target on `notifications` at all, so a step-comment mention must omit
+   * this field entirely (see workflows.ts's step-comment call site).
+   */
+  taskCommentId?: string;
 }
 
 /**
@@ -121,6 +139,9 @@ export async function notifyMentions(ctx: McpContext, args: NotifyMentionsArgs):
     type: "task_mention" as const,
     idea_id: args.ideaId,
     task_id: args.taskId,
+    // Conditional spread (not `task_comment_id: args.taskCommentId ?? null`)
+    // so call sites that omit taskCommentId keep writing byte-identical rows.
+    ...(args.taskCommentId ? { task_comment_id: args.taskCommentId } : {}),
   }));
 
   const { error } = await ctx.supabase.from("notifications").insert(rows);

@@ -1860,6 +1860,18 @@ export async function addStepComment(
       content: params.content,
       mentionedUserIds: params.mentioned_user_ids,
       actorId: attribution?.authorId,
+      // data.id here is workflow_step_comments.id, NOT board_task_comments.id
+      // — there is no `notifications` column FK'd to workflow_step_comments,
+      // so taskCommentId MUST be omitted (passing it would hit the same P0
+      // as the pre-fix comment_id: a doomed FK insert, silently dropping the
+      // whole notification). Known, accepted gap: with neither id set, the
+      // email route's task_mention branch (selectSnippetSource) can't tell
+      // this apart from a genuine description-edit mention, so it degrades
+      // to "mentioned you in the description of <task>" quoting the task's
+      // CURRENT description — inaccurate for a step comment, but still a
+      // real notification/email, which is the P0 fix. Tracked follow-up:
+      // give workflow_step_comments its own notifications column so this
+      // path can quote the actual step comment.
     });
   }
 

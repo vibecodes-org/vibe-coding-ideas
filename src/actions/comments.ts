@@ -22,19 +22,25 @@ export async function createComment(
 
   content = validateComment(content);
 
-  const { error } = await supabase.from("comments").insert({
-    idea_id: ideaId,
-    author_id: user.id,
-    content,
-    type,
-    parent_comment_id: parentCommentId || null,
-  });
+  const { data, error } = await supabase
+    .from("comments")
+    .insert({
+      idea_id: ideaId,
+      author_id: user.id,
+      content,
+      type,
+      parent_comment_id: parentCommentId || null,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     throw new Error(error.message);
   }
 
   revalidatePath(`/ideas/${ideaId}`);
+
+  return { id: data.id as string };
 }
 
 export async function incorporateComment(commentId: string, ideaId: string) {

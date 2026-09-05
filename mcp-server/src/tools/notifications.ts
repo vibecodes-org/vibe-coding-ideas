@@ -30,6 +30,7 @@ interface NotificationRow {
   idea_id: string | null;
   task_id: string | null;
   comment_id: string | null;
+  task_comment_id: string | null;
   discussion_id: string | null;
   reply_id: string | null;
   actor: { id: string; full_name: string | null } | null;
@@ -134,7 +135,7 @@ export async function listNotifications(
   let query = ctx.supabase
     .from("notifications")
     .select(
-      "id, type, read, created_at, idea_id, task_id, comment_id, discussion_id, reply_id, actor:users!notifications_actor_id_fkey(id, full_name), idea:ideas!notifications_idea_id_fkey(id, title), task:board_tasks!notifications_task_id_fkey(id, title), discussion:idea_discussions!notifications_discussion_id_fkey(title)"
+      "id, type, read, created_at, idea_id, task_id, comment_id, task_comment_id, discussion_id, reply_id, actor:users!notifications_actor_id_fkey(id, full_name), idea:ideas!notifications_idea_id_fkey(id, title), task:board_tasks!notifications_task_id_fkey(id, title), discussion:idea_discussions!notifications_discussion_id_fkey(title)"
     )
     .eq("user_id", ctx.ownerUserId ?? ctx.userId)
     .order("created_at", { ascending: false })

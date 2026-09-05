@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic";
 
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
-import { buildEmailHtml } from "@/lib/email-template";
 import { buildNotificationUrl } from "@/lib/notification-url";
+import { buildNotificationEmail, buildSnippet, selectSnippetSource } from "@/lib/notification-email";
+import { STATUS_CONFIG } from "@/lib/constants";
 import type { Database } from "@/types/database";
 
 type NotificationType =
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       type: NotificationType;
       idea_id: string | null;
       comment_id: string | null;
+      task_comment_id: string | null;
       task_id: string | null;
       discussion_id: string | null;
       reply_id: string | null;
@@ -70,13 +72,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const notification = payload.record;
-  if (!notification?.type || !notification?.user_id) {
+  if (!payload.record?.type || !payload.record?.user_id) {
     return jsonResponse({ error: "Invalid payload" }, 400);
   }
 
   // Skip low-signal notification types
-  if (!EMAIL_WORTHY_TYPES.includes(notification.type)) {
+  if (!EMAIL_WORTHY_TYPES.includes(payload.record.type)) {
     return jsonResponse({ skipped: true, reason: "low-signal type" });
   }
 
@@ -85,6 +86,22 @@ export async function POST(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Re-read the row rather than trusting the webhook payload. The trigger
+  // used to hand-pick which columns it sent, so every column added to
+  // `notifications` after it was written arrived as undefined here and the
+  // email quietly rendered as if that id didn't exist. The trigger now sends
+  // the whole row (migration 00167), but reading it back is what makes that
+  // class of bug impossible rather than merely fixed once.
+  const { data: fresh } = await supabase
+    .from("notifications")
+    .select("id, user_id, actor_id, type, idea_id, comment_id, task_comment_id, task_id, discussion_id, reply_id")
+    .eq("id", payload.record.id)
+    .maybeSingle();
+
+  // Fall back to the payload if the row is already gone (deleted between
+  // insert and delivery) — better a slightly degraded email than none.
+  const notification = fresh ?? payload.record;
 
   // Get recipient user
   const { data: recipient } = await supabase
@@ -123,42 +140,128 @@ export async function POST(request: Request) {
 
   const actorName = actor?.full_name || actor?.email || "Someone";
 
-  // Get idea title if applicable
+  // Get idea title + current status. Status feeds status_change's "changed
+  // to X" sentence — the row itself never records the old/new values, but
+  // the idea's status is already updated by the time this fires, so the
+  // idea's CURRENT status is genuinely what it changed to.
   let ideaTitle: string | null = null;
+  let ideaStatusLabel: string | null = null;
   if (notification.idea_id) {
     const { data: idea } = await supabase
       .from("ideas")
-      .select("title")
+      .select("title, status")
       .eq("id", notification.idea_id)
       .maybeSingle();
     ideaTitle = idea?.title || null;
+    ideaStatusLabel = idea?.status ? STATUS_CONFIG[idea.status]?.label ?? null : null;
   }
 
-  // Get task title if applicable
+  // Get task title + description if applicable
   let taskTitle: string | null = null;
+  let taskDescription: string | null = null;
   if (notification.task_id) {
     const { data: task } = await supabase
       .from("board_tasks")
-      .select("title")
+      .select("title, description")
       .eq("id", notification.task_id)
       .maybeSingle();
     taskTitle = task?.title || null;
+    taskDescription = task?.description || null;
   }
+
+  // Fetch the actual comment/reply/discussion text driving this
+  // notification, so the email can quote it instead of just naming the
+  // task/idea it landed on. Kept as separate fields (rather than one
+  // shared "commentBody") so selectSnippetSource can tell them apart —
+  // conflating them is what let a status/description body get quoted as
+  // if it were someone's comment.
+  //
+  // task_mention rows carry the triggering comment in `task_comment_id`
+  // (board_task_comments — a table `comment_id` cannot legally point at,
+  // since it's FK'd to `comments`; see supabase/migrations/00166). Every
+  // other comment-quoting type still uses `comment_id` against `comments`.
+  let commentBody: string | null = null;
+  if (notification.type === "task_mention") {
+    if (notification.task_comment_id) {
+      const { data } = await supabase
+        .from("board_task_comments")
+        .select("content")
+        .eq("id", notification.task_comment_id)
+        .maybeSingle();
+      commentBody = data?.content ?? null;
+    }
+  } else if (notification.comment_id) {
+    const { data } = await supabase
+      .from("comments")
+      .select("content")
+      .eq("id", notification.comment_id)
+      .maybeSingle();
+    commentBody = data?.content ?? null;
+  }
+
+  let replyBody: string | null = null;
+  if (notification.reply_id) {
+    const { data } = await supabase
+      .from("idea_discussion_replies")
+      .select("content")
+      .eq("id", notification.reply_id)
+      .maybeSingle();
+    replyBody = data?.content ?? null;
+  }
+
+  // The discussion's own body — only genuinely the trigger for a
+  // discussion_mention that has no reply_id (mentioned in the discussion
+  // post itself, not a reply).
+  let discussionBody: string | null = null;
+  let discussionTitle: string | null = null;
+  if (notification.discussion_id) {
+    const { data } = await supabase
+      .from("idea_discussions")
+      .select("title, body")
+      .eq("id", notification.discussion_id)
+      .maybeSingle();
+    discussionBody = data?.body ?? null;
+    discussionTitle = data?.title ?? null;
+  }
+
+  // Pick the source that genuinely triggered this notification — never a
+  // description/body that just happened to be fetchable. See
+  // selectSnippetSource for the per-type rule; never let a missing snippet
+  // break the send, just degrade to the plain sentence.
+  const { source: snippetSource, raw: snippetRaw } = selectSnippetSource({
+    type: notification.type,
+    hasCommentId: !!notification.comment_id,
+    hasTaskCommentId: !!notification.task_comment_id,
+    hasReplyId: !!notification.reply_id,
+    commentBody,
+    replyBody,
+    taskDescription,
+    discussionBody,
+  });
+  const snippet = buildSnippet(snippetRaw);
 
   // Build email content based on notification type
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
-  const email = buildNotificationEmail(
-    notification.type,
+  const ctaUrl = buildNotificationUrl({
+    type: notification.type,
+    ideaId: notification.idea_id,
+    commentId: notification.comment_id,
+    taskId: notification.task_id,
+    discussionId: notification.discussion_id,
+    replyId: notification.reply_id,
+    appUrl,
+  });
+  const email = buildNotificationEmail({
+    type: notification.type,
     actorName,
     ideaTitle,
     taskTitle,
-    notification.idea_id,
-    notification.discussion_id,
-    notification.comment_id,
-    notification.task_id,
-    notification.reply_id,
-    appUrl,
-  );
+    snippet,
+    ctaUrl,
+    snippetSource,
+    newStatusLabel: ideaStatusLabel,
+    discussionTitle,
+  });
 
   if (!email) {
     return jsonResponse({ skipped: true, reason: "no email content" });
@@ -197,171 +300,3 @@ export async function POST(request: Request) {
   }
 }
 
-function buildNotificationEmail(
-  type: NotificationType,
-  actorName: string,
-  ideaTitle: string | null,
-  taskTitle: string | null,
-  ideaId: string | null,
-  discussionId: string | null,
-  commentId: string | null,
-  taskId: string | null,
-  replyId: string | null,
-  appUrl: string,
-): { subject: string; html: string } | null {
-  const ctaUrl = buildNotificationUrl({
-    type, ideaId, commentId, taskId, discussionId, replyId, appUrl,
-  });
-  const ideaDisplay = ideaTitle
-    ? `<strong style="color:#fafafa;">${escapeBody(ideaTitle)}</strong>`
-    : "your idea";
-
-  switch (type) {
-    case "comment": {
-      return {
-        subject: `${actorName} commented on your idea`,
-        html: buildEmailHtml({
-          heading: "New comment on your idea",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} left a comment on ${ideaDisplay}.</p>`,
-          ctaText: "View Comment",
-          ctaUrl,
-          footerText: "You received this because someone commented on your idea.",
-        }),
-      };
-    }
-
-    case "collaborator": {
-      return {
-        subject: `${actorName} joined your idea`,
-        html: buildEmailHtml({
-          heading: "New collaborator",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} is now collaborating on ${ideaDisplay}.</p>`,
-          ctaText: "View Idea",
-          ctaUrl,
-          footerText: "You received this because of collaborator activity on your idea.",
-        }),
-      };
-    }
-
-    case "status_change": {
-      return {
-        subject: ideaTitle
-          ? `Status updated: ${ideaTitle}`
-          : "An idea you collaborate on was updated",
-        html: buildEmailHtml({
-          heading: "Idea status updated",
-          bodyHtml: `<p style="margin:0;">The status of ${ideaDisplay} has been updated.</p>`,
-          ctaText: "View Idea",
-          ctaUrl,
-          footerText:
-            "You received this because you collaborate on this idea.",
-        }),
-      };
-    }
-
-    case "task_mention": {
-      const taskDisplay = taskTitle
-        ? `<strong style="color:#fafafa;">${escapeBody(taskTitle)}</strong>`
-        : "a task";
-      return {
-        subject: `${actorName} mentioned you in a task`,
-        html: buildEmailHtml({
-          heading: "You were mentioned",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a comment on ${taskDisplay}${ideaTitle ? ` (${ideaDisplay})` : ""}.</p>`,
-          ctaText: "View Task",
-          ctaUrl,
-          footerText: "You received this because you were mentioned in a task comment.",
-        }),
-      };
-    }
-
-    case "comment_mention": {
-      return {
-        subject: `${actorName} mentioned you in a comment`,
-        html: buildEmailHtml({
-          heading: "You were mentioned",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a comment on ${ideaDisplay}.</p>`,
-          ctaText: "View Comment",
-          ctaUrl,
-          footerText: "You received this because you were mentioned in a comment.",
-        }),
-      };
-    }
-
-    case "collaboration_request": {
-      return {
-        subject: `${actorName} wants to collaborate on your idea`,
-        html: buildEmailHtml({
-          heading: "New collaboration request",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} has requested to collaborate on ${ideaDisplay}.</p>`,
-          ctaText: "Review Request",
-          ctaUrl,
-          footerText: "You received this because someone wants to collaborate on your idea.",
-        }),
-      };
-    }
-
-    case "collaboration_response": {
-      return {
-        subject: `Your collaboration request was reviewed`,
-        html: buildEmailHtml({
-          heading: "Collaboration request update",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} responded to your collaboration request on ${ideaDisplay}.</p>`,
-          ctaText: "View Idea",
-          ctaUrl,
-          footerText: "You received this because your collaboration request was reviewed.",
-        }),
-      };
-    }
-
-    case "discussion": {
-      return {
-        subject: `${actorName} started a discussion on your idea`,
-        html: buildEmailHtml({
-          heading: "New discussion",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} started a new discussion on ${ideaDisplay}.</p>`,
-          ctaText: "View Discussion",
-          ctaUrl,
-          footerText: "You received this because a new discussion was started on your idea.",
-        }),
-      };
-    }
-
-    case "discussion_reply": {
-      return {
-        subject: `${actorName} replied to a discussion`,
-        html: buildEmailHtml({
-          heading: "New discussion reply",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} replied to a discussion on ${ideaDisplay}.</p>`,
-          ctaText: "View Discussion",
-          ctaUrl,
-          footerText: "You received this because someone replied to a discussion you participated in.",
-        }),
-      };
-    }
-
-    case "discussion_mention": {
-      return {
-        subject: `${actorName} mentioned you in a discussion`,
-        html: buildEmailHtml({
-          heading: "You were mentioned",
-          bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a discussion on ${ideaDisplay}.</p>`,
-          ctaText: "View Discussion",
-          ctaUrl,
-          footerText: "You received this because you were mentioned in a discussion.",
-        }),
-      };
-    }
-
-    default:
-      return null;
-  }
-}
-
-function escapeBody(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}

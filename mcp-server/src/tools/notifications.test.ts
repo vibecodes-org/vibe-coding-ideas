@@ -65,6 +65,7 @@ function baseRow(overrides: Record<string, unknown> = {}) {
     idea_id: IDEA_ID,
     task_id: null,
     comment_id: null,
+    task_comment_id: null,
     discussion_id: null,
     reply_id: null,
     actor: { id: ACTOR_ID, full_name: "Amy Lin" },
@@ -99,6 +100,7 @@ describe("listNotifications — enrichment", () => {
     expect(n.idea_id).toBe(IDEA_ID);
     expect(n.task_id).toBe(TASK_ID);
     expect(n.comment_id).toBeNull();
+    expect(n.task_comment_id).toBeNull();
     expect(n.discussion_id).toBe(DISCUSSION_ID);
     expect(n.reply_id).toBeNull();
     expect(n.task).toEqual({ id: TASK_ID, title: "Fix websocket reconnect" });
