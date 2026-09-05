@@ -72,13 +72,12 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const notification = payload.record;
-  if (!notification?.type || !notification?.user_id) {
+  if (!payload.record?.type || !payload.record?.user_id) {
     return jsonResponse({ error: "Invalid payload" }, 400);
   }
 
   // Skip low-signal notification types
-  if (!EMAIL_WORTHY_TYPES.includes(notification.type)) {
+  if (!EMAIL_WORTHY_TYPES.includes(payload.record.type)) {
     return jsonResponse({ skipped: true, reason: "low-signal type" });
   }
 
@@ -87,6 +86,22 @@ export async function POST(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
+
+  // Re-read the row rather than trusting the webhook payload. The trigger
+  // used to hand-pick which columns it sent, so every column added to
+  // `notifications` after it was written arrived as undefined here and the
+  // email quietly rendered as if that id didn't exist. The trigger now sends
+  // the whole row (migration 00167), but reading it back is what makes that
+  // class of bug impossible rather than merely fixed once.
+  const { data: fresh } = await supabase
+    .from("notifications")
+    .select("id, user_id, actor_id, type, idea_id, comment_id, task_comment_id, task_id, discussion_id, reply_id")
+    .eq("id", payload.record.id)
+    .maybeSingle();
+
+  // Fall back to the payload if the row is already gone (deleted between
+  // insert and delivery) — better a slightly degraded email than none.
+  const notification = fresh ?? payload.record;
 
   // Get recipient user
   const { data: recipient } = await supabase

@@ -379,3 +379,59 @@ describe("POST /api/notifications/email — snippet source seam", () => {
     expect(payload.subject).not.toContain("&amp;");
   });
 });
+
+// The trigger hand-picked which columns it sent, so every column added to
+// `notifications` after it was written arrived here as undefined and the email
+// rendered as though that id did not exist — which is how the task_mention fix
+// shipped inert. The trigger now sends the whole row, and the route re-reads
+// the row anyway. These tests pin the re-read: without it the first one renders
+// the task description and mislabels a comment as a description edit.
+describe("POST /api/notifications/email — re-reads the row, does not trust the payload", () => {
+  it("uses ids present on the row but missing from the payload", async () => {
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        // What the old trigger would have sent: task_comment_id dropped.
+        notifications: {
+          ...baseNotification,
+          type: "task_mention",
+          task_id: "task-1",
+          task_comment_id: "tc-1",
+        },
+        users: { ...recipientRow, ...actorRow },
+        ideas: { title: "Idea Title", description: "idea desc" },
+        board_tasks: { title: "Task Title", description: "task desc — must not appear" },
+        board_task_comments: { content: "the real task comment" },
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(
+      // Payload deliberately omits task_comment_id, exactly as the old trigger sent it.
+      req({ ...baseNotification, type: "task_mention", task_id: "task-1" })
+    );
+    expect(res.status).toBe(200);
+
+    expect(calls.some((c) => c.table === "notifications")).toBe(true);
+
+    const payload = sentPayload();
+    expect(payload.html).toContain("the real task comment");
+    expect(payload.html).not.toContain("task desc");
+    expect(payload.html).not.toContain("the description of");
+  });
+
+  it("falls back to the payload when the row has already been deleted", async () => {
+    mockFrom.mockImplementation((table: string) => {
+      const fixtures: Record<string, TableRow> = {
+        notifications: null, // row gone between insert and delivery
+        users: { ...recipientRow, ...actorRow },
+        ideas: { title: "Idea Title", description: "idea desc" },
+        comments: { content: "a real idea comment" },
+      };
+      return makeChain(table, fixtures[table] ?? null);
+    });
+
+    const res = await POST(req({ ...baseNotification, type: "comment", comment_id: "c-1" }));
+    expect(res.status).toBe(200);
+    expect(sentPayload().html).toContain("a real idea comment");
+  });
+});
