@@ -37,8 +37,8 @@ import {
   UPDATE_CONFIRM_ACCEPT_LABEL,
   UPDATE_CONFIRM_CANCEL_LABEL,
   UPDATE_CONFIRM_HEADING,
-  UPDATE_QUIESCE_TIMEOUT_COPY,
-  UPDATE_READY_COPY,
+  isUpdateFlowSettled,
+  settledNoticeCopy,
   updateConfirmBody,
 } from "@/lib/terminal/helper-update-flow";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
@@ -311,7 +311,7 @@ export function TerminalSessionChooser({
         </div>
       )}
 
-      {(updateFlowPhase === "ready" || updateFlowPhase === "quiesce-timeout") && (
+      {isUpdateFlowSettled(updateFlowPhase) && (
         <div
           className={cn(
             "border-b px-3.5 py-2 text-[11px]",
@@ -320,7 +320,7 @@ export function TerminalSessionChooser({
               : "border-amber-500/30 bg-amber-500/5 text-amber-300",
           )}
         >
-          {updateFlowPhase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+          {settledNoticeCopy(updateFlowPhase)}
         </div>
       )}
 
