@@ -1,16 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
   buildLaunchDeepLink,
+  buildOpenTerminalDeepLink,
   encodePromptParam,
   redactDeepLinkToken,
   LAUNCH_SCHEME,
   LAUNCH_HOST,
+  OPEN_TERMINAL_HOST,
   MAX_LAUNCH_URL_LENGTH,
 } from "./deep-link";
 // The bridge/helper PARSES with the shared .mjs. Importing it here pins the two
 // implementations together: a link this (TS) module builds MUST parse back to the
 // same fields with the shared parser, or this test fails — catching any drift.
-import { parseLaunchDeepLink } from "../../../terminal/shared/deep-link.mjs";
+import { parseLaunchDeepLink, parseOpenTerminalDeepLink } from "../../../terminal/shared/deep-link.mjs";
 import {
   buildCompactBootstrapPromptParts,
   enforcePromptLength,
@@ -277,6 +279,43 @@ describe("buildLaunchDeepLink with worktree (concurrent-terminal isolation, nati
   });
 });
 
+describe("buildLaunchDeepLink with agent (docs/codex-terminal-requirements.md FR-1, AC-1/AC-2)", () => {
+  it("includes agent=codex, positioned before prompt, and round-trips", () => {
+    const withAgent = { ...SAMPLE, agent: "codex" as const, prompt: "hello" };
+    const url = buildLaunchDeepLink(withAgent);
+    expect(url).toContain("agent=codex");
+    expect(url.indexOf("agent=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withAgent);
+  });
+
+  it("AC-1: a link with agent absent is byte-identical to one built before agent existed", () => {
+    const withoutAgentParam = buildLaunchDeepLink(SAMPLE);
+    const withAgentExplicitlyUndefined = buildLaunchDeepLink({ ...SAMPLE, agent: undefined });
+    expect(withAgentExplicitlyUndefined).toBe(withoutAgentParam);
+    expect(withoutAgentParam).not.toContain("agent=");
+    expect(parseLaunchDeepLink(withoutAgentParam)).toEqual(SAMPLE);
+  });
+
+  it("AC-1: a link with agent explicitly 'claude' is also byte-identical to omitting it — never encoded as agent=claude", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, agent: "claude" as const });
+    expect(url).not.toContain("agent=");
+    expect(url).toBe(buildLaunchDeepLink(SAMPLE));
+  });
+
+  it("a garbage agent value on the wire is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&agent=chatgpt`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("agent");
+  });
+
+  it("is left untouched by redactDeepLinkToken — not a secret or free-form user content", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex" as const });
+    const redacted = redactDeepLinkToken(url);
+    expect(redacted).toContain("agent=codex");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);
@@ -443,5 +482,58 @@ describe("vibecodes:// URL budget (AC6)", () => {
     expect(logged).toContain("cwd=***");
     expect(logged).not.toContain(encodeURIComponent(cwd));
     expect(logged).toContain(`session=${SESSION}`);
+  });
+});
+
+// ── `vibecodes://open-terminal?…` — desktop Codex (FR-11/FR-12, AC-14/15) ───
+
+describe("buildOpenTerminalDeepLink (docs/codex-terminal-requirements.md FR-11)", () => {
+  const OPEN_TERMINAL_SAMPLE = {
+    relay: SAMPLE.relay,
+    helperToken: "eyJzdWIiOiJ1c2VyIn0.helperSig",
+    cwd: SAMPLE.cwd,
+    agent: "codex" as const,
+  };
+
+  it("build ⇄ parse round-trips the required fields with the shared .mjs parser", () => {
+    const url = buildOpenTerminalDeepLink(OPEN_TERMINAL_SAMPLE);
+    expect(url.startsWith(`${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?`)).toBe(true);
+    expect(parseOpenTerminalDeepLink(url)).toEqual(OPEN_TERMINAL_SAMPLE);
+  });
+
+  it("build ⇄ parse round-trips a prompt (incl. hostile characters), always LAST", () => {
+    const hostilePrompt = "Set up $(rm -rf ~) `hostname` \"double\" 'single' ; & | > < \\ %20 + \n second line $HOME";
+    const withPrompt = { ...OPEN_TERMINAL_SAMPLE, prompt: hostilePrompt };
+    const url = buildOpenTerminalDeepLink(withPrompt);
+    expect(url.endsWith(`prompt=${encodePromptParam(hostilePrompt)}`)).toBe(true);
+    expect(parseOpenTerminalDeepLink(url)).toEqual(withPrompt);
+  });
+
+  it("throws when relay/helperToken/cwd is missing", () => {
+    expect(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, relay: "" })).toThrow();
+    expect(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, helperToken: "" })).toThrow();
+    expect(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, cwd: "" })).toThrow();
+  });
+
+  it("throws for anything but agent:'codex' — no implicit default on this action (unlike `launch`)", () => {
+    // @ts-expect-error - deliberately testing the runtime guard against a bad value
+    expect(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, agent: "claude" })).toThrow();
+    // @ts-expect-error - deliberately testing the runtime guard against a bad value
+    expect(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, agent: undefined })).toThrow();
+  });
+
+  it("a `launch` link never parses as open-terminal, and vice versa", () => {
+    const launchUrl = buildLaunchDeepLink(SAMPLE);
+    expect(parseOpenTerminalDeepLink(launchUrl)).toBeNull();
+    const openTerminalUrl = buildOpenTerminalDeepLink(OPEN_TERMINAL_SAMPLE);
+    expect(parseLaunchDeepLink(openTerminalUrl)).toBeNull();
+  });
+
+  it("redactDeepLinkToken elides helperToken and prompt on an open-terminal link too", () => {
+    const url = buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, prompt: "secret task details" });
+    const redacted = redactDeepLinkToken(url);
+    expect(redacted).not.toContain(OPEN_TERMINAL_SAMPLE.helperToken);
+    expect(redacted).not.toContain("secret task details");
+    expect(redacted).toContain(`cwd=${encodeURIComponent(OPEN_TERMINAL_SAMPLE.cwd)}`);
   });
 });

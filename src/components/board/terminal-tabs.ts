@@ -20,6 +20,7 @@
 
 import type { TerminalStatus } from "@/lib/terminal/connection";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
 import type { AttachExistingPair } from "./use-terminal-session";
 import { resolveSessionName } from "@/lib/terminal/resolve-session-name";
 
@@ -117,6 +118,17 @@ export interface SessionEntry {
    * without touching `launchSeq`'s existing "deliver a launch" meaning.
    */
   autoConnectSuppressed?: boolean;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-5, implementation
+   * slice 2) — which agent this tab's session runs. Captured once, at the
+   * exact same moments as `taskId`/`ideaId` (`mintAndDeliver` in
+   * terminal-dock.tsx, from the launch payload's own `agent`), and never
+   * changed after — mirrors `SessionEntry.ideaId`'s "captured once" posture.
+   * Undefined for a genuinely pristine (never-launched) slot, same as every
+   * other launch-scoped field here; every real reader treats that (and a
+   * legacy "claude") the same via chooser-data.ts's `rowAgent`.
+   */
+  agent?: LaunchAgent;
 }
 
 // ── shared tone vocabulary (drives both the per-tab glyph and the collapsed

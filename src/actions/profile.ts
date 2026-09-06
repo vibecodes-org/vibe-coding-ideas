@@ -7,6 +7,7 @@ import { validateBio, validateAvatarUrl } from "@/lib/validation";
 import { encrypt } from "@/lib/encryption";
 import { MODEL_ALIASES, type ModelTierMap } from "@/lib/constants";
 import { MACHINE_DEFAULT_TERMINAL_MODEL, validateTerminalModelValue } from "@/lib/terminal/model-resolution";
+import { normalizeAgent, type LaunchAgent } from "@/lib/terminal/agent-launch";
 
 export async function updateProfile(formData: FormData) {
   const supabase = await createClient();
@@ -291,4 +292,53 @@ export async function updateTerminalAutoAccept(autoAccept: boolean): Promise<boo
 
   revalidatePath(`/profile/${user.id}`);
   return autoAccept;
+}
+
+// ── Terminal remembered agent (docs/codex-terminal-requirements.md FR-4a,
+// implementation slice 2) ───────────────────────────────────────────────────
+// Per-account remembered pick for the in-app terminal's agent picker
+// (users.terminal_agent, migration 00170) — mirrors terminal_model's exact
+// storage mechanism above: self-only, read/write the caller's own row,
+// revalidate the same path. `normalizeAgent` (agent-launch.ts) is the single
+// whitelist for "codex" vs. everything-else-means-"claude", so a malformed
+// value can never even reach the CHECK-constrained column.
+
+export async function getTerminalAgent(): Promise<LaunchAgent> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_agent")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return normalizeAgent(data?.terminal_agent);
+}
+
+export async function updateTerminalAgent(agent: LaunchAgent): Promise<LaunchAgent> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const toStore = normalizeAgent(agent);
+
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_agent: toStore })
+    .eq("id", user.id);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/profile/${user.id}`);
+  return toStore;
 }

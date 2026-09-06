@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX Design: launch Codex — browser terminal and desktop Terminal window</title>
+<style>
+  :root {
+    --bg: #0c0c0e; --panel: #141417; --panel-2: #111114; --line: #27272a; --line-2: #3f3f46;
+    --z100: #f4f4f5; --z200: #e4e4e7; --z300: #d4d4d8; --z400: #a1a1aa; --z500: #71717a; --z600: #52525b;
+    --emerald: #10b981; --emerald-950: #022c22; --sky: #0ea5e9; --sky-300: #7dd3fc; --sky-950: #082f49;
+    --amber-300: #fcd34d; --amber-500: #f59e0b; --rose-400: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--z300); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { color: var(--z100); font-size: 26px; margin: 0 0 6px; }
+  h2 { color: var(--z100); font-size: 19px; margin: 44px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+  h3 { color: var(--z200); font-size: 15px; margin: 24px 0 8px; }
+  p, li { max-width: 78ch; }
+  a { color: var(--sky-300); }
+  code { font-family: var(--mono); font-size: 12.5px; color: var(--z200); background: #1c1c21; padding: 1px 5px; border-radius: 4px; }
+  .meta { color: var(--z500); font-size: 13px; margin-bottom: 20px; }
+  .callout { border-left: 3px solid var(--sky); background: rgba(14,165,233,.06); padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.amber { border-color: var(--amber-500); background: rgba(245,158,11,.06); }
+  .callout.rule { border-color: var(--rose-400); background: rgba(251,113,133,.05); }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--z400); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .toc { columns: 2; column-gap: 32px; font-size: 13px; }
+  .toc li { margin: 2px 0; }
+
+  /* ── mockup frames ── */
+  .mock { margin: 16px 0 6px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: var(--panel); font-size: 12.5px; }
+  .mock-title { background: #1c1c21; color: var(--z500); font-size: 11px; padding: 5px 12px; border-bottom: 1px solid var(--line); letter-spacing: .03em; }
+  .mock-title b { color: var(--z300); font-weight: 600; }
+  .caption { color: var(--z500); font-size: 12.5px; margin: 6px 0 18px; max-width: none; }
+  .note { position: relative; }
+  .ann { display: inline-block; width: 18px; height: 18px; border-radius: 9px; background: var(--sky); color: #082f49; font-size: 11px; font-weight: 700; text-align: center; line-height: 18px; margin-right: 4px; vertical-align: middle; }
+  .ann-list { font-size: 13px; }
+  .ann-list li { margin: 4px 0; }
+
+  /* real-UI look-alikes (values copied from the shipped Tailwind classes) */
+  .row { border-top: 1px solid var(--line); padding: 10px 14px; display: flex; gap: 10px; align-items: flex-start; }
+  .row .name { color: var(--z100); font-weight: 600; font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .row .ident { font-family: var(--mono); font-size: 11px; color: var(--z500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .sub { font-size: 11px; color: var(--z500); margin-top: 3px; }
+  .row .grow { min-width: 0; flex: 1; }
+  .section-h { border-top: 1px solid var(--line); background: var(--panel-2); padding: 6px 14px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--z500); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; border: 1px solid transparent; white-space: nowrap; cursor: default; }
+  .btn.emerald { background: var(--emerald); color: var(--emerald-950); }
+  .btn.sky { background: var(--sky); color: var(--sky-950); }
+  .btn.ghost { background: transparent; color: var(--z400); }
+  .btn.outline { background: rgba(39,39,42,.6); color: var(--z200); border-color: var(--line-2); }
+  .btn.lg { padding: 8px 16px; font-size: 13px; }
+  .btn.disabled { opacity: .5; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; border: 1px solid; line-height: 16px; }
+  .chip.agent { border-color: var(--line-2); background: rgba(39,39,42,.6); color: var(--z300); }
+  .chip.amber { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); color: var(--amber-300); }
+  .chip.md { text-transform: none; font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; border: 1px solid var(--line-2); background: rgba(39,39,42,.6); color: var(--z300); }
+  .pill.rose { border-color: rgba(251,113,133,.55); background: rgba(251,113,133,.1); color: var(--rose-400); }
+  .banner { display: flex; gap: 8px; align-items: center; padding: 6px 14px; font-size: 11px; border-bottom: 1px solid; }
+  .banner.sky { border-color: rgba(14,165,233,.3); background: rgba(14,165,233,.05); color: var(--sky-300); }
+  .banner.amber { border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.05); color: var(--amber-300); }
+  .banner.block { display: block; border-left: 2px solid var(--sky); padding: 10px 14px; }
+  .banner .h { font-size: 12.5px; font-weight: 700; }
+  .banner .b { color: var(--z500); margin-top: 2px; }
+  .banner .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+  /* the agent picker itself */
+  .picker { margin-top: 10px; }
+  .picker .lbl { font-size: 11px; color: var(--z500); margin-bottom: 5px; }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; background: var(--panel-2); }
+  .seg > span { padding: 6px 12px; font-size: 12px; color: var(--z400); border-right: 1px solid var(--line-2); min-width: 104px; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .seg > span:last-child { border-right: 0; }
+  .seg > span.on { background: rgba(14,165,233,.14); color: var(--z100); font-weight: 600; box-shadow: inset 0 -2px 0 var(--sky); }
+  .seg > span.focus { outline: 2px solid var(--sky); outline-offset: -2px; }
+  .seg.full { display: flex; width: 100%; }
+  .seg.full > span { flex: 1; min-height: 44px; }
+  .check { font-size: 11px; }
+
+  /* tab strip */
+  .strip { display: flex; background: var(--panel); border-bottom: 1px solid var(--line); align-items: stretch; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12.5px; color: var(--z400); border-right: 1px solid var(--line); border-top: 2px solid transparent; min-width: 110px; max-width: 190px; white-space: nowrap; overflow: hidden; }
+  .tab.on { border-top-color: #38bdf8; background: var(--bg); color: var(--z100); font-weight: 600; }
+  .tab.wide { min-width: 150px; max-width: 230px; }
+  .tab .t { overflow: hidden; text-overflow: ellipsis; }
+  .tab .x { color: var(--z600); margin-left: auto; }
+  .plus { padding: 7px 10px; color: var(--z400); }
+
+  /* centred overlay panel */
+  .overlay { background: rgba(12,12,14,.95); padding: 28px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .overlay .icon { width: 28px; height: 28px; border: 2px dashed var(--z400); border-radius: 14px; }
+  .overlay .ttl { font-size: 16px; font-weight: 600; color: var(--z300); }
+  .overlay .body { font-size: 13px; color: var(--z400); max-width: 460px; margin: 0; }
+  .overlay .tert { font-size: 12px; color: var(--z400); text-decoration: underline; }
+  .term { font-family: var(--mono); font-size: 11.5px; color: var(--z400); background: var(--bg); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  .hdr { display: flex; gap: 8px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .hdr .id { font-family: var(--mono); font-size: 11.5px; color: var(--z500); }
+  .hdr .right { margin-left: auto; display: inline-flex; gap: 6px; }
+
+  /* dialog */
+  .dialog { max-width: 384px; margin: 12px auto; border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; overflow: hidden; }
+  .dialog .head { padding: 14px 32px 12px 16px; position: relative; }
+  .dialog .head .x { position: absolute; right: 12px; top: 12px; color: var(--z500); }
+  .dialog .ttl { color: var(--z100); font-size: 13px; font-weight: 600; }
+  .dialog .desc { font-size: 11.5px; color: var(--z500); margin-top: 3px; }
+  .dialog .foot { border-top: 1px solid var(--line); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+  .phone { width: 375px; max-width: 100%; }
+  .flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 14px 0; }
+  .flow .step { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; background: var(--panel); }
+  .flow .step b { color: var(--z100); display: block; margin-bottom: 4px; }
+  .flow .step.warn { border-color: rgba(245,158,11,.4); }
+  .kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--z300); }
+
+  /* dropdown menu (shadcn DropdownMenuContent look-alike) */
+  .menu { width: 250px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 12.5px; }
+  .mi { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 4px; color: var(--z200); }
+  .mi .ic { width: 16px; text-align: center; color: var(--z400); flex: none; }
+  .mi .sub { font-size: 11px; color: var(--z500); margin-top: 1px; }
+  .mi.hl { background: #27272a; color: var(--z100); }
+  .mi.dis { opacity: .5; }
+  .mi.danger { color: var(--rose-400); }
+  .msep { height: 1px; background: var(--line); margin: 4px -4px; }
+  .beta { display: inline-block; border-radius: 3px; background: rgba(14,165,233,.15); color: #38bdf8; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; line-height: 14px; margin-left: 6px; vertical-align: middle; }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 10px 12px; width: 260px; position: relative; }
+  .card .ct { color: var(--z100); font-weight: 600; font-size: 13px; }
+  .card .dots { position: absolute; right: 6px; top: 6px; width: 28px; height: 28px; border-radius: 6px; background: #27272a; color: var(--z100); text-align: center; line-height: 28px; }
+  .side { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; padding: 16px 14px; }
+  .decided { display: inline-block; border-radius: 4px; background: rgba(16,185,129,.12); color: #34d399; border: 1px solid rgba(16,185,129,.35); font-size: 10.5px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; margin-right: 6px; vertical-align: middle; }
+  .corrected { display: inline-block; border-radius: 4px; background: rgba(251,113,133,.12); color: var(--rose-400); border: 1px solid rgba(251,113,133,.4); font-size: 10.5px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; margin-right: 6px; vertical-align: middle; }
+  .newtag { display: inline-block; border-radius: 4px; background: rgba(14,165,233,.12); color: var(--sky-300); border: 1px solid rgba(14,165,233,.4); font-size: 10.5px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; margin-right: 6px; vertical-align: middle; }
+
+  /* ── rework additions (§12–§15) ── */
+  .menu.wide { width: 288px; }                                   /* shadcn w-72 */
+  .mlabel { padding: 6px 8px 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--z500); }  /* DropdownMenuLabel */
+  .mi .srx { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .mline { padding: 6px 8px; font-size: 11.5px; color: var(--z500); }
+  .mline code { display: block; margin-top: 2px; font-size: 11px; word-break: break-all; }
+  .splitbtn { display: inline-flex; align-items: stretch; }
+  .splitbtn .body { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; font-size: 12px; font-weight: 500; color: #34d399; background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.25); border-radius: 6px 0 0 6px; }
+  .splitbtn .chev { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 32px; color: #34d399; background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.25); border-left: 0; border-radius: 0 6px 6px 0; }
+  .toolbar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .toolbar .sp { flex: 1; }
+
+  /* macOS Terminal.app window look-alike */
+  .termwin { max-width: 640px; margin: 12px auto; border: 1px solid #3a3a40; border-radius: 10px; overflow: hidden; background: #1e1e1e; box-shadow: 0 16px 40px rgba(0,0,0,.6); }
+  .termwin .bar { display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: #2b2b2e; border-bottom: 1px solid #3a3a40; font-size: 11.5px; color: #b0b0b5; }
+  .termwin .bar .dot { width: 11px; height: 11px; border-radius: 6px; }
+  .termwin .bar .ttl { flex: 1; text-align: center; margin-right: 42px; }
+  .termwin pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: #e5e5e5; white-space: pre-wrap; word-break: break-word; }
+  .termwin pre .dim { color: #8a8a90; }
+  .termwin pre .key { color: #7dd3fc; font-weight: 700; }
+  .termwin pre .hd { color: #fbbf24; font-weight: 700; }
+  .termwin pre .cur { display: inline-block; width: 8px; height: 14px; background: #e5e5e5; vertical-align: -2px; }
+
+  /* sonner toast look-alike */
+  .toast { width: 356px; margin: 12px 0; border: 1px solid var(--line-2); background: var(--panel); border-radius: 8px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 12.5px; }
+  .toast .t { color: var(--z100); font-weight: 600; }
+  .toast .d { color: var(--z400); font-size: 11.5px; margin-top: 3px; }
+  .toast .a { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .toast .a .btn { padding: 3px 8px; font-size: 11.5px; }
+  .toast .a .btn.primary { background: var(--z100); color: var(--bg); }
+  .toast .x { float: right; color: var(--z500); margin: -2px -4px 0 8px; }
+
+  /* macOS notification banner look-alike */
+  .notif { width: 356px; margin: 12px 0; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: #2b2b2e; border: 1px solid #3a3a40; box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 12px; }
+  .notif .ic { width: 30px; height: 30px; border-radius: 7px; background: var(--emerald); flex: none; }
+  .notif .t { color: #f4f4f5; font-weight: 600; }
+  .notif .d { color: #b0b0b5; font-size: 11.5px; }
+  .vs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Launch Codex — in the browser terminal and in a desktop Terminal window — UX design</h1>
+<div class="meta">UX Design step output · board task bde102c1 · builds on <b>docs/codex-terminal-requirements.md</b> (the "Requirements" step, revised 6 Sep 2026 — §2.3, §2.4, US-10/11, FR-11–15, AC-14–22, spikes S-4/S-5) · 6 Sep 2026 · macOS only · v1 = "Codex only if it's already installed and signed in" · <b>Revised after Design Review (6 Sep 2026)</b>: the seven open questions are now decisions (§11), and the task card's menu gains explicit Codex actions (§7). · <b>Rework, same day (scope grew)</b>: Codex can now also open in a <em>desktop Terminal window</em> (§12), the board toolbar's launch dropdown is corrected and redesigned as agent × location (§13), §7 is reconciled with both, and the rest of the document is made consistent with a desktop path that VibeCodes doesn't track (§14). · <b>Revised after the second Design Review (6 Sep 2026)</b>: the five rework questions are now decisions (§15, no open questions remain). One changed the design: "Codex isn't installed" on the desktop-window path is now caught <em>before</em> anything fires — the helper's status says whether Codex is present, and the desktop-launch items are disabled with the reason and an install link beside them (§7b, §12d, §12f, §13). The after-the-fact toast survives only as the fallback for a window that fails to open for a reason the pre-flight couldn't predict.</div>
+
+<div class="callout amber"><b>What changed in the rework, in one paragraph.</b> Codex now runs in two places: the in-browser terminal (everything in §1–§7 as before) and a real Terminal window on the user's Mac, opened by <em>our</em> helper app because Codex has no link scheme of its own (Requirements §2.3). The helper opening a Terminal and running a command is new ground, so before Codex actually starts the user sees what is about to run and presses Enter (§12c — the "see and confirm" safeguard, S-5). The board toolbar's dropdown, which the earlier draft wrongly said "lands on the chooser", is in fact a one-click auto-launcher; it becomes four explicit items grouped by agent (§13). A desktop Codex window is not a dock session — no tab, no pill, no Resume row — exactly like Claude's desktop launch today (§14).</div>
+
+<p>This document designs the user-facing pieces the Requirements step asked for. It does not repeat the requirements; it cites them (US-n, FR-n, AC-n) and decides how they look and behave. Every mockup below is built from the <em>shipped</em> terminal components — the session chooser, the per-task launch dialog, the tab strip, the session header, the centred state panels and the helper-update flow — so nothing here is a new design language. Colours, sizes and copy tone match what is already on screen.</p>
+
+<div class="callout rule"><b>Hard rules this design honours</b> (root CLAUDE.md, In-App Terminal): a launch dialog is never a trap — close button, <span class="kbd">Esc</span> and outside-click always work; nothing is minted until a click; swapping the dock body kills a live terminal, so warnings for a <em>live</em> tab render as overlays and everything else renders in the panel; a popped-out tab's status is never read as ended; Resume keeps whatever agent the session already had; the recorded project folder is always the main checkout.</div>
+
+<ol class="toc">
+  <li><a href="#principles">Design principles &amp; decisions at a glance</a></li>
+  <li><a href="#flow">The user flow</a></li>
+  <li><a href="#picker">1 · The agent picker</a></li>
+  <li><a href="#missing">2 · "Codex isn't installed on this Mac"</a></li>
+  <li><a href="#helper">3 · "Your helper needs updating first"</a></li>
+  <li><a href="#labels">4 · Which agent is running — tabs, rows, header, pop-out</a></li>
+  <li><a href="#resume">5 · Resume on a Codex row</a></li>
+  <li><a href="#shared">6 · Second session shares the folder</a></li>
+  <li><a href="#taskmenu">7 · From a task card's menu — "Launch in Claude Code" / "Launch in Codex"</a></li>
+  <li><a href="#states">8 · Every state, in one table</a></li>
+  <li><a href="#mobile">9 · 375px / keyboard / screen reader</a></li>
+  <li><a href="#copy">10 · Copy sheet (exact strings)</a></li>
+  <li><a href="#questions">11 · Decisions (settled at Design Review)</a></li>
+  <li><a href="#desktop">12 · Codex in a desktop Terminal window <span class="newtag">New</span></a></li>
+  <li><a href="#toolbar">13 · The board toolbar split button <span class="corrected">Corrected</span></a></li>
+  <li><a href="#consistency">14 · Desktop Codex and the rest of this doc — consistency notes</a></li>
+  <li><a href="#open">15 · Decisions (settled at the second Design Review — rework)</a></li>
+</ol>
+
+<h2 id="principles">Design principles &amp; decisions at a glance</h2>
+<table>
+  <tr><th style="width:32%">Decision</th><th>What we do</th><th style="width:34%">Why (and what we rejected)</th></tr>
+  <tr><td>Where the choice lives</td><td>A two-option <b>segmented control</b> ("Claude Code" | "Codex") sits directly under the green "Start new session" button, on every surface that starts a <em>fresh</em> session. It is a setting you glance at, not a step you must complete.</td><td>Hick's Law: two visible options, zero extra clicks for the 95% who keep the default (US-2). Rejected: a dropdown (hides the choice, +1 click); two green buttons ("Start with Claude" / "Start with Codex") — two equal primaries compete and double the width on mobile.</td></tr>
+  <tr><td>Default</td><td>Claude Code, or the agent you picked last time (US-8). The control always shows which is selected; the launch button label never changes.</td><td>Recognition over recall — you see your last choice rather than remembering it. <span class="decided">Decided</span> Remembering is a per-<b>account</b> setting (like the starting-model setting), so it follows you across Macs and browsers; a small one-time database change is accepted (§11, Q4).</td></tr>
+  <tr><td>From a task card's menu</td><td>The card's existing "Launch in Claude Code" / "Launch in browser terminal" items stay exactly as they are, and gain <b>two explicit Codex siblings: "Launch in Codex"</b> (a desktop Terminal window, §12) <b>and "Launch Codex in browser terminal"</b>. The agent and the location are whichever item you clicked — the remembered pick is never applied silently on this path. (§7, reconciled with §13 in the rework)</td><td><span class="decided">Decided</span> Strong information scent: the label says what will run before you click. Rejected: one item that quietly used the remembered agent — a switcher who last used Codex would get Codex from a task card without being asked (§11, Q3).</td></tr>
+  <tr><td>Claude-only settings</td><td>When Codex is selected the "New sessions start on Opus · your setting" line and the amber auto-accept chip are replaced by one grey line: <i>"Codex uses its own model and permission settings."</i> (FR-8)</td><td>Never show a setting that won't apply. Replacing (not hiding) keeps the block the same height so the button doesn't jump under the cursor.</td></tr>
+  <tr><td>Codex missing</td><td>An in-panel state (not a dialog) that says plainly what happened, that nothing was started, and offers <b>three exits</b>: how to install, start with Claude Code instead, view other sessions. Claude missing gets the same treatment (FR-3).</td><td>Not a modal — there is no live terminal to protect. Not the rose "Error" pill — nothing went wrong on the user's side; grey "Not found" pill with a text label.</td></tr>
+  <tr><td>Helper too old</td><td>Gate <em>before</em> launch when the helper's version is known. The Start button disables with an adjacent, one-line explanation and the existing sky "Update now" nudge (same button, same confirm → "Closing the helper…" → "Ready to update" flow). One-click fallback: "Use Claude Code for now". (US-7, FR-7)</td><td>Reuses the exact HelperUpdateButton + HelperUpdateFlowNotice — Nick's rule: "copy the button rather than add a new type of UX". Disabled-with-explanation is allowed; disabled-without is not.</td></tr>
+  <tr><td>Showing the agent</td><td>Text label, never colour alone. Tabs: a small neutral "Codex" pill (Claude tabs stay as today). Rows (chooser, My sessions, task-launch dialog): every row gets a small "Claude Code" or "Codex" chip in its identity line. Session header: a "Codex" chip beside the status pill. Pop-out window title gets " · Codex".</td><td><span class="decided">Decided</span> Codex-only pill on tabs; both agents named on rows (§11, Q2). Tabs are 110–190px wide and already carry an amber "other board" pill; labelling every Claude tab would cost width for zero information. Rows have room, and a switcher (US-5) wants both named.</td></tr>
+  <tr><td>Resume on Codex</td><td>Same green Resume button, same inline confirm; copy says <i>"most recent Codex conversation in &lt;folder&gt;"</i>, never "this exact conversation". No picker. (US-6, AC-7)</td><td>Honest about what <code>codex resume --last</code> does. If the spike finds it isn't folder-scoped, Resume is hidden on Codex rows (same rule as "no folder recorded").</td></tr>
+  <tr><td>Second Codex session, same board</td><td><b>Warn, don't block.</b> An amber note appears under the picker the moment Codex is selected while another session is live on this board; the terminal's first line repeats it. (US-9, FR-9)</td><td><span class="decided">Decided</span> Warn, not block (§11, Q1). Blocking removes a legitimate use (a second Codex window to read/ask while the first works). The note names the consequence in plain words.</td></tr>
+  <tr><td><span class="newtag">New</span> Codex in a desktop Terminal window</td><td>Reached from the toolbar's "Codex › In a terminal window" and the card's "Launch in Codex". Our helper opens a real Terminal.app window in the project folder; the window first shows <em>what is about to run</em> (folder, board, the starting message) and waits for <span class="kbd">Enter</span>; then Codex starts with the board-connect prompt. Not a dock session: no tab, no pill, no Resume row. (§12)</td><td>Same human-in-the-loop shape as Claude's desktop launch today (the prompt is shown before it runs). The Enter step doubles as the S-5 safeguard: a link fired by some other web page can open a window that <em>asks</em>, but nothing runs until a person at the keyboard says so. Rejected: a native "Allow?" dialog (an extra click with none of the context) and "run silently" (ruled out by Requirements).</td></tr>
+  <tr><td><span class="newtag">New</span> "Codex isn't installed" on the desktop path</td><td><span class="decided">Decided</span> <b>Caught before the click.</b> The helper's status report (the pre-flight "is this agent installed?" check FR-3 already requires) says whether <code>codex</code> is on this Mac. When it isn't, the desktop-launch items ("Codex › In a terminal window", "Launch in Codex") are <b>disabled with the reason beside them</b> — "Codex isn't installed on this Mac" — and an enabled "How to install Codex" item sits directly under. No link fires, no dead Terminal window ever opens. A "couldn't open a window" toast remains only as the fallback for a failure the pre-flight couldn't predict. (§12d, §12f, §15 Q11)</td><td>Nick's call at the second Design Review: warn first, don't fire-and-apologise. It is the same disabled-with-adjacent-reason pattern §3 already uses for the helper gate, so nothing new is invented, and the way out (the install link) is adjacent, not somewhere else. The earlier after-the-fact toast + macOS notification was rejected as the main path: it opened the question ("did it work?") before answering it.</td></tr>
+  <tr><td><span class="corrected">Corrected</span> Board toolbar dropdown</td><td>Becomes <b>agent × location</b>: two labelled groups, "Claude Code" and "Codex", each with "In a terminal window" and "In the browser". Every item names what runs and where, and does exactly that in one click. The green button body keeps its label and its action (Claude, terminal window). (§13)</td><td>The earlier draft said the toolbar's "In the browser" lands on the chooser — <b>wrong</b>; it auto-launches Claude with no picker. Nick's decision: explicit items, no silent switch, no forced extra picker. Rejected: making the green button follow the remembered pick (AC-22 would allow it if the label changed, but the board's most-clicked control shouldn't change meaning between visits).</td></tr>
+</table>
+
+<h2 id="flow">The user flow</h2>
+<p>Trigger → completion, including every way back. "Fresh" surfaces are the only places the picker appears (FR-4). A launch from the board toolbar's dropdown or a task card's menu carries its agent <em>and location</em> from the item clicked instead of showing the picker — those paths have their own flows in §7 (card) and §13 (toolbar). The desktop Terminal window path is a different animal (nothing minted, nothing tracked) and has its own flow in §12b.</p>
+<div class="flow">
+  <div class="step"><b>Trigger</b>Dock chevron "Open" (goes through the entry decision and the picker below); board toolbar "Codex › In the browser" or a task card's "Launch Codex in browser terminal" (agent already chosen — skip to Gate). This flow is the <em>browser terminal</em>; the desktop window is §12b.</div>
+  <div class="step"><b>Entry decision</b>(entry-decision.ts, unchanged) → reconnect instantly, show the chooser, or empty-launch "Ready when you are".</div>
+  <div class="step"><b>Pick (fresh only)</b>Segmented control: Claude Code | Codex. Remembered per account. Escape / Close / outside-click back out — nothing minted. Task-menu launches skip this: the agent is already chosen.</div>
+  <div class="step warn"><b>Gate: helper too old?</b>Known-old → Start disables with explanation + Update now / Use Claude Code for now.</div>
+  <div class="step warn"><b>Gate: second session here?</b>Codex + live session on this board → amber "shares the folder" note. Proceed or not.</div>
+  <div class="step"><b>Launch</b>Same helper hand-off as today. Tab appears at once with the "Codex" pill; pill reads "Connecting…".</div>
+  <div class="step warn"><b>Codex not found</b>Panel: "Codex isn't installed on this Mac" · How to install · Start with Claude Code instead · View my other sessions.</div>
+  <div class="step"><b>Working</b>Header shows "Codex" chip. Board connected via Codex's own sign-in. Everything else identical.</div>
+  <div class="step"><b>Ended → Resume</b>Row shows "Codex" chip; Resume continues the most recent Codex conversation in that folder. No picker.</div>
+</div>
+<p>Back-navigation at every step: the chooser overlay and the task dialog keep their close button, <span class="kbd">Esc</span> and outside-click; the in-panel states have a visible "View my other sessions" tertiary link and the dock's own collapse control. No new dead ends are introduced.</p>
+
+<h2 id="picker">1 · The agent picker</h2>
+<h3>1a · In the session chooser ("Start new session" block)</h3>
+<div class="mock">
+  <div class="mock-title"><b>Session chooser</b> · rendered in the dock body (or as the non-destructive overlay when a live tab exists) · default state</div>
+  <div style="padding:12px 14px; border-bottom:1px solid var(--line)">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <span class="btn emerald lg">▣ Start new session</span>
+      <span style="font-size:11.5px; color:var(--z500)">up to 3 at once</span>
+    </div>
+    <div class="picker">
+      <div class="lbl"><span class="ann">1</span>Run it with</div>
+      <div class="seg" role="radiogroup" aria-label="Which agent runs this session">
+        <span class="on">✓ Claude Code</span><span>Codex</span>
+      </div>
+    </div>
+    <p style="margin:8px 0 0; font-size:11px; color:var(--z500)"><span class="ann">2</span>New sessions start on Opus · your setting <span style="color:var(--amber-300); font-weight:600">· ⚡ auto-accept on</span></p>
+    <p style="margin:4px 0 0; font-size:11px; color:var(--z500)">Only a fresh session starts in auto-accept mode — reconnecting or resuming keeps asking.</p>
+  </div>
+  <div class="section-h">Running now — this board</div>
+  <div class="row"><div class="grow"><div class="name">Fix login redirect <span class="chip agent">Claude Code</span></div><div class="ident">Nicks-MBP · ~/projects/vibe-coding-ideas · started 2h ago</div><div class="sub">If this session is open somewhere else, reconnecting here takes it over.</div></div><span class="btn sky">↻ Reconnect</span></div>
+  <div class="section-h">Recent — this board (ended in the last 48h)</div>
+  <div class="row"><div class="grow"><div class="name">Write the pricing page copy <span class="chip agent">Codex</span></div><div class="ident">~/projects/vibe-coding-ideas · ended 40m ago</div></div><span class="btn emerald">Resume</span></div>
+  <div style="display:flex; justify-content:flex-end; border-top:1px solid var(--line); background:var(--panel-2); padding:8px 14px"><span class="btn ghost">✕ Close</span></div>
+</div>
+<ol class="ann-list">
+  <li><span class="ann">1</span>The control sits <em>inside</em> the same bordered block as the Start button (Gestalt proximity: it belongs to that button and to nothing below it). Label "Run it with" says what the choice does in three plain words. Selected option shows a ✓ plus a bottom accent and bold text — three cues, none of them colour-only.</li>
+  <li><span class="ann">2</span>The existing model/auto-accept lines are untouched when Claude Code is selected (AC-1: byte-identical launch).</li>
+</ol>
+
+<div class="mock">
+  <div class="mock-title"><b>Session chooser</b> · Codex selected · no gates tripped</div>
+  <div style="padding:12px 14px">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <span class="btn emerald lg">▣ Start new session</span>
+      <span style="font-size:11.5px; color:var(--z500)">up to 3 at once</span>
+    </div>
+    <div class="picker">
+      <div class="lbl">Run it with</div>
+      <div class="seg"><span>Claude Code</span><span class="on">✓ Codex</span></div>
+    </div>
+    <p style="margin:8px 0 0; font-size:11px; color:var(--z500)"><span class="ann">3</span>Codex uses its own model and permission settings.</p>
+    <p style="margin:4px 0 0; font-size:11px; color:var(--z500)"><span class="ann">4</span>Codex signs in with your own ChatGPT account on this Mac — nothing to set up here.</p>
+  </div>
+</div>
+<ol class="ann-list">
+  <li><span class="ann">3</span>Replaces the model line one-for-one so the block's height is stable (FR-8). The auto-accept reminder line is dropped, since nothing applies.</li>
+  <li><span class="ann">4</span>One reassurance line, shown only the first three times Codex is selected in this browser, then retired (same "dismiss for this browser session" mechanism as the helper nudge). Sets the expectation that VibeCodes has no sign-in step (v1 scope).</li>
+</ol>
+
+<h3>1b · Empty-launch ("Ready when you are")</h3>
+<div class="mock">
+  <div class="mock-title"><b>Ready panel</b> · shown when nothing is live or recent — today's one-button surface</div>
+  <div class="overlay">
+    <div class="ttl" style="font-size:14px; color:var(--z100)">Ready when you are</div>
+    <p class="body" style="font-size:12px">This Mac is already set up. Start a new session, or pick up one of your other sessions.</p>
+    <div class="seg" style="margin-top:4px"><span class="on">✓ Claude Code</span><span>Codex</span></div>
+    <span class="btn emerald lg" style="margin-top:2px">Start new session</span>
+    <span class="tert">View my other sessions</span>
+  </div>
+</div>
+<p class="caption">Same control, same order (choice above the button that acts on it), same remembered value. The Ready panel already stacks vertically, so the control goes full-width of its column and the button stays the single primary.</p>
+
+<h3>1c · Per-task launch dialog</h3>
+<div class="mock">
+  <div class="mock-title"><b>TerminalTaskLaunchChoice</b> · only appears when this exact task already has a live/recent session</div>
+  <div class="dialog">
+    <div class="head"><span class="x">✕</span>
+      <div class="ttl">This task has a recent session</div>
+      <div class="desc">Write the pricing page copy<br><span style="font-family:var(--mono)">Ended 40m ago</span> · <span class="chip agent">Codex</span></div>
+      <div class="picker"><div class="lbl">Start fresh with</div><div class="seg"><span class="on">✓ Claude Code</span><span>Codex</span></div></div>
+      <p style="margin:6px 0 0; font-size:11px; color:var(--z500)">Starts on Sonnet · your setting</p>
+    </div>
+    <div class="foot"><span class="btn ghost">Cancel</span><span class="btn ghost">▣ Start fresh anyway</span><span class="btn emerald">↻ Resume</span></div>
+  </div>
+</div>
+<p class="caption">The chip on the description line tells you what "Resume" will bring back (a Codex conversation). The picker is labelled "Start fresh with" because in this dialog it governs only the "Start fresh anyway" button — Resume/Reconnect never read it (AC-7). Close ✕, <span class="kbd">Esc</span> and outside-click still cancel with nothing minted.</p>
+<div class="callout"><b>How this dialog gets its starting value.</b> It is only ever reached from a task card's <em>browser-terminal</em> items (§7), so the picker opens <em>pre-set to the item you clicked</em> — "Launch in browser terminal" opens it on Claude Code, "Launch Codex in browser terminal" opens it on Codex — never to the remembered pick. The two desktop-window items ("Launch in Claude Code", "Launch in Codex") never show this dialog: a desktop window isn't a session, so there is nothing to resume or reconnect (§12, §14). You can still flip it here before "Start fresh anyway". <span class="decided">Decided</span> The instant per-task launch (no matching session, so no dialog) never uses the remembered agent silently either: the card's menu has a separate "Launch in Codex" item, so the agent is always the one named on the thing you clicked (§11, Q3).</div>
+
+<h2 id="missing">2 · "Codex isn't installed on this Mac" (US-4, FR-3, AC-5)</h2>
+<p>Timing: the helper opens, the bridge attaches, then checks for the binary before spawning anything. The user sees the normal amber "Connecting…" pill for a second or two, then this panel replaces it. No process ran, no "command not found".</p>
+<div class="mock">
+  <div class="mock-title"><b>Session panel</b> · new view <code>agent-missing</code> · replaces the "Session ended" panel for this case</div>
+  <div class="hdr"><span class="pill">◌ Codex not found</span><span class="chip md agent">Codex</span><span class="id">VibeCodes · ~/projects/vibe-coding-ideas · session 3f9a12c0</span><span class="right"><span class="btn ghost">Close tab</span></span></div>
+  <div class="term">Codex isn't installed on this Mac, so nothing was started. Install it, then start a new session — or start with Claude Code instead.</div>
+  <div class="overlay">
+    <div class="icon"></div>
+    <div class="ttl">Codex isn't installed on this Mac</div>
+    <p class="body">The terminal looked for Codex on <b>Nicks-MBP</b> and couldn't find it. Nothing was started and nothing on your Mac has changed. Install Codex from OpenAI and sign in to it once, then start a new session.</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+      <span class="btn outline lg">↗ How to install Codex</span>
+      <span class="btn emerald lg">▣ Start with Claude Code instead</span>
+    </div>
+    <span class="tert">View my other sessions</span>
+  </div>
+</div>
+<ul class="ann-list">
+  <li><b>Pill:</b> grey "Not found" family (same styling as today's "Not connected yet"), <em>not</em> the rose Error pill — nothing broke; a text label plus the dashed-circle icon carries the meaning without colour.</li>
+  <li><b>Terminal line:</b> the same one-line mechanism the bridge already uses for the worktree fallback note, so the scrollback also records what happened.</li>
+  <li><b>Primary action</b> is the one that gets the user working right now ("Start with Claude Code instead" — it launches a fresh Claude session in the same folder, and flips the remembered agent back to Claude Code so the next launch doesn't repeat the failure. <span class="decided">Decided</span> That flip is intended — §11, Q7). "How to install Codex" opens OpenAI's install page in a new tab (external-link icon; the page is theirs, not ours — no install flow inside VibeCodes, per Requirements §3 Q2).</li>
+  <li><b>Install-page URLs — placeholder (§11, Q6):</b> the exact addresses for OpenAI's Codex CLI install page and Anthropic's Claude Code install page are <b>to be confirmed at implementation time</b> (both have moved before). Implementation should put them in one constants file next to the copy (<code>codex-copy.ts</code>) — the Claude one today is the <code>INSTALL_GUIDE_URL</code> constant in <code>launch-claude-code-button.tsx</code> — and check each opens the right page in a real browser before shipping.</li>
+  <li><b>Claude missing</b> gets the mirror image: "Claude Code isn't installed on this Mac", "How to install Claude Code" (Anthropic's page), and — only if the remembered agent was Claude — no "instead" button (there is nothing to fall back to). Tertiary link stays.</li>
+  <li>The panel is in the dock body, not a modal (nothing live to protect; modal-for-inline-content is a rule we don't break). The tab's ✕ closes it like any ended tab.</li>
+</ul>
+
+<h2 id="helper">3 · "Your helper needs updating first" (US-7, FR-7, AC-8)</h2>
+<p>An old helper ignores the new "which agent" instruction and would quietly launch Claude. So when the helper's version is known and too old, Codex is refused <em>before</em> any launch fires. We reuse the chooser's existing sky nudge and the shared "stand the old helper down, then download" flow verbatim.</p>
+<div class="mock">
+  <div class="mock-title"><b>Session chooser</b> · Codex selected · helper reports 0.3.11, Codex needs 0.4.0</div>
+  <div class="banner sky">ⓘ <span style="flex:1">Codex needs a newer helper — yours is 0.3.11 and Codex arrived in 0.4.0. Updating takes about a minute.</span><span class="btn sky">Update now</span><span>✕</span></div>
+  <div style="padding:12px 14px">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <span class="btn emerald lg disabled">▣ Start new session</span>
+      <span style="font-size:11.5px; color:var(--z500)"><span class="ann">5</span>Update the helper to start with Codex, or <a href="#">use Claude Code for now</a>.</span>
+    </div>
+    <div class="picker"><div class="lbl">Run it with</div><div class="seg"><span>Claude Code</span><span class="on">✓ Codex</span></div></div>
+    <p style="margin:8px 0 0; font-size:11px; color:var(--z500)">Codex uses its own model and permission settings.</p>
+  </div>
+</div>
+<ol class="ann-list">
+  <li><span class="ann">5</span>The Start button is disabled <em>with</em> the reason right beside it, and the reason contains the way out: the "use Claude Code for now" link flips the segmented control back to Claude Code, which re-enables the button instantly. Switching the control by hand does the same. No dead end.</li>
+</ol>
+<div class="mock">
+  <div class="mock-title"><b>After "Update now"</b> · the existing HelperUpdateFlowNotice, unchanged phases</div>
+  <div class="banner sky block"><div class="h">Update the helper?</div><div class="b">Your 1 running session will end first — the agent stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.</div><div class="actions"><span class="btn ghost">Not now</span><span class="btn sky">End sessions &amp; update</span></div></div>
+  <div class="banner sky">◌ Closing the helper…</div>
+  <div class="banner sky">Ready to update — the helper has closed. Drag the new VibeCodes app into Applications to finish.</div>
+</div>
+<p class="caption">One wording tweak to the shared confirm body: "Claude stops on your machine" becomes "the agent stops on your machine", since the running sessions may now be either. Everything else is the shipped flow.</p>
+<div class="callout"><span class="decided">Decided</span> <b>Safety net when the version is unknown — accepted at Design Review (§11, Q5).</b> The chooser only knows the helper version once this browser has connected before. A first-time browser can't be gated up front, and <b>Codex is always offered</b> anyway (never hidden while the version is unknown). Implementation must therefore also check the version the bridge announces at attach: if the user asked for Codex and the bridge is older than the Codex release, the dock ends that session immediately (before the user can type into it) and shows the "needs a newer helper" panel in place of the terminal, with Update now / Use Claude Code for now / View my other sessions (mocked in §7f — the same panel serves the task-menu path). The user never sees a Claude prompt they didn't ask for. This is a second line of defence, not the main path.</div>
+
+<h2 id="labels">4 · Which agent is running (US-5, AC-6)</h2>
+<p class="caption" style="margin-top:0"><b>Scope note (rework):</b> everything in this section is about <em>dock sessions</em> — the in-browser terminal. A Codex window opened on the desktop (§12) is not a session VibeCodes tracks, so it has no tab, no pill, no row and no header; the only place it is "labelled" is the Terminal window's own title and the review lines inside it. This is the same as Claude's "In a terminal window" launch today, which also appears nowhere in the dock (§14).</p>
+<h3>4a · Tab strip</h3>
+<div class="mock">
+  <div class="mock-title"><b>Tab strip</b> · a Claude tab, an active Codex tab, a Codex tab that is also on another board</div>
+  <div class="strip">
+    <div class="tab"><span class="t">Fix login redirect</span><span class="x">✕</span></div>
+    <div class="tab on wide"><span class="chip agent">Codex</span><span class="t">Pricing page copy</span><span class="x">✕</span></div>
+    <div class="tab wide" style="min-width:230px; max-width:310px"><span class="chip agent">Codex</span><span class="chip amber">● Other board</span><span class="t">Stripe webhook</span><span class="x">✕</span></div>
+    <div class="plus">+</div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li>Pill: neutral zinc (same style as the "not encrypted" chip in the header), text "Codex", uppercase 10px, sits <em>before</em> the name so it reads "Codex: Pricing page copy". The tab's <code>title</code> tooltip and accessible name become "Codex · Pricing page copy".</li>
+  <li>Width: a Codex tab gets the same "+40px both bounds" treatment the amber other-board pill already gets (150–230px; 230–310px with both pills), so the name never collapses to one character. This is set at tab creation, never mid-interaction — no reflow between an arm click and its confirm click (the task 9f30ae15 lesson).</li>
+  <li>Claude tabs are unlabelled — the absence of a pill means Claude Code, exactly as today. Every Claude tab on screen is byte-identical to the current UI.</li>
+  <li>The collapsed dock bar's worst-first summary is unchanged; a Codex tab's attention glyph behaves like any other.</li>
+</ul>
+
+<h3>4b · Session header</h3>
+<div class="mock">
+  <div class="mock-title"><b>Session header</b> · connected Codex session with auto-accept irrelevant (never shown for Codex)</div>
+  <div class="hdr"><span class="pill" style="border-color:rgba(16,185,129,.5); background:rgba(16,185,129,.1); color:#34d399">● Connected</span><span class="chip md agent" title="This session runs Codex (OpenAI). Model and permissions are Codex's own settings.">Codex</span><span class="id">VibeCodes · ~/projects/vibe-coding-ideas · session 3f9a12c0</span><span class="right"><span class="btn ghost">Pop out</span><span class="btn ghost">End</span></span></div>
+</div>
+<p class="caption">Sits in the exact slot the amber "Auto mode" badge uses, with the same rules: it is a launch-time fact, so it stays through disconnects and reconnects. Focusable (<code>tabIndex=0</code>) with a tooltip, like the encryption chip. On narrow widths it keeps its text (5 letters) — it never collapses to an icon, because there is no icon that means "Codex" to a non-coder.</p>
+
+<h3>4c · Rows — chooser, My sessions panel</h3>
+<div class="mock">
+  <div class="mock-title"><b>My sessions panel</b> · running list</div>
+  <div class="row"><div class="grow"><div class="name">Pricing page copy <span class="chip agent">Codex</span></div><div class="ident">Nicks-MBP · ~/projects/vibe-coding-ideas</div></div><span class="btn sky">↻ Reconnect</span><span class="btn ghost">End</span></div>
+  <div class="row"><div class="grow"><div class="name">Fix login redirect <span class="chip agent">Claude Code</span></div><div class="ident">Nicks-MBP · ~/projects/vibe-coding-ideas</div></div><span class="btn sky">↻ Reconnect</span><span class="btn ghost">End</span></div>
+</div>
+<p class="caption">Rows name <em>both</em> agents (a switcher scanning a list of ten wants the word, not an absence). Same chip style as the tab, placed after the name in the wrapping name line so long names still truncate first. Existing rows with no recorded agent read as "Claude Code" (migration default, FR-5).</p>
+
+<h3>4d · Pop-out window</h3>
+<p>Window title: <code>Terminal · Pricing page copy · Codex</code>. The pop-out header shows the same "Codex" chip. Nothing else changes; a popped-out tab's dock chip keeps its misleading-status rule untouched.</p>
+
+<h2 id="resume">5 · Resume on a Codex row (US-6, AC-7)</h2>
+<div class="mock">
+  <div class="mock-title"><b>Chooser · RecentRow</b> · Codex row, Resume clicked, inline confirm open</div>
+  <div class="row" style="background:rgba(16,185,129,.05); flex-direction:column; gap:0">
+    <div style="display:flex; gap:10px; width:100%"><div class="grow"><div class="name">Pricing page copy <span class="chip agent">Codex</span></div><div class="ident">~/projects/vibe-coding-ideas · ended 40m ago</div></div></div>
+    <div style="margin-top:8px; border-left:2px solid var(--emerald); padding-left:10px; font-size:11.5px; color:var(--z400); width:100%">
+      <p style="margin:0">Starts a new terminal that picks up your <b>most recent Codex conversation</b> in <span style="font-family:var(--mono); color:var(--z300)">~/projects/vibe-coding-ideas</span>.</p>
+      <p style="margin:4px 0 0">Codex reopens the last conversation it had in this folder — if you've used Codex elsewhere since, that one won't be affected.</p>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px"><span class="btn ghost">Cancel</span><span class="btn emerald">Resume</span></div>
+    </div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li>No picker anywhere on this path. The row's recorded agent is the agent (FR-4, FR-5).</li>
+  <li>Copy uses the chooser's existing "most recent conversation" wording (the legacy Claude path) with the agent named. The "this exact conversation" sentence is never shown for Codex in v1, because we don't have the id (Requirements §2.2).</li>
+  <li>The ended-session panel inside a Codex tab mirrors this: "Resume this conversation" stays as the primary button; the ended message reads "Codex on your machine stopped. The scrollback above is kept."</li>
+  <li>If the Requirements' spike (risk 5) finds <code>codex resume --last</code> is <em>not</em> limited to the folder, Codex rows show "Can't resume yet — Codex resume isn't folder-aware" in place of the button, exactly like the "no folder recorded" case. Honest omission beats a wrong resume.</li>
+  <li><b>Desktop windows never appear here (rework).</b> A Codex conversation started in a desktop Terminal window (§12) is not recorded, so it never becomes a Recent row and VibeCodes can't resume it. The user resumes it the way they do with Claude's desktop launch today: in the Terminal window itself (<code>codex resume</code>). Nothing in this section tries to bridge that gap in v1 (Requirements: deferred).</li>
+</ul>
+
+<h2 id="shared">6 · A second Codex session on this board shares the folder (US-9, FR-9, AC-11)</h2>
+<div class="mock">
+  <div class="mock-title"><b>Session chooser</b> · Codex selected while a session is already running on this board</div>
+  <div style="padding:12px 14px">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap"><span class="btn emerald lg">▣ Start new session</span><span style="font-size:11.5px; color:var(--z500)">up to 3 at once</span></div>
+    <div class="picker"><div class="lbl">Run it with</div><div class="seg"><span>Claude Code</span><span class="on">✓ Codex</span></div></div>
+    <div class="banner amber" style="margin-top:10px; border:1px solid rgba(245,158,11,.3); border-radius:6px; align-items:flex-start"><span>⚠</span><span><b>This one will share the project folder.</b> A session is already running on this board. Claude Code can work in a separate copy of the folder; Codex can't — so both sessions will be editing the same files. Fine for reading and asking questions; take care if both are making changes.</span></div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li>Appears the instant Codex is selected under that condition, and disappears when Claude Code is selected — the user sees the trade-off <em>before</em> the click, not after the launch.</li>
+  <li>Amber = "needs attention", with an icon and bold lead sentence; it is not colour-only.</li>
+  <li>The Start button stays enabled (warn, not block). The bridge then writes the existing "your sessions share this folder" one-liner as the terminal's first line, so the scrollback records it too.</li>
+  <li>The note is shown only when the mint route would otherwise have isolated the session — i.e. only when another session is genuinely live on <em>this</em> board. A lone Codex session sees nothing.</li>
+  <li><b>Desktop windows and this warning (rework).</b> "Another session is live" means a <em>dock</em> session — the app cannot see a desktop Terminal window, Claude's or Codex's, so a desktop window never triggers this note and is never counted by it. Going the other way (starting a desktop Codex window while a dock session is live on the board), the same trade-off is stated as a sentence <em>inside the starting prompt</em> — the existing isolation advisory the Claude desktop launch already adds (FR-12) — because prose is the only lever on a path with no enforced flag. The user reads it in the review lines (§12c) before pressing Enter. No new UI for this case.</li>
+</ul>
+
+<h2 id="taskmenu">7 · From a task card's menu — "Launch in Claude Code" / "Launch in Codex" / "Launch in browser terminal" / "Launch Codex in browser terminal"</h2>
+<p><span class="decided">Decided</span> Design Review settled Q3: the per-task launch gets <b>separate, explicit Codex actions</b>. The existing items never silently switch agent. <span class="newtag">Rework</span> Because Codex now also opens in a desktop Terminal window (§12), the card menu gets <b>two</b> Codex items, mirroring the two Claude items it already has (Requirements FR-15, AC-21): <b>"Launch in Codex"</b> = a Terminal window on this Mac (the same label shape as "Launch in Claude Code", which is also a Terminal window), and <b>"Launch Codex in browser terminal"</b> = the dock. The first draft of this section used "Launch in Codex" for the browser item and said "there is no terminal-window variant" — both are superseded. This section grounds that in the menu that actually ships, then shows the browser-terminal flow from the click to a working terminal; the desktop-window flow is §12b and is the same from a card as from the toolbar.</p>
+
+<h3>7a · What exists today (checked in the code, not assumed)</h3>
+<table>
+  <tr><th style="width:26%">Surface</th><th>What is on screen now</th><th style="width:30%">Where it goes</th></tr>
+  <tr><td>Task card ⋯ menu ("Task actions" — <code>TaskCardMenu</code>)</td><td>After a separator, the card renders <code>LaunchClaudeCodeButton variant="task-menu-item"</code>, which puts <b>two</b> items in the menu: <b>"Launch in Claude Code"</b> (terminal icon) and, when the browser terminal is switched on, <b>"Launch in browser terminal"</b> (globe icon, <span class="beta">Beta</span> chip).</td><td>The first opens Claude Code in a terminal window on the Mac via the <code>claude-cli://</code> link. The second asks the board's terminal dock to open a new tab and start Claude Code there (the "launch bus" — <code>requestBrowserLaunch</code> with the task's id and title).</td></tr>
+  <tr><td>Task detail header (<code>variant="task-icon"</code>)</td><td>A ghost icon button, terminal glyph, accessible name "Launch in Claude Code".</td><td>Terminal window only. Unchanged in v1 — Codex has no terminal-window link scheme (Requirements §2.2).</td></tr>
+  <tr><td>Board toolbar split button</td><td>"Launch Claude Code" + chevron → "In a terminal window" / "In the browser" (<span class="beta">Beta</span>).</td><td><span class="corrected">Corrected</span> The first draft said "In the browser" lands on the chooser — <b>it does not</b>. Verified in <code>launch-claude-code-button.tsx</code>: the button body and "In a terminal window" both fire Claude's <code>claude-cli://</code> launcher; "In the browser" calls <code>handleLaunchInBrowser</code> → <code>requestBrowserLaunch</code>, and the dock auto-launches Claude with no picker. The toolbar therefore <em>does</em> need a change — designed in §13.</td></tr>
+  <tr><td>Phone / tablet</td><td>One disabled item: "Open on desktop to launch Claude Code".</td><td>—</td></tr>
+  <tr><td>Feedback on this path today</td><td colspan="2">There is <b>no launch dialog</b>. The dock expands, a tab appears with an amber "Connecting…" pill, and the terminal fills in. Pre-launch refusals are toasts ("This task already has a terminal — switched to it.", "Project path too long to launch…", the session-cap message). The one dialog that can appear is §1c, and only when this exact task already has a live or recent (48h) session.</td></tr>
+</table>
+<p class="caption">Naming note: the guide pages and the toolbar say "Launch Claude Code"; the card menu item itself reads "Launch in Claude Code". This design keeps every existing label byte-for-byte and adds one.</p>
+
+<h3>7b · The menu, after</h3>
+<div class="mock">
+  <div class="mock-title"><b>Task card ⋯ menu</b> · desktop · browser terminal switched on · the launch group is now two Claude items, then two Codex items <span class="newtag">Reworked</span></div>
+  <div class="side">
+    <div class="card"><div class="dots">⋯</div><div class="ct">Write the pricing page copy</div><div style="font-size:11px; color:var(--z500); margin-top:4px">In Progress · 2 comments</div></div>
+    <div class="menu" role="menu">
+      <div class="mi"><span class="ic">⤒</span><span>Move to top</span></div>
+      <div class="mi"><span class="ic">⤓</span><span>Move to bottom</span></div>
+      <div class="msep"></div>
+      <div class="mi"><span class="ic">▣</span><span>Launch in Claude Code</span></div>
+      <div class="mi"><span class="ic">◍</span><span>Launch in browser terminal<span class="beta">Beta</span></span></div>
+      <div class="msep"></div>
+      <div class="mi hl"><span class="ic">▣</span><span><span class="ann">6</span>Launch in Codex<div class="sub">Opens a Terminal window on this Mac</div></span></div>
+      <div class="mi"><span class="ic">◍</span><span>Launch Codex in browser terminal<span class="beta">Beta</span></span></div>
+      <div class="msep"></div>
+      <div class="mi"><span class="ic">▤</span><span>Convert to conversation</span></div>
+      <div class="msep"></div>
+      <div class="mi"><span class="ic">▥</span><span>Archive</span></div>
+      <div class="msep"></div>
+      <div class="mi danger"><span class="ic">🗑</span><span>Delete</span></div>
+    </div>
+  </div>
+</div>
+<ol class="ann-list">
+  <li><span class="ann">6</span><b>Labels:</b> the two Codex items copy the shape of the two Claude items exactly, so the rule a user can learn is "<em>Launch in &lt;agent&gt;</em> = a Terminal window on my Mac; <em>…browser terminal</em> = the dock". "Launch in Codex" (desktop) and "Launch in Claude Code" (desktop) are twins; "Launch Codex in browser terminal" and "Launch in browser terminal" are twins (the Claude one keeps its existing agent-less wording byte-for-byte — renaming it would break the rule that nothing existing changes). <b>Sub-line</b> on "Launch in Codex" only (muted, 11px, the toolbar's two-line pattern): "Opens a Terminal window on this Mac" — it answers the one question a new label leaves open, and it is the place the helper gates speak (below). <b>Beta chip</b> on both browser items, none on the desktop items — it marks the beta <em>surface</em> (the dock), not the agent.</li>
+  <li><b>Ordering and grouping:</b> the two existing items keep their positions (default first, never moved). A separator, then the two Codex items in the same order (Terminal window, then browser). Grouped by agent, like the toolbar (§13) — the same mental model on both surfaces. No group headers in the card menu: it already has eight items and the agent is the first word of each Codex label, so a header would repeat it.</li>
+  <li><b>Icons:</b> <code>Terminal</code> on both "Launch in …" items, <code>Globe</code> on both browser items — the icon says <em>where</em>, the text says <em>which agent</em>. No new glyph is invented for Codex (a non-coder has no mental image for one; the word does the work — same reasoning as the header chip in §4b).</li>
+  <li><b>Visibility:</b> all Codex items are gated by the same switch as "Launch in browser terminal" (<code>isBrowserLaunchAvailable</code>) — desktop Codex needs the helper, and the helper only exists where the browser terminal does. Browser terminal off → none of them appears, and the menu is exactly today's.</li>
+  <li><span class="decided">Decided</span> <b>Codex not installed — the desktop item is disabled, with the reason and the way out beside it.</b> The helper's status report (fetched when the page loads, refreshed whenever the helper reconnects) now says whether <code>codex</code> is on this Mac (§12d, §15 Q11). When it says no, <b>"Launch in Codex" is disabled</b> and its sub-line reads <b>"Codex isn't installed on this Mac"</b>; the very next item is an enabled <b>"How to install Codex"</b> (external-link icon, opens OpenAI's page in a new tab). Disabled is signalled by the muted styling <em>and</em> the words — never opacity alone — and the reason is part of the item's accessible text, so a screen reader hears "Launch in Codex, Codex isn't installed on this Mac, dimmed". This is the §3 pattern (disabled Start button + adjacent reason containing the exit), carried into a menu: the exit here is a link, which a menu <em>can</em> host, so disabling is honest. "Launch Codex in browser terminal" is <em>not</em> disabled on this count — its path has a tab to render into, and that tab's §2 panel offers the one thing a menu can't: "Start with Claude Code instead" in the same folder (§7e). If the status is stale (Codex was installed a minute ago), the helper's own check at launch is the safety net (§12d). For the helper version, the dock <em>does</em> often know (it fetches helper status when the page loads). When it knows the helper is too old, the items stay enabled and the desktop item's sub-line changes to <b>"Needs a helper update first"</b>; selecting either Codex item opens the dock straight onto the "needs a newer helper" panel (§7f) with the update button — <em>nothing is minted, no link is fired</em>. When no helper is known at all, the desktop item's sub-line reads <b>"Needs the VibeCodes helper app"</b> and selecting it opens the dock's existing install-the-helper panel (FR-14). Rationale: a disabled item would need its way-out (the update flow: confirm → closing → ready) somewhere else, and a menu can't host that; one click to the panel that can is shorter than "disabled, go and find the dock". This matches the doc's rule that the way out is always adjacent, and reuses the exact panel the attach-time safety net shows (§3), so the user meets one message, not two. On the §7f panel the fallback button follows the location the user asked for: "Use Claude Code for now" opens a Terminal window (<code>claude-cli://</code>) after a desktop request and a dock tab after a browser one.</li>
+  <li><b>Remembered pick:</b> a menu launch never <em>reads</em> the remembered agent (the label already says which), but a successful launch does <em>write</em> it — after either Codex item the chooser's control opens on Codex next time, exactly as AC-13 asks. Desktop and browser launches write it alike; the pick is about the agent, not the place.</li>
+  <li><b>Phone / tablet:</b> the single disabled item widens to "Open on desktop to launch Claude Code or Codex". Still one item, still disabled with its reason in the label.</li>
+  <li><b>Task detail header icon:</b> stays a Claude Code terminal-window button. Codex from the task detail view is via the same ⋯ menu if one is added there later; not in v1.</li>
+</ol>
+
+<h3>7c · The flow, step by step (browser terminal — the desktop-window items follow §12b instead)</h3>
+<div class="flow">
+  <div class="step"><b>1 · Click</b>⋯ on the card → "Launch Codex in browser terminal" (or "Launch in browser terminal" for Claude Code). Menu closes. ("Launch in Codex" / "Launch in Claude Code" open a Terminal window — §12b / today's <code>claude-cli://</code>.)</div>
+  <div class="step warn"><b>2 · Gate: helper known too old?</b>Dock opens on the "needs a newer helper" panel instead of a tab. Nothing minted. Update now / Use Claude Code for now / View my other sessions.</div>
+  <div class="step"><b>3 · Same task already open here?</b>Existing dedupe: switch to that tab, toast names its agent. No second tab for one task.</div>
+  <div class="step"><b>4 · Live/recent session for this task elsewhere?</b>§1c dialog, "Start fresh with" pre-set to Codex. Resume keeps the row's agent. Cancel/Esc/outside-click = nothing.</div>
+  <div class="step"><b>5 · Mint + launch</b>Dock expands; new tab shows the "Codex" pill and the task's title; pill "Connecting…". Identical to a Claude launch except the pill and the agent on the link.</div>
+  <div class="step warn"><b>6a · Codex not found</b>Bridge checks before running anything → tab shows the §2 panel. Terminal line records it.</div>
+  <div class="step warn"><b>6b · Helper too old (found at attach)</b>Bridge announces an old version → we end the session at once → same panel as step 2, inside the tab.</div>
+  <div class="step"><b>7 · Working</b>Header "Codex" chip; the task's bootstrap prompt runs (Codex's own board-connect head, FR-6). Remembered pick → Codex.</div>
+</div>
+<p>Every refusal on this path lands <b>in the dock</b>, in the tab (or the panel) the click just opened — never only in a toast — because that is where the user is already looking after a launch click, and because both refusals carry actions (update, install link, fall back to Claude) that a toast can't hold. Toasts are kept only for the three pre-launch refusals that exist today.</p>
+
+<h3>7d · Happy path — what the dock looks like two seconds after the click</h3>
+<div class="mock">
+  <div class="mock-title"><b>Terminal dock</b> · "Launch Codex in browser terminal" from the card · task tab opened, connecting</div>
+  <div class="strip">
+    <div class="tab"><span class="t">Fix login redirect</span><span class="x">✕</span></div>
+    <div class="tab on wide"><span class="chip agent">Codex</span><span class="t">Write the pricing page copy</span><span class="x">✕</span></div>
+    <div class="plus">+</div>
+  </div>
+  <div class="hdr"><span class="pill" style="border-color:rgba(245,158,11,.5); background:rgba(245,158,11,.1); color:var(--amber-300)">◌ Connecting…</span><span class="chip md agent">Codex</span><span class="id">VibeCodes · ~/projects/vibe-coding-ideas · session 3f9a12c0</span><span class="right"><span class="btn ghost">Pop out</span><span class="btn ghost">End</span></span></div>
+  <div class="term">Opening Codex in ~/projects/vibe-coding-ideas…</div>
+</div>
+<p class="caption">Same tab label rule as a Claude task launch (the task's title), plus the "Codex" pill from §4a. The pill is set at tab creation, so the tab is its final width from the first frame.</p>
+
+<h3>7e · Error state 1 — Codex isn't installed (surfaces in the tab)</h3>
+<div class="mock">
+  <div class="mock-title"><b>Terminal dock</b> · "Launch Codex in browser terminal" from the card · bridge found no <code>codex</code> on this Mac · nothing was run</div>
+  <div class="strip">
+    <div class="tab"><span class="t">Fix login redirect</span><span class="x">✕</span></div>
+    <div class="tab on wide"><span class="chip agent">Codex</span><span class="t">Write the pricing page copy</span><span class="x">✕</span></div>
+    <div class="plus">+</div>
+  </div>
+  <div class="hdr"><span class="pill">◌ Codex not found</span><span class="chip md agent">Codex</span><span class="id">VibeCodes · ~/projects/vibe-coding-ideas · session 3f9a12c0</span><span class="right"><span class="btn ghost">Close tab</span></span></div>
+  <div class="term">Codex isn't installed on this Mac, so nothing was started. Install it, then start a new session — or start with Claude Code instead.</div>
+  <div class="overlay">
+    <div class="icon"></div>
+    <div class="ttl">Codex isn't installed on this Mac</div>
+    <p class="body">The terminal looked for Codex on <b>Nicks-MBP</b> and couldn't find it. Nothing was started and nothing on your Mac has changed. Install Codex from OpenAI and sign in to it once, then start a new session.</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+      <span class="btn outline lg">↗ How to install Codex</span>
+      <span class="btn emerald lg">▣ Start with Claude Code instead</span>
+    </div>
+    <span class="tert">View my other sessions</span>
+  </div>
+</div>
+<ul class="ann-list">
+  <li>This is the §2 panel, unchanged, rendered inside the tab the menu click opened — the user's eye is already there. No toast is shown as well (two messages for one event is noise).</li>
+  <li>"Start with Claude Code instead" relaunches <em>this task</em> with Claude Code in the same folder, reclaiming this tab in place (the existing ended-tab reclaim), and flips the remembered pick to Claude Code (Q7).</li>
+  <li>The dock's collapsed bar summary treats "Not found" like an ended tab (attention glyph, no red).</li>
+</ul>
+
+<h3>7f · Error state 2 — the helper needs updating (surfaces in the dock, before or at attach)</h3>
+<div class="mock">
+  <div class="mock-title"><b>Terminal dock</b> · either Codex item from the card, or either Codex item on the toolbar · helper 0.3.11, Codex needs 0.4.0 · shown both when known up front (no tab minted, no link fired) and when found at attach (tab ended by us)</div>
+  <div class="strip">
+    <div class="tab"><span class="t">Fix login redirect</span><span class="x">✕</span></div>
+    <div class="tab on wide"><span class="chip agent">Codex</span><span class="t">Write the pricing page copy</span><span class="x">✕</span></div>
+    <div class="plus">+</div>
+  </div>
+  <div class="banner sky">ⓘ <span style="flex:1">Codex needs a newer helper — yours is 0.3.11 and Codex arrived in 0.4.0. Updating takes about a minute.</span><span class="btn sky">Update now</span></div>
+  <div class="overlay">
+    <div class="icon"></div>
+    <div class="ttl">Your helper needs updating before it can run Codex</div>
+    <p class="body">We stopped this session before it started anything. Update the helper (about a minute), or start with Claude Code for now.</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center">
+      <span class="btn sky lg">Update now</span>
+      <span class="btn outline lg">▣ Use Claude Code for now</span>
+    </div>
+    <span class="tert">View my other sessions</span>
+  </div>
+</div>
+<ul class="ann-list">
+  <li><b>Known up front</b> (step 2): the dock opens with this panel as its body and no new tab is minted — there is nothing to protect, so it renders in the panel, not as an overlay. If a live tab already exists, it renders as the non-destructive overlay over the tab strip (the same rule the chooser follows), and the strip stays.</li>
+  <li><b>Found at attach</b> (step 6b): the tab exists and has just been ended by us; the panel replaces the terminal inside that tab. Header pill reads the grey "Not connected yet" family, never the rose Error pill.</li>
+  <li>"Update now" runs the shipped HelperUpdateFlowNotice phases verbatim (§3). "Use Claude Code for now" relaunches this task with Claude Code — same folder, same tab reclaimed — and does <em>not</em> change the remembered pick (the user still wants Codex; the helper is the blocker). The sky nudge at the top is the chooser's existing one, so a user who then opens the chooser sees a single consistent message.</li>
+  <li>The body copy says "We stopped this session before it started anything" in both cases; in the up-front case that is literally true (nothing minted) and in the attach case it is true of the agent (the bridge never spawned it), so one string serves both.</li>
+</ul>
+
+<h2 id="states">8 · Every state, in one table</h2>
+<table>
+  <tr><th style="width:24%">State</th><th>Surface</th><th>What the user sees</th><th style="width:22%">Way out</th></tr>
+  <tr><td>Default</td><td>Chooser / Ready panel / task dialog</td><td>Segmented control on Claude Code; model line and auto-accept chip exactly as today.</td><td>Close, Esc, outside-click, Collapse.</td></tr>
+  <tr><td>Codex selected</td><td>Same</td><td>"Codex uses its own model and permission settings." One-time reassurance line about signing in with ChatGPT.</td><td>Same.</td></tr>
+  <tr><td>Remembered = Codex</td><td>Same, next visit</td><td>Control opens on Codex; everything else as above.</td><td>Click Claude Code.</td></tr>
+  <tr><td>Helper too old (known)</td><td>Chooser / Ready panel</td><td>Sky nudge with Codex-specific copy + Update now; Start disabled with adjacent reason + "use Claude Code for now" link.</td><td>Update flow, switch agent, Close.</td></tr>
+  <tr><td>Helper too old (found at attach)</td><td>Session panel</td><td>Session ended by us at once; same "needs a newer helper" panel with Update now / Use Claude Code for now / View my other sessions.</td><td>Any of the three; close tab.</td></tr>
+  <tr><td>Connecting</td><td>Session panel</td><td>Unchanged amber "Connecting…"; tab already shows "Codex" pill.</td><td>End / close tab.</td></tr>
+  <tr><td>Codex not installed</td><td>Session panel + terminal line</td><td>Grey "Codex not found" pill; calm panel; How to install / Start with Claude Code instead / View my other sessions.</td><td>Any of the three; close tab.</td></tr>
+  <tr><td>Claude Code not installed</td><td>Same</td><td>Mirror copy with Anthropic's install link; no "instead" button unless Codex is installed-known (it isn't — we don't probe both).</td><td>How to install / other sessions / close tab.</td></tr>
+  <tr><td>Working</td><td>Header, tab, pop-out</td><td>"Codex" chip beside the status pill; no Auto mode badge ever; pop-out title suffixed.</td><td>As today.</td></tr>
+  <tr><td>Second session, same board</td><td>Chooser</td><td>Amber shares-the-folder note under the picker; terminal first line repeats it.</td><td>Switch to Claude Code, or proceed.</td></tr>
+  <tr><td>Ended (Codex)</td><td>Session panel</td><td>"Codex on your machine stopped." Resume this conversation (most recent) / Start fresh / View my other sessions.</td><td>As today.</td></tr>
+  <tr><td>Recent row (Codex)</td><td>Chooser, task dialog</td><td>"Codex" chip; Resume with "most recent Codex conversation" confirm.</td><td>Cancel.</td></tr>
+  <tr><td>Recent row, no folder</td><td>Chooser</td><td>Hidden from the visible list (existing rule), regardless of agent.</td><td>—</td></tr>
+  <tr><td>Task menu · "Launch Codex in browser terminal" (happy)</td><td>Card ⋯ menu → dock</td><td>Dock expands, new tab with the "Codex" pill, amber "Connecting…", then Codex's prompt. No picker, no dialog (§7b).</td><td>End / close tab.</td></tr>
+  <tr><td><span class="newtag">New</span> Toolbar · "Codex › In the browser" (happy)</td><td>Toolbar dropdown → dock</td><td>Same as the row above, minus the task title (a board-level launch has no task). No picker (§13).</td><td>End / close tab.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · happy</td><td>Toolbar "Codex › In a terminal window" / card "Launch in Codex" → Terminal.app</td><td>A Terminal window opens on the Mac in the project folder, showing the review lines (folder, board, starting message) and "Press Enter to start Codex". Enter → Codex runs with the board-connect prompt. Board shows nothing (the window took focus) (§12c).</td><td>Close the window / <span class="kbd">Ctrl</span>+<span class="kbd">C</span> before Enter = nothing ran.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · nothing seemed to happen</td><td>Board toast (neutral)</td><td>After ~1.5s with the page still focused: "Opening Codex in a Terminal window…" / "Look for a new Terminal window and press Enter there. Didn't open? Check the VibeCodes helper is installed and running." Action: "Helper guide" (§12e).</td><td>Dismiss; auto-hides.</td></tr>
+  <tr><td><span class="newtag">New</span> <span class="decided">Decided</span> Desktop Codex · Codex not installed (helper status says so)</td><td>Menu item disabled + adjacent item</td><td>"Codex › In a terminal window" / "Launch in Codex" is <b>disabled</b>, sub-line "Codex isn't installed on this Mac"; directly beneath it an enabled "How to install Codex" item. No link fires, no window opens, nothing to dismiss (§12d, §12f).</td><td>How to install Codex (new tab); the Claude items are right there; Esc closes the menu.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · couldn't open a Terminal window (fallback)</td><td>macOS notification + board toast</td><td>Only for failures the pre-flight can't predict (temp folder unwritable, <code>open</code> failed, folder vanished, or Codex went missing since the last status report): "Couldn't open a Terminal window for Codex — nothing was started." Action: "Copy command" (the codex line to paste yourself), or "How to install Codex" if the helper's reason is that Codex is missing (§12d).</td><td>Copy command / How to install; dismiss.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · no helper known</td><td>Menu sub-line → dock panel</td><td>Item enabled, sub-line "Needs the VibeCodes helper app"; selecting it opens the dock's existing install-the-helper panel. No link fired (§12b, FR-14).</td><td>Install the helper; "Use Claude Code for now" (terminal window); close.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · helper too old (known)</td><td>Menu sub-line → dock panel</td><td>Sub-line "Needs a helper update first"; selecting it opens the §7f panel. No link fired.</td><td>Update now / Use Claude Code for now (terminal window) / View my other sessions.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · no folder recorded</td><td>Existing pick-a-folder dialog</td><td>Same dialog the Claude desktop launch shows today; on save the Codex launch continues (§12b, FR-12).</td><td>Cancel, Esc, outside-click.</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · folder too long for the link</td><td>Toast</td><td>Existing "Project path too long to launch…" toast, agent named ("…run Codex there"). Folder is never dropped to make it fit (FR-12).</td><td>—</td></tr>
+  <tr><td><span class="newtag">New</span> Desktop Codex · link fired by some other web page</td><td>Terminal window</td><td>The review screen opens and waits; the last line says "If you didn't just click Launch in VibeCodes, close this window." Nothing runs without Enter (§12c, AC-19).</td><td>Close the window.</td></tr>
+  <tr><td>Task menu · Codex, task already has a tab here</td><td>Toast</td><td>Existing dedupe: switches to that tab; toast names its agent ("…already has a Claude Code terminal — switched to it").</td><td>End that tab, then relaunch.</td></tr>
+  <tr><td>Task menu · Codex, task has a live/recent session elsewhere</td><td>Task launch dialog</td><td>§1c dialog with "Start fresh with" pre-set to Codex; Resume/Reconnect keep the row's own agent.</td><td>Cancel, Esc, outside-click.</td></tr>
+  <tr><td>Task menu · helper too old (known)</td><td>Menu sub-line → dock panel</td><td>Item stays enabled with sub-line "Needs a helper update first"; selecting it opens the dock on the "needs a newer helper" panel — nothing minted (§7c).</td><td>Update now / Use Claude Code for now / View my other sessions.</td></tr>
+  <tr><td>Task menu · helper too old (found at attach)</td><td>Dock panel</td><td>Session ended by us at once; same panel as above (§7c).</td><td>Same.</td></tr>
+  <tr><td>Task menu · Codex not installed</td><td>Dock panel + terminal line</td><td>Same "Codex isn't installed on this Mac" panel as §2, inside the task's tab (§7d).</td><td>How to install / Start with Claude Code instead / View my other sessions.</td></tr>
+  <tr><td>Task menu · path too long</td><td>Toast</td><td>Existing "Project path too long to launch" toast, wording generalised to "run the agent there".</td><td>—</td></tr>
+  <tr><td>Task menu · phone / tablet</td><td>Card ⋯ menu</td><td>One disabled item: "Open on desktop to launch Claude Code or Codex" (existing item, wording widened).</td><td>—</td></tr>
+  <tr><td>Non-Mac</td><td>Coming-soon panel</td><td>Unchanged "Mac-only for now" copy. No picker (FR-4).</td><td>Unchanged.</td></tr>
+  <tr><td>Loading helper status</td><td>Chooser</td><td>Picker enabled, no nudge (unknown ≠ old). Attach-time safety net covers the gap.</td><td>—</td></tr>
+</table>
+
+<h2 id="mobile">9 · 375px, keyboard and screen reader</h2>
+<div class="mock phone">
+  <div class="mock-title"><b>375px</b> · chooser start block, Codex selected, shares-folder note</div>
+  <div style="padding:12px 14px">
+    <span class="btn emerald lg" style="display:flex; justify-content:center">▣ Start new session</span>
+    <div style="font-size:11.5px; color:var(--z500); margin-top:6px">up to 3 at once</div>
+    <div class="picker"><div class="lbl">Run it with</div><div class="seg full"><span>Claude Code</span><span class="on">✓ Codex</span></div></div>
+    <p style="margin:8px 0 0; font-size:11px; color:var(--z500)">Codex uses its own model and permission settings.</p>
+    <div class="banner amber" style="margin-top:10px; border:1px solid rgba(245,158,11,.3); border-radius:6px; align-items:flex-start"><span>⚠</span><span><b>This one will share the project folder.</b> A session is already running on this board…</span></div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li><b>Touch targets:</b> at ≤640px the segmented control goes full width and each option is at least 44px tall (Fitts). The Start button already spans the width.</li>
+  <li><b>Keyboard:</b> the control is a native radio group (<code>role="radiogroup"</code>, two <code>role="radio"</code> buttons). <span class="kbd">Tab</span> lands on the selected option; <span class="kbd">←</span>/<span class="kbd">→</span> switch; <span class="kbd">Space</span> selects. The chooser's existing "focus lands on the first primary action" rule is unchanged — the picker is <em>after</em> the Start button in DOM order, so <span class="kbd">Enter</span> on open still starts a session with the remembered agent.</li>
+  <li><b>Screen reader:</b> group label "Which agent runs this session"; options announce "Claude Code, selected, radio 1 of 2" / "Codex, radio 2 of 2". The tab's accessible name includes the agent ("Codex · Pricing page copy"). The chips are plain text inside the row's name, so they are read naturally. The helper-too-old reason is associated with the disabled button via <code>aria-describedby</code>. The not-installed panel's heading is a real heading element so it's reachable by heading navigation.</li>
+  <li><b>Contrast (WCAG 2.1 AA, checked against the shipped surfaces):</b> chip text zinc-300 on the zinc-800/60 chip over #141417 ≈ 9.9:1; sky-300 nudge text on its 5% tint ≈ 8.3:1; amber-300 note text ≈ 9.6:1; emerald-950 on emerald-500 ≈ 7.1:1; disabled Start at 50% opacity is exempt (disabled control) and the adjacent explanation is full-contrast zinc-500 on #141417 ≈ 4.6:1 for 11.5px text — <em>borderline</em>; implementation should render that explanation in zinc-400 (≈ 7:1). Same note applies to the existing "up to 3 at once" text, which is out of scope to change.</li>
+  <li><b>Colour never alone:</b> selection = ✓ + bold + accent bar; not-installed = text pill + icon; shares-folder = icon + bold lead; agent identity = a word, never a hue.</li>
+  <li><b>No hover-only actions:</b> everything is a visible button or link; tooltips (chip title) only add detail.</li>
+</ul>
+
+<h2 id="copy">10 · Copy sheet (exact strings)</h2>
+<p>All strings pass the first-run copy rules: no "Failed", "Error", "Nothing opened", "port", "token", "relay". Implementation should put these in a <code>codex-copy.ts</code> next to <code>first-run-copy.ts</code> and reuse its forbidden-words test.</p>
+<table>
+  <tr><th style="width:30%">Key</th><th>String</th></tr>
+  <tr><td>picker.label</td><td>Run it with</td></tr>
+  <tr><td>picker.labelInTaskDialog</td><td>Start fresh with</td></tr>
+  <tr><td>picker.groupA11y</td><td>Which agent runs this session</td></tr>
+  <tr><td>picker.options</td><td>Claude Code · Codex</td></tr>
+  <tr><td>codexSettingsLine</td><td>Codex uses its own model and permission settings.</td></tr>
+  <tr><td>codexSignInHint (first 3 times)</td><td>Codex signs in with your own ChatGPT account on this Mac — nothing to set up here.</td></tr>
+  <tr><td>helperTooOld.nudge</td><td>Codex needs a newer helper — yours is {version} and Codex arrived in {min}. Updating takes about a minute.</td></tr>
+  <tr><td>helperTooOld.reason (beside Start)</td><td>Update the helper to start with Codex, or <u>use Claude Code for now</u>.</td></tr>
+  <tr><td>helperTooOld.panelTitle (attach-time)</td><td>Your helper needs updating before it can run Codex</td></tr>
+  <tr><td>helperTooOld.panelBody</td><td>We stopped this session before it started anything. Update the helper (about a minute), or start with Claude Code for now.</td></tr>
+  <tr><td>updateConfirmBody (shared, tweaked)</td><td>Your {n} running session{s} will end first — the agent stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.</td></tr>
+  <tr><td>missing.pill</td><td>Codex not found · Claude Code not found</td></tr>
+  <tr><td>missing.title</td><td>Codex isn't installed on this Mac</td></tr>
+  <tr><td>missing.body</td><td>The terminal looked for Codex on {machine} and couldn't find it. Nothing was started and nothing on your Mac has changed. Install Codex from OpenAI and sign in to it once, then start a new session.</td></tr>
+  <tr><td>missing.install</td><td>How to install Codex (opens OpenAI's page) · How to install Claude Code (opens Anthropic's page)</td></tr>
+  <tr><td>missing.fallback</td><td>Start with Claude Code instead</td></tr>
+  <tr><td>missing.terminalLine</td><td>Codex isn't installed on this Mac, so nothing was started. Install it, then start a new session — or start with Claude Code instead.</td></tr>
+  <tr><td>sharesFolder.lead</td><td>This one will share the project folder.</td></tr>
+  <tr><td>sharesFolder.body</td><td>A session is already running on this board. Claude Code can work in a separate copy of the folder; Codex can't — so both sessions will be editing the same files. Fine for reading and asking questions; take care if both are making changes.</td></tr>
+  <tr><td>resume.confirm (Codex)</td><td>Starts a new terminal that picks up your most recent Codex conversation in {folder}.</td></tr>
+  <tr><td>resume.hint (Codex)</td><td>Codex reopens the last conversation it had in this folder — if you've used Codex elsewhere since, that one won't be affected.</td></tr>
+  <tr><td>resume.unavailable (if spike fails)</td><td>Can't resume yet — Codex resume isn't folder-aware</td></tr>
+  <tr><td>ended.message (Codex)</td><td>Codex on your machine stopped. The scrollback above is kept.</td></tr>
+  <tr><td>chip.tooltip</td><td>This session runs Codex (OpenAI). Model and permissions are Codex's own settings.</td></tr>
+  <tr><td>popout.title</td><td>Terminal · {label} · Codex</td></tr>
+  <tr><td>taskMenu.codexDesktop (new item)</td><td>Launch in Codex</td></tr>
+  <tr><td>taskMenu.codexDesktopSub</td><td>Opens a Terminal window on this Mac</td></tr>
+  <tr><td>taskMenu.codexBrowser (new item)</td><td>Launch Codex in browser terminal</td></tr>
+  <tr><td>taskMenu.codexSub.helperTooOld</td><td>Needs a helper update first</td></tr>
+  <tr><td>taskMenu.codexSub.noHelper</td><td>Needs the VibeCodes helper app</td></tr>
+  <tr><td>taskMenu.codexSub.notInstalled (item disabled) <span class="decided">Decided</span></td><td>Codex isn't installed on this Mac</td></tr>
+  <tr><td>menu.installCodex (enabled item directly under the disabled one) · .sub</td><td>How to install Codex · Opens OpenAI's install page</td></tr>
+  <tr><td>menu.installCodex.subStale (appended while the desktop item is disabled)</td><td>Just installed it? Reload this page.</td></tr>
+  <tr><td colspan="2" style="color:var(--z400); font-weight:600; padding-top:14px">Rework — toolbar (§13)</td></tr>
+  <tr><td>toolbar.body (unchanged)</td><td>Launch Claude Code</td></tr>
+  <tr><td>toolbar.group.claude · toolbar.group.codex</td><td>Claude Code · Codex</td></tr>
+  <tr><td>toolbar.item.window (both groups, unchanged label)</td><td>In a terminal window</td></tr>
+  <tr><td>toolbar.item.browser (both groups, unchanged label)</td><td>In the browser</td></tr>
+  <tr><td>toolbar.claude.windowSub (unchanged)</td><td>On your computer — how it works today</td></tr>
+  <tr><td>toolbar.browserSub (both groups, unchanged)</td><td>A live terminal docked on this board</td></tr>
+  <tr><td>toolbar.codex.windowSub</td><td>Opens Terminal on this Mac — needs the VibeCodes helper</td></tr>
+  <tr><td>toolbar.codex.windowSub.noHelper</td><td>Needs the VibeCodes helper app</td></tr>
+  <tr><td>toolbar.codex.windowSub.helperTooOld</td><td>Needs a helper update first</td></tr>
+  <tr><td>toolbar.codex.windowSub.notInstalled (item disabled) <span class="decided">Decided</span></td><td>Codex isn't installed on this Mac</td></tr>
+  <tr><td>toolbar.a11y (visually hidden prefix on every launch item)</td><td>"Claude Code, " / "Codex, " — so a screen reader hears "Codex, in a terminal window"</td></tr>
+  <tr><td colspan="2" style="color:var(--z400); font-weight:600; padding-top:14px">Rework — desktop Terminal window (§12)</td></tr>
+  <tr><td>desktop.review.title</td><td>VibeCodes · Open Codex here?</td></tr>
+  <tr><td>desktop.review.folder · .board</td><td>Folder  {folder} · Board  {board title}[ · task "{task title}"]</td></tr>
+  <tr><td>desktop.review.promptLead</td><td>Codex will start with this message ({n} lines):</td></tr>
+  <tr><td>desktop.review.action</td><td>Press Enter to start Codex, or close this window to do nothing.</td></tr>
+  <tr><td>desktop.review.stranger</td><td>If you didn't just click Launch in VibeCodes, close this window.</td></tr>
+  <tr><td>desktop.review.starting</td><td>Starting Codex in {folder}…</td></tr>
+  <tr><td>desktop.review.cancelled (Ctrl+C)</td><td>Nothing was started. You can close this window.</td></tr>
+  <tr><td>desktop.windowTitle</td><td>Codex · {board title}</td></tr>
+  <tr><td>desktop.pending.toast (neutral, only if the page kept focus)</td><td>Opening Codex in a Terminal window… / Look for a new Terminal window and press Enter there. Didn't open? Check the VibeCodes helper is installed and running. · action: Helper guide</td></tr>
+  <tr><td>desktop.cantOpen.notification · .toast (fallback only)</td><td>Couldn't open a Terminal window for Codex — nothing was started. / You can run it yourself: copy the command and paste it into any terminal. · action: Copy command</td></tr>
+  <tr><td>desktop.cantOpen.toast.codexMissing (fallback when the helper's reason is "Codex not found" — status was stale)</td><td>Couldn't open a Terminal window for Codex — nothing was started. / Codex isn't installed on this Mac. Install it from OpenAI and sign in to it once, then try again — or use Launch Claude Code. · action: How to install Codex</td></tr>
+  <tr><td><s>desktop.missing.notification · desktop.missing.toast</s></td><td><span class="decided">Decided</span> Removed at the second Design Review (Q11) — the not-installed case is caught before the click, so these strings are never shown.</td></tr>
+  <tr><td>desktop.pathTooLong (existing toast, agent named)</td><td>Project path too long to launch — open the folder manually and run Codex there</td></tr>
+  <tr><td>desktop.needsHelper (panel intro, FR-14)</td><td>Opening Codex in a Terminal window needs the VibeCodes helper app.</td></tr>
+  <tr><td>helperTooOld.fallbackButton (desktop request)</td><td>Use Claude Code for now (opens a terminal window)</td></tr>
+  <tr><td>taskMenu.mobileDisabled (widened)</td><td>Open on desktop to launch Claude Code or Codex</td></tr>
+  <tr><td>taskMenu.dedupeToast (agent named)</td><td>This task already has a {agent} terminal — switched to it.</td></tr>
+  <tr><td>taskMenu.pathTooLong (generalised)</td><td>Project path too long to launch — open the folder manually and run {agent} there</td></tr>
+  <tr><td>helperTooOld.fallbackButton</td><td>Use Claude Code for now</td></tr>
+  <tr><td>connecting.terminalLine (Codex)</td><td>Opening Codex in {folder}…</td></tr>
+  <tr><td>install URLs</td><td><b>Placeholder — confirm at implementation</b> (§11, Q6): CODEX_INSTALL_URL = OpenAI's Codex CLI page; CLAUDE_INSTALL_URL = Anthropic's Claude Code page.</td></tr>
+</table>
+
+<h2 id="questions">11 · Decisions (settled at Design Review, 6 Sep 2026)</h2>
+<p>These were the seven open questions in the first draft. Nick decided all of them; the rest of the document has been updated to match, and each decision names the section it lands in.</p>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:30%">Question</th><th>Decision</th><th style="width:16%">Lands in</th></tr>
+  <tr><td>Q1</td><td>A second Codex session on the same board shares the folder — warn or block?</td><td><span class="decided">Decided</span> <b>Warn, don't block.</b> Amber note under the picker plus the terminal's first line; Start stays enabled.</td><td>§6, §8</td></tr>
+  <tr><td>Q2</td><td>Label Claude tabs too?</td><td><span class="decided">Decided</span> <b>"Codex" pill on Codex tabs only;</b> every session-list row names its agent ("Claude Code" or "Codex").</td><td>§4a, §4c</td></tr>
+  <tr><td>Q3</td><td>The instant per-task launch from a task card (no dialog) — remembered agent silently, or an explicit action?</td><td><span class="decided">Decided</span> <b>A separate "Launch in Codex" item</b> beside the existing "Launch in Claude Code" / "Launch in browser terminal" items. The agent is always the one named on the item clicked; the remembered pick is never applied silently on this path.</td><td>§7 (new), §1c</td></tr>
+  <tr><td>Q4</td><td>Where to remember the agent pick?</td><td><span class="decided">Decided</span> <b>Per account</b> — follows the user across Macs and browsers, like the starting-model setting. A small one-time database change (one column on the user record) is accepted.</td><td>Principles table, §1</td></tr>
+  <tr><td>Q5</td><td>Old helper on a first-ever browser that can't know the version up front?</td><td><span class="decided">Decided</span> <b>The attach-time safety net is accepted:</b> start connecting, detect the too-old helper, stop cleanly before anything runs, show the update panel. <b>Codex is always offered</b> — never hidden while the version is unknown.</td><td>§3, §7f</td></tr>
+  <tr><td>Q6</td><td>Exact install-page URLs for Codex and Claude Code?</td><td><span class="decided">Decided</span> <b>Confirm at implementation time.</b> Placeholders are marked in §2 and the copy sheet; both must be opened in a real browser before shipping.</td><td>§2, §10</td></tr>
+  <tr><td>Q7</td><td>"Start with Claude Code instead" also flips the remembered pick back to Claude?</td><td><span class="decided">Decided</span> <b>Intended — confirmed.</b> (Note the distinction: "Use Claude Code for now" on the helper-too-old panel does <em>not</em> flip it, because there the user still wants Codex and the helper is the only blocker — §7f.)</td><td>§2, §7e</td></tr>
+</table>
+
+<h2 id="desktop">12 · Codex in a desktop Terminal window <span class="newtag">New</span> (US-10, FR-11–FR-14, AC-14–AC-19, spikes S-4/S-5)</h2>
+<p>Claude's "In a terminal window" is a hand-off: VibeCodes builds a <code>claude-cli://</code> link and Claude Code's own handler (Anthropic's, not ours) opens the window, shows the prompt and runs it. Codex has no such handler, so "Codex in a terminal window" is <em>ours end to end</em>: the app fires a <code>vibecodes://</code> link with a new action, <b>our helper app</b> opens a real Terminal.app window in the project folder, and that window runs <code>codex</code> with the starting prompt (Requirements §2.3). This section designs what the user sees on that path. The mechanics (launch script vs AppleScript) are Implementation's call after spike S-4; nothing here depends on which they pick.</p>
+<div class="callout rule"><b>What a desktop Codex window is <em>not</em>.</b> It is not a dock session. Nothing is minted, nothing appears in the tab strip or "My sessions", it has no "Codex" pill, no Resume row, and it does not count towards the session cap or the "another session is live" check. This is exactly the standing of Claude's <code>claude-cli://</code> launch today, and the doc keeps the two alike on purpose (§14). Resume = the user types <code>codex resume</code> in that window.</div>
+
+<h3>12a · What the user clicks</h3>
+<p>Two controls, one flow: the board toolbar's <b>Codex › In a terminal window</b> (§13) and a task card's <b>Launch in Codex</b> (§7b). Both name the agent and the place in the label, both are one click, and both run the flow below; the only difference is that a card launch puts the task's title into the prompt and the review lines, exactly as a card launch does for Claude today.</p>
+
+<h3>12b · The flow, step by step</h3>
+<div class="flow">
+  <div class="step"><b>1 · Click</b>Toolbar "Codex › In a terminal window" or card "Launch in Codex". Menu closes.</div>
+  <div class="step warn"><b>2 · Gate: helper present, new enough, and is Codex installed?</b>No helper known → dock opens on the existing install-the-helper panel. Too old → the §7f "needs a newer helper" panel. Either way <em>no link fires</em> and "Use Claude Code for now" opens a Claude terminal window instead (FR-14). <span class="decided">Decided</span> Helper says Codex isn't installed → the item was already <em>disabled</em> in the menu with the reason and a "How to install Codex" item beside it, so this click never happens (§12d, §12f).</div>
+  <div class="step warn"><b>3 · Gate: folder known?</b>No recorded folder for this board → the existing pick-a-folder dialog, same as Claude today. Save continues the Codex launch; Cancel/Esc = nothing (FR-12).</div>
+  <div class="step"><b>4 · Link fires</b>The page fires the <code>vibecodes://</code> "open a terminal" link. The board shows <em>nothing</em> unless nothing seems to happen (step 5b). No tab, no chooser.</div>
+  <div class="step warn"><b>5a · Helper re-checks, then opens</b>The helper looks for <code>codex</code> once more on the same PATH it will give the window (the status it reported earlier could be stale). Missing, or the window can't be opened for any other reason → <b>no window opens</b>; the fallback "couldn't open a window" notification + board toast (§12d).</div>
+  <div class="step"><b>5b · Nothing happened?</b>~1.5s later, if the browser page still has focus, the neutral "Opening Codex in a Terminal window…" toast — the same race Claude's launch uses (§12e).</div>
+  <div class="step"><b>6 · Terminal window opens — review</b>A new Terminal.app window, already in the project folder, shows what is about to run and waits: "Press Enter to start Codex" (§12c). Nothing has run yet.</div>
+  <div class="step"><b>7 · Enter → Codex starts</b>Codex runs with the board-connect prompt as its first message. From here on it is Codex's own experience (its sign-in, its permissions); VibeCodes tracks nothing. Remembered pick → Codex.</div>
+</div>
+<p>Ways back at every step: the gate panels have close buttons and <span class="kbd">Esc</span>; the folder dialog cancels with nothing fired; the Terminal window can be closed (or <span class="kbd">Ctrl</span>+<span class="kbd">C</span>) at the review line with nothing run; and after Codex starts it is an ordinary Terminal window the user owns.</p>
+
+<h3>12c · The review screen — "see and confirm" before Codex runs (S-5)</h3>
+<p>Because any web page can fire a <code>vibecodes://</code> link, the helper must never start Codex unattended. The safeguard is <b>in the Terminal window itself</b>: the window opens, prints what is about to happen, and waits for a real key press. This is the same shape as Claude's desktop launch today — Claude Code shows the prefilled prompt and the human presses Enter to send it — so the "human in the loop" a Claude user already knows is kept, and it doubles as the security step.</p>
+<div class="termwin" role="img" aria-label="A macOS Terminal window titled Codex · VibeCodes showing the review lines and a prompt to press Enter">
+  <div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="ttl">Codex · VibeCodes — 96×28</span></div>
+<pre><span class="hd">VibeCodes · Open Codex here?</span>
+
+  <span class="dim">Folder</span>   ~/projects/vibe-coding-ideas
+  <span class="dim">Board</span>    VibeCodes · task "Write the pricing page copy"
+
+<span class="dim">Codex will start with this message (11 lines):</span>
+<span class="dim">┃</span> Connect this project to its VibeCodes board first: run
+<span class="dim">┃</span>   codex mcp add vibecodes --url https://vibecodes.co.uk/api/mcp
+<span class="dim">┃</span> then
+<span class="dim">┃</span>   codex mcp login vibecodes
+<span class="dim">┃</span> and stop so I can finish signing in — don't improvise the sign-in.
+<span class="dim">┃</span> Then confirm the folder with `pwd`, record it on the board, and
+<span class="dim">┃</span> pick up task "Write the pricing page copy".
+<span class="dim">┃</span> Note: another session is already working on this board, so this
+<span class="dim">┃</span> folder may be shared — take care with edits.
+
+<span class="key">Press Enter to start Codex</span>, or close this window to do nothing.
+<span class="dim">If you didn't just click Launch in VibeCodes, close this window.</span>
+<span class="cur"></span></pre>
+</div>
+<p class="caption">Terminal.app, default profile. The board title comes from the link; the folder is the one the window is already in (printed from the shell, never trusted from the link alone); the message is the full compact bootstrap prompt, shown whole — it is short by construction because it has to fit a URL. After Enter, one line "Starting Codex in ~/projects/vibe-coding-ideas…" and then Codex's own screen takes over; the review lines stay in the scrollback as a record of what was run.</p>
+<ul class="ann-list">
+  <li><b>Why the window and not a dialog.</b> The window already has the two things the user needs to judge the launch — the folder (they're in it) and the message (in full) — and the confirmation is one key. A native "VibeCodes wants to open Terminal — Allow?" dialog would be an extra click with none of that context, and would still leave the prompt unseen until Codex was already running. Rejected.</li>
+  <li><b>Why it is a real safeguard, not theatre.</b> The waiting line reads from the keyboard of the Terminal window only. A link fired by some other web page can, at worst, open a window that <em>asks</em> — it cannot press Enter, and the script never runs anything before that key. The last line tells a surprised user what to do ("close this window"). The helper still runs only the fixed <code>codex</code> binary, in a folder that must already exist, with the message as one argument (Requirements, security note) — the review step is on top of those, not instead of them.</li>
+  <li><b>No "don't ask again".</b> Deliberately: the step protects against links that didn't come from the user's own click, and a remembered "skip" would reopen that hole for every future link. One key per launch is the price, and it is the same price Claude's desktop launch already charges.</li>
+  <li><b>The alternative Implementation may choose (S-5).</b> A short-lived signed token on the link, checked by the helper over its control connection, would prove the launch came from the signed-in account. If Implementation ships that, the review screen <em>still stays</em> — it is where the user reads the prompt and the shared-folder note before Codex acts on them (FR-12's advisory has no other place to be read). What the token would buy is the freedom to make the Enter step optional later; that is not proposed for v1.</li>
+  <li><b><span class="kbd">Ctrl</span>+<span class="kbd">C</span> or closing the window</b> at the review line prints "Nothing was started. You can close this window." and exits. The temp launch script is removed either way (FR-11) — no leftovers, no half-launch (AC-17).</li>
+  <li><b>Window title:</b> "Codex · VibeCodes" (agent · board), set by the launch script, so the Mac's window list and Mission Control show which board a window belongs to — the only "label" a desktop window gets (§4 scope note).</li>
+  <li><b>Accessibility.</b> The review is plain text in Terminal.app, read by VoiceOver like any terminal output; the key line starts with the action word ("Press Enter…") so it is found first. Colour (the amber heading, the sky action) is decoration only; the structure carries in plain text. Terminal's own font-size and contrast settings apply.</li>
+</ul>
+
+<h3>12d · "Codex isn't installed on this Mac" — caught before the click <span class="decided">Decided</span> — and the "couldn't open a window" fallback (FR-3, FR-13, AC-16/17)</h3>
+<p><b>Second Design Review (Q11): the helper checks first, and the board warns before anything launches.</b> The helper's status report — which the dock already fetches when the page loads — now also says whether <code>codex</code> is installed on this Mac (the pre-flight "is this agent installed?" check FR-3 requires for both agents, reported up front). When it says no, every control that would open Codex in a desktop window is <b>refused before any link fires</b>: the item is disabled, the reason sits beside it, and the way out (an install link) sits directly beneath. No Terminal window opens, dead or otherwise, and nothing has to be explained after the fact.</p>
+<div class="vs">
+  <div>
+    <div class="mock-title" style="border:1px solid var(--line); border-radius:6px 6px 0 0"><b>Board toolbar dropdown</b> · Codex group · helper reports Codex not installed</div>
+    <div class="menu wide" role="menu" aria-label="Launch options" style="margin:0; border-radius:0 0 6px 6px">
+      <div class="mlabel">Codex</div>
+      <div class="mi dis" aria-disabled="true"><span class="ic">▣</span><span><span class="srx">Codex, </span>In a terminal window<div class="sub">Codex isn't installed on this Mac</div></span></div>
+      <div class="mi"><span class="ic">↗</span><span>How to install Codex<div class="sub">Opens OpenAI's install page</div></span></div>
+      <div class="mi"><span class="ic">◍</span><span><span class="srx">Codex, </span>In the browser<span class="beta">Beta</span><div class="sub">A live terminal docked on this board</div></span></div>
+    </div>
+  </div>
+  <div>
+    <div class="mock-title" style="border:1px solid var(--line); border-radius:6px 6px 0 0"><b>Task card ⋯ menu</b> · Codex items · helper reports Codex not installed</div>
+    <div class="menu" role="menu" style="margin:0; border-radius:0 0 6px 6px">
+      <div class="mi dis" aria-disabled="true"><span class="ic">▣</span><span>Launch in Codex<div class="sub">Codex isn't installed on this Mac</div></span></div>
+      <div class="mi"><span class="ic">↗</span><span>How to install Codex<div class="sub">Opens OpenAI's install page</div></span></div>
+      <div class="mi"><span class="ic">◍</span><span>Launch Codex in browser terminal<span class="beta">Beta</span></span></div>
+    </div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li><b>Disabled, never colour-only, never a dead end.</b> The disabled item keeps its full text at reduced weight, and the sub-line says <em>why</em> in the same words on both surfaces: "Codex isn't installed on this Mac". The next item is the exit, "How to install Codex" (external-link icon, opens OpenAI's page in a new tab; URL placeholder per §11 Q6), so the reason and the fix are read together. The item is <code>aria-disabled</code> rather than removed — Radix keeps disabled items in the accessibility tree — so a screen-reader user hears "In a terminal window, Codex isn't installed on this Mac, dimmed" and then the install item. Muted styling is a hint; the words carry the meaning. This is the doc's existing disabled-with-adjacent-reason pattern (the §3 Start button) in a menu.</li>
+  <li><b>Why disable here but not for the helper gates (§12f).</b> The rule is "the way out must be adjacent". For a too-old or missing helper the way out is a multi-step flow (confirm → closing → ready to update) that a menu can't host, so those items stay enabled and open the panel that can. For "not installed" the way out is one link, and a menu hosts links perfectly well — so the honest state (you can't launch this) and the exit (install it) fit side by side.</li>
+  <li><b>The Claude items stay enabled</b> in the same menu, a line above, so the fallback needs no copy of its own — the user sees it. (The only place a "use Launch Claude Code" sentence is still needed is the runtime fallback toast below.)</li>
+  <li><b>Freshness.</b> The status is refreshed when the page loads and whenever the helper reconnects; the helper re-checks at launch anyway (§12b step 5a). Two edge cases: if Codex was installed <em>after</em> the last report, the item is wrongly disabled until the next refresh, so in the disabled state the install item's sub-line carries one extra clause — "Opens OpenAI's install page · Just installed it? Reload this page." If Codex was <em>removed</em> after the last report, the item is enabled and the helper's own check at launch catches it — the fallback toast below, with the install action.</li>
+  <li><b>What is <em>not</em> gated on this field.</b> "Launch Codex in browser terminal" / "Codex › In the browser" and the chooser's picker (§1) are unchanged: those paths have a tab to render into, and the §2 panel in that tab offers "Start with Claude Code instead" in the same folder — richer than a disabled item. Same words, different container.</li>
+</ul>
+<h3>12d-ii · "Couldn't open a Terminal window" — the runtime fallback</h3>
+<p>For failures the pre-flight can't predict — temp folder unwritable, <code>open</code> failed, folder vanished, or Codex gone missing since the last status report — the helper reports the reason back over its existing control connection (FR-13's "nice-to-have", made the normal path here) and the board shows one toast, mirrored by a macOS notification for the user who has already switched away from the browser.</p>
+<div class="vs">
+  <div>
+    <div class="mock-title" style="border:1px solid var(--line); border-radius:6px 6px 0 0"><b>On the board</b> · sonner toast · stays until dismissed · fallback only</div>
+    <div class="toast" role="status"><span class="x">✕</span><div class="t">Couldn't open a Terminal window for Codex — nothing was started.</div><div class="d">You can run it yourself: copy the command and paste it into any terminal.</div><div class="a"><span class="btn outline">⧉ Copy command</span></div></div>
+  </div>
+  <div>
+    <div class="mock-title" style="border:1px solid var(--line); border-radius:6px 6px 0 0"><b>On the Mac</b> · macOS notification from the helper · fallback only</div>
+    <div class="notif"><div class="ic"></div><div><div class="t">Couldn't open a Terminal window for Codex — nothing was started.</div><div class="d">Copy the command from the VibeCodes board and paste it into any terminal.</div></div></div>
+  </div>
+</div>
+<ul class="ann-list">
+  <li><b>Why a toast.</b> It is how this exact surface already reports launch outcomes ("Opening Claude Code…", "Project path too long…", "Your browser blocked the launch") — same position, same component, no new UX type. It <b>stays until dismissed</b> (not the 4-second default) because it carries an action; ✕ and <span class="kbd">Esc</span> dismiss it; <code>role="status"</code> so it is announced without stealing focus. Never two toasts for one event: the neutral "Opening…" toast (§12e) is replaced by this one if the report arrives while it is showing. If the report never arrives (helper offline mid-launch), the native notification and the §12e nudge still cover it.</li>
+  <li><b>When the reason is "Codex not found"</b> (the status was stale), the body reads "Codex isn't installed on this Mac. Install it from OpenAI and sign in to it once, then try again — or use Launch Claude Code." and the action is <b>How to install Codex</b> instead of Copy command — copying a command for a program that isn't there would be unkind.</li>
+  <li><b>The Copy command action</b> is the <code>cd '&lt;folder&gt;' &amp;&amp; codex '&lt;message&gt;'</code> line — so the user can paste it into any terminal themselves. This mirrors the "Copy command" escape hatch the Claude launch already offers, and it needs a Codex version of the copied command (a small addition; <span class="decided">Decided</span> §15, Q10 — this toast is the only place a Codex copy command exists in v1).</li>
+  <li><b>The bridge path is unchanged:</b> "Launch Codex in browser terminal" with Codex missing still shows the §2 panel inside the tab — that path <em>has</em> a tab, and that panel can offer "Start with Claude Code instead" in the same folder, which a disabled menu item cannot. Same words, different container. (If Implementation later wants to disable the browser items on the same status field, the §7b pattern applies unchanged — but it is not required for v1, and the in-tab panel is the richer answer.)</li>
+  <li><b>Note for Implementation (extends FR-3).</b> The helper's status report — the one the dock already fetches when the page loads and whenever the helper reconnects — must also say whether <code>codex</code> is installed (found on the PATH the helper gives a launched window). The pre-flight "is this agent installed?" check FR-3 already requires is the same lookup; this only reports its result up front instead of at launch. Unknown (status not yet loaded, or an older helper that doesn't report it) means <em>enabled</em>, never disabled — unknown ≠ missing, the same rule the helper-version gate follows.</li>
+</ul>
+
+<h3>12e · Happy-path feedback on the board, and the "nothing happened" nudge</h3>
+<p>When the launch works, the board shows nothing at all — the Terminal window takes focus, which is the signal. Claude's desktop launch behaves the same way (a lost page focus is treated as "it opened"). Only when the page still has focus after the same short race does a <em>neutral</em> toast appear, and it is a nudge, not an error:</p>
+<div class="toast" role="status"><span class="x">✕</span><div class="t">Opening Codex in a Terminal window…</div><div class="d">Look for a new Terminal window and press Enter there. Didn't open? Check the VibeCodes helper is installed and running.</div><div class="a"><span class="btn outline">Helper guide</span></div></div>
+<p class="caption">Auto-hides like today's "Opening Claude Code…" toast. The likeliest reason for a silent no-op on this path is the helper not being installed or running (Claude's path doesn't need it; this one does — FR-14's "needs the helper" is new information for a Claude user), so the action goes to the helper guide rather than to "Copy command".</p>
+
+<h3>12f · The gates before the link fires (FR-14)</h3>
+<table>
+  <tr><th style="width:26%">The app knows…</th><th>Menu item (toolbar and card)</th><th style="width:36%">On select</th></tr>
+  <tr><td>Helper present, version new enough</td><td>Enabled. Sub-line "Opens Terminal on this Mac — needs the VibeCodes helper" (toolbar) / "Opens a Terminal window on this Mac" (card).</td><td>Flow §12b from step 3.</td></tr>
+  <tr><td>No helper known</td><td>Enabled. Sub-line <b>"Needs the VibeCodes helper app"</b>.</td><td>Dock opens on its existing install-the-helper panel, with the one new intro line "Opening Codex in a Terminal window needs the VibeCodes helper app." and "Use Claude Code for now (opens a terminal window)". No link fired.</td></tr>
+  <tr><td>Helper too old for Codex</td><td>Enabled. Sub-line <b>"Needs a helper update first"</b>.</td><td>Dock opens on the §7f panel (Update now / Use Claude Code for now — terminal window / View my other sessions). No link fired.</td></tr>
+  <tr><td><span class="decided">Decided</span> Helper reports Codex is <b>not installed</b></td><td><b>Disabled</b> (muted, <code>aria-disabled</code>, still readable). Sub-line <b>"Codex isn't installed on this Mac"</b>. Directly beneath it, an <em>enabled</em> item <b>"How to install Codex"</b> (external-link icon).</td><td>Nothing — the item can't be selected. "How to install Codex" opens OpenAI's page in a new tab. No link fired, no window. The Claude items in the same menu are the fallback and are right there.</td></tr>
+  <tr><td>Helper status still loading</td><td>Enabled, normal sub-line (unknown ≠ missing).</td><td>Flow §12b. An old helper ignores an action it doesn't know (skew-safe); the ~1.5s neutral toast then tells the user to check the helper.</td></tr>
+</table>
+<p class="caption">Same rule as §7b: never disabled without its way out beside it. For the helper gates the way out is a multi-step flow, so the item stays enabled and opens the panel that hosts it; for "not installed" the way out is a single link, so the item is honestly disabled and the link sits next to it. One version number gates both Codex locations — users update once (FR-14).</p>
+
+<h2 id="toolbar">13 · The board toolbar split button <span class="corrected">Corrected</span> (US-11, FR-15, AC-20, AC-22)</h2>
+<h3>13a · The correction</h3>
+<p>The first draft's §7a said the toolbar's "In the browser" item "lands on the chooser, which already carries the picker — no change here". <b>That was wrong.</b> Checked in <code>src/components/board/launch-claude-code-button.tsx</code> (the <code>variant="board"</code> render, ~line 573 on): the green button body and the dropdown's "In a terminal window" both call <code>handleLaunch</code>, which fires Claude's <code>claude-cli://</code> desktop launcher; "In the browser" calls <code>handleLaunchInBrowser</code> → <code>requestBrowserLaunch</code>, and the dock <b>auto-launches Claude at once, with no chooser and no picker</b>. So the toolbar is a one-click launcher on both items, and Codex has to be offered <em>in the menu itself</em>. Nick's decision: since Codex now runs both in a desktop window and in the browser, the dropdown becomes <b>agent × location</b> — explicit items, no silent switch, no forced extra picker.</p>
+
+<h3>13b · The dropdown, after</h3>
+<div class="mock">
+  <div class="mock-title"><b>Board toolbar</b> · desktop (≥ md) · browser terminal switched on · dropdown open</div>
+  <div class="toolbar"><span style="font-size:13px; color:var(--z100); font-weight:600">VibeCodes</span><span class="sp"></span><span class="btn ghost">Filter</span><span class="btn ghost">⋯</span><span class="splitbtn"><span class="body">▣ Launch Claude Code</span><span class="chev" aria-label="Launch options">⌄</span></span></div>
+  <div style="display:flex; justify-content:flex-end; padding: 6px 14px 16px">
+    <div class="menu wide" role="menu" aria-label="Launch options">
+      <div class="mlabel"><span class="ann">7</span>Claude Code</div>
+      <div class="mi"><span class="ic">▣</span><span><span class="srx">Claude Code, </span>In a terminal window<div class="sub">On your computer — how it works today</div></span></div>
+      <div class="mi"><span class="ic">◍</span><span><span class="srx">Claude Code, </span>In the browser<span class="beta">Beta</span><div class="sub">A live terminal docked on this board</div></span></div>
+      <div class="msep"></div>
+      <div class="mlabel">Codex</div>
+      <div class="mi hl"><span class="ic">▣</span><span><span class="srx">Codex, </span><span class="ann">8</span>In a terminal window<div class="sub">Opens Terminal on this Mac — needs the VibeCodes helper</div></span></div>
+      <div class="mi"><span class="ic">◍</span><span><span class="srx">Codex, </span>In the browser<span class="beta">Beta</span><div class="sub">A live terminal docked on this board</div></span></div>
+      <div class="msep"></div>
+      <div class="mline"><span class="ann">9</span><span style="color:var(--z300); font-weight:600">Recorded on Nicks-MBP</span><code>~/projects/vibe-coding-ideas</code></div>
+      <div class="mi"><span class="ic">▤</span><span>Start a new project…</span></div>
+      <div class="mi"><span class="ic">⧉</span><span>Copy launch command</span></div>
+      <div class="msep"></div>
+      <div class="mi"><span class="ic">⚙</span><span>Set exact folder (advanced)…</span></div>
+      <div class="msep"></div>
+      <div class="mi"><span class="ic">↗</span><span>Install guide</span></div>
+    </div>
+  </div>
+</div>
+<ol class="ann-list">
+  <li><span class="ann">7</span><b>Group headers</b> are shadcn <code>DropdownMenuLabel</code>s ("Claude Code", "Codex") — non-interactive, muted, uppercase like the chooser's section headers, so the eye reads two blocks of two. Claude first: it is the default, and the first item under the trigger is still "In a terminal window" for Claude — <span class="kbd">↓</span> then <span class="kbd">Enter</span> does exactly what it did yesterday. Codex second. Within each group the order is Terminal window, then browser (today's order).</li>
+  <li><span class="ann">8</span><b>Item labels are the existing two strings, unchanged</b>, in both groups: "In a terminal window" / "In the browser". The header supplies the agent; the item supplies the place. Icons repeat per group — <code>Terminal</code> for the window, <code>Globe</code> for the browser — so the icon column reads as "where" all the way down. The <span class="beta">Beta</span> chip sits on both browser items (it marks the dock, not the agent). The Codex window item carries the one new sub-line: "Opens Terminal on this Mac — needs the VibeCodes helper" — the first time a desktop launch has depended on our helper, said in plain words (FR-14). Its sub-line swaps to "Needs the VibeCodes helper app" / "Needs a helper update first" when the app knows (§12f). <span class="decided">Decided</span> When the helper reports that Codex isn't installed, this item is <b>disabled</b> with the sub-line "Codex isn't installed on this Mac" and an enabled "How to install Codex" item directly beneath it (mocked in §12d) — the browser item stays enabled (§7b explains why). The Codex browser item's sub-line is the same as Claude's — it is the same dock.</li>
+  <li><span class="ann">9</span><b>Everything below the launch groups is untouched:</b> the saved-folder line, "Start a new project…", "Copy launch command", "Set exact folder (advanced)…", "Install guide" — same labels, same order, same separators. They are agent-neutral (the folder is the folder) except "Copy launch command", which stays the Claude command in v1 (<span class="decided">Decided</span> §15, Q10).</li>
+  <li><b>Width and height.</b> The menu keeps its <code>w-72</code> (288px). Two headers, one extra separator and two items add about 96px of height — fine on a desktop toolbar (this menu is hidden below <code>md</code> anyway). Each item is ≥ 36px tall; the two-line items are 44px.</li>
+  <li><b>Screen readers.</b> A <code>DropdownMenuLabel</code> is not announced with the items, so each launch item gets a visually-hidden prefix ("Claude Code, " / "Codex, ") and reads as "Codex, in a terminal window, menu item 3 of 4". The sub-lines are part of the item's text, so they are read too. The trigger keeps its existing name "Launch options".</li>
+  <li><b>Keyboard.</b> Standard Radix menu: <span class="kbd">↑</span>/<span class="kbd">↓</span> skip the headers and separators; typing <span class="kbd">C</span> jumps between the items whose text starts with "C" — none do (both start with "In"), which is fine; headers are not focus stops. <span class="kbd">Esc</span> closes with nothing fired.</li>
+</ol>
+
+<h3>13c · What each item does</h3>
+<table>
+  <tr><th style="width:26%">Item</th><th>Happy path</th><th style="width:22%">Codex not installed</th><th style="width:22%">Helper missing / too old</th></tr>
+  <tr><td>Green body "Launch Claude Code"</td><td><b>Unchanged.</b> Fires <code>claude-cli://</code>; Claude Code opens a terminal window and shows the prompt. Label never changes (see below).</td><td>n/a</td><td>n/a — Claude's path needs no helper (AC-18).</td></tr>
+  <tr><td>Claude Code › In a terminal window</td><td><b>Unchanged</b> — same as the body.</td><td>n/a</td><td>n/a</td></tr>
+  <tr><td>Claude Code › In the browser</td><td><b>Unchanged</b> — <code>requestBrowserLaunch</code> without an agent; the dock auto-launches Claude (byte-identical payload, AC-20).</td><td>§2 panel in the tab (Claude missing mirror).</td><td>Existing helper nudge/update flow.</td></tr>
+  <tr><td><span class="newtag">New</span> Codex › In a terminal window</td><td>Flow §12b: gates → link → helper opens Terminal.app in the folder → review → Enter → Codex.</td><td><span class="decided">Decided</span> Item disabled up front, sub-line "Codex isn't installed on this Mac", "How to install Codex" beneath it; no link fires (§12d, §12f). Fallback if the status was stale: the "couldn't open a window" toast with the install action.</td><td>No link fired; dock opens on the install-helper panel or the §7f update panel; "Use Claude Code for now" opens a Claude terminal window (§12f).</td></tr>
+  <tr><td><span class="newtag">New</span> Codex › In the browser</td><td><code>requestBrowserLaunch({ agent: "codex" })</code>; the dock goes straight to a Codex mint and launch — new tab with the "Codex" pill, "Connecting…", then Codex. <b>No picker, no chooser</b> (AC-20). Board-level, so no task title.</td><td>§2 panel inside the new tab ("Codex isn't installed on this Mac", How to install / Start with Claude Code instead / View my other sessions).</td><td>Helper known too old → dock opens on the §7f panel, nothing minted. Found at attach → session ended by us, same panel in the tab (the Q5 safety net).</td></tr>
+</table>
+<ul class="ann-list">
+  <li><b>Why the green body stays Claude.</b> AC-22 would allow the body to follow the remembered pick <em>if</em> its label changed with it. Not proposed: the toolbar button is the board's most-clicked control, and a control that reads "Launch Codex" on Tuesday and "Launch Claude Code" on Wednesday (because a card menu wrote the pick) trades one click for a lifetime of glances. The remembered pick belongs to the chooser, where the control shows its value before you act. The dropdown is one click away and names everything.</li>
+  <li><b>Browser terminal switched off:</b> the menu collapses to exactly today's single "Open in Claude Code" item — no Codex anywhere, because both Codex locations depend on the helper, which ships with the terminal feature.</li>
+  <li><b>Remembered pick:</b> as with the card menu, a toolbar launch never reads it but a successful Codex launch (either location) writes it (§7b).</li>
+  <li><b>Task detail header icon</b> stays a Claude-only terminal-window button in v1 (Requirements FR-15) — one icon has no room for four choices, and the card's ⋯ menu is the Codex route.</li>
+</ul>
+
+<h3>13d · How this squares with the task-card menu (§7)</h3>
+<p>Same four launches, same grouping by agent, same icons, same gates — the two surfaces differ only in what the labels have to carry. The toolbar can afford headers, so its items say only the place; the card menu is a flat list of eight, so the agent lives in the label ("Launch in Codex", "Launch Codex in browser terminal") and there are no headers. The desktop Codex item <em>is</em> on the card menu (FR-15 asks for it, and a per-task launch is the most natural place to want a window "for this task" — the task title rides in the prompt and the review lines). Both surfaces run §12b for the window and §7c for the dock. The earlier §7 claim that Codex was browser-only is withdrawn.</p>
+
+<h2 id="consistency">14 · Desktop Codex and the rest of this doc — consistency notes</h2>
+<p>Sections 1–7 were written when Codex ran only in the browser dock. Nothing in them is wrong for the dock; the notes below stop them being read as claims about the desktop window. Rule of thumb throughout: <b>a desktop Codex window behaves exactly like Claude's desktop launch today — VibeCodes fires it and forgets it.</b></p>
+<table>
+  <tr><th style="width:26%">Section</th><th>What it covers</th><th style="width:40%">And for a desktop Codex window</th></tr>
+  <tr><td>§1 picker</td><td>Fresh <em>dock</em> sessions.</td><td>Never shown. The desktop items name the agent themselves (§12a, §13).</td></tr>
+  <tr><td>§2 not installed</td><td>The in-tab panel.</td><td><span class="decided">Decided</span> Caught before the click: the helper's status says Codex is missing, so the desktop item is disabled with the reason and a "How to install Codex" item beside it (§12d, §12f). The board toast + macOS notification survive only as the fallback for a window that fails to open for a reason the pre-flight couldn't see.</td></tr>
+  <tr><td>§3 helper too old</td><td>Chooser gate + attach-time safety net.</td><td>Gate only (§12f) — there is no attach, because nothing connects to the relay. One minimum helper version covers both locations.</td></tr>
+  <tr><td>§4 which agent is running</td><td>Tabs, rows, header, pop-out.</td><td>None of these exist for a desktop window. Its only label is the Terminal window's title, "Codex · &lt;board&gt;".</td></tr>
+  <tr><td>§5 Resume</td><td>Recent rows in the chooser.</td><td>Never listed; not resumable from VibeCodes. The user types <code>codex resume</code> in the window (deferred, Requirements §4).</td></tr>
+  <tr><td>§6 shares the folder</td><td>Amber note when a dock session is live.</td><td>A desktop window is invisible to that check (both directions). The trade-off is stated in the starting message instead — the existing isolation advisory — and read on the review screen (§12c).</td></tr>
+  <tr><td>§7 task-card menu</td><td>Now four items.</td><td>"Launch in Codex" = desktop window; "Launch Codex in browser terminal" = dock (§7b, §13d).</td></tr>
+  <tr><td>Remembered pick (Q4, Q7)</td><td>Per-account agent default.</td><td>Written by a successful desktop Codex launch too; "Start with Claude Code instead" / the not-installed toast's advice to use the green button do <em>not</em> flip it on this path (no button was pressed that says "instead" — the user simply launches Claude). Keeping Q7's rule literal: only the explicit "Start with Claude Code instead" button flips it.</td></tr>
+  <tr><td>Session cap ("up to 3 at once")</td><td>Dock sessions.</td><td>Not counted. A user can have three dock tabs and any number of desktop windows, as with Claude today.</td></tr>
+  <tr><td>Analytics (FR-10)</td><td>Events carry <code>agent</code>.</td><td>And <code>location: "desktop"</code>; never the prompt.</td></tr>
+</table>
+
+<h2 id="open">15 · Decisions (settled at the second Design Review, 6 Sep 2026 — rework)</h2>
+<p>These were the five open questions raised by the rework. Nick decided all of them; four confirmed what the doc already showed, and one (Q11) changed the design. <b>No open questions remain</b> — Q1–Q7 were settled at the first review (§11) and stay settled. Each row names where the decision lands.</p>
+<table>
+  <tr><th style="width:5%">#</th><th style="width:30%">Question</th><th>Decision</th><th style="width:16%">Lands in</th></tr>
+  <tr><td>Q8</td><td><b>The confirm step (S-5).</b> Is the in-window "press Enter to start Codex" review the safeguard we ship, rather than a native "Allow?" dialog or a silent signed-token check?</td><td><span class="decided">Decided</span> <b>Yes — the in-window review is the safeguard.</b> It matches Claude's desktop launch (prompt shown, human presses Enter), costs one key, and is a real barrier to links fired from elsewhere. A signed token is welcome on top but does not remove the review screen in v1. No change to the design.</td><td>§12c</td></tr>
+  <tr><td>Q9</td><td><b>Card-menu labels.</b> "Launch in Codex" now means a <em>desktop window</em> (twin of "Launch in Claude Code"); the dock item is "Launch Codex in browser terminal". OK to re-point it now that both locations exist?</td><td><span class="decided">Decided</span> <b>Keep "Launch in Codex" for the desktop item; "Launch Codex in browser terminal" for the dock.</b> The learnable rule "Launch in &lt;agent&gt; = window, …browser terminal = dock" stands; the longer alternative labels are not adopted. No change to the design.</td><td>§7b, §13d</td></tr>
+  <tr><td>Q10</td><td><b>"Copy launch command" and the Codex fallback command.</b> Leave the dropdown's "Copy launch command" Claude-only in v1, and add a Codex version only where the desktop path needs it?</td><td><span class="decided">Decided</span> <b>Claude-only in v1.</b> The only Codex copy command is the one on the "couldn't open a window" fallback toast. No second "Copy Codex launch command" item. No change to the design.</td><td>§12d, §13b</td></tr>
+  <tr><td>Q11</td><td><b>Pre-check "is Codex installed" before firing?</b> Should the helper's status report say whether <code>codex</code> is on this Mac so the board can warn before launching, or is v1 = after-the-fact toast + notification only?</td><td><span class="decided">Decided</span> <b>Check first, warn before launching — this changed the design.</b> The helper's status report must include whether <code>codex</code> is installed (extends FR-3). When it isn't, the desktop-window items on the toolbar and the card menu are <b>disabled with the reason beside them</b> ("Codex isn't installed on this Mac") and an enabled "How to install Codex" item directly beneath; no link fires and no window opens. The after-the-fact toast + notification is demoted to the fallback for a window that fails to open for a reason the pre-flight couldn't predict. The browser-terminal items are unchanged (their tab hosts the richer §2 panel).</td><td>§7b, §8, §10, §12b, §12d, §12f, §13b, §13c, §14</td></tr>
+  <tr><td>Q12</td><td><b>macOS notification permission.</b> The helper's native notification needs the user to allow notifications from the helper once. Accept that one-off prompt, or keep the helper silent?</td><td><span class="decided">Decided</span> <b>Accept the one-off permission prompt.</b> The notification is the only message that reaches a user who has left the browser. If declined, the board toast still covers the common case. With Q11 the notification now fires only on the rare fallback path, so the prompt is seen even less often. No change to the design.</td><td>§12d</td></tr>
+</table>
+
+<h3>Requirements feedback</h3>
+<p>The Requirements deliverable held up; nothing in it blocked this design. Three things it should absorb from the first round: (a) FR-7's gate needs the attach-time fallback described in §3 because a never-connected browser can't know the helper version up front — now accepted (Q5); (b) FR-4 should state explicitly that the per-task launch gets its own explicit Codex actions and never applies the remembered agent silently (Q3, §7); (c) FR-5/US-8: the remembered pick is a per-account column, not browser storage (Q4). From the rework: (d) FR-13's "helper reports the reason back over the control connection" should be promoted from nice-to-have to the normal path, because the board toast in §12d depends on it; (e) FR-15's card-menu wording is adopted as written ("Launch in Codex" = desktop, "Launch Codex in browser terminal" = dock) — confirmed at the second review (Q9); (f) S-5 is answered here with the in-window review (Q8, confirmed) — Implementation confirms feasibility of "print, wait for Enter, then exec codex" inside the launch script during spike S-4; (g) <b>FR-3 extends</b> (Q11): the helper's status report must include whether <code>codex</code> is installed, so the desktop-launch controls can be refused before any link fires; unknown must read as enabled, never disabled.</p>
+
+</main>
+</body>
+</html>

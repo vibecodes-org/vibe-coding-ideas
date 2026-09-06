@@ -88,6 +88,20 @@
 //             copy of this module simply never reads `permissionMode` off
 //             the URL — no version-skew risk, no error surface, silently
 //             ignored, same as every other param here.
+//   agent   — Codex support (docs/codex-terminal-requirements.md FR-1,
+//             implementation slice 1): which agent the bridge should spawn.
+//             The ONLY value ever put on the wire is the literal "codex";
+//             the default "claude" is OMITTED entirely (never encoded as
+//             `agent=claude`), so a launch with this absent or "claude"
+//             parses to the exact same object shape as before this field
+//             existed (AC-1 — byte-identical link, no version-skew risk in
+//             either direction, same posture as `model`/`worktree`). An old
+//             bridge's bundled copy of this module simply never reads
+//             `agent` off the URL and spawns Claude as always; the APP is
+//             what refuses a Codex launch against an old helper (FR-7), not
+//             this parser. Inserted before `prompt`, alongside the other
+//             optional non-secret params, so it never eats into the
+//             prompt's length budget.
 //   worktree — concurrent-terminal isolation (formerly an advisory text
 //             protocol baked into `prompt`, now Claude Code's own NATIVE
 //             `--worktree <name>` CLI flag — see
@@ -124,8 +138,21 @@
 
 /** Custom URL scheme the packaged helper registers (slice 7 OS bit). */
 export const LAUNCH_SCHEME = "vibecodes";
-/** The single action this scheme exposes today: `vibecodes://launch?…`. */
+/** The original action this scheme exposes: `vibecodes://launch?…`. */
 export const LAUNCH_HOST = "launch";
+/**
+ * The SECOND action (Codex support, docs/codex-terminal-requirements.md
+ * FR-11, US-10) — `vibecodes://open-terminal?…`. Unlike `launch`, this never
+ * forks the invisible in-browser bridge: it tells the helper to open a real
+ * Terminal.app window on the user's Mac running `codex` in a folder, with a
+ * starting prompt — see terminal/helper/open-terminal.mjs for the script/
+ * quoting logic and terminal/helper/main.js for the deep-link handler. Kept
+ * as a SEPARATE host (not a `launch` variant) so an old helper that only
+ * knows `launch` simply ignores an unrecognised action outright (skew-safe:
+ * FR-14 gates this on the app side with a helper-version check anyway, but
+ * the parser itself never has to special-case "launch, but different").
+ */
+export const OPEN_TERMINAL_HOST = "open-terminal";
 
 /** Strict UUID shape — mirrors control-frames.mjs's `sanitizeConversationId`.
  *  Duplicated (not imported) to keep this module dependency-free (see the
@@ -180,8 +207,18 @@ function isWorktreeFlagSafe(v) {
   return v === "1";
 }
 
+/** Codex support (FR-1) — the ONLY legal wire value is the literal "codex".
+ *  "claude" (the default) is never put on the wire at all (see the header
+ *  comment) — this predicate exists purely for the parse-side re-check, same
+ *  style as isPermissionModeSafe/isWorktreeFlagSafe above.
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isAgentSafe(v) {
+  return v === "codex";
+}
+
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&prompt=…]`
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&agent=codex][&prompt=…]`
  * deep link.
  *
  * Uses encodeURIComponent so reserved characters in the relay URL / token /
@@ -190,10 +227,10 @@ function isWorktreeFlagSafe(v) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, agent?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode, worktree } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode, worktree, agent } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -230,6 +267,10 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // permissionMode — before `prompt`. Only ever the literal "1"; a falsy
   // value is omitted entirely (no version-skew risk for an old bridge).
   if (worktree) parts.push(`worktree=1`);
+  // Codex support (FR-1): only ever the literal "codex" is put on the wire —
+  // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
+  // launch is byte-identical to before this field existed (AC-1).
+  if (agent && isAgentSafe(agent)) parts.push(`agent=codex`);
   if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -260,7 +301,7 @@ export function encodePromptParam(prompt) {
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, agent?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -320,6 +361,13 @@ export function parseLaunchDeepLink(url) {
   // "worktree" at all — no version-skew risk.
   const rawWorktree = parsed.searchParams.get("worktree");
   const worktree = rawWorktree !== null && isWorktreeFlagSafe(rawWorktree) ? true : undefined;
+  // Codex support (FR-1): re-validated here exactly like worktree above —
+  // anything except the exact literal "codex" is dropped silently (including
+  // an explicit "claude", which is just the default and was never meant to
+  // ride the wire — see the header comment). An old bridge's bundled copy of
+  // this parser simply never reads "agent" at all — no version-skew risk.
+  const rawAgent = parsed.searchParams.get("agent");
+  const agent = rawAgent && isAgentSafe(rawAgent) ? rawAgent : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -334,6 +382,7 @@ export function parseLaunchDeepLink(url) {
   if (model) out.model = model;
   if (permissionMode) out.permissionMode = permissionMode;
   if (worktree) out.worktree = worktree;
+  if (agent) out.agent = agent;
   if (prompt) out.prompt = prompt;
   return out;
 }
@@ -353,4 +402,89 @@ export function redactDeepLinkToken(url) {
     .replace(/([?&]token=)[^&]*/g, "$1***")
     .replace(/([?&]helperToken=)[^&]*/g, "$1***")
     .replace(/([?&]prompt=)[^&]*/g, "$1***");
+}
+
+// ── `vibecodes://open-terminal?…` — desktop Codex (FR-11/FR-12) ─────────────
+//
+// A DIFFERENT shape from `launch`: no `session`/`token` (bridge/browser relay
+// pairing — nothing is minted, no relay session, per the requirements' "No
+// session record" note), but it DOES carry `helperToken` as a REQUIRED field
+// (not optional like on `launch`) — a desktop-only user, who has never fired
+// a browser `launch` link, would otherwise have a helper with no way to open
+// its standing control connection at all. `relay` is required for the same
+// reason (the helper needs somewhere to dial that token against). `cwd` is
+// required (the folder to open Terminal in); `agent` is required and the
+// ONLY legal value is the literal `"codex"` — Claude keeps its own
+// `claude-cli://` desktop path untouched (FR-11). `prompt` is optional and,
+// as on `launch`, always LAST.
+
+/** Codex-only whitelist for THIS action — `"claude"` is refused (FR-11: "v1:
+ *  codex only — claude is refused on this action because Claude keeps its
+ *  own claude-cli:// path"), unlike `launch`'s `agent`, where "codex" is the
+ *  only value ever put ON the wire but "claude" is a valid (implicit) parse
+ *  result. Here there is no implicit default — an open-terminal link names
+ *  its agent explicitly or it isn't a valid link at all. */
+function isOpenTerminalAgentSafe(v) {
+  return v === "codex";
+}
+
+/**
+ * Build a `vibecodes://open-terminal?relay=…&helperToken=…&cwd=…&agent=codex[&prompt=…]`
+ * deep link. Throws when a required field is missing, OR when `agent` is not
+ * exactly `"codex"` — there is no implicit default on this action (see the
+ * header comment), so a caller must never fire a malformed one.
+ *
+ * @param {{ relay: string, helperToken: string, cwd: string, agent: string, prompt?: string }} params
+ * @returns {string}
+ */
+export function buildOpenTerminalDeepLink({ relay, helperToken, cwd, agent, prompt } = {}) {
+  if (!relay || !helperToken || !cwd) {
+    throw new Error("buildOpenTerminalDeepLink requires relay, helperToken and cwd");
+  }
+  if (!isOpenTerminalAgentSafe(agent)) {
+    throw new Error('buildOpenTerminalDeepLink requires agent to be exactly "codex"');
+  }
+  const parts = [
+    `relay=${encodeURIComponent(relay)}`,
+    `helperToken=${encodeURIComponent(helperToken)}`,
+    `cwd=${encodeURIComponent(cwd)}`,
+    `agent=codex`,
+  ];
+  if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
+  return `${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?${parts.join("&")}`;
+}
+
+/**
+ * Parse a `vibecodes://open-terminal?…` deep link into
+ * `{ relay, helperToken, cwd, agent, prompt? }`, or null when it is not a
+ * well-formed link for this action (wrong scheme/action, any required field
+ * missing, or `agent` is anything but the exact literal `"codex"` — an old
+ * link/typo/hostile value is rejected outright, never silently defaulted,
+ * because unlike `launch` there is no safe implicit agent here).
+ *
+ * @param {unknown} url
+ * @returns {{ relay: string, helperToken: string, cwd: string, agent: "codex", prompt?: string } | null}
+ */
+export function parseOpenTerminalDeepLink(url) {
+  if (typeof url !== "string" || url.length === 0) return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== `${LAUNCH_SCHEME}:`) return null;
+  const action = parsed.host || parsed.pathname.replace(/^\/+/, "");
+  if (action !== OPEN_TERMINAL_HOST) return null;
+
+  const relay = parsed.searchParams.get("relay");
+  const helperToken = parsed.searchParams.get("helperToken");
+  const cwd = parsed.searchParams.get("cwd");
+  const rawAgent = parsed.searchParams.get("agent");
+  const prompt = parsed.searchParams.get("prompt") || undefined;
+  if (!relay || !helperToken || !cwd || !isOpenTerminalAgentSafe(rawAgent)) return null;
+
+  const out = { relay, helperToken, cwd, agent: /** @type {"codex"} */ (rawAgent) };
+  if (prompt) out.prompt = prompt;
+  return out;
 }

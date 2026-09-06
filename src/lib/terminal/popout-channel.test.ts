@@ -34,6 +34,7 @@ const PAYLOAD: PopoutPayload = {
   identity: "Recipe Saver · session sid-123",
   readOnly: false,
   autoAccept: false,
+  agent: "claude",
 };
 
 const BUFFER: TransferredBuffer = { data: "some scrollback\r\n", truncated: false };

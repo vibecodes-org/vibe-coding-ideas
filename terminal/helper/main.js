@@ -38,10 +38,11 @@ const {
   dialog,
   Menu,
   nativeImage,
+  Notification,
   shell,
   Tray,
 } = require("electron");
-const { fork } = require("node:child_process");
+const { fork, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -91,6 +92,26 @@ const SHARED_SESSION_TOKEN = app.isPackaged
 const SHARED_CONTROL_FRAMES = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "control-frames.mjs")
   : path.resolve(__dirname, "..", "shared", "control-frames.mjs");
+
+// Codex support (docs/codex-terminal-requirements.md FR-3/FR-11) — the shared
+// PATH-resolution + binary-existence checks, same split as every other
+// SHARED_* constant above.
+const SHARED_SPAWN_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "spawn-path.mjs")
+  : path.resolve(__dirname, "..", "shared", "spawn-path.mjs");
+
+const SHARED_BINARY_CHECK = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "binary-check.mjs")
+  : path.resolve(__dirname, "..", "shared", "binary-check.mjs");
+
+// terminal/helper's OWN modules (ship inside app.asar alongside main.js via
+// electron-builder.yml's `files:` list — NOT extraResources). __dirname
+// already resolves correctly relative to main.js's own location whether
+// packaged or not, so no app.isPackaged branch is needed here (unlike the
+// SHARED_* constants above, which cross the asar/extraResources boundary).
+const LOCAL_AGENT_AVAILABILITY = path.resolve(__dirname, "agent-availability.mjs");
+const LOCAL_OPEN_TERMINAL = path.resolve(__dirname, "open-terminal.mjs");
+const LOCAL_OPEN_TERMINAL_GATE = path.resolve(__dirname, "open-terminal-gate.mjs");
 
 // The control connection is plain `ws` — the SAME package the bridge already
 // depends on (terminal/bridge/package.json), shipped alongside it under
@@ -142,6 +163,57 @@ let _controlFrames = null;
 async function controlFramesMod() {
   if (!_controlFrames) _controlFrames = await import(pathToFileURL(SHARED_CONTROL_FRAMES).href);
   return _controlFrames;
+}
+
+let _spawnPath = null;
+async function spawnPathMod() {
+  if (!_spawnPath) _spawnPath = await import(pathToFileURL(SHARED_SPAWN_PATH).href);
+  return _spawnPath;
+}
+
+let _binaryCheck = null;
+async function binaryCheckMod() {
+  if (!_binaryCheck) _binaryCheck = await import(pathToFileURL(SHARED_BINARY_CHECK).href);
+  return _binaryCheck;
+}
+
+let _agentAvailability = null;
+async function agentAvailabilityMod() {
+  if (!_agentAvailability) _agentAvailability = await import(pathToFileURL(LOCAL_AGENT_AVAILABILITY).href);
+  return _agentAvailability;
+}
+
+let _openTerminal = null;
+async function openTerminalMod() {
+  if (!_openTerminal) _openTerminal = await import(pathToFileURL(LOCAL_OPEN_TERMINAL).href);
+  return _openTerminal;
+}
+
+let _openTerminalGate = null;
+async function openTerminalGateMod() {
+  if (!_openTerminalGate) _openTerminalGate = await import(pathToFileURL(LOCAL_OPEN_TERMINAL_GATE).href);
+  return _openTerminalGate;
+}
+
+/**
+ * Check which known agents are installed, using the SAME PATH-resolution
+ * algorithm the bridge uses for its own pre-flight (FR-3) — resolved and
+ * injected HERE (never left to agent-availability.mjs's own dev/test-only
+ * fallback import) so this call never depends on a relative import crossing
+ * the asar/extraResources boundary in the packaged app (see
+ * agent-availability.mjs's own header comment for the full reasoning).
+ * @returns {Promise<{ claude: boolean, codex: boolean }>}
+ */
+async function checkAgentAvailabilityForHelper() {
+  const [{ resolveLoginShellPath }, { isBinaryInstalled }, { checkAgentAvailability }] = await Promise.all([
+    spawnPathMod(),
+    binaryCheckMod(),
+    agentAvailabilityMod(),
+  ]);
+  return checkAgentAvailability({
+    resolveLoginShellPathImpl: resolveLoginShellPath,
+    isBinaryInstalledImpl: isBinaryInstalled,
+  });
 }
 
 // ── userData persistence (settings + the last control credentials) ───────────
@@ -219,6 +291,7 @@ function handleCrash(kind, err) {
   } catch {
     /* best effort — a failed crash log must never block the exit below */
   }
+  cleanupPendingOpenTerminalScriptsSync();
   log("error", "crash — logging and exiting", { kind, err: message });
   // Best-effort goodbye — no await (the event loop may be unhealthy); a failed
   // send just means this disconnect is later classed "stopped unexpectedly",
@@ -429,6 +502,256 @@ async function handleLaunchUrl(rawUrl) {
   });
 }
 
+/**
+ * Route a `vibecodes://…` link to the right handler based on its action —
+ * `launch` (the existing invisible-bridge path, unchanged) or `open-terminal`
+ * (Codex support, FR-11: a NEW action that opens a real Terminal.app window —
+ * see handleOpenTerminalUrl below). Called from every place a link can
+ * arrive (open-url, second-instance, cold-launch argv) so both actions work
+ * everywhere `launch` already did. An unrecognised action (old link shape, a
+ * future action this build doesn't know, or plain garbage) is a no-op —
+ * skew-safe in both directions, same posture as every unknown deep-link
+ * param elsewhere in this codebase.
+ */
+async function handleDeepLink(rawUrl) {
+  const { parseLaunchDeepLink, parseOpenTerminalDeepLink, redactDeepLinkToken } = await shared();
+  if (parseLaunchDeepLink(rawUrl)) return handleLaunchUrl(rawUrl);
+  if (parseOpenTerminalDeepLink(rawUrl)) return handleOpenTerminalUrl(rawUrl);
+  log("warn", "ignoring unrecognised vibecodes:// url", { url: redactDeepLinkToken(rawUrl) });
+}
+
+// ── Desktop Codex: `vibecodes://open-terminal?…` (FR-11, US-10) ─────────────
+//
+// Opens a REAL Terminal.app window running `codex` in a folder — a
+// completely different animal from `launch` above: nothing is minted, no
+// relay session, no invisible bridge fork. See terminal/helper/open-terminal.mjs
+// for the script-building/quoting logic and the security properties it
+// enforces (fixed binary, shell's own post-cd pwd, prompt as one argv
+// element, the S-5 "press Enter" safeguard). This function does the
+// surrounding I/O: temp-file hygiene, the `open` invocation, and the
+// pre-flight/failure/spam guards the requirements demand (FR-13, AC-16/17,
+// security note).
+
+/** How long a temp launch script is allowed to survive on disk as a fallback
+ *  net (FR-11 hygiene) — the script's OWN first action is to self-delete, so
+ *  this only matters if Terminal never got the chance to run it at all. */
+const OPEN_TERMINAL_SCRIPT_CLEANUP_MS = 5 * 60 * 1000;
+/** The fixed prefix randomScriptFilename() always uses — the sweep below
+ *  matches on it, never a full guess of the random suffix. */
+const OPEN_TERMINAL_SCRIPT_PREFIX = "vibecodes-codex-";
+/** One review window "in flight" at a time (security note: "guard
+ *  window-spam / ignore repeats within a few seconds"). Approximated with a
+ *  fixed cooldown — the helper has no feedback channel to know when the user
+ *  actually presses Enter or closes the window in Terminal.app. Generous
+ *  enough to cover a real "read this, then decide" interaction; short enough
+ *  that a genuine second attempt (the first window was missed/closed) isn't
+ *  locked out for long. */
+const OPEN_TERMINAL_COOLDOWN_MS = 20_000;
+let openTerminalCooldownUntil = 0;
+/** Scripts written but not yet confirmed self-deleted — best-effort cleanup
+ *  on quit/crash in addition to the fallback timer and the next-start sweep. */
+const pendingOpenTerminalScripts = new Set();
+
+/**
+ * Best-effort native notification for a failure the pre-flight couldn't
+ * predict (FR-13's fallback path; the not-installed case is normally caught
+ * BEFORE the click on the app side per UX design §12d — this only fires for
+ * something that changed since the last status report, or another failure
+ * class entirely). Minimum v1 delivery per FR-13.
+ *
+ * NOT IMPLEMENTED in this slice: also reporting the reason back over the
+ * standing control connection so the BROWSER shows the same message (FR-13's
+ * "nice-to-have… made the normal path" per the UX design rework) — that
+ * needs a new control-frame type plus relay storage/forward plus an app-side
+ * listener, a three-way protocol change beyond this slice's scope. The
+ * native notification here is the only channel for now; see the
+ * implementation report.
+ * @param {string} message
+ */
+function reportOpenTerminalFailure(message) {
+  try {
+    if (Notification.isSupported()) {
+      new Notification({ title: "VibeCodes", body: message }).show();
+    }
+  } catch (e) {
+    log("warn", "could not show open-terminal failure notification", { err: String(e?.message || e) });
+  }
+}
+
+/** Remove any leftover launch scripts from a PREVIOUS run (a crash, or a
+ *  link that never got as far as `open`) — FR-11's "removed … on next helper
+ *  start" hygiene requirement. A leftover script's self-delete line never ran
+ *  (that's WHY it's still there), so it is always safe to remove. */
+function sweepStaleOpenTerminalScripts() {
+  try {
+    const dir = app.getPath("temp");
+    for (const name of fs.readdirSync(dir)) {
+      if (name.startsWith(OPEN_TERMINAL_SCRIPT_PREFIX) && name.endsWith(".command")) {
+        try { fs.unlinkSync(path.join(dir, name)); } catch { /* already gone, or a permissions race — not fatal */ }
+      }
+    }
+  } catch (e) {
+    log("warn", "could not sweep stale open-terminal launch scripts", { err: String(e?.message || e) });
+  }
+}
+
+/** Best-effort synchronous cleanup of any scripts this process itself wrote
+ *  but never confirmed gone — called from the quit/crash paths, where an
+ *  async cleanup can't be awaited safely. */
+function cleanupPendingOpenTerminalScriptsSync() {
+  for (const p of pendingOpenTerminalScripts) {
+    try { fs.unlinkSync(p); } catch { /* already gone, or Terminal is still using it — leave it for the next sweep */ }
+  }
+  pendingOpenTerminalScripts.clear();
+}
+
+async function handleOpenTerminalUrl(rawUrl) {
+  const { parseOpenTerminalDeepLink, redactDeepLinkToken } = await shared();
+  const parsed = parseOpenTerminalDeepLink(rawUrl);
+  if (!parsed) {
+    log("warn", "ignoring malformed vibecodes://open-terminal url", { url: redactDeepLinkToken(rawUrl) });
+    return;
+  }
+
+  // RELAY-HOST ALLOWLIST — same first-line reject as handleLaunchUrl, before
+  // anything else. `relay=` is attacker-controllable. Checked BEFORE the
+  // spam cooldown below is armed — cheap basic validation, so a malformed
+  // link never costs a legitimate later request its cooldown window
+  // (security note's self-DoS concern).
+  const { isRelayHostAllowed } = await allowlistMod();
+  if (!isRelayHostAllowed(parsed.relay, { allowLoopback: !app.isPackaged })) {
+    let host = "unparseable";
+    try { host = new URL(parsed.relay).host; } catch { /* never echo the token */ }
+    log("error", "relay host not allowed — refusing open-terminal request", { host });
+    return;
+  }
+
+  // Local shape/role sanity check ONLY (defense in depth, never the gate —
+  // see the doc block below). Also checked before the cooldown is armed.
+  const { decodeTokenClaims } = await sessionTokenMod();
+  const claims = decodeTokenClaims(parsed.helperToken);
+  if (claims?.role !== "helper" || !claims?.sid) {
+    log("error", "open-terminal helperToken is not a well-formed helper-role token — refusing");
+    return;
+  }
+
+  // Window-spam guard — see OPEN_TERMINAL_COOLDOWN_MS's doc above. Armed only
+  // once the request has cleared the cheap checks above, so a malformed/
+  // disallowed link can't burn a legitimate request's cooldown window; a
+  // request that reaches here is about to do real (if bounded) work — a
+  // relay round trip, a codex PATH check — so everything past this point is
+  // exactly what the cooldown exists to rate-limit.
+  const now = Date.now();
+  if (now < openTerminalCooldownUntil) {
+    log("warn", "ignoring open-terminal request — one is already in flight");
+    return;
+  }
+  openTerminalCooldownUntil = now + OPEN_TERMINAL_COOLDOWN_MS;
+
+  // SECURITY FIX (Finding 1 — CRITICAL): the helper holds no copy of
+  // TERMINAL_SESSION_SECRET, so it can NEVER verify the token's signature
+  // itself — decodeTokenClaims above is a cheap shape/role check only, not
+  // authorization. Only the RELAY can authoritatively verify this token (via
+  // authorizeAttach), so open (or refresh) the control connection carrying an
+  // explicit `purpose=open-terminal` marker and AWAIT its authenticated
+  // `open-terminal-authorized` ack before writing anything to disk or
+  // spawning `open -a Terminal`. A bare WebSocket "open" event does NOT prove
+  // acceptance — the relay accept()s a bad token too, then closes it — so
+  // this function must never treat connectControl's return alone as success;
+  // see open-terminal-gate.mjs for the wait itself. This is also what lets a
+  // desktop-only user (who never fired a browser `launch` link) get a
+  // control connection at all — the requirements' explicit note that this
+  // link must carry helperToken.
+  saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
+  const controlSocket = await connectControl(parsed.relay, parsed.helperToken, { purpose: "open-terminal" });
+  if (!controlSocket) {
+    log("error", "open-terminal — could not open a control connection to verify this request — refusing to open a window");
+    reportOpenTerminalFailure("Couldn't verify this request with VibeCodes — nothing was opened.");
+    return;
+  }
+  const [{ waitForOpenTerminalAuthorization }, { isOpenTerminalAuthorizedFrame }] = await Promise.all([
+    openTerminalGateMod(),
+    controlFramesMod(),
+  ]);
+  try {
+    await waitForOpenTerminalAuthorization(controlSocket, { isAuthorizedFrame: isOpenTerminalAuthorizedFrame });
+  } catch (e) {
+    log("error", "open-terminal request was not authorized by the relay — refusing to open a window", {
+      err: String(e?.message || e),
+    });
+    reportOpenTerminalFailure("Couldn't verify this request with VibeCodes — nothing was opened.");
+    return;
+  }
+  log("info", "open-terminal request authorized by relay");
+
+  // Pre-flight "is codex installed?" (FR-13) — checked FRESH against the
+  // real PATH, never trusted from an earlier control-connection announcement
+  // alone (that report can be stale — UX design §12b step 5a).
+  let availability;
+  try {
+    availability = await checkAgentAvailabilityForHelper();
+  } catch (e) {
+    log("error", "open-terminal pre-flight check failed — refusing to open a window", { err: String(e?.message || e) });
+    reportOpenTerminalFailure("Couldn't check whether Codex is installed on this Mac.");
+    return;
+  }
+  if (!availability.codex) {
+    log("warn", "open-terminal refused — codex not found on PATH");
+    reportOpenTerminalFailure("Codex isn't installed on this Mac.");
+    return;
+  }
+
+  const [{ pathFallbackShellSnippet }, { buildOpenTerminalScript, randomScriptFilename }] = await Promise.all([
+    spawnPathMod(),
+    openTerminalMod(),
+  ]);
+
+  let scriptText;
+  try {
+    scriptText = buildOpenTerminalScript({
+      cwd: parsed.cwd,
+      prompt: parsed.prompt || "",
+      pathFallbackSnippet: pathFallbackShellSnippet(),
+    });
+  } catch (e) {
+    log("error", "could not build the open-terminal launch script", { err: String(e?.message || e) });
+    reportOpenTerminalFailure("Couldn't prepare the Codex launch.");
+    return;
+  }
+
+  const scriptPath = path.join(app.getPath("temp"), randomScriptFilename());
+  try {
+    fs.writeFileSync(scriptPath, scriptText, { mode: 0o700 });
+  } catch (e) {
+    log("error", "couldn't write the launch script — refusing to open a window", { err: String(e?.message || e) });
+    reportOpenTerminalFailure("Couldn't prepare the Codex launch.");
+    return;
+  }
+  pendingOpenTerminalScripts.add(scriptPath);
+
+  execFile("open", ["-a", "Terminal", scriptPath], (err) => {
+    if (err) {
+      log("error", "`open -a Terminal` failed — nothing was started", { err: String(err?.message || err) });
+      reportOpenTerminalFailure("Couldn't open a Terminal window for Codex.");
+      // The script never got a chance to self-delete — clean up ourselves.
+      try { fs.unlinkSync(scriptPath); } catch { /* already gone, or never existed */ }
+      pendingOpenTerminalScripts.delete(scriptPath);
+      return;
+    }
+    log("info", "opened Terminal for a desktop Codex launch");
+    // Fallback net: the script self-deletes as ITS OWN first action once
+    // Terminal actually runs it. If Terminal never got to it for any reason
+    // (a permission prompt the user never answered, a Terminal preference
+    // that delays execution, anything else unpredicted), don't leave the
+    // temp file around forever.
+    const cleanupTimer = setTimeout(() => {
+      try { fs.unlinkSync(scriptPath); } catch { /* already gone — the normal, expected case */ }
+      pendingOpenTerminalScripts.delete(scriptPath);
+    }, OPEN_TERMINAL_SCRIPT_CLEANUP_MS);
+    cleanupTimer.unref?.();
+  });
+}
+
 // Pull a vibecodes:// link out of an argv array (cold launch on macOS dev /
 // Windows, and the second-instance forward).
 function urlFromArgv(argv) {
@@ -477,12 +800,31 @@ function closeControlConnection() {
 /**
  * Open (or re-open) the control connection to `relay` with the given HELPER
  * role token. A redundant call for the SAME (relay, token) while already open
- * is a no-op (the deep-link module's own contract for a repeat launch).
+ * is a no-op (the deep-link module's own contract for a repeat launch) —
+ * UNLESS `opts.purpose` is set, in which case a FRESH connection is always
+ * made so the caller gets a genuine round trip to verify against (see
+ * `opts.purpose` doc below). Returns the live `ws.WebSocket` it is using (the
+ * reused one, or a freshly created one), or `null` if no connection was
+ * (re)established (quitting, or an unparseable token).
+ *
+ * @param {string} relayBase @param {string} token
+ * @param {{ purpose?: "open-terminal" }} [opts]
+ *   `purpose` — carried as a `purpose=` query param on the connect URL. Used
+ *   ONLY by the desktop-Codex open-terminal gate (Finding 1 fix): it marks
+ *   this connection so the relay sends back an explicit
+ *   `open-terminal-authorized` ack once `authorizeAttach` verifies the token
+ *   (see terminal/shared/control-frames.mjs and relay/src/index.js's
+ *   fetchHelperLeg). Bypassing the "already connected, no-op" shortcut for a
+ *   purposed call matters because a REUSED connection was authorized for
+ *   WHATEVER purpose it originally connected with (possibly none) — it must
+ *   never be treated as having proven anything for this NEW request.
+ * @returns {Promise<import("ws").WebSocket | null>}
  */
-async function connectControl(relayBase, token) {
-  if (quitting) return;
-  if (controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
-    return; // already connected with this exact credential — no-op
+async function connectControl(relayBase, token, opts = {}) {
+  const { purpose } = opts;
+  if (quitting) return null;
+  if (!purpose && controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
+    return controlWs; // already connected with this exact credential — no-op
   }
   closeControlConnection();
 
@@ -490,7 +832,21 @@ async function connectControl(relayBase, token) {
   const claims = decodeTokenClaims(token);
   if (!claims?.sid) {
     log("error", "control token unparseable — cannot open control connection");
-    return;
+    return null;
+  }
+
+  // Codex support (FR-3's helper-side half): report which known agents are
+  // installed on THIS attach — a fresh, best-effort check every time (not
+  // cached across the helper's whole lifetime), so installing/upgrading an
+  // agent while the helper keeps running is reflected on the NEXT reconnect
+  // rather than never. Never blocks/fails the control connect itself: a
+  // failed check just means "unknown" (both fields omitted), the same
+  // graceful-degrade shape as every other optional query param here.
+  let availability = null;
+  try {
+    availability = await checkAgentAvailabilityForHelper();
+  } catch (e) {
+    log("warn", "agent availability check failed — reporting unknown", { err: String(e?.message || e) });
   }
 
   const params = new URLSearchParams({
@@ -501,6 +857,11 @@ async function connectControl(relayBase, token) {
     machineLabel: os.hostname(),
     alwaysOn: alwaysOn ? "1" : "0",
   });
+  if (availability) {
+    params.set("codexInstalled", availability.codex ? "1" : "0");
+    params.set("claudeInstalled", availability.claude ? "1" : "0");
+  }
+  if (purpose) params.set("purpose", purpose);
   const url = `${relayBase.replace(/\/$/, "")}/?${params}`;
   log("info", "opening control connection", { host: (() => { try { return new URL(relayBase).host; } catch { return "unparseable"; } })() });
 
@@ -543,6 +904,7 @@ async function connectControl(relayBase, token) {
     }
     scheduleControlReconnect(relayBase, token);
   });
+  return ws;
 }
 
 function scheduleControlReconnect(relayBase, token) {
@@ -695,6 +1057,7 @@ function beginCleanQuit(reason) {
     clearTimeout(lingerTimer);
     lingerTimer = null;
   }
+  cleanupPendingOpenTerminalScriptsSync();
   void sendGoodbye(reason).finally(() => {
     closeControlConnection();
     app.quit();
@@ -708,7 +1071,7 @@ if (!gotLock) {
 } else {
   app.on("second-instance", (_event, argv) => {
     const url = urlFromArgv(argv);
-    if (url) handleLaunchUrl(url);
+    if (url) handleDeepLink(url);
   });
 
   // macOS delivers URL-scheme activations (cold AND warm) as an Apple Event that
@@ -717,7 +1080,7 @@ if (!gotLock) {
   let ready = false;
   app.on("open-url", (event, url) => {
     event.preventDefault();
-    if (ready) handleLaunchUrl(url);
+    if (ready) handleDeepLink(url);
     else pending.push(url);
   });
 
@@ -748,12 +1111,16 @@ if (!gotLock) {
     // arrives moments later (below) will simply no-op against this if its
     // helperToken matches, or supersede it if the app was reinstalled/re-auth'd.
     void maybeConnectControlFromPersisted();
+    // Codex support (FR-11 hygiene): remove any desktop-Codex launch scripts
+    // left over from a previous run (crash, or a link that never reached
+    // `open`) before anything new can write one.
+    sweepStaleOpenTerminalScripts();
 
     // Drain anything that arrived pre-ready, then a cold-launch argv URL (covers
     // the dev/verify path where the link is passed on the command line).
-    for (const u of pending.splice(0)) handleLaunchUrl(u);
+    for (const u of pending.splice(0)) handleDeepLink(u);
     const argvUrl = urlFromArgv(process.argv);
-    if (argvUrl) handleLaunchUrl(argvUrl);
+    if (argvUrl) handleDeepLink(argvUrl);
 
     updateLingerTimer();
   });

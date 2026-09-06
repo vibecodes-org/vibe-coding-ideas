@@ -364,3 +364,23 @@ describe("POST /api/terminal/session — duplicate-conversation guard (card 0301
     );
   });
 });
+
+describe("POST /api/terminal/session — Codex support (docs/codex-terminal-requirements.md FR-1/FR-5, implementation slice 2)", () => {
+  it("stamps the new row 'claude' when agent is absent (AC-1: byte-identical to before this field existed)", async () => {
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    expect(res.status).toBe(200);
+    expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ agent: "claude" }));
+  });
+
+  it("stamps the new row 'codex' when the client sends agent: 'codex'", async () => {
+    const res = await POST(req({ ideaId: IDEA_1, agent: "codex" }));
+    expect(res.status).toBe(200);
+    expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ agent: "codex" }));
+  });
+
+  it("rejects a malformed agent value at the schema (400)", async () => {
+    const res = await POST(req({ ideaId: IDEA_1, agent: "chatgpt" }));
+    expect(res.status).toBe(400);
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+});

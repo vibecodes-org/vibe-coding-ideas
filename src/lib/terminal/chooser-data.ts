@@ -88,8 +88,15 @@
 //      rework — more rows are now legitimately distinct, so the old cap would
 //      truncate real history), newest-ended first.
 
+import type { LaunchAgent } from "./agent-launch";
+
 export const RECENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 export const RECENT_MAX = 10;
+
+/** "Existing rows with no recorded agent read as Claude Code" (design §4c/FR-5) — the one place every row-agent reader should call through. */
+export function rowAgent(agent: LaunchAgent | undefined): LaunchAgent {
+  return agent === "codex" ? "codex" : "claude";
+}
 
 /** One row as the (extended) list route returns it — active or recently-ended. */
 export interface ChooserRegistryRow {
@@ -113,6 +120,18 @@ export interface ChooserRegistryRow {
   endedAt: string | null;
   /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `resolveSessionName`/`deriveTabLabel`. */
   displayName: string | null;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-5, implementation
+   * slice 2) — which agent this session ran (terminal_sessions.agent).
+   * Design §4c: every row names its agent, "Claude Code" or "Codex".
+   * Optional (rather than defaulted at this layer) so existing fixtures/
+   * callers that predate this field keep compiling; every real reader
+   * treats a missing value as "claude" (see `rowAgent` below) — the same
+   * "existing rows with no recorded agent read as Claude Code" rule the
+   * design calls for (migration 00170's NOT NULL DEFAULT 'claude' means a
+   * real API response always sets this in practice).
+   */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserLiveRow {
@@ -128,6 +147,8 @@ export interface ChooserLiveRow {
   wasOpenInThisTab: boolean;
   /** The user's own name for this session (card 3bf262ac). */
   displayName: string | null;
+  /** See ChooserRegistryRow's doc — carried through unchanged. */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserRecentRow {
@@ -144,6 +165,8 @@ export interface ChooserRecentRow {
   endedAt: string;
   /** The user's own name for this session (card 3bf262ac) — renaming an ended row is exactly where Nick needs this most (the Recent/resume list). */
   displayName: string | null;
+  /** See ChooserRegistryRow's doc — carried through unchanged; Resume never shows the picker, it fires with the ROW's own agent (design §5). */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserSections {
@@ -228,6 +251,7 @@ export function deriveChooserSections(
     createdAt: r.createdAt,
     wasOpenInThisTab: tabSidSet.has(r.sid),
     displayName: r.displayName,
+    agent: r.agent,
   });
 
   const live = rows.filter((r) => r.status === "active");
@@ -298,6 +322,7 @@ export function deriveChooserSections(
     claudeSessionId: r.claudeSessionId,
     endedAt: r.endedAt,
     displayName: r.displayName,
+    agent: r.agent,
   }));
 
   const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, currentIdeaId);

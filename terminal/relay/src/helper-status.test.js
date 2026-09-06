@@ -23,6 +23,8 @@ test("connected: reports the live fields, never stoppedUnexpectedly", () => {
     alwaysOn: true,
     stoppedUnexpectedly: false,
     lastEventAt: null,
+    codexInstalled: null,
+    claudeInstalled: null,
   });
 });
 
@@ -63,4 +65,24 @@ test("a custom unexpectedTtlMs overrides the default (relay env override parity)
   const uncleanAt = NOW - 1000;
   const status = computeHelperStatus({ connected: false, uncleanAt, now: NOW, unexpectedTtlMs: 500 });
   assert.equal(status.stoppedUnexpectedly, false, "1000ms ago is past a 500ms TTL");
+});
+
+// ── Codex support (FR-3's helper-side half, UX design §15 Q11) ─────────────
+
+test("codexInstalled/claudeInstalled default to null (unknown), never false, when omitted", () => {
+  const status = computeHelperStatus({ connected: true, now: NOW });
+  assert.equal(status.codexInstalled, null);
+  assert.equal(status.claudeInstalled, null);
+});
+
+test("a known true/false value for either agent is reported as-is", () => {
+  const status = computeHelperStatus({ connected: true, now: NOW, codexInstalled: true, claudeInstalled: false });
+  assert.equal(status.codexInstalled, true);
+  assert.equal(status.claudeInstalled, false);
+});
+
+test("a garbage value for either agent normalizes to null (unknown), never coerced to a boolean", () => {
+  const status = computeHelperStatus({ connected: true, now: NOW, codexInstalled: "yes", claudeInstalled: undefined });
+  assert.equal(status.codexInstalled, null);
+  assert.equal(status.claudeInstalled, null);
 });

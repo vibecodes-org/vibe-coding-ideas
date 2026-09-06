@@ -498,6 +498,8 @@ describe("TerminalSessionChooser", () => {
         alwaysOn: false,
         stoppedUnexpectedly: false,
         lastEventAt: null,
+        codexInstalled: null,
+        claudeInstalled: null,
         ...overrides,
       };
     }
@@ -573,6 +575,8 @@ describe("TerminalSessionChooser", () => {
         alwaysOn: false,
         stoppedUnexpectedly: false,
         lastEventAt: null,
+        codexInstalled: null,
+        claudeInstalled: null,
         ...overrides,
       };
     }

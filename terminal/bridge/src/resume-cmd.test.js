@@ -2,7 +2,7 @@
 // Run: cd terminal/bridge && node --test   (or: npm test)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveClaudeLaunch } from "./resume-cmd.js";
+import { resolveClaudeLaunch, resolveAgentLaunch } from "./resume-cmd.js";
 
 const MINTED = "11111111-2222-3333-4444-555555555555";
 const RESUME_ID = "99999999-8888-7777-6666-555555555555";
@@ -184,4 +184,77 @@ test("the legacy --continue resume NEVER receives --worktree, even if one is som
 test("an explicit --cmd override NEVER receives --worktree, even if one is somehow passed", () => {
   const result = resolveClaudeLaunch({ explicitCmd: "bash", worktree: true, mintId: () => MINTED });
   assert.deepEqual(result, { cmd: "bash", conv: null });
+});
+
+// ── Codex support (docs/codex-terminal-requirements.md FR-2, AC-3) ──────────
+
+test("agent absent/anything but the exact literal 'codex' delegates to resolveClaudeLaunch unchanged", () => {
+  for (const agent of [undefined, null, "claude", "chatgpt", "CODEX", ""]) {
+    const result = resolveAgentLaunch({ agent, mintId: () => MINTED });
+    assert.deepEqual(result, { cmd: `claude --session-id ${MINTED}`, conv: MINTED });
+  }
+});
+
+test("AC-3: {agent:'codex'} -> plain `codex`, conv null", () => {
+  const result = resolveAgentLaunch({ agent: "codex", mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "codex", conv: null });
+});
+
+test("AC-3: {agent:'codex', resume:true} -> `codex resume --last`, conv null", () => {
+  const result = resolveAgentLaunch({ agent: "codex", resume: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "codex resume --last", conv: null });
+});
+
+test("AC-3: {agent:'codex', resumeId} -> `codex resume <uuid>`, conv is that same id", () => {
+  const result = resolveAgentLaunch({ agent: "codex", resumeId: RESUME_ID, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `codex resume ${RESUME_ID}`, conv: RESUME_ID });
+});
+
+test("resumeId wins over the legacy resume flag for codex too", () => {
+  const result = resolveAgentLaunch({ agent: "codex", resumeId: RESUME_ID, resume: true, mintId: () => MINTED });
+  assert.equal(result.cmd, `codex resume ${RESUME_ID}`);
+});
+
+test("AC-3: a fresh codex launch with model/permissionMode/worktree emits NONE of the Claude flags", () => {
+  const result = resolveAgentLaunch({
+    agent: "codex",
+    model: "claude-x",
+    permissionMode: "auto",
+    worktree: true,
+    mintId: () => MINTED,
+  });
+  assert.equal(result.cmd, "codex");
+  for (const flag of ["--model", "--permission-mode", "--session-id", "--worktree"]) {
+    assert.ok(!result.cmd.includes(flag), `must not contain ${flag}`);
+  }
+  assert.equal(result.conv, null, "a fresh codex launch never knows its conversation id");
+});
+
+test("codex resume/resumeId branches also never receive Claude-only flags", () => {
+  const resumed = resolveAgentLaunch({ agent: "codex", resume: true, model: "opus", worktree: true, mintId: () => MINTED });
+  assert.equal(resumed.cmd, "codex resume --last");
+  const exact = resolveAgentLaunch({
+    agent: "codex",
+    resumeId: RESUME_ID,
+    permissionMode: "auto",
+    worktree: true,
+    mintId: () => MINTED,
+  });
+  assert.equal(exact.cmd, `codex resume ${RESUME_ID}`);
+});
+
+test("an explicit --cmd override wins for codex too, and mintId is never called", () => {
+  let minted = false;
+  const result = resolveAgentLaunch({
+    agent: "codex",
+    explicitCmd: "bash",
+    resumeId: RESUME_ID,
+    resume: true,
+    mintId: () => {
+      minted = true;
+      return MINTED;
+    },
+  });
+  assert.deepEqual(result, { cmd: "bash", conv: null });
+  assert.equal(minted, false);
 });

@@ -70,6 +70,8 @@ function helperStatus(overrides: Partial<HelperStatus> = {}): HelperStatus {
     alwaysOn: false,
     stoppedUnexpectedly: false,
     lastEventAt: null,
+    codexInstalled: null,
+    claudeInstalled: null,
     ...overrides,
   };
 }

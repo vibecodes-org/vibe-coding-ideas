@@ -48,6 +48,7 @@ import {
   parseGoodbyeReason,
   isAlwaysOnFrame,
   parseAlwaysOnValue,
+  encodeOpenTerminalAuthorizedFrame,
 } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
@@ -165,6 +166,8 @@ export function startStandinRelay(opts = {}) {
       alwaysOn: leg?.alwaysOn ?? false,
       uncleanAt: leg?.uncleanAt ?? null,
       now: Date.now(),
+      codexInstalled: leg?.codexInstalled ?? null,
+      claudeInstalled: leg?.claudeInstalled ?? null,
     });
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(status));
@@ -288,18 +291,41 @@ export function startStandinRelay(opts = {}) {
       try { existing.ws.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
     }
 
+    // Codex support (FR-3's helper-side half) — tri-state, mirrors the
+    // Cloudflare DO's fetchHelperLeg exactly: "1"/"0" is a known answer,
+    // anything else (including absent, an old helper) falls back to whatever
+    // was already known (a reattach shouldn't forget it), else null (unknown).
+    const codexInstalledRaw = url.searchParams.get("codexInstalled");
+    const claudeInstalledRaw = url.searchParams.get("claudeInstalled");
+    const codexInstalled =
+      codexInstalledRaw === "1" ? true : codexInstalledRaw === "0" ? false : existing?.codexInstalled ?? null;
+    const claudeInstalled =
+      claudeInstalledRaw === "1" ? true : claudeInstalledRaw === "0" ? false : existing?.claudeInstalled ?? null;
+
     const leg = {
       ws,
       owner: auth.sub,
       version: sanitizeHelperVersion(url.searchParams.get("helperVersion")) ?? existing?.version ?? null,
       machineLabel: sanitizeMachineLabel(url.searchParams.get("machineLabel")) ?? existing?.machineLabel ?? null,
       alwaysOn: url.searchParams.get("alwaysOn") === "1",
+      codexInstalled,
+      claudeInstalled,
       // Design rule: a fresh attach clears any "stopped unexpectedly" flag.
       uncleanAt: null,
       goodbye: false,
     };
     helperLegs.set(session, leg);
-    log("helper attached", { session, version: leg.version, alwaysOn: leg.alwaysOn });
+    log("helper attached", { session, version: leg.version, alwaysOn: leg.alwaysOn, codexInstalled, claudeInstalled });
+
+    // OPEN-TERMINAL RELAY AUTHORIZATION (desktop Codex security fix, Finding
+    // 1) — faithful twin of the Cloudflare DO's fetchHelperLeg: a helper leg
+    // that connected with `purpose=open-terminal` gets an explicit ack, sent
+    // strictly AFTER authorizeAttach succeeded above.
+    if (url.searchParams.get("purpose") === "open-terminal") {
+      try {
+        ws.send(encodeOpenTerminalAuthorizedFrame());
+      } catch { /* closing */ }
+    }
 
     ws.on("message", (data, isBinary) => {
       if (isBinary) return; // a helper leg never sends binary

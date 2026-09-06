@@ -76,6 +76,8 @@ interface ListedSession {
   endedAt: string | null;
   /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `deriveTabLabel`. */
   displayName: string | null;
+  /** Codex support (docs/codex-terminal-requirements.md FR-5, implementation slice 2) — see chooser-data.ts's ChooserRegistryRow.agent doc. */
+  agent?: "claude" | "codex";
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -462,6 +464,10 @@ export function TerminalMySessionsPanel({
                             {s.ideaTitle}
                           </span>
                         )}
+                        {/* Codex support (design §4c) — every row names its agent. */}
+                        <span className="flex-none rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] font-normal text-zinc-300">
+                          {s.agent === "codex" ? "Codex" : "Claude Code"}
+                        </span>
                       </div>
                       <div className="truncate font-mono text-[11px] text-zinc-500">{identity}</div>
                     </div>

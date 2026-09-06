@@ -66,6 +66,8 @@ import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 import { HelperUpdateButton, HelperUpdateFlowNotice } from "./terminal-helper-update-button";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { TerminalAgentPicker } from "./terminal-agent-picker";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
 import {
@@ -229,6 +231,17 @@ interface TerminalSessionViewProps {
    */
   onBrowseSessions?: () => void;
   /**
+   * Codex support (docs/codex-terminal-ux-design.html §1b, implementation
+   * slice 2) — the picker's current value/handler for the "Ready when you
+   * are" panel (a paired, idle Mac with nothing to reattach to). Omitted →
+   * the picker doesn't render and `onConnect` fires exactly as before this
+   * field existed. Every OTHER fresh-session surface (chooser, task dialog)
+   * is owned by terminal-dock.tsx directly — this is the one launch surface
+   * that lives inside this per-tab view instead.
+   */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
+  /**
    * Live sessions across the dock (any tab that's connected / connecting /
    * waiting / reconnecting) — drives the helper-update flow's confirm copy
    * ("Your N running sessions will end first"). Falls back to this tab's
@@ -319,6 +332,8 @@ export function TerminalSessionView({
   onRetryReconnect,
   onResumeEndedSession,
   onBrowseSessions,
+  agent,
+  onAgentChange,
   liveSessionCount,
   paneFocused,
   onFocusPane,
@@ -713,6 +728,21 @@ export function TerminalSessionView({
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
           </span>
+          {/* Codex support (design §4b) — a launch-time fact (which agent
+              this session runs), so it persists through disconnects/
+              reconnects just like the auto-accept badge below. Focusable
+              with a tooltip, like the E2EE chip above; text never collapses
+              to an icon (5 letters, always kept — no icon reads "Codex" to a
+              non-coder). */}
+          {entry.agent === "codex" && (
+            <span
+              className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
+              title="This session runs Codex (OpenAI). Model and permissions are Codex's own settings."
+              tabIndex={0}
+            >
+              Codex
+            </span>
+          )}
           {/* Auto-accept badge (task d3de150c, design §3.1) — deliberately
               NOT gated on `state.status === "connected"` like Read-only just
               below: this is a launch-time FACT about the session, not a
@@ -910,8 +940,10 @@ export function TerminalSessionView({
               canResume={canResume}
               canResumeFromError={canResumeFromError}
               pairingTimedOut={pairingTimedOut}
-              onConnect={() => void actions.connect({ autoLaunch: true })}
+              onConnect={() => void actions.connect({ autoLaunch: true, agent })}
               onDownloadHelper={helperUpdate.start}
+              agent={agent}
+              onAgentChange={onAgentChange}
               onRetry={() => {
                 // Reconnect-relaunch fix: re-attempt THIS session (a fresh
                 // reattach → fresh deep link) instead of minting an unrelated
@@ -1057,6 +1089,8 @@ function StateOverlay({
   onBrowseSessions,
   onCapExceeded,
   onDownloadHelper,
+  agent,
+  onAgentChange,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -1096,6 +1130,9 @@ function StateOverlay({
   onCapExceeded?: () => void;
   /** Every download affordance runs the shared stand-down-first flow. */
   onDownloadHelper: () => void;
+  /** Codex support (docs/codex-terminal-ux-design.html §1b, implementation slice 2) — see TerminalSessionViewProps' same-named prop. */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -1103,7 +1140,14 @@ function StateOverlay({
 
       {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} onDownload={onDownloadHelper} />}
 
-      {view === "ready" && <ReadyPanel onConnect={onConnect} onBrowseSessions={onBrowseSessions} />}
+      {view === "ready" && (
+        <ReadyPanel
+          onConnect={onConnect}
+          onBrowseSessions={onBrowseSessions}
+          agent={agent}
+          onAgentChange={onAgentChange}
+        />
+      )}
 
       {(view === "connecting" || view === "connecting-returning") && (
         <ConnectingPanel returning={view === "connecting-returning"} />
@@ -1352,11 +1396,25 @@ function StateOverlay({
 // explicit End never relaunches a session). Before this existed the idle
 // branch fell through to the install wizard below, telling an already-set-up
 // Mac to download the helper (Nick, 2026-08-25).
-function ReadyPanel({ onConnect, onBrowseSessions }: { onConnect: () => void; onBrowseSessions?: () => void }) {
+function ReadyPanel({
+  onConnect,
+  onBrowseSessions,
+  agent,
+  onAgentChange,
+}: {
+  onConnect: () => void;
+  onBrowseSessions?: () => void;
+  /** Codex support (design §1b) — omitted → the picker doesn't render, byte-identical to before this field existed. */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
+}) {
   return (
     <div className="flex max-w-md flex-col items-center gap-3" data-testid="ready-panel">
       <p className="text-sm font-semibold text-zinc-100">{FIRST_RUN_COPY.ready.title}</p>
       <p className="text-xs text-zinc-400">{FIRST_RUN_COPY.ready.body}</p>
+      {agent && onAgentChange && (
+        <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Run it with" className="w-full" />
+      )}
       <button
         type="button"
         onClick={onConnect}
