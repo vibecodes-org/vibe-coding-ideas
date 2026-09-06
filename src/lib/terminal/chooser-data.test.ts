@@ -10,6 +10,7 @@ import {
   liveSessionsElsewhereOnThisBoard,
   visibleRecentRows,
   partitionRecentByBoard,
+  rowAgent,
   type ChooserRegistryRow,
   type ChooserRecentRow,
 } from "./chooser-data";
@@ -31,6 +32,7 @@ function row(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserR
     status: "active",
     endedAt: null,
     displayName: null,
+    agent: "claude",
     ...overrides,
   };
 }
@@ -938,5 +940,35 @@ describe("live-conversation guard (card 0301fe8e)", () => {
   it("findLiveSessionForConversation with excludeSid returns null when the excluded row is the only match", () => {
     const rows = [row({ sid: "self-sid", status: "active", claudeSessionId: CONV })];
     expect(findLiveSessionForConversation(rows, CONV, "self-sid")).toBeNull();
+  });
+});
+
+// ── Codex support (implementation slice 2) ──────────────────────────────────
+
+describe("rowAgent", () => {
+  it("passes through the exact literal 'codex'", () => {
+    expect(rowAgent("codex")).toBe("codex");
+  });
+
+  it("reads a missing/legacy value as Claude Code (design §4c/FR-5)", () => {
+    expect(rowAgent(undefined)).toBe("claude");
+    expect(rowAgent("claude")).toBe("claude");
+  });
+});
+
+describe("deriveChooserSections — agent propagation", () => {
+  it("carries each row's own agent through to every derived section", () => {
+    const rows = [
+      row({ sid: "live-codex", status: "active", agent: "codex" }),
+      row({
+        sid: "recent-claude",
+        status: "ended",
+        endedAt: new Date(NOW - 60_000).toISOString(),
+        agent: "claude",
+      }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(sections.liveHere.find((r) => r.sid === "live-codex")?.agent).toBe("codex");
+    expect(sections.recent.find((r) => r.sid === "recent-claude")?.agent).toBe("claude");
   });
 });

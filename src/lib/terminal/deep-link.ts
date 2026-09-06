@@ -16,8 +16,16 @@ import { isValidPermissionModeValue } from "./auto-accept-mode";
 
 /** Custom URL scheme the packaged helper registers (slice 7 OS bit). */
 export const LAUNCH_SCHEME = "vibecodes";
-/** The single action this scheme exposes today: `vibecodes://launch?…`. */
+/** The original action this scheme exposes: `vibecodes://launch?…`. */
 export const LAUNCH_HOST = "launch";
+/**
+ * The SECOND action (Codex support, docs/codex-terminal-requirements.md
+ * FR-11, US-10) — `vibecodes://open-terminal?…`. Opens a real Terminal.app
+ * window on the user's Mac running `codex`, instead of forking the invisible
+ * in-browser bridge — see terminal/shared/deep-link.mjs's matching header
+ * comment and terminal/helper/main.js's handler for the full shape.
+ */
+export const OPEN_TERMINAL_HOST = "open-terminal";
 
 /**
  * Hard ceiling on the FULL `vibecodes://launch` URL. Custom-scheme URLs past an
@@ -134,16 +142,31 @@ export interface LaunchDeepLinkParams {
    * `--session-id`); this flag only says WHETHER to isolate, not a name.
    */
   worktree?: boolean;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-1/AC-1/AC-2,
+   * implementation slice 1) — which agent the bridge should spawn. The ONLY
+   * value ever put on the wire is the literal "codex"; "claude" (the
+   * default) and anything else is OMITTED entirely, not encoded as
+   * `agent=claude` — so a launch with this absent or set to "claude"
+   * produces a byte-identical link to before this field existed (AC-1).
+   * Inserted before `prompt`, alongside the other optional non-secret
+   * params, so it never eats into the prompt's length budget. An old
+   * bridge/helper that doesn't know this param simply never reads it and
+   * spawns Claude as always — no version-skew risk (mirrors `model`'s own
+   * posture; skew is instead handled by the app refusing a Codex launch
+   * against an old helper, FR-7 — not this builder's concern).
+   */
+  agent?: "claude" | "codex";
 }
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&worktree=1][&prompt=…]` deep
- * link. Throws when a required field is missing so a malformed link is never
- * fired. `prompt` is always the LAST param so the base-link length (and
- * therefore the prompt budget) is stable — every other optional param,
- * including `cols`/`rows`, `model` and `worktree`, is inserted before it,
- * alongside the other credentials.
+ * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&worktree=1][&agent=codex]
+ * [&prompt=…]` deep link. Throws when a required field is missing so a
+ * malformed link is never fired. `prompt` is always the LAST param so the
+ * base-link length (and therefore the prompt budget) is stable — every other
+ * optional param, including `cols`/`rows`, `model`, `worktree` and `agent`,
+ * is inserted before it, alongside the other credentials.
  */
 export function buildLaunchDeepLink({
   relay,
@@ -159,6 +182,7 @@ export function buildLaunchDeepLink({
   model,
   permissionMode,
   worktree,
+  agent,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -197,6 +221,10 @@ export function buildLaunchDeepLink({
   // permissionMode. Only ever the literal "1"; omitted entirely when falsy
   // (no version-skew risk for an old bridge/helper).
   if (worktree) parts.push(`worktree=1`);
+  // Codex support (FR-1): only ever the literal "codex" is put on the wire —
+  // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
+  // launch is byte-identical to before this field existed (AC-1).
+  if (agent === "codex") parts.push(`agent=codex`);
   if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -236,4 +264,65 @@ export function redactDeepLinkToken(url: string): string {
     .replace(/([?&]token=)[^&]*/g, "$1***")
     .replace(/([?&]helperToken=)[^&]*/g, "$1***")
     .replace(/([?&]prompt=)[^&]*/g, "$1***");
+}
+
+// ── `vibecodes://open-terminal?…` — desktop Codex (FR-11/FR-12) ─────────────
+//
+// A different shape from `launch`: no `session`/`token` (no relay session is
+// ever minted for this path — "No session record", requirements §2.3), but
+// `helperToken` IS required here (not optional like on `launch`) — a
+// desktop-only user, who has never fired a browser `launch` link, would
+// otherwise have a helper with no way to open its standing control
+// connection at all. `agent` is required and the ONLY legal value is the
+// literal `"codex"` — Claude keeps its own `claude-cli://` desktop path
+// untouched. Mirrors terminal/shared/deep-link.mjs's build/parse exactly
+// (drift-tested in deep-link.test.ts).
+
+export interface OpenTerminalDeepLinkParams {
+  /** Relay base ws URL — needed so the helper's control connection has
+   *  somewhere to dial, exactly like `launch`'s `relay`. */
+  relay: string;
+  /** App-minted, HMAC-signed HELPER-role token (secret — keep out of logs).
+   *  REQUIRED on this action (unlike `launch`, where it's optional). */
+  helperToken: string;
+  /** The folder Terminal should open in — required; the helper's launch
+   *  script `cd`s into it and shows its OWN `pwd`, never trusting this
+   *  string for display (security note). */
+  cwd: string;
+  /** The ONLY legal value is the literal `"codex"` — Claude has no
+   *  equivalent on this action (FR-11). */
+  agent: "codex";
+  /** Optional compact bootstrap prompt, same INERT-DATA posture as
+   *  `launch`'s `prompt` — rides as Codex's one positional argument, never
+   *  shell-split or executed by the helper itself. Always LAST. */
+  prompt?: string;
+}
+
+/**
+ * Build a `vibecodes://open-terminal?relay=…&helperToken=…&cwd=…&agent=codex[&prompt=…]`
+ * deep link. Throws when a required field is missing — there is no implicit
+ * default for `agent` on this action (unlike `launch`), so a malformed call
+ * is refused outright rather than silently firing a broken link.
+ */
+export function buildOpenTerminalDeepLink({
+  relay,
+  helperToken,
+  cwd,
+  agent,
+  prompt,
+}: OpenTerminalDeepLinkParams): string {
+  if (!relay || !helperToken || !cwd) {
+    throw new Error("buildOpenTerminalDeepLink requires relay, helperToken and cwd");
+  }
+  if (agent !== "codex") {
+    throw new Error('buildOpenTerminalDeepLink requires agent to be exactly "codex"');
+  }
+  const parts = [
+    `relay=${encodeURIComponent(relay)}`,
+    `helperToken=${encodeURIComponent(helperToken)}`,
+    `cwd=${encodeURIComponent(cwd)}`,
+    `agent=codex`,
+  ];
+  if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
+  return `${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?${parts.join("&")}`;
 }

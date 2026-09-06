@@ -49,6 +49,7 @@ import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-termina
 import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
 import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
+import { normalizeAgent } from "@/lib/terminal/agent-launch";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -85,6 +86,12 @@ const BodySchema = z.object({
   // user already has LIVE, and to stamp the new row's `claude_session_id` at
   // insert time instead of waiting for the bridge to announce it.
   resumeId: z.string().uuid().optional(),
+  // Codex support (docs/codex-terminal-requirements.md FR-1/FR-5,
+  // implementation slice 2) — which agent this launch is starting. Absent or
+  // "claude" (the only other legal value the client ever sends is the exact
+  // literal "codex") stamps the new row's `agent` column as 'claude', same
+  // as every row that predates this field — see normalizeAgent below.
+  agent: z.enum(["claude", "codex"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -145,7 +152,8 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId, taskId, taskTitle, displayName, resumeId } = parsed.data;
+    const { ideaId, taskId, taskTitle, displayName, resumeId, agent } = parsed.data;
+    const effectiveAgent = normalizeAgent(agent);
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -468,6 +476,9 @@ export async function POST(req: Request) {
       status: "active",
       expires_at: computeSessionExpiresAt(nowMs),
       e2ee_session_key: e2eeSessionKey,
+      // Codex support (FR-5): stamped once from the launch request, never
+      // changed after (see migration 00170's column comment).
+      agent: effectiveAgent,
     });
     if (insertErr) {
       // The registry is best-effort (R2) — never fail an otherwise-successful

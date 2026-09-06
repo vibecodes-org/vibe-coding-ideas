@@ -53,6 +53,14 @@ export type Database = {
            *  and has no platform-wide default (per-user only, safety
            *  setting) — see src/lib/terminal/auto-accept-mode.ts. */
           terminal_auto_accept: boolean;
+          /** Codex support (docs/codex-terminal-requirements.md FR-4a,
+           *  implementation slice 1) — the last agent the user picked,
+           *  remembered per account (across devices), mirroring
+           *  `terminal_model`'s storage mechanism. Default `'claude'`.
+           *  Checked `in ('claude', 'codex')` at the DB level; drives the
+           *  picker's default and "Start with Claude Code instead" flips it
+           *  back to `'claude'`. See migration 00170. */
+          terminal_agent: "claude" | "codex";
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -98,6 +106,7 @@ export type Database = {
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -137,6 +146,7 @@ export type Database = {
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -2825,6 +2835,12 @@ export type Database = {
         // can reattach and decrypt) — cleared to null only when the session
         // itself ends (session/end, session/closed, session-reap.ts).
         e2ee_session_key: string | null;
+        // Codex support (docs/codex-terminal-requirements.md FR-5,
+        // implementation slice 1) — which agent this session is running.
+        // NOT NULL, default 'claude' (migration 00170) so every pre-existing
+        // row reads as Claude. Stamped by the mint route from the launch
+        // request; never changes after the row is created.
+        agent: "claude" | "codex";
       };
       Insert: {
         id?: string;
@@ -2842,6 +2858,7 @@ export type Database = {
         ended_at?: string | null;
         expires_at: string;
         e2ee_session_key?: string | null;
+        agent?: "claude" | "codex";
       };
       Update: {
         id?: string;
@@ -2859,6 +2876,7 @@ export type Database = {
         ended_at?: string | null;
         expires_at?: string;
         e2ee_session_key?: string | null;
+        agent?: "claude" | "codex";
       };
       Relationships: [
         {

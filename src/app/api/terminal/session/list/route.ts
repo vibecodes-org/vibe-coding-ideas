@@ -72,7 +72,7 @@ export async function GET() {
     const { data: rows, error } = await supabase
       .from("terminal_sessions")
       .select(
-        "sid, idea_id, task_id, task_title, machine_label, cwd, claude_session_id, display_name, created_at, status, ended_at",
+        "sid, idea_id, task_id, task_title, machine_label, cwd, claude_session_id, display_name, created_at, status, ended_at, agent",
       )
       .eq("user_id", user.id)
       .or(`status.eq.active,ended_at.gte.${recentSince}`)
@@ -102,6 +102,10 @@ export async function GET() {
       createdAt: row.created_at,
       status: row.status,
       endedAt: row.ended_at,
+      // Codex support (FR-5, implementation slice 2) — which agent this
+      // session ran. NOT NULL DEFAULT 'claude' at the DB layer (migration
+      // 00170), so every row genuinely carries a value.
+      agent: row.agent,
     }));
 
     return NextResponse.json({ sessions });

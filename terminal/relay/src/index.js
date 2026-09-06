@@ -80,6 +80,7 @@ import {
   parseGoodbyeReason,
   isAlwaysOnFrame,
   parseAlwaysOnValue,
+  encodeOpenTerminalAuthorizedFrame,
 } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
@@ -318,11 +319,13 @@ export class TerminalRelay {
     }
 
     const connected = this.state.getWebSockets("role:helper").length > 0;
-    const [version, machineLabel, alwaysOn, uncleanAt] = await Promise.all([
+    const [version, machineLabel, alwaysOn, uncleanAt, codexInstalled, claudeInstalled] = await Promise.all([
       this.state.storage.get("helperVersion"),
       this.state.storage.get("helperMachineLabel"),
       this.state.storage.get("helperAlwaysOn"),
       this.state.storage.get("helperUncleanAt"),
+      this.state.storage.get("helperCodexInstalled"),
+      this.state.storage.get("helperClaudeInstalled"),
     ]);
     const status = computeHelperStatus({
       connected,
@@ -331,6 +334,8 @@ export class TerminalRelay {
       alwaysOn: alwaysOn ?? false,
       uncleanAt: uncleanAt ?? null,
       now: Date.now(),
+      codexInstalled: codexInstalled ?? null,
+      claudeInstalled: claudeInstalled ?? null,
     });
     return jsonResponse(status, 200);
   }
@@ -439,15 +444,47 @@ export class TerminalRelay {
     const version = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
     const machineLabel = sanitizeMachineLabel(url.searchParams.get("machineLabel"));
     const alwaysOn = url.searchParams.get("alwaysOn") === "1";
+    // Codex support (FR-3's helper-side half) — tri-state: "1"/"0" is a known
+    // answer, anything else (including absent, an old helper) is UNKNOWN and
+    // must be stored as such, never coerced to false (§15 Q11: "unknown must
+    // read as enabled, never disabled").
+    const codexInstalledRaw = url.searchParams.get("codexInstalled");
+    const claudeInstalledRaw = url.searchParams.get("claudeInstalled");
+    const codexInstalled = codexInstalledRaw === "1" ? true : codexInstalledRaw === "0" ? false : null;
+    const claudeInstalled = claudeInstalledRaw === "1" ? true : claudeInstalledRaw === "0" ? false : null;
     await Promise.all([
       version ? this.state.storage.put("helperVersion", version) : Promise.resolve(),
       machineLabel ? this.state.storage.put("helperMachineLabel", machineLabel) : Promise.resolve(),
       this.state.storage.put("helperAlwaysOn", alwaysOn),
+      codexInstalled === null
+        ? this.state.storage.delete("helperCodexInstalled")
+        : this.state.storage.put("helperCodexInstalled", codexInstalled),
+      claudeInstalled === null
+        ? this.state.storage.delete("helperClaudeInstalled")
+        : this.state.storage.put("helperClaudeInstalled", claudeInstalled),
       // Design rule: a fresh attach clears any "stopped unexpectedly" flag.
       this.state.storage.delete("helperUncleanAt"),
     ]);
 
-    this.log("helper attached", { session, version, alwaysOn });
+    this.log("helper attached", { session, version, alwaysOn, codexInstalled, claudeInstalled });
+
+    // OPEN-TERMINAL RELAY AUTHORIZATION (desktop Codex security fix, Finding
+    // 1): a helper leg that connected with `purpose=open-terminal` gets an
+    // EXPLICIT ack, sent strictly AFTER authorizeAttach succeeded above — the
+    // helper's open-terminal handler waits on this frame (never a bare
+    // `onopen`, which a rejected/BAD_TOKEN leg also fires) before writing its
+    // launch script or opening a Terminal window. `purpose` is attacker-
+    // controllable but harmless: it only ever gates an EXTRA confirmation
+    // frame sent to a leg that already independently passed authorizeAttach —
+    // it can never cause a frame to be sent to an unauthenticated connection.
+    if (url.searchParams.get("purpose") === "open-terminal") {
+      try {
+        server.send(encodeOpenTerminalAuthorizedFrame());
+      } catch (e) {
+        this.log("open-terminal-authorized send failed", { session, err: String(e) });
+      }
+    }
+
     return new Response(null, { status: 101, webSocket: client });
   }
 

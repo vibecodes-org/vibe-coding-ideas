@@ -15,7 +15,10 @@ import { RefreshCw, Terminal as TerminalIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
-import type { TaskSessionMatch } from "@/lib/terminal/chooser-data";
+import { rowAgent, type TaskSessionMatch } from "@/lib/terminal/chooser-data";
+import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { TerminalAgentPicker } from "./terminal-agent-picker";
 
 export interface TerminalTaskLaunchChoiceProps {
   open: boolean;
@@ -44,6 +47,15 @@ export interface TerminalTaskLaunchChoiceProps {
    * src/lib/terminal/auto-accept-mode.ts. Omitted when null/undefined.
    */
   autoAcceptChip?: string | null;
+  /**
+   * Codex support (docs/codex-terminal-ux-design.html §1c, implementation
+   * slice 2) — "Start fresh with", pre-set by the caller to whichever agent
+   * the triggering launch already carried (never the remembered pick — see
+   * design §1c's callout). Omitted → the picker doesn't render, and
+   * "Start fresh anyway" behaves exactly as before this field existed.
+   */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
 }
 
 export function TerminalTaskLaunchChoice({
@@ -56,6 +68,8 @@ export function TerminalTaskLaunchChoice({
   onCancel,
   modelLine = null,
   autoAcceptChip = null,
+  agent,
+  onAgentChange,
 }: TerminalTaskLaunchChoiceProps) {
   // Narrow on `match.kind` directly at each use (rather than a derived
   // boolean) — `ChooserLiveRow`/`ChooserRecentRow` don't share a `createdAt`/
@@ -101,8 +115,17 @@ export function TerminalTaskLaunchChoice({
           <DialogDescription className="mt-1 text-[11.5px] text-zinc-500">
             <span className="block truncate">{taskTitle}</span>
             <span className="font-mono">{ageLabel}</span>
+            {" · "}
+            <span className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] font-normal text-zinc-300">
+              {AGENT_LABEL[rowAgent(match.row.agent)]}
+            </span>
             {!canReconnect && <span className="block text-zinc-600">No folder was recorded for it — can&apos;t resume.</span>}
           </DialogDescription>
+          {/* Codex support (design §1c): governs only "Start fresh anyway" —
+              Reconnect/Resume above keep the matched row's own agent. */}
+          {agent && onAgentChange && (
+            <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Start fresh with" />
+          )}
           {/* Task c4ca2d95: scoped to "Start fresh" — Reconnect/Resume keep
               the session's own model (AC-8), so this line is deliberately
               silent about them. */}

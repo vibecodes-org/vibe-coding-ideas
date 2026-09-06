@@ -219,6 +219,14 @@ export interface PopoutPayload {
    * one) and on deploy skew / a pre-feature session.
    */
   sessionKey?: string;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-5, implementation
+   * slice 2) — this tab's own agent (`SessionEntry.agent`), carried so the
+   * popped window's header chip and title match the dock's (design §4d).
+   * Absent on a payload sent by a sender that predates this card (deploy
+   * skew) — treated as "claude" by `parsePopoutPayload`, the safe default.
+   */
+  agent?: "claude" | "codex";
 }
 
 export type PopoutChannelMessage =
@@ -305,6 +313,10 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
     // default for that deploy-skew case, not a reason to reject the whole
     // hand-off.
     autoAccept: typeof p.autoAccept === "boolean" ? p.autoAccept : false,
+    // Codex support: same leniency as autoAccept — a sender that predates
+    // this card simply never sets it, and "claude" (no chip) is the safe
+    // default, not a reason to reject the whole hand-off.
+    agent: p.agent === "codex" ? "codex" : "claude",
   };
   // Optional and leniently parsed (design §1's decision callout): a
   // malformed/absent buffer is dropped on its own — the credentials above

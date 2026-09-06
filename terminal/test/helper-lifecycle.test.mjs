@@ -37,11 +37,13 @@ async function waitFor(pred, ms, label, pollMs = 25) {
 }
 
 /** Open a raw helper-leg ws and collect its TEXT control frames. */
-async function openHelperLeg(relayUrl, session, token, { version, machineLabel, alwaysOn } = {}) {
+async function openHelperLeg(relayUrl, session, token, { version, machineLabel, alwaysOn, codexInstalled, claudeInstalled } = {}) {
   const params = new URLSearchParams({ session, role: "helper", token });
   if (version) params.set("helperVersion", version);
   if (machineLabel) params.set("machineLabel", machineLabel);
   if (alwaysOn) params.set("alwaysOn", "1");
+  if (codexInstalled !== undefined) params.set("codexInstalled", codexInstalled ? "1" : "0");
+  if (claudeInstalled !== undefined) params.set("claudeInstalled", claudeInstalled ? "1" : "0");
   const ws = new WebSocket(`${relayUrl}/?${params}`);
   const leg = { ws, texts: [], closed: null };
   ws.on("message", (data, isBinary) => {
@@ -93,8 +95,58 @@ test("(1) helper attach → GET /helper/status reports connected with announced 
     alwaysOn: true,
     stoppedUnexpectedly: false,
     lastEventAt: null,
+    codexInstalled: null,
+    claudeInstalled: null,
   });
   console.log("[helper/1] PASS — attach reports connected with announced version/machineLabel/alwaysOn");
+});
+
+test("(1b) helper attach also reports codex/claude install state, tri-state (Codex support, FR-3)", { timeout: 15000 }, async (t) => {
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const session = helperSessionId(owner);
+  const relay = await startStandinRelay({ port: 0, secret: SECRET });
+  t.after(() => relay.close());
+
+  const token = await mintHelperToken({ sub: owner, secret: SECRET });
+  const helper = await openHelperLeg(relay.url, session, token, { codexInstalled: true, claudeInstalled: false });
+  t.after(() => { try { helper.ws.terminate(); } catch { /* */ } });
+
+  const control = await mintControlToken({ sub: owner, sid: session, secret: SECRET });
+  const { body } = await waitFor(
+    async () => {
+      const r = await getStatus(relay, session, control);
+      return r.body.connected ? r : null;
+    },
+    5000,
+    "status to report connected",
+  );
+  assert.equal(body.codexInstalled, true);
+  assert.equal(body.claudeInstalled, false);
+  console.log("[helper/1b] PASS — codex/claude install state flows through to /helper/status");
+});
+
+test("(1c) an old-helper attach (neither param sent) reports UNKNOWN, never false", { timeout: 15000 }, async (t) => {
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const session = helperSessionId(owner);
+  const relay = await startStandinRelay({ port: 0, secret: SECRET });
+  t.after(() => relay.close());
+
+  const token = await mintHelperToken({ sub: owner, secret: SECRET });
+  const helper = await openHelperLeg(relay.url, session, token, {});
+  t.after(() => { try { helper.ws.terminate(); } catch { /* */ } });
+
+  const control = await mintControlToken({ sub: owner, sid: session, secret: SECRET });
+  const { body } = await waitFor(
+    async () => {
+      const r = await getStatus(relay, session, control);
+      return r.body.connected ? r : null;
+    },
+    5000,
+    "status to report connected",
+  );
+  assert.equal(body.codexInstalled, null, "unknown, not false — the app must never disable on an old helper");
+  assert.equal(body.claudeInstalled, null);
+  console.log("[helper/1c] PASS — an old helper's silence reads as unknown, never 'not installed'");
 });
 
 test("(2) goodbye then disconnect → not connected, never stoppedUnexpectedly", { timeout: 15000 }, async (t) => {

@@ -14,6 +14,9 @@ import {
   redactDeepLinkToken,
   LAUNCH_SCHEME,
   LAUNCH_HOST,
+  buildOpenTerminalDeepLink,
+  parseOpenTerminalDeepLink,
+  OPEN_TERMINAL_HOST,
 } from "../shared/deep-link.mjs";
 
 const SAMPLE = {
@@ -292,4 +295,112 @@ test("redactDeepLinkToken leaves worktree untouched — not a secret or free-for
   const url = buildLaunchDeepLink({ ...SAMPLE, worktree: true });
   const redacted = redactDeepLinkToken(url);
   assert.ok(redacted.includes("worktree=1"));
+});
+
+// ── Codex support (docs/codex-terminal-requirements.md FR-1, AC-1/AC-2) ────
+
+test("build ⇄ parse round-trips agent=codex, positioned before prompt", () => {
+  const withAgent = { ...SAMPLE, agent: "codex", prompt: "hello" };
+  const url = buildLaunchDeepLink(withAgent);
+  assert.ok(url.includes("agent=codex"));
+  assert.ok(url.indexOf("agent=") < url.indexOf("prompt="), "agent precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withAgent);
+});
+
+test("AC-1: agent absent or 'claude' is byte-identical to a link built before agent existed", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("agent="));
+  assert.deepEqual(parseLaunchDeepLink(url), SAMPLE);
+  const claudeUrl = buildLaunchDeepLink({ ...SAMPLE, agent: "claude" });
+  assert.equal(claudeUrl, url, "explicit agent:'claude' must never be encoded as agent=claude");
+});
+
+test("a garbage agent value on the wire is rejected outright — never forwarded", () => {
+  const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&agent=chatgpt`;
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(parsed !== null);
+  assert.ok(!("agent" in parsed));
+});
+
+test("redactDeepLinkToken leaves agent untouched — not a secret or free-form user content", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex" });
+  const redacted = redactDeepLinkToken(url);
+  assert.ok(redacted.includes("agent=codex"));
+});
+
+// ── `vibecodes://open-terminal?…` — desktop Codex (FR-11/FR-12, AC-14/15) ───
+
+const OPEN_TERMINAL_SAMPLE = {
+  relay: "ws://127.0.0.1:8787",
+  helperToken: "eyJzdWIiOiJ1c2VyIn0.helperSig",
+  cwd: "/Users/nick/projects/my idea",
+  agent: "codex",
+};
+
+test("build ⇄ parse round-trips the required fields", () => {
+  const url = buildOpenTerminalDeepLink(OPEN_TERMINAL_SAMPLE);
+  assert.ok(url.startsWith(`${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?`));
+  assert.deepEqual(parseOpenTerminalDeepLink(url), OPEN_TERMINAL_SAMPLE);
+});
+
+test("build ⇄ parse round-trips a prompt (incl. hostile characters), always LAST", () => {
+  const withPrompt = { ...OPEN_TERMINAL_SAMPLE, prompt: HOSTILE_PROMPT };
+  const url = buildOpenTerminalDeepLink(withPrompt);
+  assert.ok(url.endsWith(`prompt=${encodePromptParam(HOSTILE_PROMPT)}`));
+  assert.deepEqual(parseOpenTerminalDeepLink(url), withPrompt);
+});
+
+test("buildOpenTerminalDeepLink throws when relay/helperToken/cwd is missing", () => {
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, relay: "" }));
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, helperToken: "" }));
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, cwd: "" }));
+});
+
+test("buildOpenTerminalDeepLink throws for anything but agent:'codex' — no implicit default on this action", () => {
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, agent: "claude" }));
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, agent: undefined }));
+  assert.throws(() => buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, agent: "" }));
+});
+
+test("parseOpenTerminalDeepLink rejects a foreign scheme / wrong action / junk", () => {
+  assert.equal(parseOpenTerminalDeepLink("claude-cli://open?q=hi"), null);
+  assert.equal(parseOpenTerminalDeepLink(`${LAUNCH_SCHEME}://launch?relay=r&session=s&token=t`), null);
+  assert.equal(parseOpenTerminalDeepLink("not a url"), null);
+  assert.equal(parseOpenTerminalDeepLink(""), null);
+  assert.equal(parseOpenTerminalDeepLink(null), null);
+});
+
+test("parseOpenTerminalDeepLink returns null when a required param is absent", () => {
+  assert.equal(
+    parseOpenTerminalDeepLink(`${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?relay=r&helperToken=h&agent=codex`),
+    null,
+    "missing cwd",
+  );
+  assert.equal(
+    parseOpenTerminalDeepLink(`${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?relay=r&cwd=c&agent=codex`),
+    null,
+    "missing helperToken",
+  );
+});
+
+test("parseOpenTerminalDeepLink rejects agent=claude and any other non-codex value — no implicit default", () => {
+  const base = `${LAUNCH_SCHEME}://${OPEN_TERMINAL_HOST}?relay=r&helperToken=h&cwd=c`;
+  assert.equal(parseOpenTerminalDeepLink(`${base}&agent=claude`), null);
+  assert.equal(parseOpenTerminalDeepLink(`${base}&agent=chatgpt`), null);
+  assert.equal(parseOpenTerminalDeepLink(base), null, "agent entirely absent is also invalid on this action");
+});
+
+test("a `launch` link never parses as open-terminal, and vice versa", () => {
+  const launchUrl = buildLaunchDeepLink(SAMPLE);
+  assert.equal(parseOpenTerminalDeepLink(launchUrl), null);
+  const openTerminalUrl = buildOpenTerminalDeepLink(OPEN_TERMINAL_SAMPLE);
+  assert.equal(parseLaunchDeepLink(openTerminalUrl), null);
+});
+
+test("redactDeepLinkToken elides helperToken and prompt on an open-terminal link too", () => {
+  const url = buildOpenTerminalDeepLink({ ...OPEN_TERMINAL_SAMPLE, prompt: "secret task details" });
+  const redacted = redactDeepLinkToken(url);
+  assert.ok(!redacted.includes(OPEN_TERMINAL_SAMPLE.helperToken));
+  assert.ok(!redacted.includes("secret task details"));
+  assert.ok(redacted.includes(`cwd=${encodeURIComponent(OPEN_TERMINAL_SAMPLE.cwd)}`), "cwd survives — not a secret");
 });

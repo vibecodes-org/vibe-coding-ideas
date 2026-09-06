@@ -20,6 +20,19 @@ export interface HelperStatus {
   alwaysOn: boolean;
   stoppedUnexpectedly: boolean;
   lastEventAt: number | null;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-3's helper-side
+   * half, UX design §15 Q11): whether the helper found `codex`/`claude` on
+   * its spawn PATH the last time it attached. `null` means UNKNOWN (no
+   * helper has ever attached, or the connected helper predates this field)
+   * — callers MUST treat unknown as "don't disable the control", never as
+   * "not installed" (the design's explicit rule). Consumed today only by
+   * the desktop-Codex pre-flight in launch-claude-code-button.tsx; a full
+   * "grey out the menu item up front" UI gate is a follow-up (see that
+   * component's own TODO).
+   */
+  codexInstalled: boolean | null;
+  claudeInstalled: boolean | null;
 }
 
 /**

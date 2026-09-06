@@ -12,6 +12,7 @@
 // it unit-testable without React.
 
 import type { CompactPromptEssentials } from "@/lib/launch-claude-code";
+import type { LaunchAgent } from "./agent-launch";
 
 /** The two destinations Claude can run in. "terminal-window" = today's behaviour. */
 export type LaunchTarget = "terminal-window" | "browser";
@@ -134,6 +135,24 @@ export interface BrowserLaunchPayload {
    * rename UI before a session exists to rename).
    */
   displayName?: string;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-1/FR-5,
+   * implementation slice 2) — which agent this launch should run. Absent or
+   * "claude" is the default (byte-identical to today); "codex" is the ONLY
+   * other legal value (see agent-launch.ts's `normalizeAgent`). Set at the
+   * moment the payload is built:
+   *   - a fresh toolbar/task-menu launch: whichever item was clicked
+   *     ("Launch Codex in browser terminal") or the chooser/Ready-panel
+   *     picker's current value at "Start new session" time — never applied
+   *     silently (design §11 Q3);
+   *   - a Resume/reconnect payload: the ROW's own recorded agent
+   *     (terminal_sessions.agent) — Resume never shows the picker (design
+   *     §5, AC-7).
+   * Threaded by use-terminal-session.ts into both the mint request body
+   * (persisted to terminal_sessions.agent) and the fired deep link's own
+   * `agent` param (buildLaunchDeepLink).
+   */
+  agent?: LaunchAgent;
 }
 
 /** Ask the board's terminal dock to open + auto-launch in the browser. */
