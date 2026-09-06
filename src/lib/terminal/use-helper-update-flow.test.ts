@@ -152,6 +152,58 @@ describe("useHelperUpdateFlow", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
+  it("delivered:false from the command route -> 'helper-unreachable', no status poll, download still starts", async () => {
+    // Nick, 6 Sep 2026 (card 3280f13c): prod log showed the quiesce command
+    // answered `delivered:false` (the relay had no live helper connection),
+    // the very next status poll said connected:false, and the flow declared
+    // "the helper has closed" — while the helper was alive on the Mac and
+    // Finder refused the drag as "in use". connected:false is the SAME
+    // absent connection, not evidence of a quit, so the poll must not run.
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/terminal/session/end") return jsonResponse({});
+      if (url === "/api/terminal/helper/command") return jsonResponse({ delivered: false });
+      if (url === "/api/terminal/helper/status") return jsonResponse({ connected: false });
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    });
+    const onSettled = vi.fn();
+    const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 0, onSettled }));
+
+    await act(async () => {
+      result.current.start();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.phase).toBe("helper-unreachable");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/helper/status");
+    expect(location.assign).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+    expect(onSettled).toHaveBeenCalledOnce();
+
+    act(() => result.current.resetIfSettled());
+    expect(result.current.phase).toBe("idle");
+  });
+
+  it("delivered:true from the command route -> polls status and settles to 'ready' once disconnected", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/terminal/helper/command") return jsonResponse({ delivered: true });
+      if (url === "/api/terminal/helper/status") return jsonResponse(statusQueue.shift() ?? { connected: true });
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    });
+    statusQueue = [{ connected: true }, { connected: false }];
+    const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 0 }));
+
+    await act(async () => {
+      result.current.start();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.phase).toBe("quiescing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(result.current.phase).toBe("ready");
+    expect(location.assign).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+  });
+
   it("resetIfSettled clears a 'ready' phase back to idle", async () => {
     statusQueue = [{ connected: false }];
     const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 0 }));

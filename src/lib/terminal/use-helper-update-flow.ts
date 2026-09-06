@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   INITIAL_UPDATE_FLOW_STATE,
   QUIESCE_TIMEOUT_MS,
+  isUpdateFlowSettled,
   updateFlowReducer,
   type UpdateFlowPhase,
   type UpdateFlowState,
@@ -93,7 +94,7 @@ export function useHelperUpdateFlow({
     setState((s) => updateFlowReducer(s, { type: "cancelled" }));
   }, []);
   const resetIfSettled = useCallback(() => {
-    setState((s) => (s.phase === "ready" || s.phase === "quiesce-timeout" ? INITIAL_UPDATE_FLOW_STATE : s));
+    setState((s) => (isUpdateFlowSettled(s.phase) ? INITIAL_UPDATE_FLOW_STATE : s));
   }, []);
 
   // Drive the "quiescing" phase: end any live sessions first (only reached
@@ -118,14 +119,32 @@ export function useHelperUpdateFlow({
           /* best effort — the quiesce command below still proceeds */
         }
       }
+      // `delivered:false` is the relay's honest "no live helper connection to
+      // hand this to" (src/app/api/terminal/helper/command/route.ts). It is
+      // NOT the same as the helper having quit: the helper's control
+      // connection can be down while the process is very much alive (Nick,
+      // 6 Sep 2026, card 3280f13c — prod log showed exactly this, the flow
+      // then reported "the helper has closed", and Finder refused the drag as
+      // "in use"). Polling status would only compound it — `connected:false`
+      // is the same absent connection — so stop here and say so.
+      let delivered: boolean | undefined;
       try {
-        await fetch("/api/terminal/helper/command", {
+        const res = await fetch("/api/terminal/helper/command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cmd: "quiesce" }),
         });
+        if (res.ok) {
+          const body = (await res.json().catch(() => null)) as { delivered?: unknown } | null;
+          if (typeof body?.delivered === "boolean") delivered = body.delivered;
+        }
       } catch {
         /* best effort — the poll below still resolves via timeout */
+      }
+      if (cancelled) return;
+      if (delivered === false) {
+        setState((s) => updateFlowReducer(s, { type: "quiesce-undelivered" }));
+        return;
       }
 
       const deadline = Date.now() + QUIESCE_TIMEOUT_MS;
@@ -158,12 +177,12 @@ export function useHelperUpdateFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, sessionCount]);
 
-  // Either outcome of quiescing starts the download (design: the whole point
+  // Every outcome of quiescing starts the download (design: the whole point
   // is drag-to-Applications always succeeds because nothing is running by
-  // now) and lets the caller refresh whatever it shows for the now-quiesced
-  // helper.
+  // now — and when we couldn't make that true, the notice says what to do)
+  // and lets the caller refresh whatever it shows for the helper.
   useEffect(() => {
-    if (state.phase !== "ready" && state.phase !== "quiesce-timeout") return;
+    if (!isUpdateFlowSettled(state.phase)) return;
     window.location.assign(TERMINAL_HELPER_DOWNLOAD_URL);
     onSettled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
