@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     // the explicit filter keeps the query honest regardless of client).
     const { data: row, error: rowErr } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, status, expires_at, cwd, claude_session_id, display_name, e2ee_session_key")
+      .select("sid, idea_id, status, expires_at, cwd, claude_session_id, display_name, e2ee_session_key, agent")
       .eq("sid", sid)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -144,6 +144,12 @@ export async function POST(req: Request) {
       // persisted beyond in-memory dock state (FR-6). `null` when the row
       // predates this feature or the session has already ended.
       sessionKey: row.e2ee_session_key,
+      // Codex support (FR-5): forward the row's agent so a reload-reattached /
+      // instant-continue tab is rebuilt with the right agent label. Without it
+      // performReattach left entry.agent undefined and a live Codex session
+      // read as "Claude Code" on the panel after a hard refresh (Nick, 7 Sep
+      // 2026). session/list already returns this; reattach now matches.
+      agent: row.agent,
     });
   } catch (err) {
     logger.error("Terminal session reattach error", {

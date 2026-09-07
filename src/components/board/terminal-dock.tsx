@@ -2068,6 +2068,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         displayName?: string | null;
         /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only. */
         sessionKey?: string;
+        /** Codex support (FR-5): the row's agent, so the rebuilt tab keeps its
+         *  Codex label across a reload/reconnect (bug: read as Claude Code after
+         *  a hard refresh — Nick, 7 Sep 2026). */
+        agent?: LaunchAgent;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2129,6 +2133,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         launchPayload: null,
         attach,
         showReconnectedNoHistoryNote: !initialBuffer,
+        // Codex support (FR-5): carry the row's agent onto the rebuilt tab so a
+        // reload-reattached / instant-continue Codex session keeps its "Codex"
+        // label — without this the tab read as Claude Code after a hard refresh
+        // (Nick, 7 Sep 2026). Normalised the same way every other row-agent
+        // reader does (chooser-data.ts's rowAgent): only the literal "codex".
+        agent: data.agent === "codex" ? "codex" : "claude",
       };
       setSessions((prev) => (pristineKey ? prev.map((s) => (s.key === pristineKey ? entry : s)) : [...prev, entry]));
       setActiveKey(entry.key);
