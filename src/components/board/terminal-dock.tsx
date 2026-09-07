@@ -3027,11 +3027,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // amber badge below (design item 2 — the only place it may
                 // appear).
                 const boardIdentity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
-                // Codex support (design §4a): set at tab creation (entry.agent
-                // is captured once by mintAndDeliver, never mid-interaction),
-                // so this never reflows a tab between an arm click and its
-                // confirm click — same rule the "other board" pill follows.
-                const isCodexTab = entry.agent === "codex";
                 const label = deriveTabLabel({
                   displayName: entry.displayName,
                   taskTitle: entry.taskTitle,
@@ -3053,7 +3048,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                     role="tab"
                     aria-selected={isActive}
                     tabIndex={isActive ? 0 : -1}
-                    title={isCodexTab ? `Codex · ${label}` : label}
+                    title={label}
                     onKeyDown={(e) => handleTabKeyDown(e, index, entry.key)}
                     onClick={() => {
                       setExpanded(true);
@@ -3071,17 +3066,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       // the mid-interaction reflow the comment below forbids:
                       // `isOtherBoard` only changes on a board navigation,
                       // never between an arm click and its confirm click.
-                      // Codex support (design §4a): a Codex tab gets the SAME
-                      // "+40px both bounds" treatment as the amber other-board
-                      // pill — stacked when both apply — so the pill and the
-                      // session name never crush each other.
-                      boardIdentity.isOtherBoard && isCodexTab
-                        ? "min-w-[230px] max-w-[310px]"
-                        : boardIdentity.isOtherBoard
-                          ? "min-w-[190px] max-w-[270px]"
-                          : isCodexTab
-                            ? "min-w-[150px] max-w-[230px]"
-                            : "min-w-[110px] max-w-[190px]",
+                      boardIdentity.isOtherBoard
+                        ? "min-w-[190px] max-w-[270px]"
+                        : "min-w-[110px] max-w-[190px]",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
                       // Deliberately NO width change while renaming/confirming.
@@ -3197,14 +3184,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                           {meta.glyph}
                         </span>
                         <span className="sr-only">{meta.ariaText}</span>
-                        {/* Codex pill (design §4a, §11 Q2): Codex tabs only —
-                            Claude tabs are unlabelled, exactly as today.
-                            Sits BEFORE the name so it reads "Codex: <name>". */}
-                        {isCodexTab && (
-                          <span className="flex-none rounded border border-zinc-700 bg-zinc-800/60 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-zinc-300">
-                            Codex
-                          </span>
-                        )}
+                        {/* The per-agent tab pill was removed (Nick, 7 Sep
+                            2026) — the agent is now named in the session panel
+                            header instead, so tabs are unlabelled for every
+                            agent. */}
                         <span
                           className="min-w-0 flex-1 truncate"
                           onDoubleClick={(e) => {

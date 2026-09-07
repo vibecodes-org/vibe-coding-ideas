@@ -732,7 +732,9 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
     registry.resolve([liveElsewhereRow()]);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.getByTestId("chooser").dataset.agent).toBe("codex");
+    // The chooser renders as soon as the decision is "chooser" — the toggle's
+    // own state flush can trail by a tick, so poll for it (not a bare expect).
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
   });
 
   it("mints immediately with no race when the registry is already loaded before the click (unchanged behaviour)", async () => {

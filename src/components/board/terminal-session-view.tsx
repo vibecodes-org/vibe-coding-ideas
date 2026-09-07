@@ -53,7 +53,6 @@ import {
   Undo2,
   RefreshCw,
   X,
-  Zap,
   Shield,
   ShieldAlert,
 } from "lucide-react";
@@ -67,6 +66,7 @@ import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 import { HelperUpdateButton, HelperUpdateFlowNotice } from "./terminal-helper-update-button";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
 import { TerminalAgentPicker } from "./terminal-agent-picker";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
@@ -83,7 +83,6 @@ import {
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
-import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 
@@ -728,36 +727,29 @@ export function TerminalSessionView({
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
           </span>
-          {/* Codex support (design §4b) — a launch-time fact (which agent
-              this session runs), so it persists through disconnects/
-              reconnects just like the auto-accept badge below. Focusable
-              with a tooltip, like the E2EE chip above; text never collapses
-              to an icon (5 letters, always kept — no icon reads "Codex" to a
+          {/* Agent chip (Nick, 7 Sep 2026) — every in-browser session names
+              its agent here, Claude Code as well as Codex. Consolidated: the
+              tab strip's own agent badge was removed (redundant with this
+              panel), so this is now the single place the agent is shown. A
+              launch-time fact, so it persists through disconnects/reconnects.
+              Focusable with a tooltip like the E2EE chip above; text never
+              collapses to an icon (no glyph reads "Claude Code"/"Codex" to a
               non-coder). */}
-          {entry.agent === "codex" && (
-            <span
-              className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
-              title="This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model."
-              tabIndex={0}
-            >
-              Codex
-            </span>
-          )}
-          {/* Auto-accept badge (task d3de150c, design §3.1) — deliberately
-              NOT gated on `state.status === "connected"` like Read-only just
-              below: this is a launch-time FACT about the session, not a
-              live connection state, so it must show for the session's whole
-              life (connected, disconnected, reconnecting) — the forget
-              scenario the design is built around only works if the badge
-              never disappears just because the connection blipped. */}
-          {autoAccept && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/55 bg-amber-500/10 px-2 py-1 text-[11px] font-bold text-amber-300"
-              title={AUTO_ACCEPT_BADGE_TITLE}
-            >
-              <Zap className="h-3 w-3" /> {AUTO_ACCEPT_BADGE_LABEL}
-            </span>
-          )}
+          <span
+            className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
+            title={
+              entry.agent === "codex"
+                ? "This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model."
+                : "This session runs Claude Code. The model follows your Model Tiers for each workflow step; permissions are Claude Code's own settings."
+            }
+            tabIndex={0}
+          >
+            {AGENT_LABEL[entry.agent === "codex" ? "codex" : "claude"]}
+          </span>
+          {/* Auto-accept / "auto mode" is deliberately NOT shown as a header
+              chip for in-browser terminals (Nick, 7 Sep 2026): the terminal
+              body itself already prints "auto mode on", so a second indicator
+              here is redundant. */}
           {readOnly && state.status === "connected" && (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
               <Lock className="h-3 w-3" /> Read-only
