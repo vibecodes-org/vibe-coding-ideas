@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import type { Database } from "@/types/database";
+import { redirectUriMatches } from "@/lib/oauth-redirect";
 
 function getServiceClient() {
   return createClient<Database>(
@@ -141,8 +142,10 @@ async function handleAuthorizationCode(body: FormData) {
     );
   }
 
-  // Verify redirect_uri if stored
-  if (redirectUri && authCode.redirect_uri !== redirectUri) {
+  // Verify redirect_uri if stored — loopback-aware (RFC 8252 §7.3), matching the
+  // authorize step, so a loopback client whose host form/port differs from the
+  // stored value (e.g. Codex on 127.0.0.1 + ephemeral port) is not rejected here.
+  if (redirectUri && !redirectUriMatches(authCode.redirect_uri ? [authCode.redirect_uri] : [], redirectUri)) {
     return jsonResponse(
       { error: "invalid_grant", error_description: "redirect_uri mismatch" },
       400
