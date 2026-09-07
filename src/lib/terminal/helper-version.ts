@@ -65,8 +65,12 @@
  *  handler's app.exit(1) → the whole helper died and no session could start.
  *  0.3.14 fixes it: electron-builder.yml now globs `*.mjs` (verified both
  *  modules present in the shipped app.asar), and Codex support is otherwise
- *  identical to 0.3.13. Re-bumped to 0.3.14 for Nick's live test. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.14";
+ *  identical to 0.3.13. Re-bumped to 0.3.14 for Nick's live test.
+ *  0.3.15 (7 Sep 2026): FR-4 — a fresh in-browser Codex launch opens on the
+ *  Standard-tier Codex model + reasoning effort (`codex -m … -c
+ *  model_reasoning_effort=…`). Old helpers degrade gracefully (Codex opens on
+ *  its own default), so this stays a soft "update recommended" nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.15";
 
 export type HelperVersionParts = readonly [number, number, number];
 
