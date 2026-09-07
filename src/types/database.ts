@@ -930,6 +930,10 @@ export type Database = {
           match_tier: string | null;
           model_tier: string | null;
           executed_model: string | null;
+          /** Migration 00171 (Codex model-tier task, FR-8). Self-reported
+           *  reasoning-effort level ('low' | 'medium' | 'high' | 'unknown')
+           *  the step actually ran with, paired with executed_model. */
+          reasoning_effort_used: string | null;
           tier_honored: boolean | null;
           persona_used: string | null;
           persona_honored: boolean | null;
@@ -957,6 +961,7 @@ export type Database = {
           match_tier?: string | null;
           model_tier?: string | null;
           executed_model?: string | null;
+          reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
@@ -988,6 +993,7 @@ export type Database = {
           match_tier?: string | null;
           model_tier?: string | null;
           executed_model?: string | null;
+          reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
