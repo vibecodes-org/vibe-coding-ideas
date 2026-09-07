@@ -388,14 +388,16 @@ vi.mock("./terminal-session-chooser", () => ({
     onReconnectHere,
     onOpenBoardAndReconnect,
     onResume,
+    agent,
   }: {
     sections: ChooserSections;
     onStartNew: () => void;
     onReconnectHere: (row: ChooserLiveRow) => void;
     onOpenBoardAndReconnect: (row: ChooserLiveRow) => void;
     onResume: (row: ChooserRecentRow) => void;
+    agent: string;
   }) => (
-    <div data-testid="chooser">
+    <div data-testid="chooser" data-agent={agent}>
       <button data-testid="chooser-start-new" onClick={onStartNew}>
         Start new
       </button>
@@ -689,6 +691,48 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  // Regression (Nick, 7 Sep 2026): "Codex → In the browser" opened the chooser
+  // with the toggle on Claude Code (the remembered pick), ignoring the explicit
+  // Codex click — and handleChooserStartNew would then overwrite the payload's
+  // agent with that stale toggle. The chooser's toggle must reflect the agent
+  // the launch actually carried.
+  it("seeds the chooser toggle from the explicit launch agent (Codex), not the remembered pick — registry already loaded", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    // A live session elsewhere → the resolved decision is "chooser".
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    // Default toggle before any launch is Claude (no remembered override in this test).
+    expect(screen.getByTestId("chooser").dataset.agent).toBe("claude");
+
+    act(() => {
+      requestBrowserLaunch({ agent: "codex" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
+  });
+
+  it("seeds the chooser toggle from the explicit launch agent (Codex) even when the launch races the still-loading registry", async () => {
+    const registry = deferredRegistryResponse();
+    stubFetch(registry.promise);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Launch fires before the registry resolves — deliverLaunch queues it
+    // (deferredLaunchPendingRef) without yet knowing it's a chooser outcome.
+    act(() => {
+      requestBrowserLaunch({ agent: "codex" });
+    });
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+
+    // Resolving to something worth choosing between replays the queued launch
+    // into the chooser — the deferred-replay branch must seed the toggle too.
+    registry.resolve([liveElsewhereRow()]);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    expect(screen.getByTestId("chooser").dataset.agent).toBe("codex");
   });
 
   it("mints immediately with no race when the registry is already loaded before the click (unchanged behaviour)", async () => {

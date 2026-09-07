@@ -326,6 +326,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     setChooserAgent(agent);
     void persistViewerTerminalAgent(agent).catch(() => {});
   }, []);
+  // An incoming launch (bus payload) carries the agent the user explicitly
+  // clicked — "Codex → In the browser" sends agent:"codex". The board-level
+  // chooser's toggle (chooserAgent) must reflect THAT, not the remembered
+  // pick, or the panel shows Claude after a Codex click AND
+  // handleChooserStartNew's `{ ...pendingLaunch, agent: chooserAgent }` then
+  // overwrites the explicit choice with the stale toggle (the task dialog
+  // already honours this via taskDialogAgent — see the effect below). Also
+  // marks the seed ref so a late-resolving rememberedAgent can't clobber it.
+  // No persist: this mirrors an explicit launch, not a manual toggle write.
+  const seedChooserAgentFromLaunch = useCallback((payload: BrowserLaunchPayload | null) => {
+    if (payload?.agent) {
+      chooserAgentSeededRef.current = true;
+      setChooserAgent(payload.agent);
+    }
+  }, []);
   // Dock-open persistence (rework 5, card cbe60db5 — Nick's field test: "fix
   // the terminal panel staying open as well"). Initial paint stays collapsed
   // (SSR-safe, matches every other install-first input use-terminal-session.ts
@@ -1984,12 +1999,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // visible underneath.
         setExpanded(true);
         setPendingLaunch(payload);
+        seedChooserAgentFromLaunch(payload);
         if (sessionsRef.current.length > 0) setChooserMode("launch");
         return;
       }
       mintAndDeliver(payload);
     },
-    [mintAndDeliver],
+    [mintAndDeliver, seedChooserAgentFromLaunch],
   );
 
   // The "In the browser" menu item (board toolbar) and task-card menus fire the
@@ -2167,7 +2183,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // from that state alone — nothing else to do. With a tab already
         // open, `deliverLaunch` couldn't know the resolved kind yet at queue
         // time, so the overlay hasn't been shown — open it now,
-        // non-destructively.
+        // non-destructively. Either way, seed the toggle from the explicit
+        // launch agent — the queue-time branch in `deliverLaunch` set
+        // `pendingLaunch` before the decision was known and couldn't do it.
+        seedChooserAgentFromLaunch(pendingLaunch);
         if (sessions.length > 0) setChooserMode("launch");
         return;
       }
@@ -2190,7 +2209,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections, seedChooserAgentFromLaunch]);
 
   // Cross-board resume fix (bug 62e57071, Sentinel's investigation): a
   // Recent row can belong to ANY board — chooser-data.ts's Recent section is
