@@ -156,6 +156,24 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     expect(promptText).toContain("task-abc-789");
   });
 
+  it("carries an EXPLICIT agent:'claude' in the browser-launch payload (regression: an explicit Claude choice must not be dropped to undefined, which the dock reads as 'remembered pick' and defaults to Codex)", async () => {
+    renderMenuItem({ taskId: "task-abc-789" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
+
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string };
+    expect(payload.agent).toBe("claude");
+  });
+
+  it("carries agent:'codex' when launching Codex in the browser", async () => {
+    renderMenuItem({ taskId: "task-abc-789" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Launch Codex in browser terminal/i }));
+
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string };
+    expect(payload.agent).toBe("codex");
+  });
+
   // Nick, 3 Sep 2026: the board page's recorded-folder list is a one-shot SSR
   // snapshot. A folder the agent recorded during the PREVIOUS session on this
   // page was invisible to the next launch until a reload, so that launch went
