@@ -1118,7 +1118,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("stays hidden when the only live session here is this tab's own", async () => {
@@ -1127,7 +1127,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("shows singular copy for exactly one other live session on this board", async () => {
@@ -1140,7 +1140,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     );
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Another session is live here")).toBeInTheDocument());
     // Never worded as a stranger's session — Phase 1 is same-user-only (the
     // investigation step confirmed terminal_sessions RLS is owner-only).
     expect(screen.queryByText(/someone else/i)).not.toBeInTheDocument();
@@ -1157,7 +1157,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     );
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByText("2 other tabs are open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2 other sessions are live here")).toBeInTheDocument());
   });
 
   it("never counts a live session on a DIFFERENT board", async () => {
@@ -1166,7 +1166,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("updates reactively — appears once a registry refresh reveals a 2nd live session here", async () => {
@@ -1178,7 +1178,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
 
     // Force a registry refresh via the same fallback `performReattach`'s
     // failure path already triggers (see the Bug A retry tests above) —
@@ -1187,7 +1187,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     // runs and picks up the 2nd row.
     fireEvent.click(screen.getByTestId("chooser-reconnect-here-own-sid"));
 
-    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Another session is live here")).toBeInTheDocument());
   });
 });
 
@@ -2709,7 +2709,7 @@ describe("TerminalDock — multi-terminal reload restore", () => {
 
     await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
     expect(reattached.sort()).toEqual(["own-sid-1", "own-sid-2"]);
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
   });
 
