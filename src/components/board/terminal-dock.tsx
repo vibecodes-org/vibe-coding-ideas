@@ -2680,17 +2680,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               sessions is live on THIS board. Phase 1 only (see the
               investigation step): `terminal_sessions` RLS is owner-only, so
               every `liveHere` row is guaranteed to be this same person's,
-              never a collaborator's — the copy says "tab", never "someone
-              else". */}
+              never a collaborator's — the copy says "session", never "someone
+              else". It says "session" and NOT "tab" deliberately: a live row
+              means a session the server still has marked active, which need
+              NOT have any window open — closing a tab (or an orphaned/ghost
+              row) leaves the session live with no tab at all (Nick, 6 Sep
+              2026: badge said "Another tab is open here" with no other tab —
+              a stale no-task session was still active on the board). */}
           {otherLiveHere.length > 0 && (
             <span
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300"
-              title={`Also open here: ${otherLiveHere.map((r) => r.taskTitle ?? r.cwd ?? "another folder").join(", ")}`}
+              title={`Also live on this board: ${otherLiveHere.map((r) => r.taskTitle ?? r.cwd ?? "another folder").join(", ")}`}
             >
               <span aria-hidden="true">⚠</span>
               {otherLiveHere.length === 1
-                ? "Another tab is open here"
-                : `${otherLiveHere.length} other tabs are open here`}
+                ? "Another session is live here"
+                : `${otherLiveHere.length} other sessions are live here`}
             </span>
           )}
           {/* Card b70bcbeb: same amber "other board" marker as the tab strip,
