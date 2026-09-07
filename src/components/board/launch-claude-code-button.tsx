@@ -475,9 +475,16 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           // B10's dedupe never mistakes two board launches for the same task.
           taskId: props.variant === "board" ? undefined : props.taskId,
           taskTitle: props.variant === "board" ? undefined : props.taskTitle,
-          // Codex support: absent/"claude" is dropped by the dock's own
-          // downstream handling (byte-identical to before this param existed).
-          agent: agent === "codex" ? "codex" : undefined,
+          // Carry the EXPLICIT agent choice verbatim — including "claude". A
+          // launch fired from "Launch Claude Code in browser" MUST record
+          // agent:"claude" so the dock's task-launch dialog pre-selects Claude
+          // (it reads `pendingLaunch.agent ?? rememberedPick`; sending undefined
+          // here silently dropped the explicit choice and fell back to the
+          // remembered agent — e.g. showing Codex after a Codex launch). The
+          // final vibecodes:// link is still byte-identical for "claude" vs
+          // absent (deep-link.ts treats them the same), so the wire format is
+          // unchanged — only the internal choice is now preserved.
+          agent,
         });
       });
     },
