@@ -174,33 +174,37 @@ export interface AgentAwarePlatformModelDefaults {
 }
 
 /**
- * Seed Codex model ids — PLACEHOLDERS PENDING NICK'S CONFIRMATION (FR-1).
- * `codex --help` (installed locally, v0.153.4) documents `-m/--model` and
- * `-c model_reasoning_effort=<level>` but does not enumerate a model catalogue;
- * this repo has no access to OpenAI's live model list. "gpt-5.1-codex" /
- * "gpt-5.1-codex-mini" are realistic-shaped ids (Codex CLI's own model-family
- * naming convention) standing in for a strong/small pair until Nick confirms
- * the actual ids to ship. Free text is always accepted regardless (FR-1) — a
- * wrong seed here never blocks a real model id from being configured.
+ * Seed Codex model ids — CONFIRMED BY NICK (7 Sep 2026). Current Codex lineup
+ * (Sept 2026): GPT-6 Astra (`gpt-6-astra`, GA'd 3 Sep, staged rollout) is the
+ * new frontier; the GPT-5.6 family — Sol (flagship), Terra (workhorse), Luna
+ * (budget) — is the broadly-available generation. Effort levels are
+ * minimal/low/medium/high/xhigh, but Sol/Terra/Luna top out at "high".
+ *
+ * Astra is deliberately the Frontier default even though its rollout isn't
+ * complete: a user whose Codex account can't reach `gpt-6-astra` yet degrades
+ * to the Frontier fallback `gpt-5.6-sol` (the current flagship) rather than
+ * failing. Free text is always accepted (FR-1), so any user can override.
  */
 export const SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS: AgentAwarePlatformModelDefaults = {
   defaults: {
     frontier: {
       claude: { model: SEED_PLATFORM_MODEL_DEFAULTS.defaults.frontier, effort: "high" },
-      codex: { model: "gpt-5.1-codex", effort: "high" },
+      codex: { model: "gpt-6-astra", effort: "high" },
     },
     standard: {
       claude: { model: SEED_PLATFORM_MODEL_DEFAULTS.defaults.standard, effort: "medium" },
-      codex: { model: "gpt-5.1-codex-mini", effort: "medium" },
+      codex: { model: "gpt-5.6-sol", effort: "medium" },
     },
     cheap: {
       claude: { model: SEED_PLATFORM_MODEL_DEFAULTS.defaults.cheap, effort: "low" },
-      codex: { model: "gpt-5.1-codex-mini", effort: "low" },
+      codex: { model: "gpt-5.6-luna", effort: "low" },
     },
   },
   fallback: {
     claude: SEED_PLATFORM_MODEL_DEFAULTS.fallback,
-    codex: { "gpt-5.1-codex": "gpt-5.1-codex-mini", "gpt-5.1-codex-mini": "gpt-5.1-codex" },
+    // Astra (mid-rollout) degrades to the current flagship; the 5.6 family
+    // steps down toward the budget model.
+    codex: { "gpt-6-astra": "gpt-5.6-sol", "gpt-5.6-sol": "gpt-5.6-luna", "gpt-5.6-luna": "gpt-5.6-sol" },
   },
 };
 

@@ -132,7 +132,7 @@ function AgentModelField({
             id={id}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={agent === "claude" ? "e.g. opus-5.5" : "e.g. gpt-5.1-codex"}
+            placeholder={agent === "claude" ? "e.g. opus-5.5" : "e.g. gpt-6-astra"}
             disabled={disabled}
             aria-invalid={codexBlocked || undefined}
             aria-describedby={codexBlocked ? `${id}-error` : isNovel ? `${id}-novel-warning` : undefined}

@@ -4308,10 +4308,10 @@ describe("resolveModelTier", () => {
     expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", effort: "low", fallback: "sonnet" });
   });
 
-  it("resolves each Codex tier to its seed placeholder model/effort/fallback", () => {
-    expect(resolveModelTier("frontier", "codex")).toEqual({ resolved: "gpt-5.1-codex", effort: "high", fallback: "gpt-5.1-codex-mini" });
-    expect(resolveModelTier("standard", "codex")).toEqual({ resolved: "gpt-5.1-codex-mini", effort: "medium", fallback: "gpt-5.1-codex" });
-    expect(resolveModelTier("cheap", "codex")).toEqual({ resolved: "gpt-5.1-codex-mini", effort: "low", fallback: "gpt-5.1-codex" });
+  it("resolves each Codex tier to its confirmed seed model/effort/fallback", () => {
+    expect(resolveModelTier("frontier", "codex")).toEqual({ resolved: "gpt-6-astra", effort: "high", fallback: "gpt-5.6-sol" });
+    expect(resolveModelTier("standard", "codex")).toEqual({ resolved: "gpt-5.6-sol", effort: "medium", fallback: "gpt-5.6-luna" });
+    expect(resolveModelTier("cheap", "codex")).toEqual({ resolved: "gpt-5.6-luna", effort: "low", fallback: "gpt-5.6-sol" });
   });
 
   it("uses the caller's Claude override when the tier is present and valid", () => {
@@ -4350,7 +4350,7 @@ describe("resolveModelTier", () => {
     });
     // The legacy flat shape carries no Codex information — Codex still resolves to its own platform default.
     expect(resolveModelTier("frontier", "codex", { frontier: "opus" })).toEqual({
-      resolved: "gpt-5.1-codex", effort: "high", fallback: "gpt-5.1-codex-mini",
+      resolved: "gpt-6-astra", effort: "high", fallback: "gpt-5.6-sol",
     });
   });
 
@@ -4413,15 +4413,15 @@ describe("modelTierClause", () => {
 
   it("produces the Codex-worded directive — never mentions the Task tool", () => {
     const clause = modelTierClause("standard", "codex");
-    expect(clause).toContain('switch this Codex session to model "gpt-5.1-codex-mini" with reasoning effort "medium"');
+    expect(clause).toContain('switch this Codex session to model "gpt-5.6-sol" with reasoning effort "medium"');
     expect(clause).not.toContain("Task tool");
     expect(clause).not.toContain("subagent");
   });
 
   it("never capitalises a Codex model id in the clause", () => {
     const clause = modelTierClause("standard", "codex");
-    expect(clause).toContain("gpt-5.1-codex-mini");
-    expect(clause).not.toContain("Gpt-5.1-Codex-Mini");
+    expect(clause).toContain("gpt-5.6-sol");
+    expect(clause).not.toContain("Gpt-5.6-Sol");
   });
 
   it("includes the doc-precedence rule for the platform-default path (URGENT stale-CLAUDE.md fix)", () => {
@@ -4572,8 +4572,8 @@ describe("resolveTierAdherence", () => {
   });
 
   it("resolves and honors a Codex model+effort report", () => {
-    expect(resolveTierAdherence("standard", "codex", "gpt-5.1-codex-mini", "medium")).toEqual({
-      executedModel: "gpt-5.1-codex-mini",
+    expect(resolveTierAdherence("standard", "codex", "gpt-5.6-sol", "medium")).toEqual({
+      executedModel: "gpt-5.6-sol",
       executedEffort: "medium",
       tierHonored: true,
       viaFallback: false,

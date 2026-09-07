@@ -165,7 +165,7 @@ function AgentTierCell({
             id={idBase}
             value={staged?.model ?? ""}
             onChange={(e) => onModelChange(e.target.value)}
-            placeholder="e.g. gpt-5.1-codex"
+            placeholder="e.g. gpt-6-astra"
             disabled={disabled}
             aria-invalid={codexBlocked || undefined}
             aria-describedby={codexBlocked ? codexErrorId : codexIsNovel ? codexNovelId : undefined}

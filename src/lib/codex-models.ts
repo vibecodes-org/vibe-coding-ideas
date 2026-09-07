@@ -18,20 +18,21 @@ import { REASONING_EFFORT_LEVELS, type ReasoningEffort } from "@/lib/platform-mo
 export { REASONING_EFFORT_LEVELS, type ReasoningEffort };
 
 /**
- * Seed Codex model catalogue — PLACEHOLDERS PENDING NICK'S CONFIRMATION.
- * `codex --help` / `codex doctor` (installed locally, CLI v0.153.4) confirm
- * `-m/--model <MODEL>` takes a free-text model id and `-c
- * model_reasoning_effort=<level>` is a real, separate config key (this
- * machine's own `~/.codex/config.toml` has `model_reasoning_effort = "high"`
- * set) — but neither surfaces an enumerable model catalogue, and this repo
- * has no network access to OpenAI's live model list. These three ids are
- * realistic-shaped placeholders (Codex's own "-codex" / "-codex-mini" naming
- * convention) for a strong/mid/small ladder, NOT confirmed real ids — swap
- * them for whatever Nick confirms before shipping FR-7's UI.
+ * Codex model catalogue — the advisory "known" list (drives the model picker's
+ * suggestions and the "unknown model" advisory; free text is always accepted).
+ * Current Codex lineup as of Sept 2026: GPT-6 Astra (`gpt-6-astra`, GA 3 Sep,
+ * staged rollout) is the new frontier; the GPT-5.6 family — Sol (flagship),
+ * Terra (workhorse), Luna (budget) — is the broadly-available generation, with
+ * GPT-5.5 / GPT-5.4 still selectable. `-c model_reasoning_effort=` accepts
+ * minimal/low/medium/high/xhigh, but the 5.6 family tops out at "high". This
+ * list is advisory only and updated as OpenAI's lineup moves.
  */
 export const KNOWN_CODEX_MODELS = [
-  { value: "gpt-5.1-codex", label: "gpt-5.1-codex", tier: "frontier" as const },
-  { value: "gpt-5.1-codex-mini", label: "gpt-5.1-codex-mini", tier: "standard" as const },
+  { value: "gpt-6-astra", label: "gpt-6-astra", tier: "frontier" as const },
+  { value: "gpt-5.6-sol", label: "gpt-5.6-sol", tier: "frontier" as const },
+  { value: "gpt-5.6-terra", label: "gpt-5.6-terra", tier: "standard" as const },
+  { value: "gpt-5.6-luna", label: "gpt-5.6-luna", tier: "cheap" as const },
+  { value: "gpt-5.5", label: "gpt-5.5", tier: "standard" as const },
 ] as const;
 
 export function isKnownCodexModel(value: string): boolean {
@@ -68,7 +69,7 @@ export function validateCodexModelValue(value: string): CodexModelValidation {
   if (SHELL_METACHARACTERS.test(value)) {
     return {
       ok: false,
-      reason: "Model ids can't contain shell characters. Use a model id like gpt-5.1-codex.",
+      reason: "Model ids can't contain shell characters. Use a model id like gpt-6-astra.",
     };
   }
   return { ok: true };
