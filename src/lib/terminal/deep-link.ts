@@ -112,6 +112,15 @@ export interface LaunchDeepLinkParams {
    */
   model?: string;
   /**
+   * FR-4 (agent-aware model tiers) — the Codex reasoning effort a FRESH Codex
+   * launch opens on (`codex -c model_reasoning_effort=<effort>`). Resolved
+   * server-side at mint time alongside `model` (which, for a Codex launch, is
+   * the Codex model id). Hard whitelist low/medium/high; a Claude launch never
+   * sets it. Fresh-launch only, same constraint as `model`. Mirrors
+   * terminal/shared/deep-link.mjs (drift-tested).
+   */
+  effort?: string;
+  /**
    * Task d3de150c ("Terminal mode") — set ONLY when the launching user's
    * `terminal_auto_accept` preference is on, resolved server-side at mint
    * time (see src/app/api/terminal/session/route.ts). The single valid
@@ -180,6 +189,7 @@ export function buildLaunchDeepLink({
   cols,
   rows,
   model,
+  effort,
   permissionMode,
   worktree,
   agent,
@@ -210,6 +220,11 @@ export function buildLaunchDeepLink({
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // class doc comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
+  // FR-4: the Codex reasoning effort, alongside `model` — same insertion point.
+  // Hard whitelist (low/medium/high); anything else is never fired.
+  if (effort === "low" || effort === "medium" || effort === "high") {
+    parts.push(`effort=${encodeURIComponent(effort)}`);
+  }
   // Task d3de150c: same insertion point as `model` — before `prompt`,
   // alongside the other optional non-secret params. Whitelist-checked here
   // too (not just at parse time) so a malformed/forbidden value passed by a

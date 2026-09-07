@@ -172,6 +172,12 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 // resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
 // (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
+// FR-4 (agent-aware model tiers): the Codex reasoning effort, already
+// parse-time whitelisted (low/medium/high) by the shared module. Only ever
+// applied on a FRESH Codex launch (see resolveAgentLaunch's codex branch),
+// alongside MODEL — which, for a Codex launch, is the Codex model id the mint
+// resolved. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
+const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
 // `permissionMode` param, already parse-time whitelisted by the shared
 // module's isPermissionModeSafe (only the literal "auto" ever
@@ -220,6 +226,11 @@ const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
   resumeId: RESUME_ID,
   resume: RESUME,
   model: MODEL,
+  // FR-4: for a Codex launch MODEL is the Codex model id (mint-resolved); the
+  // codex branch reads codexModel/codexEffort, the claude branch reads model —
+  // only one fires per AGENT, so passing MODEL to both is safe.
+  codexModel: MODEL,
+  codexEffort: EFFORT,
   permissionMode: PERMISSION_MODE,
   worktree: WORKTREE,
   mintId: () => crypto.randomUUID(),

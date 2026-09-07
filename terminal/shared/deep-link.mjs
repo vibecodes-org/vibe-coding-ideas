@@ -217,6 +217,17 @@ function isAgentSafe(v) {
   return v === "codex";
 }
 
+/** FR-4 (agent-aware model tiers) — the Codex reasoning-effort a fresh Codex
+ *  launch opens on (`-c model_reasoning_effort=<effort>`). Hard whitelist of
+ *  the shared ladder (REASONING_EFFORT_LEVELS in src/lib/platform-model-defaults.ts).
+ *  Only meaningful alongside `model` on a Codex launch; a Claude launch ignores
+ *  it. Rechecked on both build and parse.
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isEffortSafe(v) {
+  return v === "low" || v === "medium" || v === "high";
+}
+
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&agent=codex][&prompt=…]`
  * deep link.
@@ -230,7 +241,7 @@ function isAgentSafe(v) {
  * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, agent?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode, worktree, agent } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, effort, permissionMode, worktree, agent } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -257,6 +268,9 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // header comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
+  // FR-4: the Codex reasoning effort, alongside `model` — same insertion point,
+  // whitelist-checked here too so a malformed value is never fired.
+  if (effort && isEffortSafe(effort)) parts.push(`effort=${encodeURIComponent(effort)}`);
   // Task d3de150c: same insertion point as `model` — before `prompt`.
   // Whitelist-checked here too (not just at parse time), so a malformed or
   // forbidden value can never even be fired in a link.
@@ -368,6 +382,12 @@ export function parseLaunchDeepLink(url) {
   // this parser simply never reads "agent" at all — no version-skew risk.
   const rawAgent = parsed.searchParams.get("agent");
   const agent = rawAgent && isAgentSafe(rawAgent) ? rawAgent : undefined;
+  // FR-4: re-validated here exactly like permissionMode above — a hard
+  // whitelist (low/medium/high); anything else is dropped silently. An old
+  // helper's bundled copy of this parser simply never reads "effort" — no
+  // version-skew risk.
+  const rawEffort = parsed.searchParams.get("effort");
+  const effort = rawEffort && isEffortSafe(rawEffort) ? rawEffort : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -380,6 +400,7 @@ export function parseLaunchDeepLink(url) {
     out.rows = parsedRows;
   }
   if (model) out.model = model;
+  if (effort) out.effort = effort;
   if (permissionMode) out.permissionMode = permissionMode;
   if (worktree) out.worktree = worktree;
   if (agent) out.agent = agent;
