@@ -1215,3 +1215,53 @@ describe("TerminalSessionView — 'not encrypted yet' chip (Terminal P2 E2EE)", 
     expect(screen.getByText(E2EE_COPY.chip.notE2ee)).toBeInTheDocument();
   });
 });
+
+// Split view — pane visual order (Nick's field report, 7 Sep 2026: after a
+// resume/reconnect the two tabs showed each other's session id, because the
+// tab strip lays out in `paneKeys` order while the body maps `sessions` array
+// order). `paneOrder` (the pane's index within `paneKeys`) is applied as CSS
+// `order` so the body's visual left→right always follows `paneKeys` too —
+// then the two can never cross. Style-only, so no live xterm node moves.
+describe("TerminalSessionView pane order", () => {
+  function renderPane(paneOrder: number | undefined) {
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        poppedOut={false}
+        onBringBack={vi.fn()}
+        // A defined `paneFocused` is what marks this view as one of the split's
+        // panes (`inPane`), which is when `paneOrder` is honoured.
+        paneFocused={false}
+        paneOrder={paneOrder}
+      />,
+    );
+  }
+
+  it("applies paneOrder as the pane's CSS order so the body follows paneKeys", () => {
+    installMockSession();
+    renderPane(1);
+    // The pane root is the tabpanel (only present when inPane).
+    expect(screen.getByRole("tabpanel").style.order).toBe("1");
+  });
+
+  it("honours order 0 (a paneKeys[0] pane must not be treated as 'no order')", () => {
+    installMockSession();
+    renderPane(0);
+    expect(screen.getByRole("tabpanel").style.order).toBe("0");
+  });
+
+  it("sets no order when paneOrder is omitted (tabbed mode)", () => {
+    installMockSession();
+    renderPane(undefined);
+    expect(screen.getByRole("tabpanel").style.order).toBe("");
+  });
+});

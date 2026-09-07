@@ -3497,6 +3497,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResumeEndedSession={handleResumeEndedSession}
             lastHelperStatus={lastHelperStatus}
             wakeResume={wakeResumeByKey[entry.key] ?? null}
+            // Keep the pane's visual position tied to `paneKeys` (the canonical
+            // left→right order), not this map's `sessions` array order — else a
+            // resume/reconnect that reorders `paneKeys` leaves the tab strip
+            // (which maps `paneKeys`) crossed over the body (Nick, 7 Sep 2026).
+            paneOrder={inPane ? paneIndex : undefined}
           />
           );
         })}
