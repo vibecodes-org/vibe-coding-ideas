@@ -354,7 +354,7 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
   it("fires a vibecodes://open-terminal link with agent=codex when the helper reports codex installed", async () => {
     mockFetchHelperStatus.mockResolvedValue({
       connected: true,
-      version: "0.3.11",
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
       machineLabel: null,
       alwaysOn: false,
       stoppedUnexpectedly: false,
@@ -420,7 +420,7 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
   it("codex reported missing: shows the not-installed toast with an install link, never fires a link", async () => {
     mockFetchHelperStatus.mockResolvedValue({
       connected: true,
-      version: "0.3.11",
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
       machineLabel: null,
       alwaysOn: false,
       stoppedUnexpectedly: false,
@@ -441,7 +441,7 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
   it("unknown codex-installed state (older helper, null) does NOT block the launch (unknown reads as enabled)", async () => {
     mockFetchHelperStatus.mockResolvedValue({
       connected: true,
-      version: "0.3.11",
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
       machineLabel: null,
       alwaysOn: false,
       stoppedUnexpectedly: false,
@@ -463,7 +463,7 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
   it("no folder known: opens the pick-a-folder dialog instead of firing a folder-less launch (FR-12)", async () => {
     mockFetchHelperStatus.mockResolvedValue({
       connected: true,
-      version: "0.3.11",
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
       machineLabel: null,
       alwaysOn: false,
       stoppedUnexpectedly: false,

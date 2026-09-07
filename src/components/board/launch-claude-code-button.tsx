@@ -257,7 +257,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // passes `true`; handleLaunchInBrowser leaves it `false` (default) so the
   // note never rides alongside vibecodes://'s real, enforced flag.
   const buildCompactEssentials = useCallback(
-    (state: LaunchPathState, includeIsolationAdvisory = false): CompactPromptEssentials => {
+    (
+      state: LaunchPathState,
+      includeIsolationAdvisory = false,
+      agent: "claude" | "codex" = "claude"
+    ): CompactPromptEssentials => {
       const { newProject, existingPath } = compactDirArgsFor(state);
       return buildCompactPromptEssentials({
         appUrl: APP_URL,
@@ -269,6 +273,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         existingPath,
         taskId: props.variant === "board" ? undefined : props.taskId,
         includeIsolationAdvisory,
+        agent,
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
@@ -461,7 +466,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // it). cwd rides the payload so a pinned/recorded existing folder is
       // honoured in the browser too.
       void resolveFreshLaunch().then(({ state, cwd }) => {
-        const essentials = buildCompactEssentials(state);
+        const essentials = buildCompactEssentials(state, false, agent);
         requestBrowserLaunch({
           essentials,
           cwd,
@@ -493,16 +498,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // cwdPolicy:"keep" — FR-12), but through OUR OWN scheme + helper instead of
   // a third-party handler, since Codex has no scheme of its own (§2.3).
   //
-  // SCOPE NOTE: the prompt below still reuses the SAME agent-agnostic
-  // essentials builder the existing "in the browser" Codex launch already
-  // uses (buildCompactEssentials) — it assumes Claude's own MCP setup
-  // commands (`claude mcp add …`), pending the Codex-specific bootstrap-
-  // prompt head (requirements FR-6), which is a separate product decision
-  // not yet implemented anywhere in this codebase and outside this slice's
-  // scope (bridge + helper release-packaged code). This wiring is therefore
-  // exactly as complete as today's browser Codex path — not a regression,
-  // but the board-connect step Codex actually sees will say "claude mcp add"
-  // until FR-6 lands.
+  // FR-6 (now implemented): the prompt below reuses the SAME essentials
+  // builder as the "in the browser" Codex launch (buildCompactEssentials),
+  // passing agent: "codex" so the board-connect step uses Codex's own
+  // connector commands (`codex mcp add … --url` / `codex mcp login`) instead
+  // of Claude's `claude mcp add`/`/mcp`.
   //
   // Pre-flight gating here is deliberately MINIMAL (fails toward "let the
   // helper's own runtime checks decide" rather than a full disabled-menu-item
@@ -573,7 +573,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         }
         const helperToken = tokenBody.helperToken;
 
-        const essentials = buildCompactEssentials(state, true);
+        const essentials = buildCompactEssentials(state, true, "codex");
         const result = buildBoundedDeepLink({
           essentials,
           cwd: resolvedCwd,
