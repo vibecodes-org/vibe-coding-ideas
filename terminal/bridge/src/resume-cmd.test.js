@@ -230,6 +230,44 @@ test("AC-3: a fresh codex launch with model/permissionMode/worktree emits NONE o
   assert.equal(result.conv, null, "a fresh codex launch never knows its conversation id");
 });
 
+// FR-4: a fresh Codex launch opens on the chosen Codex model + effort.
+test("FR-4: fresh codex with valid codexModel + codexEffort emits `-m <model> -c model_reasoning_effort=<effort>`", () => {
+  const result = resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "high", mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "codex -m gpt-6-astra -c model_reasoning_effort=high", conv: null });
+});
+
+test("FR-4: emits NEITHER flag when only one of codexModel/codexEffort is present", () => {
+  assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", mintId: () => MINTED }).cmd, "codex");
+  assert.equal(resolveAgentLaunch({ agent: "codex", codexEffort: "high", mintId: () => MINTED }).cmd, "codex");
+});
+
+test("FR-4: drops an invalid effort (not low/medium/high) -> bare codex", () => {
+  assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "turbo", mintId: () => MINTED }).cmd, "codex");
+});
+
+test("FR-4: drops a model with whitespace/shell metacharacters -> bare codex (never interpolated)", () => {
+  for (const bad of ["gpt; rm -rf /", "gpt $(whoami)", "gpt 6", "gpt`x`", "gpt|y"]) {
+    assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: bad, codexEffort: "high", mintId: () => MINTED }).cmd, "codex");
+  }
+});
+
+test("FR-4: never emits the Codex model/effort on a resume", () => {
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", resumeId: RESUME_ID, codexModel: "gpt-6-astra", codexEffort: "high", mintId: () => MINTED }).cmd,
+    `codex resume ${RESUME_ID}`
+  );
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", resume: true, codexModel: "gpt-6-astra", codexEffort: "high", mintId: () => MINTED }).cmd,
+    "codex resume --last"
+  );
+});
+
+test("FR-4: never emits the Codex model/effort for a Claude launch", () => {
+  const result = resolveAgentLaunch({ agent: "claude", codexModel: "gpt-6-astra", codexEffort: "high", mintId: () => MINTED });
+  assert.ok(!result.cmd.includes("gpt-6-astra"));
+  assert.ok(!result.cmd.includes("model_reasoning_effort"));
+});
+
 test("codex resume/resumeId branches also never receive Claude-only flags", () => {
   const resumed = resolveAgentLaunch({ agent: "codex", resume: true, model: "opus", worktree: true, mintId: () => MINTED });
   assert.equal(resumed.cmd, "codex resume --last");

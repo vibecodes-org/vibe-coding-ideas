@@ -126,15 +126,38 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
 // the caller passes in (AC-3's hard requirement) — `model`/`permissionMode`/
 // `worktree` are simply never read on that branch.
 
+// Dependency-free mirrors of validateCodexModelValue / validateReasoningEffort
+// (src/lib/codex-models.ts) — the bridge can't import the app's TS. Kept in
+// lock-step by the drift test against agent-launch.ts. FR-4: a fresh Codex
+// launch may open on a chosen model + effort, but only after BOTH pass here.
+const CODEX_SHELL_METACHARS = /[\]`$(){}<>\\'"*?~#!;&|[]/;
+const CODEX_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
+function isCodexModelSafe(value) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.trim().length <= 100 &&
+    !/\s/.test(value) &&
+    !CODEX_SHELL_METACHARS.test(value)
+  );
+}
+/** ` -m <model> -c model_reasoning_effort=<effort>` or "" — both must validate together. */
+function codexModelFlags(model, effort) {
+  if (!model || !effort) return "";
+  if (!isCodexModelSafe(model)) return "";
+  if (!CODEX_EFFORT_LEVELS.has(effort)) return "";
+  return ` -m ${model} -c model_reasoning_effort=${effort}`;
+}
+
 /**
  * Resolve the command to spawn for a launch, agent-aware. `agent` absent or
  * anything other than the exact literal `"codex"` delegates straight to
  * {@link resolveClaudeLaunch} (Claude's own four branches, unchanged).
  *
- * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
+ * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId }) {
+export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, mintId }) {
   if (agent !== "codex") {
     return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId });
   }
@@ -143,12 +166,14 @@ export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
   // Exact resume (deferred feature, requirements FR-2: "the resolver should
   // support it now so the deep link shape is settled" — only reachable once
-  // Codex conversation ids are tracked; harmless to support today).
+  // Codex conversation ids are tracked; harmless to support today). Never
+  // carries a model/effort — a resumed conversation keeps its own model.
   if (resumeId) return { cmd: `codex resume ${resumeId}`, conv: resumeId };
   // Legacy/most-recent resume — Codex's closest analogue to `--continue`.
   if (resume) return { cmd: "codex resume --last", conv: null };
   // Fresh launch: Codex has no pre-assignable session id (§2.2), so `conv` is
-  // honestly null — nothing upstream may assume it's present. `model`,
-  // `permissionMode` and `worktree` are deliberately never read here.
-  return { cmd: "codex", conv: null };
+  // honestly null. FR-4: open on the chosen Codex model + effort when both
+  // validate, else bare `codex`. `model`/`permissionMode`/`worktree` (Claude's)
+  // are still never read here.
+  return { cmd: `codex${codexModelFlags(codexModel, codexEffort)}`, conv: null };
 }

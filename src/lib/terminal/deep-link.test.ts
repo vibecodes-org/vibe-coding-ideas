@@ -194,6 +194,25 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
     expect(url.indexOf("model=")).toBeLessThan(url.indexOf("prompt="));
   });
 
+  // FR-4: the Codex reasoning effort rides alongside `model`.
+  it("includes a valid effort (low/medium/high), before prompt, and round-trips", () => {
+    const withEffort = { ...SAMPLE, model: "gpt-6-astra", effort: "high", prompt: "hi" };
+    const url = buildLaunchDeepLink(withEffort);
+    expect(url).toContain("effort=high");
+    expect(url.indexOf("effort=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withEffort);
+  });
+
+  it("drops an out-of-whitelist effort entirely (never fired)", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, model: "gpt-6-astra", effort: "turbo" });
+    expect(url).not.toContain("effort=");
+  });
+
+  it("omits effort when absent", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("effort=");
+  });
+
   it("carries a custom (non-alias) model id verbatim, URL-encoded", () => {
     const withModel = { ...SAMPLE, model: "claude-opus-5-20260101" };
     const url = buildLaunchDeepLink(withModel);

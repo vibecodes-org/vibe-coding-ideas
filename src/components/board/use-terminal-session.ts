@@ -1469,6 +1469,12 @@ export function useTerminalSession(
          */
         model?: string;
         /**
+         * FR-4 (agent-aware model tiers) — the Codex reasoning effort paired
+         * with `model` for a fresh Codex launch (low/medium/high), from the
+         * mint response. Same fresh-launch-only threading rule as `model`.
+         */
+        effort?: string;
+        /**
          * Task d3de150c ("Terminal mode" auto-accept toggle) — the mint
          * route's resolved permission mode (set only when the user's own
          * `terminal_auto_accept` preference is on). Same threading rule as
@@ -1641,6 +1647,9 @@ export function useTerminalSession(
               // Task c4ca2d95: fresh-launch only — the resume branch above
               // never reaches this call.
               model: opts?.model,
+              // FR-4: the Codex reasoning effort, paired with `model` for a
+              // fresh Codex launch. Same fresh-launch-only posture as `model`.
+              effort: opts?.effort,
               // Task d3de150c: same fresh-launch-only posture as `model`.
               permissionMode: opts?.permissionMode,
               // Concurrent-terminal isolation (QA-flagged fix): this destination
@@ -2298,6 +2307,8 @@ export function useTerminalSession(
       expiresAt: number;
       /** Task c4ca2d95 — the mint route's resolved effective terminal model, fresh-launch only. */
       model?: string;
+      /** FR-4 — the Codex reasoning effort paired with `model` for a fresh Codex launch. */
+      effort?: string;
       /** Task d3de150c — the mint route's resolved permission mode ("auto" or absent), fresh-launch only. */
       permissionMode?: string;
       /** Concurrent-session isolation — true when another of this user's sessions is already live on this board (fires `--worktree`), fresh-launch only. */
@@ -2446,6 +2457,7 @@ export function useTerminalSession(
       fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, {
         trigger: "connect",
         model: data.model,
+        effort: data.effort,
         permissionMode: data.permissionMode,
         isolate: data.isolate,
       });
