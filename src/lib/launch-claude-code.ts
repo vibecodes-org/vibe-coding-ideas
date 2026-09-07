@@ -794,7 +794,7 @@ If they are NOT available, add the hosted connector, then sign in:
 
 Do NOT use \`claude mcp add\` or \`/mcp\` — those are Claude Code commands and do nothing for Codex. Do NOT debug or reconfigure other MCP servers. If the board tools still aren't available after signing in, stop and tell me rather than guessing.
 
-You are Codex: whenever you call claim_next_step, complete_step or fail_step, pass agent: "codex" so each workflow step runs on your Codex model tier (and report reasoning_effort_used on completion).`;
+You are Codex: whenever you call claim_next_step, complete_step or fail_step, pass agent: "codex". For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its accepted launch settings on completion.`;
   }
   return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
 
@@ -1173,7 +1173,7 @@ function buildCompactStepPieces({
   // board).
   const connectStep =
     agent === "codex"
-      ? `Connect the board tools (if they're already available, skip this step): run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`, then \`codex mcp login vibecodes\` and sign in with your ChatGPT/OpenAI account. Do NOT use \`claude mcp add\` or \`/mcp\`. You are Codex: pass agent: "codex" to claim_next_step/complete_step/fail_step so steps run on your Codex model tier.`
+      ? `Connect if board tools are unavailable: run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`, then \`codex mcp login vibecodes\` (ChatGPT/OpenAI sign-in). Do NOT use \`claude mcp add\` or \`/mcp\`. Pass agent: "codex" to claim_next_step/complete_step/fail_step. For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its launch settings.`
       : `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`;
   const essentialSteps = [
     connectStep,
