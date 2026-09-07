@@ -165,12 +165,9 @@ export function resolveModelTier(
  * null/undefined tier so callers can add it unconditionally without changing
  * the instruction byte-for-byte on the Auto path (FR-12).
  *
- * `agent` selects the wording: the Claude clause (default) still spawns a
- * Task-tool subagent; the Codex clause instructs the Codex session itself to
- * switch model/effort (e.g. `/model`) and report what it used — and, per the
- * Design Review build condition, MUST NOT mention the Task tool (Codex has
- * no such tool; a Claude-specific instruction would be actively wrong there)
- * and must NEVER capitalise the Codex model id.
+ * `agent` selects the launch controls: Claude uses its Task tool; Codex uses
+ * explicit spawn parameters in a fresh context. A parent /model picker does
+ * not configure an already-spawned child. Keep the Claude clause unchanged.
  */
 export function modelTierClause(
   tier: string | null | undefined,
@@ -184,7 +181,7 @@ export function modelTierClause(
   const { resolved, effort, fallback } = resolution;
 
   if (agent === "codex") {
-    return `MANDATORY MODEL: before doing any work on this step, switch this Codex session to model "${resolved}" with reasoning effort "${effort}" (e.g. /model ${resolved} ${effort}) and confirm the switch. If "${resolved}" is unavailable, use model "${fallback}" at the same effort and state the substitution in your step output. Do not start the step's work before switching, and do not keep the session's current model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran on (or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
+    return `MANDATORY MODEL: launch this step's fresh Codex subagent with model: "${resolved}" and reasoning_effort: "${effort}" as actual spawn parameters, not just words in its prompt. Use fork_turns: "none" when supported; a full-history fork inherits the parent's model and cannot accept these overrides. The execution object contains the resolved launch settings. If the launch reports "${resolved}" unavailable, retry with model: "${fallback}" at the same effort and state the substitution in your output. Keep the accepted launch configuration with the returned child id. When calling complete_step/fail_step, pass agent: "codex", model_used and reasoning_effort_used from that child's accepted launch configuration (or a runtime-reported override). Do not ask the child to identify its model: lack of child introspection does not erase known launch settings. This is orchestrator-reported configuration, not independent verification of the provider runtime. Never report a requested configuration if the launch rejected it or fell back to something else. Do not switch the parent with /model or inherit its model for this tiered step. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. Never edit project docs to reconcile a model mismatch or record concrete tier→model mappings there; follow this claim's execution settings.`;
   }
 
   return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
@@ -968,7 +965,8 @@ export async function claimNextStep(
 
   const expected_deliverables = updated.expected_deliverables ?? [];
 
-  // Build an explicit instruction for Claude Code to switch identity before executing
+  const claimingAgent: AgentKind = params.agent ?? "claude";
+  // Select the persona independently of the CLI used to execute the step.
   const matchedAgent = updated.bot_id
     ? available_agents.find((a) => a.bot_id === updated.bot_id)
     : null;
@@ -1051,7 +1049,7 @@ export async function claimNextStep(
     `complete_step with the claim_token, stating verbatim in your output: "Completed inline — no subagent ` +
     `capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
 
-  const identityInstruction = personaEmbeddable
+  const claudeIdentityInstruction = personaEmbeddable
     ? `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
       `1. Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)\n` +
       `2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is ${personaRef}, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
@@ -1068,6 +1066,23 @@ export async function claimNextStep(
       `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
       `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
       noSubagentException;
+
+  // Codex has native spawn controls, but not Claude's Task tool or a callable
+  // /model picker. Keep this separate so the established Claude paths stay
+  // byte-identical (pinned by the pre-fix instruction hashes in workflows.test).
+  const codexIdentityInstruction =
+    `MANDATORY: execute each workflow step in a FRESH SUBAGENT using Codex's native spawn_agent capability (it may be namespaced as collaboration.spawn_agent).\n` +
+    pickStep +
+    `1. Keep claim_token in the orchestrator only. Never forward the entire claim response, because it contains this completion credential.\n` +
+    (personaEmbeddable
+      ? `2. Use persona_prompt verbatim as the child's persona instructions: ${personaRef}. It is already included; do not call get_agent_prompt.\n`
+      : `2. Call get_agent_prompt with agent_id ${agentIdArg} to obtain ${personaRef}'s full persona instructions.\n`) +
+    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, context (prior outputs with step names and IDs), approval_notes, rework_instructions, available_skills and their loading instructions, work_token, and the actual working directory. Preserve human approval constraints and prior-step feedback. Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
+    `4. The child does this step's work, comments with work_token, and returns its deliverable, relevant skills actually loaded, and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
+    `5. Wait for that child to finish; retry/resume the same child if interrupted. Complete only after receiving its deliverable, using agent: "codex", claim_token, output, model_used and reasoning_effort_used from the accepted launch, persona_used (verbatim/adapted/none), and skills_used. Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
+    `CAPABILITY CHECK: inspect the actual spawn tool schema. If it cannot set both model and effort for a tiered step, or there is no supported subagent capability, do not pretend an inline /model command or a model name in the prompt changes execution. Report the capability gap with a work_token comment and stop before doing the work; do not complete it as a successful tier test. Only report unknown when no accepted launch/runtime configuration is available.\n` +
+    `AUTO: when execution.model is null the tier makes no model promise; choose a supported model/effort for the fresh child and record what you actually launched.`;
+  const identityInstruction = claimingAgent === "codex" ? codexIdentityInstruction : claudeIdentityInstruction;
 
   const contextParts: string[] = [];
 
@@ -1192,7 +1207,6 @@ export async function claimNextStep(
   // precedence over userId so a bot acting for a human resolves against the
   // human's map, not the bot's. The two reads are independent, so they run in
   // parallel rather than serially.
-  const claimingAgent: AgentKind = params.agent ?? "claude";
   let userModelTierMap: unknown = null;
   let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
   if (updated.model_tier) {
@@ -1208,6 +1222,9 @@ export async function claimNextStep(
     platformDefaults = resolvedPlatformDefaults;
   }
   const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults);
+  const codexResolution = claimingAgent === "codex" && updated.model_tier
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
+    : null;
 
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
   // the Auto path so .filter(Boolean) drops it and the instruction stays
@@ -1219,6 +1236,17 @@ export async function claimNextStep(
     step: updated,
     claim_token,
     work_token: workTokenPair?.token ?? null,
+    ...(claimingAgent === "codex" ? {
+      execution: {
+        agent: "codex" as const,
+        mode: "subagent" as const,
+        fork_turns: "none" as const,
+        model: codexResolution?.resolved ?? null,
+        reasoning_effort: codexResolution?.effort ?? null,
+        fallback_model: codexResolution?.fallback ?? null,
+        reporting_source: "accepted_launch_configuration" as const,
+      },
+    } : {}),
     ...(personaEmbeddable
       ? {
           persona_prompt: matchedBot!.system_prompt,
