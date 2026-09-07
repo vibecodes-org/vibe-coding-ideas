@@ -309,6 +309,19 @@ interface TerminalSessionViewProps {
    * knows its own — never overrides a value the tab already has.
    */
   wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
+  /**
+   * Split view (Nick's field report, 7 Sep 2026 — tab labels crossed after a
+   * resume/reconnect): the body maps every session in `sessions` array order
+   * to keep them all mounted, but the tab strip above lays its columns out in
+   * `paneKeys` order — the canonical left→right order the rest of the dock
+   * uses (keyboard nav, drag assignment, focus). When a resume/reconnect
+   * reorders `paneKeys` away from the array order, the two disagreed and a
+   * tab sat over the WRONG pane. This is that pane's index within `paneKeys`;
+   * applied as CSS `order` so the visual left→right of the panes always
+   * follows `paneKeys` too — a pure style change, so no live xterm DOM node
+   * ever moves. Undefined in tabbed mode (only one pane is visible anyway).
+   */
+  paneOrder?: number;
 }
 
 export function TerminalSessionView({
@@ -341,6 +354,7 @@ export function TerminalSessionView({
   onPaneFocusChange,
   lastHelperStatus,
   wakeResume,
+  paneOrder,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -608,6 +622,10 @@ export function TerminalSessionView({
         inPane && paneFocused && "border-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_0_14px_rgba(56,189,248,0.12)]",
         inPane && !paneFocused && "border-zinc-800",
       )}
+      // Pane visual order follows `paneKeys` (see `paneOrder` prop doc) so the
+      // tab strip and the pane body can never cross. Style-only: the DOM order
+      // (and so the live xterm node) never moves.
+      style={inPane && typeof paneOrder === "number" ? { order: paneOrder } : undefined}
       aria-hidden={!isActive}
       role={inPane ? "tabpanel" : undefined}
       aria-label={inPane ? paneAccessibleName(label, !!paneFocused) : undefined}
