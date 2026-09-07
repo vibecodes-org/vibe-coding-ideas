@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import { matchRegisteredRedirectUri, resolveRedirectTarget } from "@/lib/oauth-redirect";
 
 function getServiceClient() {
   return createClient<Database>(
@@ -56,12 +57,22 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!client.redirect_uris.includes(redirectUri)) {
+    // Loopback-aware match (RFC 8252 §7.3): native clients redirect to a
+    // loopback address whose host form (127.0.0.1 / localhost / ::1) and port
+    // vary. Our platform also normalizes 127.0.0.1 -> localhost on the incoming
+    // query string, so an exact string match wrongly rejected Codex, which
+    // registers http://127.0.0.1:<ephemeral-port>/callback/<id>.
+    const matchedRedirectUri = matchRegisteredRedirectUri(client.redirect_uris, redirectUri);
+    if (!matchedRedirectUri) {
       return jsonResponse(
         { error: "invalid_request", error_description: "redirect_uri not registered for this client" },
         400
       );
     }
+
+    // Send the browser back to the host form the client actually registered
+    // (its callback server binds that), on the port from this live request.
+    const effectiveRedirectUri = resolveRedirectTarget(matchedRedirectUri, redirectUri);
 
     // Redirect to the consent/login page with all OAuth params
     if (!process.env.NEXT_PUBLIC_APP_URL) {
@@ -73,7 +84,7 @@ export async function GET(request: Request) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
     const loginUrl = new URL(`${baseUrl}/oauth/authorize`);
     loginUrl.searchParams.set("client_id", clientId);
-    loginUrl.searchParams.set("redirect_uri", redirectUri);
+    loginUrl.searchParams.set("redirect_uri", effectiveRedirectUri);
     loginUrl.searchParams.set("code_challenge", codeChallenge);
     loginUrl.searchParams.set("code_challenge_method", codeChallengeMethod || "S256");
     loginUrl.searchParams.set("state", state);
