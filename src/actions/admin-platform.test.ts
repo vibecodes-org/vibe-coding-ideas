@@ -27,8 +27,11 @@ import {
   getPlatformTerminalModelDefaultAction,
   getPlatformTerminalModelDefaultForAdmin,
   updatePlatformTerminalModelDefault,
+  getAgentAwarePlatformModelDefaultsAction,
+  getAgentAwarePlatformModelDefaultsForAdmin,
+  updateAgentAwarePlatformModelDefaults,
 } from "./admin-platform";
-import { SEED_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
+import { SEED_PLATFORM_MODEL_DEFAULTS, SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 
 const SUPER_ADMIN_ID = "00000000-0000-0000-0000-0000000000aa";
 const REGULAR_USER_ID = "00000000-0000-0000-0000-0000000000bb";
@@ -411,5 +414,130 @@ describe("updatePlatformTerminalModelDefault — super-admin gate", () => {
     await expect(updatePlatformTerminalModelDefault("opus")).rejects.toThrow(
       "Failed to save the terminal starting model — try again"
     );
+  });
+});
+
+describe("getAgentAwarePlatformModelDefaultsAction", () => {
+  it("returns the agent-aware seed when no row is saved yet", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+
+    expect(await getAgentAwarePlatformModelDefaultsAction()).toEqual(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS);
+  });
+
+  it("upgrades a legacy flat row transparently — any authenticated user can read", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { value: SEED_PLATFORM_MODEL_DEFAULTS }, error: null }),
+        }),
+      }),
+    }));
+
+    const result = await getAgentAwarePlatformModelDefaultsAction();
+    expect(result.defaults.frontier.claude.model).toBe("opus");
+    expect(result.defaults.frontier.codex).toEqual(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier.codex);
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("getAgentAwarePlatformModelDefaultsForAdmin", () => {
+  it("reports isSeed=true when nothing has been saved", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+
+    const result = await getAgentAwarePlatformModelDefaultsForAdmin();
+    expect(result.isSeed).toBe(true);
+    expect(result.value).toEqual(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS);
+  });
+
+  it("surfaces the audit line for a saved agent-aware row", async () => {
+    const live = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () =>
+            Promise.resolve({
+              data: { value: live, updated_at: "2026-09-01T00:00:00Z", updated_by: { id: SUPER_ADMIN_ID, full_name: "Nick Ball" } },
+              error: null,
+            }),
+        }),
+      }),
+    }));
+
+    const result = await getAgentAwarePlatformModelDefaultsForAdmin();
+    expect(result.isSeed).toBe(false);
+    expect(result.value).toEqual(live);
+    expect(result.updatedBy).toEqual({ id: SUPER_ADMIN_ID, full_name: "Nick Ball" });
+  });
+});
+
+describe("updateAgentAwarePlatformModelDefaults — super-admin gate", () => {
+  const validInput = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(updateAgentAwarePlatformModelDefaults(validInput)).rejects.toThrow("Not authenticated");
+  });
+
+  it("throws for an authenticated non-super-admin (denied)", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: { id: REGULAR_USER_ID } }, error: null });
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: false }, error: null }) }) }),
+    }));
+
+    await expect(updateAgentAwarePlatformModelDefaults(validInput)).rejects.toThrow("Super admin access required");
+  });
+
+  it("saves and returns the parsed value for a super-admin (allowed)", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+    let upsertedWith: unknown;
+
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === "users") {
+        return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: true }, error: null }) }) }) };
+      }
+      return {
+        upsert: (row: unknown) => {
+          upsertedWith = row;
+          return Promise.resolve({ error: null });
+        },
+      };
+    });
+
+    const result = await updateAgentAwarePlatformModelDefaults(validInput);
+    expect(result).toEqual(validInput);
+    expect(upsertedWith).toMatchObject({ key: "model_tier_defaults", value: validInput, updated_by: SUPER_ADMIN_ID });
+  });
+
+  it("rejects a Codex model id with shell metacharacters, before ever touching the DB (FR-1)", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+
+    const bad = {
+      ...validInput,
+      defaults: {
+        ...validInput.defaults,
+        frontier: { ...validInput.defaults.frontier, codex: { model: "gpt; rm -rf", effort: "high" as const } },
+      },
+    };
+
+    await expect(updateAgentAwarePlatformModelDefaults(bad)).rejects.toThrow();
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects a tier entry missing effort (zod shape check)", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+
+    const bad = {
+      ...validInput,
+      defaults: {
+        ...validInput.defaults,
+        frontier: { ...validInput.defaults.frontier, claude: { model: "opus" } },
+      },
+    };
+
+    await expect(updateAgentAwarePlatformModelDefaults(bad as never)).rejects.toThrow();
   });
 });

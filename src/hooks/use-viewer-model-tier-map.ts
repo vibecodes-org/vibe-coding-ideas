@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getModelTierMap } from "@/actions/profile";
+import { getModelTierMap, getAgentAwareModelTierMap } from "@/actions/profile";
 import type { ModelTierMap } from "@/lib/constants";
+import type { AgentAwareUserModelTierMap } from "@/lib/platform-model-defaults";
 
 // Module-level cache shared by every mounted ModelTierSelect — fetched once
 // per session rather than once per mount (there are 5 mounts). `undefined` =
@@ -63,6 +64,70 @@ export function useViewerModelTierMap(): ModelTierMap | null | undefined {
     return () => {
       cancelled = true;
       listeners.delete(listener);
+    };
+  }, []);
+
+  return map;
+}
+
+// ============================================================
+// Agent-aware viewer model-tier map (Codex model-tier task, FR-7 UI slice) —
+// same shared-cache-across-mounts pattern as useViewerModelTierMap above, but
+// for the full agent-aware override shape (both agents, model + effort) used
+// by the tier picker's both-agent resolution line and the step-detail
+// dialog. `undefined` = not yet fetched; an empty object `{}` = fetched, no
+// overrides (never `null` — normalizeUserModelTierMap never returns null).
+// ============================================================
+
+let cachedAgentAwareMap: AgentAwareUserModelTierMap | undefined;
+let agentAwareInFlight: Promise<AgentAwareUserModelTierMap> | null = null;
+const agentAwareListeners = new Set<(map: AgentAwareUserModelTierMap) => void>();
+
+function fetchAgentAwareOnce(): Promise<AgentAwareUserModelTierMap> {
+  if (!agentAwareInFlight) {
+    agentAwareInFlight = getAgentAwareModelTierMap()
+      .then((map) => {
+        cachedAgentAwareMap = map;
+        return map;
+      })
+      .catch(() => {
+        cachedAgentAwareMap = {};
+        return {};
+      });
+  }
+  return agentAwareInFlight;
+}
+
+/** Mirrors setViewerModelTierMapCache — called after the Model Tiers dialog
+ *  saves so any already-mounted consumer (tier picker, step detail) updates
+ *  immediately without a full reload. */
+export function setViewerAgentAwareModelTierMapCache(map: AgentAwareUserModelTierMap): void {
+  cachedAgentAwareMap = map;
+  agentAwareListeners.forEach((listener) => listener(map));
+}
+
+/** The current viewer's agent-aware model_tier_map (normalized — legacy flat
+ *  values upgrade transparently), fetched once and shared across every
+ *  mounted consumer. Returns undefined while loading. */
+export function useViewerAgentAwareModelTierMap(): AgentAwareUserModelTierMap | undefined {
+  const [map, setMap] = useState<AgentAwareUserModelTierMap | undefined>(cachedAgentAwareMap);
+
+  useEffect(() => {
+    let cancelled = false;
+    const listener = (m: AgentAwareUserModelTierMap) => {
+      if (!cancelled) setMap(m);
+    };
+    agentAwareListeners.add(listener);
+
+    if (cachedAgentAwareMap === undefined) {
+      fetchAgentAwareOnce().then((m) => {
+        if (!cancelled) setMap(m);
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      agentAwareListeners.delete(listener);
     };
   }, []);
 

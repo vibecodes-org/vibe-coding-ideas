@@ -4,6 +4,7 @@ import { tierMismatchSentence } from "../../../src/lib/constants";
 import {
   getPlatformModelDefaults,
   SEED_PLATFORM_MODEL_DEFAULTS,
+  normalizeUserModelTierMap,
   type PlatformModelDefaults,
 } from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
@@ -52,6 +53,30 @@ async function touchBoardTask(ctx: McpContext, taskId: string) {
     .from("board_tasks")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", taskId);
+}
+
+/**
+ * Read-compat adapter, NOT a resolution-logic change: `users.model_tier_map`
+ * is now stored in the agent-aware shape (Codex model-tier task, already
+ * merged — see src/lib/platform-model-defaults.ts), but resolveModelTier/
+ * modelTierClause here still only resolve the Claude side (agent-aware
+ * step resolution is a separate, not-yet-scoped follow-up). This extracts
+ * just the Claude model override from either a legacy flat row or the new
+ * nested shape, via the existing `normalizeUserModelTierMap`, so this
+ * unchanged Claude-only resolution keeps working against the new column
+ * type. A user's Codex overrides are inert here until that follow-up lands.
+ */
+function toLegacyClaudeFlatMap(
+  raw: unknown
+): { frontier?: string; standard?: string; cheap?: string } | null {
+  if (!raw) return null;
+  const normalized = normalizeUserModelTierMap(raw);
+  const flat: { frontier?: string; standard?: string; cheap?: string } = {};
+  for (const tier of ["frontier", "standard", "cheap"] as const) {
+    const model = normalized[tier]?.claude?.model;
+    if (model) flat[tier] = model;
+  }
+  return flat;
 }
 
 // --- Shared step schema used by template tools ---
@@ -1108,7 +1133,7 @@ export async function claimNextStep(
         .maybeSingle(),
       getPlatformModelDefaults(ctx.supabase),
     ]);
-    userModelTierMap = userRow?.model_tier_map ?? null;
+    userModelTierMap = toLegacyClaudeFlatMap(userRow?.model_tier_map);
     platformDefaults = resolvedPlatformDefaults;
   }
   const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap, platformDefaults);
@@ -1242,7 +1267,7 @@ export async function completeStep(
         .maybeSingle(),
       getPlatformModelDefaults(ctx.supabase),
     ]);
-    userModelTierMap = userRow?.model_tier_map ?? null;
+    userModelTierMap = toLegacyClaudeFlatMap(userRow?.model_tier_map);
     platformDefaults = resolvedPlatformDefaults;
   }
   const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
@@ -1446,7 +1471,7 @@ export async function failStep(
         .maybeSingle(),
       getPlatformModelDefaults(ctx.supabase),
     ]);
-    userModelTierMap = userRow?.model_tier_map ?? null;
+    userModelTierMap = toLegacyClaudeFlatMap(userRow?.model_tier_map);
     platformDefaults = resolvedPlatformDefaults;
   }
   const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
