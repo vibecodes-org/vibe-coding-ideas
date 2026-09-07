@@ -3407,7 +3407,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                         )}
                       >
                         {entry && renderTab(entry, originalIndex)}
-                        {isLast && stripControls}
+                        {/* Right-align the utility cluster inside the last
+                            column (Nick, 7 Sep 2026): in single view the
+                            toggle/+ already sit hard right (they follow a
+                            flex-1 tab strip); in split they used to bunch up
+                            against the last tab with dead space trailing to
+                            the pane's right edge. `ml-auto` pushes them to
+                            that edge so both layouts read the same. When the
+                            tab overflows there's no spare space, so `ml-auto`
+                            collapses to 0 and the column scrolls as before. */}
+                        {isLast && <div className="ml-auto flex flex-none items-stretch">{stripControls}</div>}
                       </div>
                     );
                   })}
