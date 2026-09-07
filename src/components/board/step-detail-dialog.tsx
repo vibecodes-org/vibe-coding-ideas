@@ -275,6 +275,9 @@ interface StepDetailDialogProps {
   ideaId: string;
   allSteps?: TaskWorkflowStep[];
   isReadOnly?: boolean;
+  /** Called after a successful in-dialog edit so the parent can refetch and the
+   *  dialog re-renders the freshest step (not the pre-edit snapshot). */
+  onStepUpdated?: () => void;
 }
 
 export function StepDetailDialog({
@@ -285,6 +288,7 @@ export function StepDetailDialog({
   ideaId,
   allSteps = [],
   isReadOnly = false,
+  onStepUpdated,
 }: StepDetailDialogProps) {
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [loadingComments, setLoadingComments] = useState(true);
@@ -451,6 +455,7 @@ export function StepDetailDialog({
       });
       toast.success("Step updated");
       setIsEditing(false);
+      onStepUpdated?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update step");
     } finally {
