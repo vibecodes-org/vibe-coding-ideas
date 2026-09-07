@@ -66,11 +66,13 @@ import { displayName, getInitials } from "@/lib/utils";
 import {
   modelTierLabel,
   capitalizeModelName,
-  tierDefaultsToCopy,
+  tierMismatchSentence,
   TIER_ADHERENCE_DISCLOSURE,
+  MODEL_ALIASES,
   type ModelTierValue,
 } from "@/lib/constants";
-import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
+import { usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
+import type { AgentKind } from "@/lib/platform-model-defaults";
 import type { TaskWorkflowStep, WorkflowStepComment } from "@/types";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 
@@ -83,32 +85,64 @@ import { ApprovalLockIcon } from "./approval-lock-icon";
  * border, tint, AND words (never colour alone) so it can never read as a
  * failure — most legacy/non-reporting completions land here.
  */
+/** Best-effort agent inference for display only (Codex model-tier task, FR-8
+ *  UI slice) — task_workflow_steps has no stored "which agent ran this"
+ *  column (only executed_model), so the agent chip and Claude/Codex
+ *  capitalisation rule are inferred from the reported model string's shape:
+ *  a known Claude Task-tool alias (fable/opus/sonnet/haiku) reads as Claude;
+ *  anything else (a Codex model id) reads as Codex. Returns null when
+ *  there's nothing to infer from (no reported model). */
+function inferExecutedAgent(executedModel: string | null): AgentKind | null {
+  if (!executedModel) return null;
+  return (MODEL_ALIASES as readonly string[]).includes(executedModel.toLowerCase()) ? "claude" : "codex";
+}
+
+function AgentChip({ agent }: { agent: AgentKind }) {
+  return (
+    <span className="ml-1.5 inline-flex items-center rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+      {agent === "claude" ? "Claude" : "Codex"}
+    </span>
+  );
+}
+
 function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
   // Called unconditionally (Rules of Hooks) — cheap no-op on the early-return paths below.
-  const platformDefaults = usePlatformModelDefaults();
+  const { defaults: platformDefaults } = usePlatformAgentAwareModelDefaults();
 
   if (!step.model_tier) return null;
   if (step.status !== "completed" && step.status !== "failed") return null;
 
   const tierLabel = modelTierLabel(step.model_tier);
+  const agent = inferExecutedAgent(step.executed_model);
+  // Effort would go in brackets after the model (design §4), but
+  // task_workflow_steps has no reported-effort column yet — that's backend
+  // work out of scope here (mcp-server/telemetry is not part of this UI
+  // task), so effort always reads as "not reported" for now rather than
+  // guessing or fabricating a value.
+  const effortSuffix = "";
 
   if (step.tier_honored === true) {
-    const modelLabel = capitalizeModelName(step.executed_model ?? "unknown");
+    const rawModel = step.executed_model ?? "unknown";
+    const modelLabel = agent === "codex" ? rawModel : capitalizeModelName(rawModel);
     return (
       <div
         className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs"
-        aria-label={`Execution: ran on ${modelLabel}, tier honored`}
+        aria-label={`Execution: ran on ${modelLabel}${effortSuffix}, tier honored`}
       >
         <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
         <span className="min-w-0">
-          <span className="font-medium">Ran on {modelLabel}</span>{" "}
+          <span className="font-medium">
+            Ran on {modelLabel}
+            {effortSuffix}
+          </span>{" "}
           <span className="text-muted-foreground">· tier honored</span>
+          {agent && <AgentChip agent={agent} />}
           <Tooltip>
             <TooltipTrigger asChild>
               <Info className="ml-1 inline h-3 w-3 cursor-help align-middle text-muted-foreground" />
             </TooltipTrigger>
             <TooltipContent className="max-w-72 text-xs">
-              {`The orchestrator reported running this step on ${modelLabel} — the model ${tierLabel} defaults to, or that tier's allowed fallback. ${TIER_ADHERENCE_DISCLOSURE}`}
+              {`The orchestrator reported running this step on ${modelLabel}${effortSuffix} — the model ${tierLabel} defaults to, or that tier's allowed fallback. ${TIER_ADHERENCE_DISCLOSURE}`}
             </TooltipContent>
           </Tooltip>
         </span>
@@ -117,20 +151,27 @@ function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
   }
 
   if (step.tier_honored === false) {
-    const modelLabel = capitalizeModelName(step.executed_model ?? "unknown");
+    const rawModel = step.executed_model ?? "unknown";
+    const modelLabel = agent === "codex" ? rawModel : capitalizeModelName(rawModel);
+    const platformEntry = platformDefaults.defaults[step.model_tier as ModelTierValue]?.[agent ?? "claude"];
     return (
       <div
         className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
-        aria-label={`Execution: ran on ${modelLabel}, tier not honored`}
+        aria-label={`Execution: ran on ${modelLabel}${effortSuffix}, tier not honored`}
       >
         <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
         <span className="min-w-0">
           <span className="font-medium">
-            Ran on <em className="not-italic text-amber-500">{modelLabel}</em>
+            Ran on{" "}
+            <em className="not-italic text-amber-500">
+              {modelLabel}
+              {effortSuffix}
+            </em>
           </span>{" "}
           <span className="text-muted-foreground">· tier not honored</span>
+          {agent && <AgentChip agent={agent} />}
           <span className="block text-[11px] text-muted-foreground">
-            {tierDefaultsToCopy(step.model_tier, platformDefaults.defaults[step.model_tier as ModelTierValue])}. Self-reported — not verified.
+            {tierMismatchSentence(step.model_tier, rawModel, platformEntry?.model, agent ?? "claude")}
           </span>
         </span>
       </div>

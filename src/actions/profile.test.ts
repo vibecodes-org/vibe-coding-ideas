@@ -23,6 +23,8 @@ vi.mock("next/cache", () => ({
 import {
   getModelTierMap,
   updateModelTierMap,
+  getAgentAwareModelTierMap,
+  updateAgentAwareModelTierMap,
   getTerminalModel,
   updateTerminalModel,
   getTerminalAutoAccept,
@@ -156,6 +158,124 @@ describe("updateModelTierMap", () => {
       update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
     }));
     await expect(updateModelTierMap({ frontier: "opus" })).rejects.toThrow("write failed");
+  });
+});
+
+describe("getAgentAwareModelTierMap", () => {
+  it("upgrades a legacy flat row to the agent-aware shape (Claude-only, no stored effort)", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { model_tier_map: { frontier: "opus" } }, error: null }),
+        }),
+      }),
+    }));
+
+    const result = await getAgentAwareModelTierMap();
+    expect(result).toEqual({ frontier: { claude: { model: "opus" } } });
+  });
+
+  it("passes an already agent-aware row through unchanged", async () => {
+    const stored = { frontier: { claude: { model: "opus", effort: "high" }, codex: { model: "gpt-5.1-codex", effort: "high" } } };
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: () => Promise.resolve({ data: { model_tier_map: stored }, error: null }) }),
+      }),
+    }));
+
+    expect(await getAgentAwareModelTierMap()).toEqual(stored);
+  });
+
+  it("returns {} when the column is null", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { model_tier_map: null }, error: null }) }) }),
+    }));
+
+    expect(await getAgentAwareModelTierMap()).toEqual({});
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(getAgentAwareModelTierMap()).rejects.toThrow("Not authenticated");
+  });
+});
+
+describe("updateAgentAwareModelTierMap", () => {
+  it("accepts a valid Claude override (model + effort) and stores it scoped to the current user", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    const result = await updateAgentAwareModelTierMap({ frontier: { claude: { model: "opus", effort: "high" } } });
+
+    expect(result).toEqual({ frontier: { claude: { model: "opus", effort: "high" } } });
+    expect(updatedWith).toEqual({ model_tier_map: { frontier: { claude: { model: "opus", effort: "high" } } } });
+  });
+
+  it("accepts a valid Codex override on the same tier", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+    }));
+
+    await expect(
+      updateAgentAwareModelTierMap({ standard: { codex: { model: "gpt-5.1-codex-mini", effort: "medium" } } })
+    ).resolves.toEqual({ standard: { codex: { model: "gpt-5.1-codex-mini", effort: "medium" } } });
+  });
+
+  it("stores NULL for an empty map (all tiers reset to platform default)", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    const result = await updateAgentAwareModelTierMap({});
+
+    expect(result).toBeNull();
+    expect(updatedWith).toEqual({ model_tier_map: null });
+  });
+
+  it("rejects a model chosen with no effort (AC-3), naming the tier and agent", async () => {
+    await expect(
+      updateAgentAwareModelTierMap({ frontier: { codex: { model: "gpt-5.1-codex" } } })
+    ).rejects.toThrow(/Choose a reasoning effort for gpt-5.1-codex — Frontier \(Codex\)/);
+  });
+
+  it("rejects an invalid Claude alias", async () => {
+    await expect(
+      updateAgentAwareModelTierMap({ frontier: { claude: { model: "gpt-4", effort: "high" } } })
+    ).rejects.toThrow(/must be one of/);
+  });
+
+  it("rejects a Codex model id containing shell metacharacters (FR-1)", async () => {
+    await expect(
+      updateAgentAwareModelTierMap({ frontier: { codex: { model: "gpt; rm -rf", effort: "high" } } })
+    ).rejects.toThrow();
+  });
+
+  it("rejects a non-object payload", async () => {
+    await expect(updateAgentAwareModelTierMap("opus" as never)).rejects.toThrow("Invalid model tier map");
+    await expect(updateAgentAwareModelTierMap(null as never)).rejects.toThrow("Invalid model tier map");
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(updateAgentAwareModelTierMap({})).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
+    }));
+    await expect(updateAgentAwareModelTierMap({ frontier: { claude: { model: "opus", effort: "high" } } })).rejects.toThrow(
+      "write failed"
+    );
   });
 });
 

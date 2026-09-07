@@ -2,9 +2,14 @@ import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import { tierMismatchSentence } from "../../../src/lib/constants";
 import {
-  getPlatformModelDefaults,
   SEED_PLATFORM_MODEL_DEFAULTS,
-  type PlatformModelDefaults,
+  getAgentAwarePlatformModelDefaults,
+  SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  normalizeUserModelTierMap,
+  REASONING_EFFORT_LEVELS,
+  type AgentAwarePlatformModelDefaults,
+  type AgentKind,
+  type ReasoningEffort,
 } from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, verifyClaimToken } from "../claim-token";
@@ -71,50 +76,87 @@ const templateStepSchema = z.object({
 // single-hop fallback chain used when the resolved model is unavailable on
 // the caller's plan/session. These are Task-tool aliases, NOT API model ids.
 //
-// These two constants are now the SEED / typed fallback ONLY (admin
-// configurable platform model-tier defaults). The LIVE value is the
-// `platform_settings` row (key `model_tier_defaults`), read per-claim via
-// `getPlatformModelDefaults()` and threaded through as the `platformDefaults`
-// argument below — resolveModelTier/modelTierClause/resolveTierAdherence all
-// default to SEED_PLATFORM_MODEL_DEFAULTS when no live value is supplied, so
-// existing call sites/tests keep working, but claim_next_step/complete_step/
+// These two constants are the SEED / typed fallback ONLY (admin configurable
+// platform model-tier defaults, Claude-only shape). The LIVE value is the
+// `platform_settings` row (key `model_tier_defaults`), read per-claim —
+// agent-aware now (Codex model-tier task) via `getAgentAwarePlatformModelDefaults()`
+// and threaded through as the `platformDefaults` argument to the agent-aware
+// resolveModelTier/modelTierClause/resolveTierAdherence below, which default
+// to SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS when no live value is supplied
+// (an old flat row normalizes into its Claude block — see
+// normalizeToAgentAwarePlatformModelDefaults). claim_next_step/complete_step/
 // fail_step always pass the freshly-read live value. Never read these two
 // constants directly outside this seed role — read the platform_settings row.
 export const MODEL_TIER_TO_SUBAGENT_MODEL = SEED_PLATFORM_MODEL_DEFAULTS.defaults;
 export const MODEL_TIER_FALLBACK = SEED_PLATFORM_MODEL_DEFAULTS.fallback;
 
-type UserModelTierMap = { frontier?: string; standard?: string; cheap?: string } | null | undefined;
+// ============================================================
+// Codex model-tier task — agent-aware resolution (FR-3/FR-6)
+//
+// "Make model tiers agent-aware so Codex runs each workflow step at its
+// configured model, not just Claude." A step's tier now resolves to BOTH a
+// Claude entry (Task-tool model alias + effort) and a Codex entry (model id
+// + effort); `agent` selects which. Absent/omitted `agent` defaults to
+// "claude" so every existing caller (claim_next_step without the new
+// optional `agent` argument) keeps resolving exactly as before.
+// ============================================================
+
+export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffort; fallback: string };
 
 /**
- * Resolves a step's tier to a concrete Task-tool model + its fallback: the
- * caller's model_tier_map override for this tier if set and valid, else the
- * platform default (from `platformDefaults`, defaulting to the seed
- * constants); fallback is `platformDefaults.fallback[resolved]`, falling back
- * to the seed fallback chain, and finally to the resolved model itself if
- * neither knows it (never a broken/undefined directive). Returns null for an
- * unrecognised tier (defensive — the enum already constrains stored values).
+ * Resolves a step's tier + agent to a concrete model + its fallback + its
+ * required reasoning effort: the caller's model_tier_map override for this
+ * tier/agent if set and valid, else the platform default (from
+ * `platformDefaults`, defaulting to the agent-aware seed); fallback is
+ * `platformDefaults.fallback[agent][resolved]`, falling back to the seed
+ * fallback chain, and finally to the resolved model itself if neither knows
+ * it (never a broken/undefined directive). Returns null for an unrecognised
+ * tier (defensive — the enum already constrains stored values).
  *
- * Override validity is checked against the SEED fallback chain's keys (the
- * fixed 4-alias set the per-user Models dialog offers) — this is
+ * `userModelTierMap` is the RAW `users.model_tier_map` value (either the
+ * legacy flat shape or the new agent-aware shape) — normalized internally
+ * via `normalizeUserModelTierMap`, so callers never need to know which shape
+ * a given row is in.
+ *
+ * Claude override validity is checked against the SEED fallback chain's keys
+ * (the fixed 4-alias set the per-user Models dialog offers) — this is
  * deliberately independent of `platformDefaults`, so a super-admin adding a
  * novel platform-default family never silently changes what counts as a
  * "valid" user override (per-user override precedence is preserved exactly).
+ * Codex overrides are free text (FR-1: no fixed catalogue) — any non-empty
+ * string the user configured is honored as-is; the catalogue in
+ * src/lib/codex-models.ts drives UI advisories only, never acceptance.
  */
 export function resolveModelTier(
   tier: "frontier" | "standard" | "cheap",
-  userModelTierMap?: UserModelTierMap,
-  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
-): { resolved: string; fallback: string } | null {
-  const platformDefault = platformDefaults.defaults[tier] ?? SEED_PLATFORM_MODEL_DEFAULTS.defaults[tier];
-  if (!platformDefault) return null;
+  agent: AgentKind = "claude",
+  userModelTierMap?: unknown,
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+): ModelTierAgentResolution | null {
+  const tierDefaults = platformDefaults.defaults[tier] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults[tier];
+  if (!tierDefaults) return null;
+  const platformAgentDefault = tierDefaults[agent];
+  if (!platformAgentDefault) return null;
 
-  const override = userModelTierMap?.[tier];
-  const resolved = override && override in SEED_PLATFORM_MODEL_DEFAULTS.fallback ? override : platformDefault;
+  const overrideEntry = normalizeUserModelTierMap(userModelTierMap)[tier]?.[agent];
+
+  let resolvedModel = platformAgentDefault.model;
+  if (overrideEntry?.model) {
+    const validOverride =
+      agent === "claude"
+        ? overrideEntry.model in SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback.claude
+        : true;
+    if (validOverride) resolvedModel = overrideEntry.model;
+  }
+  const resolvedEffort = overrideEntry?.effort ?? platformAgentDefault.effort;
+
+  const fallbackMap = platformDefaults.fallback[agent] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent];
   const fallback =
-    platformDefaults.fallback[resolved] ??
-    SEED_PLATFORM_MODEL_DEFAULTS.fallback[resolved as keyof typeof SEED_PLATFORM_MODEL_DEFAULTS.fallback] ??
-    resolved;
-  return { resolved, fallback };
+    fallbackMap[resolvedModel] ??
+    SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent][resolvedModel] ??
+    resolvedModel;
+
+  return { resolved: resolvedModel, effort: resolvedEffort, fallback };
 }
 
 /**
@@ -122,38 +164,60 @@ export function resolveModelTier(
  * FIRST in the join (Design-Review CONDITION 2), not appended. Returns "" for
  * null/undefined tier so callers can add it unconditionally without changing
  * the instruction byte-for-byte on the Auto path (FR-12).
+ *
+ * `agent` selects the wording: the Claude clause (default) still spawns a
+ * Task-tool subagent; the Codex clause instructs the Codex session itself to
+ * switch model/effort (e.g. `/model`) and report what it used — and, per the
+ * Design Review build condition, MUST NOT mention the Task tool (Codex has
+ * no such tool; a Claude-specific instruction would be actively wrong there)
+ * and must NEVER capitalise the Codex model id.
  */
 export function modelTierClause(
   tier: string | null | undefined,
-  userModelTierMap?: UserModelTierMap,
-  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
+  agent: AgentKind = "claude",
+  userModelTierMap?: unknown,
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
 ): string {
   if (!tier) return "";
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults);
   if (!resolution) return "";
-  const { resolved, fallback } = resolution;
-  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
+  const { resolved, effort, fallback } = resolution;
+
+  if (agent === "codex") {
+    return `MANDATORY MODEL: before doing any work on this step, switch this Codex session to model "${resolved}" with reasoning effort "${effort}" (e.g. /model ${resolved} ${effort}) and confirm the switch. If "${resolved}" is unavailable, use model "${fallback}" at the same effort and state the substitution in your step output. Do not start the step's work before switching, and do not keep the session's current model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran on (or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
+  }
+
+  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
 }
 
 // ============================================================
 // P2c — tier adherence (self-reported telemetry, never hard verification)
 // ============================================================
 
-/** Resolved adherence outcome for a step's completion/failure (FR-6/7/8). */
-export type TierAdherenceResult = { executedModel: string | null; tierHonored: boolean | null };
+/** Resolved adherence outcome for a step's completion/failure (FR-6/7/8,
+ *  extended agent-aware). `viaFallback` is true when the reported model
+ *  matched the tier's FALLBACK rather than its primary resolved model —
+ *  never surfaced as a mismatch/dishonored signal on its own. */
+export type TierAdherenceResult = {
+  executedModel: string | null;
+  executedEffort: string | null;
+  tierHonored: boolean | null;
+  viaFallback: boolean;
+};
 
 /**
- * Computes `executed_model`/`tier_honored` from the orchestrator's self-reported
- * `model_used` for a step. Reuses `resolveModelTier` (same fallback rules as the
- * MANDATORY MODEL directive) — never re-derives its own notion of "honored".
+ * Computes `executed_model`/`reasoning_effort_used`/`tier_honored` from the
+ * orchestrator's self-reported `model_used`/`effort_used` for a step.
+ * Reuses `resolveModelTier` (same fallback rules as the MANDATORY MODEL
+ * directive) — never re-derives its own notion of "honored".
  *
- * Exact cases (P2c FR-7):
- *  - model_used omitted            -> executed=NULL,      honored=NULL   (never false)
- *  - model_used="unknown"          -> executed="unknown",  honored=NULL   (never false)
- *  - tier is NULL (Auto)           -> executed=model_used, honored=NULL   (Auto made no promise)
- *  - tier set, model_used=resolved -> executed=model_used, honored=true
- *  - tier set, model_used=fallback -> executed=model_used, honored=true  (fallback counts as honored)
- *  - tier set, model_used=other/"other" -> executed=model_used, honored=false
+ * Exact cases (P2c FR-7, extended for effort/agent — QA Bug-1 hardening):
+ *  - model_used omitted                      -> executed=NULL,      honored=NULL   (never false)
+ *  - model_used="unknown"                     -> executed="unknown", honored=NULL   (never false)
+ *  - tier is NULL (Auto)                      -> executed=model_used, honored=NULL  (Auto made no promise)
+ *  - model is neither resolved nor fallback   -> honored=false, REGARDLESS of effort (a model mismatch alone is enough to call it dishonored)
+ *  - model matches (resolved or fallback), but effort is unreported (undefined) or "unknown" -> honored=NULL, NEVER false — the caller simply didn't report effort, which is not evidence of dishonoring it (avoids a false "tier not honored" mismatch comment)
+ *  - model matches AND effort is reported (a concrete, non-"unknown" value)     -> honored = (effortUsed === the tier's resolved effort)
  *
  * Compliance-drift note (accepted MVP behaviour, see docs/design-platform-model-defaults.html
  * §6): `platformDefaults` here is whatever is LIVE at complete/fail time, not
@@ -165,20 +229,39 @@ export type TierAdherenceResult = { executedModel: string | null; tierHonored: b
  */
 export function resolveTierAdherence(
   tier: string | null | undefined,
+  agent: AgentKind = "claude",
   modelUsed: string | undefined,
-  userModelTierMap?: UserModelTierMap,
-  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
+  effortUsed: string | undefined,
+  userModelTierMap?: unknown,
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
 ): TierAdherenceResult {
-  if (modelUsed === undefined) return { executedModel: null, tierHonored: null };
-  if (modelUsed === "unknown") return { executedModel: "unknown", tierHonored: null };
-  if (!tier) return { executedModel: modelUsed, tierHonored: null };
+  const reportedEffort = effortUsed ?? null;
+  if (modelUsed === undefined) return { executedModel: null, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
+  if (modelUsed === "unknown") return { executedModel: "unknown", executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
+  if (!tier) return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
 
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
-  if (!resolution) return { executedModel: modelUsed, tierHonored: null };
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults);
+  if (!resolution) return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
 
-  const { resolved, fallback } = resolution;
-  const tierHonored = modelUsed === resolved || modelUsed === fallback;
-  return { executedModel: modelUsed, tierHonored };
+  const { resolved, fallback, effort } = resolution;
+  const viaFallback = modelUsed !== resolved && modelUsed === fallback;
+  const modelMatches = modelUsed === resolved || viaFallback;
+
+  // QA Bug-1: a model mismatch alone is dishonored, regardless of effort.
+  if (!modelMatches) {
+    return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: false, viaFallback: false };
+  }
+
+  // QA Bug-1: model matches but effort wasn't reported (or was reported as
+  // "unknown") -> NULL, never false. The caller not reporting effort is not
+  // evidence they dishonored it — treating it as false would auto-post a
+  // misleading "tier not honored" comment on every completion that simply
+  // omits reasoning_effort_used.
+  if (effortUsed === undefined || effortUsed === "unknown") {
+    return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback };
+  }
+
+  return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: effortUsed === effort, viaFallback };
 }
 
 // ============================================================
@@ -537,6 +620,18 @@ export const claimNextStepSchema = z.object({
     .optional()
     .describe(
       "Only used when the step has no pre-assigned bot: record the claim for this agent. Ignored when the step already has a bot_id (the claim is made on behalf of the assigned bot by construction)."
+    ),
+  // Codex model-tier task (FR-3): which CLI is claiming this step, so the
+  // MANDATORY MODEL directive (when the step has a model_tier) resolves and
+  // is worded for the right one. Defaults to "claude" when omitted —
+  // BYTE-IDENTICAL to pre-existing behaviour, so every caller that has never
+  // heard of this argument keeps working unchanged. Unrelated to `agent_id`
+  // above, which names a bot persona, not a CLI.
+  agent: z
+    .enum(["claude", "codex"])
+    .optional()
+    .describe(
+      "Which CLI is claiming this step — 'claude' (default) or 'codex'. Selects the wording and model/effort resolution of the MANDATORY MODEL directive for tiered steps. Omit for Claude; existing behaviour is unchanged."
     ),
 });
 
@@ -1097,8 +1192,9 @@ export async function claimNextStep(
   // precedence over userId so a bot acting for a human resolves against the
   // human's map, not the bot's. The two reads are independent, so they run in
   // parallel rather than serially.
-  let userModelTierMap: { frontier?: string; standard?: string; cheap?: string } | null = null;
-  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
+  const claimingAgent: AgentKind = params.agent ?? "claude";
+  let userModelTierMap: unknown = null;
+  let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
   if (updated.model_tier) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
@@ -1106,12 +1202,12 @@ export async function claimNextStep(
         .select("model_tier_map")
         .eq("id", ctx.ownerUserId ?? ctx.userId)
         .maybeSingle(),
-      getPlatformModelDefaults(ctx.supabase),
+      getAgentAwarePlatformModelDefaults(ctx.supabase),
     ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
     platformDefaults = resolvedPlatformDefaults;
   }
-  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap, platformDefaults);
+  const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults);
 
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
   // the Auto path so .filter(Boolean) drops it and the instruction stays
@@ -1158,6 +1254,20 @@ export const completeStepSchema = z.object({
   // unrecognised values are never rejected here, just logged if they mismatch.
   model_used: z.string().max(40).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it, or \"unknown\"/\"other\"). Omit if you don't know. Free text — a platform default can be a novel model family. VibeCodes records this to report tier adherence — it is not verified."),
+  // Codex model-tier task (FR-8): effort is a SEPARATE first-class field from
+  // model_used, not folded into it — stored in its own column
+  // (reasoning_effort_used, migration 00171), never widening model_used's
+  // 40-char cap. Unlike model_used, effort is a fixed enum (Nick's
+  // approval-gate note 2 / FR-6) — both agents share the same ladder.
+  reasoning_effort_used: z.enum([...REASONING_EFFORT_LEVELS, "unknown"]).optional()
+    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with ('low'/'medium'/'high', or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
+  // Which CLI executed this step — mirrors claim_next_step's `agent`.
+  // Defaults to "claude" when omitted, matching whichever agent claimed the
+  // step by default. Used only to pick the right side of the tier's
+  // agent-aware resolution for adherence — never persisted as its own
+  // column (self-reported telemetry, same posture as model_used).
+  agent: z.enum(["claude", "codex"]).optional()
+    .describe("Which CLI actually ran this step — 'claude' (default) or 'codex'. Used to resolve tier adherence against the right agent's configured model/effort. Omit for Claude."),
   persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
     .describe(
       "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
@@ -1227,12 +1337,15 @@ export async function completeStep(
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
-  // P2c: resolve executed_model/tier_honored from the self-reported model_used.
-  // Only run the user-map + live-platform-default reads when actually needed
-  // for resolution — a tier is set AND a concrete (non-"unknown") model_used
-  // was passed. No query on the Auto path or when model_used is omitted/"unknown".
-  let userModelTierMap: UserModelTierMap = null;
-  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
+  // P2c: resolve executed_model/reasoning_effort_used/tier_honored from the
+  // self-reported model_used/reasoning_effort_used (Codex model-tier task
+  // FR-8: agent-aware). Only run the user-map + live-platform-default reads
+  // when actually needed for resolution — a tier is set AND a concrete
+  // (non-"unknown") model_used was passed. No query on the Auto path or when
+  // model_used is omitted/"unknown".
+  const completingAgent: AgentKind = params.agent ?? "claude";
+  let userModelTierMap: unknown = null;
+  let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
   if (step.model_tier && params.model_used && params.model_used !== "unknown") {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
@@ -1240,12 +1353,19 @@ export async function completeStep(
         .select("model_tier_map")
         .eq("id", ctx.ownerUserId ?? ctx.userId)
         .maybeSingle(),
-      getPlatformModelDefaults(ctx.supabase),
+      getAgentAwarePlatformModelDefaults(ctx.supabase),
     ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
     platformDefaults = resolvedPlatformDefaults;
   }
-  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
+  const { executedModel, executedEffort, tierHonored } = resolveTierAdherence(
+    step.model_tier,
+    completingAgent,
+    params.model_used,
+    params.reasoning_effort_used,
+    userModelTierMap,
+    platformDefaults
+  );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
@@ -1259,6 +1379,7 @@ export async function completeStep(
     claim_token_hash: null,
     work_token_hash: null,
     executed_model: executedModel,
+    reasoning_effort_used: executedEffort,
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
@@ -1272,7 +1393,7 @@ export async function completeStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .eq("status", "in_progress")
-    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, tier_honored, persona_used, persona_honored, skills_used")
+    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
@@ -1286,13 +1407,16 @@ export async function completeStep(
   // (plain 'comment' type, not 'failure') so the mismatch is visible in-product.
   // Honored/unknown completions post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
+      agent: completingAgent,
       directed: resolution?.resolved,
+      directedEffort: resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
+      executedEffort,
       ownerUserId: ctx.ownerUserId,
     });
     await ctx.supabase.from("workflow_step_comments").insert({
@@ -1302,11 +1426,14 @@ export async function completeStep(
       type: "comment",
       // Nick's gate note 4: name the LIVE platform default (the one just read
       // above), never a stale hard-coded constant, so this comment can't drift
-      // from what the admin actually configured.
+      // from what the admin actually configured. Codex model ids are never
+      // capitalized (reviewer build condition) — tierMismatchSentence's
+      // `agent` argument gates that.
       content: tierMismatchSentence(
         step.model_tier as string,
         executedModel as string,
-        platformDefaults.defaults[step.model_tier as keyof PlatformModelDefaults["defaults"]]
+        platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[completingAgent]?.model,
+        completingAgent
       ),
     });
   }
@@ -1357,6 +1484,20 @@ export const failStepSchema = z.object({
   // unrecognised values are never rejected here, just logged if they mismatch.
   model_used: z.string().max(40).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it, or \"unknown\"/\"other\"). Omit if you don't know. Free text — a platform default can be a novel model family. VibeCodes records this to report tier adherence — it is not verified."),
+  // Codex model-tier task (FR-8): effort is a SEPARATE first-class field from
+  // model_used, not folded into it — stored in its own column
+  // (reasoning_effort_used, migration 00171), never widening model_used's
+  // 40-char cap. Unlike model_used, effort is a fixed enum (Nick's
+  // approval-gate note 2 / FR-6) — both agents share the same ladder.
+  reasoning_effort_used: z.enum([...REASONING_EFFORT_LEVELS, "unknown"]).optional()
+    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with ('low'/'medium'/'high', or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
+  // Which CLI executed this step — mirrors claim_next_step's `agent`.
+  // Defaults to "claude" when omitted, matching whichever agent claimed the
+  // step by default. Used only to pick the right side of the tier's
+  // agent-aware resolution for adherence — never persisted as its own
+  // column (self-reported telemetry, same posture as model_used).
+  agent: z.enum(["claude", "codex"]).optional()
+    .describe("Which CLI actually ran this step — 'claude' (default) or 'codex'. Used to resolve tier adherence against the right agent's configured model/effort. Omit for Claude."),
   persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
     .describe(
       "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
@@ -1431,12 +1572,14 @@ export async function failStep(
   // may still be set but the human gate owns the decision).
   const attributedTo = step.status !== "awaiting_approval" && step.bot_id ? step.bot_id : ctx.userId;
 
-  // P2c: resolve executed_model/tier_honored from the self-reported model_used
-  // (same rules as complete_step — see resolveTierAdherence). Only run the
-  // user-map + live-platform-default reads when a tier is set AND a concrete
+  // P2c: resolve executed_model/reasoning_effort_used/tier_honored from the
+  // self-reported model_used/reasoning_effort_used (same rules as
+  // complete_step — see resolveTierAdherence). Only run the user-map +
+  // live-platform-default reads when a tier is set AND a concrete
   // (non-"unknown") model_used was passed.
-  let userModelTierMap: UserModelTierMap = null;
-  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
+  const failingAgent: AgentKind = params.agent ?? "claude";
+  let userModelTierMap: unknown = null;
+  let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
   if (step.model_tier && params.model_used && params.model_used !== "unknown") {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
@@ -1444,12 +1587,19 @@ export async function failStep(
         .select("model_tier_map")
         .eq("id", ctx.ownerUserId ?? ctx.userId)
         .maybeSingle(),
-      getPlatformModelDefaults(ctx.supabase),
+      getAgentAwarePlatformModelDefaults(ctx.supabase),
     ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
     platformDefaults = resolvedPlatformDefaults;
   }
-  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
+  const { executedModel, executedEffort, tierHonored } = resolveTierAdherence(
+    step.model_tier,
+    failingAgent,
+    params.model_used,
+    params.reasoning_effort_used,
+    userModelTierMap,
+    platformDefaults
+  );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
@@ -1461,6 +1611,7 @@ export async function failStep(
     claim_token_hash: null,
     work_token_hash: null,
     executed_model: executedModel,
+    reasoning_effort_used: executedEffort,
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
@@ -1473,7 +1624,7 @@ export async function failStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .in("status", ["in_progress", "awaiting_approval"])
-    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, tier_honored, persona_used, persona_honored, skills_used")
+    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
@@ -1498,13 +1649,16 @@ export async function failStep(
   // blocked — mirrors complete_step. Plain 'comment' type (not 'failure') so it
   // reads distinctly from the failure comment above. Honored/unknown post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
+      agent: failingAgent,
       directed: resolution?.resolved,
+      directedEffort: resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
+      executedEffort,
       ownerUserId: ctx.ownerUserId,
     });
     await ctx.supabase.from("workflow_step_comments").insert({
@@ -1513,11 +1667,13 @@ export async function failStep(
       author_id: attributedTo,
       type: "comment",
       // Nick's gate note 4: name the LIVE platform default, never a stale
-      // hard-coded constant (mirrors complete_step above).
+      // hard-coded constant (mirrors complete_step above). Codex model ids
+      // are never capitalized (reviewer build condition).
       content: tierMismatchSentence(
         step.model_tier as string,
         executedModel as string,
-        platformDefaults.defaults[step.model_tier as keyof PlatformModelDefaults["defaults"]]
+        platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[failingAgent]?.model,
+        failingAgent
       ),
     });
   }

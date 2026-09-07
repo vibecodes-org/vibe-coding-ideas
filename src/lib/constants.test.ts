@@ -15,6 +15,7 @@ import {
   TIER_ADHERENCE_DISCLOSURE,
   tierDefaultsToCopy,
   tierMismatchSentence,
+  tierResolutionLine,
   capitalizeModelName,
 } from "./constants";
 import type { IdeaStatus, CommentType } from "@/types";
@@ -371,5 +372,31 @@ describe("tierMismatchSentence", () => {
   it("names the LIVE platform default when passed, so a mismatch comment never names a stale default", () => {
     const sentence = tierMismatchSentence("frontier", "sonnet", "fable");
     expect(sentence).toContain("Frontier step defaults to Fable");
+  });
+});
+
+describe("tierResolutionLine", () => {
+  it("formats '<Tier> → <Claude model> (<effort>) on Claude · <codex model> (<effort>) on Codex'", () => {
+    const line = tierResolutionLine(
+      "frontier",
+      { model: "opus", effort: "high" },
+      { model: "gpt-5.1-codex", effort: "high" }
+    );
+    expect(line).toBe("Frontier → Opus (high) on Claude · gpt-5.1-codex (high) on Codex");
+  });
+
+  it("capitalises the Claude alias but keeps the Codex model id exactly as configured (lowercase)", () => {
+    const line = tierResolutionLine(
+      "standard",
+      { model: "sonnet", effort: "medium" },
+      { model: "gpt-5.1-codex-mini", effort: "medium" }
+    );
+    expect(line).toContain("Sonnet (medium) on Claude");
+    expect(line).toContain("gpt-5.1-codex-mini (medium) on Codex");
+  });
+
+  it("uses the tier's human label, not the raw stored value", () => {
+    const line = tierResolutionLine("cheap", { model: "haiku", effort: "low" }, { model: "gpt-5.1-codex-mini", effort: "low" });
+    expect(line.startsWith("Cheap →")).toBe(true);
   });
 });

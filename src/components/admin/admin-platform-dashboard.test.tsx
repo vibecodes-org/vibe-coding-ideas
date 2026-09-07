@@ -24,14 +24,14 @@ const mockGetTerminalForAdmin = vi.fn();
 const mockUpdateTerminal = vi.fn();
 
 vi.mock("@/actions/admin-platform", () => ({
-  getPlatformModelDefaultsForAdmin: () => mockGetForAdmin(),
-  updatePlatformModelDefaults: (input: unknown) => mockUpdate(input),
+  getAgentAwarePlatformModelDefaultsForAdmin: () => mockGetForAdmin(),
+  updateAgentAwarePlatformModelDefaults: (input: unknown) => mockUpdate(input),
   getPlatformTerminalModelDefaultForAdmin: () => mockGetTerminalForAdmin(),
   updatePlatformTerminalModelDefault: (model: string | null) => mockUpdateTerminal(model),
 }));
 
 vi.mock("@/hooks/use-platform-model-defaults", () => ({
-  setPlatformModelDefaultsCache: vi.fn(),
+  setPlatformAgentAwareModelDefaultsCache: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
@@ -41,19 +41,19 @@ vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { AdminPlatformDashboard, AdminTerminalModelCard } from "./admin-platform-dashboard";
-import { SEED_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
+import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
 afterEach(cleanup);
 
 const SEEDED_AUDIT = {
-  value: SEED_PLATFORM_MODEL_DEFAULTS,
+  value: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
   updatedBy: { id: "u1", full_name: "Nick Ball" },
   updatedAt: "2026-07-20T00:00:00Z",
   isSeed: false,
 };
 
-describe("AdminPlatformDashboard", () => {
+describe("AdminPlatformDashboard (agent-aware, Codex model-tier task FR-7)", () => {
   it("renders the denied state for a non-super-admin and never fetches", () => {
     render(<AdminPlatformDashboard isSuperAdmin={false} />);
 
@@ -61,7 +61,7 @@ describe("AdminPlatformDashboard", () => {
     expect(mockGetForAdmin).not.toHaveBeenCalled();
   });
 
-  it("shows a loading skeleton, then the fetched frontier default and audit line", async () => {
+  it("shows a loading skeleton, then the fetched frontier default (both agents) and audit line", async () => {
     mockGetForAdmin.mockResolvedValue(SEEDED_AUDIT);
 
     render(<AdminPlatformDashboard isSuperAdmin />);
@@ -69,11 +69,15 @@ describe("AdminPlatformDashboard", () => {
     await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
     expect(screen.getByText("Nick Ball")).toBeInTheDocument();
     expect(screen.getByText(/Save enables when you change a value/)).toBeInTheDocument();
+    // The resolution line names both agents' seeded model.
+    expect(
+      screen.getByText(/Frontier → Opus \(high\) on Claude · gpt-6-astra \(high\) on Codex/)
+    ).toBeInTheDocument();
   });
 
   it("shows the 'using code defaults' note and disables Cancel when nothing has been saved yet", async () => {
     mockGetForAdmin.mockResolvedValue({
-      value: SEED_PLATFORM_MODEL_DEFAULTS,
+      value: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
       updatedBy: null,
       updatedAt: null,
       isSeed: true,
@@ -95,11 +99,17 @@ describe("AdminPlatformDashboard", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
-  it("'Reset to seed' stages the seed values locally (dirty, Save enabled) without saving", async () => {
+  it("'Reset to seed (both agents)' stages the seed values locally (dirty, Save enabled) without saving", async () => {
     const live = {
       value: {
-        defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" },
-        fallback: SEED_PLATFORM_MODEL_DEFAULTS.fallback,
+        ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+        defaults: {
+          ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults,
+          frontier: {
+            ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier,
+            claude: { model: "fable", effort: "high" },
+          },
+        },
       },
       updatedBy: { id: "u1", full_name: "Nick Ball" },
       updatedAt: "2026-07-20T00:00:00Z",
@@ -110,19 +120,25 @@ describe("AdminPlatformDashboard", () => {
     render(<AdminPlatformDashboard isSuperAdmin />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset to seed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset to seed (both agents)" }));
 
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("gates Save behind the novel-family confirm checkbox, then saves once confirmed", async () => {
-    // Load with a novel platform default already in place (frontier: "opus-5.5")
+  it("gates Save behind the novel-value confirm checkbox, then saves once confirmed", async () => {
+    // Load with a novel Codex default already in place (cheap: "gpt-5.1-nano-preview")
     // so the field renders as a free-text Input with no Select interaction needed.
     mockGetForAdmin.mockResolvedValue({
       value: {
-        defaults: { frontier: "opus-5.5", standard: "sonnet", cheap: "haiku" },
-        fallback: SEED_PLATFORM_MODEL_DEFAULTS.fallback,
+        ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+        defaults: {
+          ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults,
+          cheap: {
+            ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.cheap,
+            codex: { model: "gpt-5.1-nano-preview", effort: "low" },
+          },
+        },
       },
       updatedBy: null,
       updatedAt: null,
@@ -131,25 +147,31 @@ describe("AdminPlatformDashboard", () => {
 
     render(<AdminPlatformDashboard isSuperAdmin />);
 
-    const input = await screen.findByLabelText(/Frontier —/);
-    expect(input).toHaveValue("opus-5.5");
+    const input = await screen.findByDisplayValue("gpt-5.1-nano-preview");
 
     // Change to a different novel value -> dirty AND still novel.
-    fireEvent.change(input, { target: { value: "opus-5.6" } });
+    fireEvent.change(input, { target: { value: "gpt-5.1-nano-preview-2" } });
 
-    expect(screen.getByText(/isn't a known model alias/)).toBeInTheDocument();
+    expect(screen.getByText(/isn't a known model/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText(/Confirm the checkbox above to enable Save/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
 
-    mockUpdate.mockResolvedValue({
-      defaults: { frontier: "opus-5.6", standard: "sonnet", cheap: "haiku" },
-      fallback: SEED_PLATFORM_MODEL_DEFAULTS.fallback,
-    });
+    const saved = {
+      ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+      defaults: {
+        ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults,
+        cheap: {
+          ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.cheap,
+          codex: { model: "gpt-5.1-nano-preview-2", effort: "low" },
+        },
+      },
+    };
+    mockUpdate.mockResolvedValue(saved);
     mockGetForAdmin.mockResolvedValue({
-      value: { defaults: { frontier: "opus-5.6", standard: "sonnet", cheap: "haiku" }, fallback: SEED_PLATFORM_MODEL_DEFAULTS.fallback },
+      value: saved,
       updatedBy: { id: "u1", full_name: "Nick Ball" },
       updatedAt: "2026-07-25T00:00:00Z",
       isSeed: false,
@@ -157,24 +179,39 @@ describe("AdminPlatformDashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      defaults: expect.objectContaining({ frontier: "opus-5.6" }),
-    })));
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaults: expect.objectContaining({
+            cheap: expect.objectContaining({ codex: { model: "gpt-5.1-nano-preview-2", effort: "low" } }),
+          }),
+        })
+      )
+    );
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
   });
 
   it("shows a retryable error toast and keeps staged values when the save action throws", async () => {
     mockGetForAdmin.mockResolvedValue({
-      value: { defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" }, fallback: SEED_PLATFORM_MODEL_DEFAULTS.fallback },
+      value: {
+        ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+        defaults: {
+          ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults,
+          frontier: {
+            ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier,
+            claude: { model: "fable", effort: "high" },
+          },
+        },
+      },
       updatedBy: null,
       updatedAt: null,
       isSeed: false,
     });
 
     render(<AdminPlatformDashboard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Reset to seed" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reset to seed (both agents)" })).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset to seed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset to seed (both agents)" }));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
 
     mockUpdate.mockRejectedValueOnce(new Error("Super admin access required"));

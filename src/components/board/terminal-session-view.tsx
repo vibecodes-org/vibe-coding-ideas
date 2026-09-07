@@ -737,7 +737,7 @@ export function TerminalSessionView({
           {entry.agent === "codex" && (
             <span
               className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
-              title="This session runs Codex (OpenAI). Model and permissions are Codex's own settings."
+              title="This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model."
               tabIndex={0}
             >
               Codex

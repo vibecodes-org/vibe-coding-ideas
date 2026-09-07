@@ -8,7 +8,12 @@ import {
   isValidPlatformModelDefaults,
   SEED_PLATFORM_MODEL_DEFAULTS,
   PLATFORM_MODEL_DEFAULTS_KEY,
+  getAgentAwarePlatformModelDefaults,
+  normalizeToAgentAwarePlatformModelDefaults,
+  SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  REASONING_EFFORT_LEVELS,
   type PlatformModelDefaults,
+  type AgentAwarePlatformModelDefaults,
 } from "@/lib/platform-model-defaults";
 import {
   getPlatformTerminalModelDefault,
@@ -16,6 +21,7 @@ import {
   TERMINAL_MODEL_DEFAULT_KEY,
 } from "@/lib/terminal/platform-terminal-model";
 import { validateTerminalModelValue } from "@/lib/terminal/model-resolution";
+import { validateCodexModelValue } from "@/lib/codex-models";
 
 // ── Admin-configurable platform model-tier defaults ─────────────────────
 // Super-admin-only read-for-admin / write. Any authenticated user can read
@@ -117,6 +123,117 @@ export async function updatePlatformModelDefaults(
 
   if (error) {
     logger.error("Failed to save platform model tier defaults", { error: error.message, userId });
+    throw new Error("Failed to save platform model defaults — try again");
+  }
+
+  return parsed;
+}
+
+// ── Agent-aware platform model-tier defaults (Codex model-tier task, FR-7 UI
+// slice) ─────────────────────────────────────────────────────────────────
+// Same super-admin-only read-for-admin / write posture as the flat action
+// above, on the SAME platform_settings row (key model_tier_defaults — the
+// column is JSONB and transparently accepts either shape, see
+// platform-model-defaults.ts's module comment). This is what the admin
+// "Platform" tab now reads and writes; updatePlatformModelDefaults above is
+// kept only for any lingering flat-shape caller and its own tests — it is no
+// longer called by the UI.
+
+const reasoningEffortInputSchema = z.enum(REASONING_EFFORT_LEVELS);
+
+const agentTierEntryInputSchema = z.object({
+  model: z.string().trim().min(1).max(100),
+  effort: reasoningEffortInputSchema,
+});
+
+const agentAwarePlatformModelDefaultsInputSchema = z.object({
+  defaults: z.object({
+    frontier: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
+    standard: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
+    cheap: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
+  }),
+  fallback: z.object({
+    claude: z.record(z.string(), z.string().trim().min(1).max(100)),
+    codex: z.record(z.string(), z.string().trim().min(1).max(100)),
+  }),
+});
+
+export type AgentAwarePlatformModelDefaultsInput = z.infer<typeof agentAwarePlatformModelDefaultsInputSchema>;
+
+export type AgentAwarePlatformModelDefaultsAudit = {
+  value: AgentAwarePlatformModelDefaults;
+  updatedBy: { id: string; full_name: string | null } | null;
+  updatedAt: string | null;
+  isSeed: boolean;
+};
+
+/** Any authenticated user can call this — same read-for-everyone posture as
+ *  getPlatformModelDefaultsAction above. Used by usePlatformAgentAwareModelDefaults(). */
+export async function getAgentAwarePlatformModelDefaultsAction(): Promise<AgentAwarePlatformModelDefaults> {
+  const supabase = await createClient();
+  return getAgentAwarePlatformModelDefaults(supabase);
+}
+
+/** Admin "Platform" tab read — audit line + isSeed, normalized so a legacy
+ *  flat row (or one saved before this slice existed) upgrades transparently
+ *  instead of showing raw/invalid JSON. */
+export async function getAgentAwarePlatformModelDefaultsForAdmin(): Promise<AgentAwarePlatformModelDefaultsAudit> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value, updated_at, updated_by:users!platform_settings_updated_by_fkey(id, full_name)")
+    .eq("key", PLATFORM_MODEL_DEFAULTS_KEY)
+    .maybeSingle();
+
+  if (!data) {
+    return { value: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS, updatedBy: null, updatedAt: null, isSeed: true };
+  }
+
+  const value = normalizeToAgentAwarePlatformModelDefaults(data.value);
+  const updatedBy = Array.isArray(data.updated_by) ? data.updated_by[0] ?? null : data.updated_by ?? null;
+
+  return { value, updatedBy, updatedAt: data.updated_at, isSeed: false };
+}
+
+/**
+ * Save the agent-aware platform model-tier defaults. Super-admin-only
+ * (checked here AND by RLS — defence in depth). Beyond the zod shape check
+ * (every tier × agent has a non-empty model and a valid effort — AC-3's rule
+ * applies here too, though the UI should never let an incomplete pair
+ * reach Save), every Codex model id (both the per-tier defaults and the
+ * fallback chain) is re-validated with validateCodexModelValue — it's later
+ * passed to `codex -m`, so shell-safety is enforced server-side regardless of
+ * what the client sent.
+ */
+export async function updateAgentAwarePlatformModelDefaults(
+  input: AgentAwarePlatformModelDefaultsInput
+): Promise<AgentAwarePlatformModelDefaults> {
+  const parsed = agentAwarePlatformModelDefaultsInputSchema.parse(input);
+
+  for (const tier of ["frontier", "standard", "cheap"] as const) {
+    const validation = validateCodexModelValue(parsed.defaults[tier].codex.model);
+    if (!validation.ok) {
+      throw new Error(`${tier} (Codex): ${validation.reason}`);
+    }
+  }
+  for (const [key, model] of Object.entries(parsed.fallback.codex)) {
+    const validation = validateCodexModelValue(model);
+    if (!validation.ok) {
+      throw new Error(`Codex fallback for "${key}": ${validation.reason}`);
+    }
+  }
+
+  const { supabase, userId } = await requireSuperAdmin();
+
+  const { error } = await supabase.from("platform_settings").upsert({
+    key: PLATFORM_MODEL_DEFAULTS_KEY,
+    value: parsed,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    logger.error("Failed to save agent-aware platform model tier defaults", { error: error.message, userId });
     throw new Error("Failed to save platform model defaults — try again");
   }
 

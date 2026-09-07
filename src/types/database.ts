@@ -10,6 +10,22 @@ export interface WorkflowTemplateStep {
   model_tier?: string;
 }
 
+/** Codex model-tier task (FR-2): `users.model_tier_map`'s stored shape,
+ *  agent-aware since migration 00171. A legacy flat row (bare
+ *  `{frontier?/standard?/cheap?: string}`) reads as a Claude-only model
+ *  override; the new shape nests per-agent `{ model?, effort? }` under each
+ *  tier. Both shapes are valid JSON for this JSONB column — always read
+ *  through `normalizeUserModelTierMap()` (src/lib/platform-model-defaults.ts),
+ *  never assume one shape. */
+export type ModelTierMapStored =
+  | { frontier?: string; standard?: string; cheap?: string }
+  | Partial<
+      Record<
+        "frontier" | "standard" | "cheap",
+        Partial<Record<"claude" | "codex", Partial<{ model: string; effort: string }>>>
+      >
+    >;
+
 export type Database = {
   public: {
     Tables: {
@@ -41,7 +57,7 @@ export type Database = {
            *  devices. Empty object = no saved preference — see IdeaFeedPreferences
            *  in src/types/index.ts. */
           feed_preferences: { view?: string; status?: string; sort?: string };
-          model_tier_map: { frontier?: string; standard?: string; cheap?: string } | null;
+          model_tier_map: ModelTierMapStored | null;
           /** In-app terminal starting-model override. NULL = platform default;
            *  '__machine_default__' = explicit opt-out (see MACHINE_DEFAULT_TERMINAL_MODEL
            *  in src/lib/terminal/model-resolution.ts); any other string = passed
@@ -103,7 +119,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           feed_preferences?: { view?: string; status?: string; sort?: string };
-          model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
+          model_tier_map?: ModelTierMapStored | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;
           terminal_agent?: "claude" | "codex";
@@ -143,7 +159,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           feed_preferences?: { view?: string; status?: string; sort?: string };
-          model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
+          model_tier_map?: ModelTierMapStored | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;
           terminal_agent?: "claude" | "codex";
@@ -914,6 +930,10 @@ export type Database = {
           match_tier: string | null;
           model_tier: string | null;
           executed_model: string | null;
+          /** Migration 00171 (Codex model-tier task, FR-8). Self-reported
+           *  reasoning-effort level ('low' | 'medium' | 'high' | 'unknown')
+           *  the step actually ran with, paired with executed_model. */
+          reasoning_effort_used: string | null;
           tier_honored: boolean | null;
           persona_used: string | null;
           persona_honored: boolean | null;
@@ -941,6 +961,7 @@ export type Database = {
           match_tier?: string | null;
           model_tier?: string | null;
           executed_model?: string | null;
+          reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
@@ -972,6 +993,7 @@ export type Database = {
           match_tier?: string | null;
           model_tier?: string | null;
           executed_model?: string | null;
+          reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;

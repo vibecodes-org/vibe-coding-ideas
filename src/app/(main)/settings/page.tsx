@@ -5,6 +5,7 @@ import { EditProfileDialog } from "@/components/profile/edit-profile-dialog";
 import { NotificationSettings } from "@/components/profile/notification-settings";
 import { ApiKeySettings } from "@/components/profile/api-key-settings";
 import { ModelTierSettings } from "@/components/profile/model-tier-settings";
+import { normalizeUserModelTierMap } from "@/lib/platform-model-defaults";
 import { BoardColumnSettings } from "@/components/profile/board-column-settings";
 import { McpApiKeys } from "@/components/profile/mcp-api-keys";
 import { GithubConnection } from "@/components/profile/github-connection";
@@ -134,7 +135,12 @@ export default async function SettingsPage() {
             description="Which Claude model each tier and the in-app terminal use."
             action={
               <ModelTierSettings
-                map={ownSettings.model_tier_map}
+                // model_tier_map's stored type is agent-aware now (Codex
+                // model-tier task, FR-2 — see ModelTierMapStored in
+                // src/types/database.ts). Normalized server-side so a legacy
+                // flat row (or malformed/empty value) upgrades transparently
+                // before ModelTierSettings ever sees it (AC-2 backward compat).
+                agentAwareMap={normalizeUserModelTierMap(ownSettings.model_tier_map)}
                 terminalModel={ownSettings.terminal_model}
                 terminalAutoAccept={ownSettings.terminal_auto_accept}
               />
