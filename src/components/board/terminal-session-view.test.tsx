@@ -282,10 +282,14 @@ function baseEntry(overrides: Partial<SessionEntry> = {}): SessionEntry {
   };
 }
 
-function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void) {
+function renderView(
+  poppedOut: boolean,
+  onRetryReconnect?: (sid: string) => void,
+  entryOverrides: Partial<SessionEntry> = {},
+) {
   return render(
     <TerminalSessionView
-      entry={baseEntry()}
+      entry={baseEntry(entryOverrides)}
       descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
       label="Session 1"
       isActive
@@ -932,11 +936,10 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
   });
 });
 
-// ── auto-accept badge (task d3de150c) ────────────────────────────────────
-// Design review note 2: this badge must NOT copy the Read-only pill's
-// `state.status === "connected"` gate — it needs to show for the session's
-// whole life (launched, connected, disconnected, reconnecting/waiting), not
-// just while actively connected.
+// ── agent chip (Nick, 7 Sep 2026) ────────────────────────────────────────
+// Every in-browser session names its agent in the panel header — Claude Code
+// as well as Codex — and the old per-agent tab-strip pill and the "Auto mode"
+// header chip were both removed as redundant.
 
 function installMockSessionWithStatus(status: TerminalConnectionState["status"], autoAccept: boolean) {
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
@@ -972,38 +975,29 @@ function installMockSessionWithStatus(status: TerminalConnectionState["status"],
   });
 }
 
-describe("TerminalSessionView — auto-accept badge (task d3de150c)", () => {
-  it("shows the Auto-accept badge while connected", () => {
+describe("TerminalSessionView — agent chip (Nick, 7 Sep 2026)", () => {
+  it("names a Codex session in the panel header", () => {
     installMockSessionWithStatus("connected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+    renderView(false, undefined, { agent: "codex" });
+    expect(screen.getByText("Codex")).toBeInTheDocument();
   });
 
-  it("shows the Auto-accept badge while disconnected — NOT gated on status === connected", () => {
-    installMockSessionWithStatus("disconnected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+  it("names a Claude Code session in the panel header (previously unlabelled)", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false, undefined, { agent: "claude" });
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("shows the Auto-accept badge while waiting-to-pair/reconnecting", () => {
-    installMockSessionWithStatus("waiting-to-pair", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+  it("defaults a legacy entry with no recorded agent to Claude Code", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false); // no agent override
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("never shows the badge when the session was not launched with the flag", () => {
-    installMockSessionWithStatus("connected", false);
-    renderView(false);
+  it("no longer shows the 'Auto mode' header chip, even when launched with auto-accept", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false, undefined, { agent: "claude" });
     expect(screen.queryByText("Auto mode")).not.toBeInTheDocument();
-  });
-
-  it("renders an accessible title explaining the mode, not just an icon", () => {
-    installMockSessionWithStatus("connected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode").closest("span")).toHaveAttribute(
-      "title",
-      expect.stringContaining("approves routine edits and commands itself"),
-    );
   });
 });
 
