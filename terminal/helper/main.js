@@ -112,6 +112,7 @@ const SHARED_BINARY_CHECK = app.isPackaged
 const LOCAL_AGENT_AVAILABILITY = path.resolve(__dirname, "agent-availability.mjs");
 const LOCAL_OPEN_TERMINAL = path.resolve(__dirname, "open-terminal.mjs");
 const LOCAL_OPEN_TERMINAL_GATE = path.resolve(__dirname, "open-terminal-gate.mjs");
+const LOCAL_CONTROL_URL = path.resolve(__dirname, "control-url.mjs");
 
 // The control connection is plain `ws` — the SAME package the bridge already
 // depends on (terminal/bridge/package.json), shipped alongside it under
@@ -193,6 +194,12 @@ let _openTerminalGate = null;
 async function openTerminalGateMod() {
   if (!_openTerminalGate) _openTerminalGate = await import(pathToFileURL(LOCAL_OPEN_TERMINAL_GATE).href);
   return _openTerminalGate;
+}
+
+let _controlUrl = null;
+async function controlUrlMod() {
+  if (!_controlUrl) _controlUrl = await import(pathToFileURL(LOCAL_CONTROL_URL).href);
+  return _controlUrl;
 }
 
 /**
@@ -652,35 +659,54 @@ async function handleOpenTerminalUrl(rawUrl) {
   // TERMINAL_SESSION_SECRET, so it can NEVER verify the token's signature
   // itself — decodeTokenClaims above is a cheap shape/role check only, not
   // authorization. Only the RELAY can authoritatively verify this token (via
-  // authorizeAttach), so open (or refresh) the control connection carrying an
-  // explicit `purpose=open-terminal` marker and AWAIT its authenticated
+  // authorizeAttach), so open a DEDICATED control socket carrying an explicit
+  // `purpose=open-terminal` marker (connectOpenTerminalControl — NEVER the
+  // primary connectControl; see that function's header comment for the live
+  // regression this split fixes) and AWAIT its authenticated
   // `open-terminal-authorized` ack before writing anything to disk or
   // spawning `open -a Terminal`. A bare WebSocket "open" event does NOT prove
   // acceptance — the relay accept()s a bad token too, then closes it — so
-  // this function must never treat connectControl's return alone as success;
-  // see open-terminal-gate.mjs for the wait itself. This is also what lets a
-  // desktop-only user (who never fired a browser `launch` link) get a
-  // control connection at all — the requirements' explicit note that this
-  // link must carry helperToken.
+  // this function must never treat connectOpenTerminalControl's return alone
+  // as success; see open-terminal-gate.mjs for the wait itself. This is also
+  // what lets a desktop-only user (who never fired a browser `launch` link)
+  // get a control connection at all — the requirements' explicit note that
+  // this link must carry helperToken.
   saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
-  const controlSocket = await connectControl(parsed.relay, parsed.helperToken, { purpose: "open-terminal" });
+
+  // RACE FIX: pre-import the gate + frame-parser modules BEFORE opening the
+  // socket, so `waitForOpenTerminalAuthorization` can attach its "message"
+  // listener in the SAME synchronous tick the socket becomes available — no
+  // `await` gap in between. Before this fix, these dynamic imports ran AFTER
+  // the socket was opened, and an ack that arrived during that gap (reliably,
+  // against the real relay) was silently dropped, always producing the full
+  // 8s timeout and opening no window.
+  const [{ waitForOpenTerminalAuthorization }, { isOpenTerminalAuthorizedFrame }] = await Promise.all([
+    openTerminalGateMod(),
+    controlFramesMod(),
+  ]);
+  const controlSocket = await connectOpenTerminalControl(parsed.relay, parsed.helperToken);
   if (!controlSocket) {
     log("error", "open-terminal — could not open a control connection to verify this request — refusing to open a window");
     reportOpenTerminalFailure("Couldn't verify this request with VibeCodes — nothing was opened.");
     return;
   }
-  const [{ waitForOpenTerminalAuthorization }, { isOpenTerminalAuthorizedFrame }] = await Promise.all([
-    openTerminalGateMod(),
-    controlFramesMod(),
-  ]);
+  // No `await` between having the socket and listening — attach synchronously.
+  const authorization = waitForOpenTerminalAuthorization(controlSocket, {
+    isAuthorizedFrame: isOpenTerminalAuthorizedFrame,
+  });
   try {
-    await waitForOpenTerminalAuthorization(controlSocket, { isAuthorizedFrame: isOpenTerminalAuthorizedFrame });
+    await authorization;
   } catch (e) {
     log("error", "open-terminal request was not authorized by the relay — refusing to open a window", {
       err: String(e?.message || e),
     });
     reportOpenTerminalFailure("Couldn't verify this request with VibeCodes — nothing was opened.");
     return;
+  } finally {
+    // The handshake is a one-shot — close it the instant it settles (success,
+    // rejection, or timeout), whichever branch is taken. Never lingers, and
+    // never touches the primary controlWs.
+    try { controlSocket.close(); } catch { /* already closing */ }
   }
   log("info", "open-terminal request authorized by relay");
 
@@ -798,42 +824,15 @@ function closeControlConnection() {
 }
 
 /**
- * Open (or re-open) the control connection to `relay` with the given HELPER
- * role token. A redundant call for the SAME (relay, token) while already open
- * is a no-op (the deep-link module's own contract for a repeat launch) —
- * UNLESS `opts.purpose` is set, in which case a FRESH connection is always
- * made so the caller gets a genuine round trip to verify against (see
- * `opts.purpose` doc below). Returns the live `ws.WebSocket` it is using (the
- * reused one, or a freshly created one), or `null` if no connection was
- * (re)established (quitting, or an unparseable token).
- *
- * @param {string} relayBase @param {string} token
- * @param {{ purpose?: "open-terminal" }} [opts]
- *   `purpose` — carried as a `purpose=` query param on the connect URL. Used
- *   ONLY by the desktop-Codex open-terminal gate (Finding 1 fix): it marks
- *   this connection so the relay sends back an explicit
- *   `open-terminal-authorized` ack once `authorizeAttach` verifies the token
- *   (see terminal/shared/control-frames.mjs and relay/src/index.js's
- *   fetchHelperLeg). Bypassing the "already connected, no-op" shortcut for a
- *   purposed call matters because a REUSED connection was authorized for
- *   WHATEVER purpose it originally connected with (possibly none) — it must
- *   never be treated as having proven anything for this NEW request.
- * @returns {Promise<import("ws").WebSocket | null>}
+ * Look up a token's claims + a fresh agent-availability snapshot — the two
+ * pieces of state both connectControl and connectOpenTerminalControl need
+ * before they can build a connect URL. Pulled out so neither duplicates the
+ * other's decode-and-probe logic.
+ * @returns {Promise<{ claims: { sid?: string } | null, availability: { claude: boolean, codex: boolean } | null }>}
  */
-async function connectControl(relayBase, token, opts = {}) {
-  const { purpose } = opts;
-  if (quitting) return null;
-  if (!purpose && controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
-    return controlWs; // already connected with this exact credential — no-op
-  }
-  closeControlConnection();
-
+async function resolveControlConnectInputs(token) {
   const { decodeTokenClaims } = await sessionTokenMod();
   const claims = decodeTokenClaims(token);
-  if (!claims?.sid) {
-    log("error", "control token unparseable — cannot open control connection");
-    return null;
-  }
 
   // Codex support (FR-3's helper-side half): report which known agents are
   // installed on THIS attach — a fresh, best-effort check every time (not
@@ -848,21 +847,51 @@ async function connectControl(relayBase, token, opts = {}) {
   } catch (e) {
     log("warn", "agent availability check failed — reporting unknown", { err: String(e?.message || e) });
   }
+  return { claims, availability };
+}
 
-  const params = new URLSearchParams({
-    session: claims.sid,
-    role: "helper",
+/**
+ * Open (or re-open) the PRIMARY control connection to `relay` with the given
+ * HELPER role token. A redundant call for the SAME (relay, token) while
+ * already open is a no-op (the deep-link module's own contract for a repeat
+ * launch). Returns the live `ws.WebSocket` it is using (the reused one, or a
+ * freshly created one), or `null` if no connection was (re)established
+ * (quitting, or an unparseable token).
+ *
+ * This is the ONLY function allowed to read or assign the module-level
+ * `controlWs` — the desktop-Codex open-terminal handshake uses the
+ * completely separate connectOpenTerminalControl() below precisely so it can
+ * never disturb this connection or the live session it may be keeping alive
+ * (regression fixed here, live-confirmed on Nick's Mac 6 Sep 2026: a
+ * `purpose=open-terminal` call used to reuse this same function, which
+ * unconditionally closed and replaced `controlWs`).
+ *
+ * @param {string} relayBase @param {string} token
+ * @returns {Promise<import("ws").WebSocket | null>}
+ */
+async function connectControl(relayBase, token) {
+  if (quitting) return null;
+  if (controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
+    return controlWs; // already connected with this exact credential — no-op
+  }
+  closeControlConnection();
+
+  const { claims, availability } = await resolveControlConnectInputs(token);
+  if (!claims?.sid) {
+    log("error", "control token unparseable — cannot open control connection");
+    return null;
+  }
+
+  const { buildControlConnectUrl } = await controlUrlMod();
+  const url = buildControlConnectUrl({
+    relayBase,
+    sid: claims.sid,
     token,
     helperVersion: HELPER_VERSION,
     machineLabel: os.hostname(),
-    alwaysOn: alwaysOn ? "1" : "0",
+    alwaysOn,
+    availability,
   });
-  if (availability) {
-    params.set("codexInstalled", availability.codex ? "1" : "0");
-    params.set("claudeInstalled", availability.claude ? "1" : "0");
-  }
-  if (purpose) params.set("purpose", purpose);
-  const url = `${relayBase.replace(/\/$/, "")}/?${params}`;
   log("info", "opening control connection", { host: (() => { try { return new URL(relayBase).host; } catch { return "unparseable"; } })() });
 
   const ws = new WebSocket(url);
@@ -903,6 +932,63 @@ async function connectControl(relayBase, token, opts = {}) {
       return;
     }
     scheduleControlReconnect(relayBase, token);
+  });
+  return ws;
+}
+
+/**
+ * Open a DEDICATED, throwaway control-connection socket for the desktop-Codex
+ * open-terminal authorization handshake (security review Finding 1). This
+ * function is deliberately NOT a mode of connectControl — it:
+ *   - NEVER reads or assigns the module-level `controlWs`, so the PRIMARY
+ *     control connection (and any live session it is keeping alive) is
+ *     completely undisturbed by an open-terminal request;
+ *   - installs no reconnect-on-close scheduling — it is a one-shot handshake
+ *     socket, not a standing connection;
+ *   - shares ONLY the URL/param-building logic with connectControl
+ *     (buildControlConnectUrl via resolveControlConnectInputs), never its
+ *     socket wiring.
+ * Always carries `purpose=open-terminal`. Never a no-op reuse — every call
+ * gets a genuinely fresh socket, so the caller has a real round trip to
+ * verify against (a reused connection could have been authorized for
+ * whatever it originally connected for, possibly nothing).
+ *
+ * The caller (handleOpenTerminalUrl) owns the returned socket's entire
+ * lifecycle and MUST close it once the handshake settles — success,
+ * rejection, or timeout. This function only attaches a log-on-error
+ * listener; it never closes the socket itself.
+ *
+ * @param {string} relayBase @param {string} token
+ * @returns {Promise<import("ws").WebSocket | null>} null if the token is unparseable.
+ */
+async function connectOpenTerminalControl(relayBase, token) {
+  const { claims, availability } = await resolveControlConnectInputs(token);
+  if (!claims?.sid) {
+    log("error", "open-terminal control token unparseable — cannot open control connection");
+    return null;
+  }
+
+  const { buildControlConnectUrl } = await controlUrlMod();
+  const url = buildControlConnectUrl({
+    relayBase,
+    sid: claims.sid,
+    token,
+    helperVersion: HELPER_VERSION,
+    machineLabel: os.hostname(),
+    alwaysOn,
+    availability,
+    purpose: "open-terminal",
+  });
+  log("info", "opening dedicated open-terminal control connection", {
+    host: (() => { try { return new URL(relayBase).host; } catch { return "unparseable"; } })(),
+  });
+
+  const ws = new WebSocket(url);
+  // Log-only — the actual accept/reject outcome is handled by
+  // waitForOpenTerminalAuthorization's own close/error listeners in
+  // open-terminal-gate.mjs. This never touches controlWs.
+  ws.on("error", (err) => {
+    log("warn", "open-terminal control connection error", { err: String(err?.message || err) });
   });
   return ws;
 }
@@ -1172,3 +1258,23 @@ if (!gotLock) {
     })();
   });
 }
+
+// ── test-only hook ────────────────────────────────────────────────────────
+// main.js is always launched as Electron's own entry point (`electron .`) —
+// nothing in production ever `require()`s it. Exporting these internals is
+// therefore harmless in production and is what lets
+// terminal/test/control-connection.test.mjs load this file (with `electron`
+// and `ws` swapped for fakes) to regression-test the exact bug fixed here: a
+// desktop-Codex open-terminal handshake must never touch the primary
+// `controlWs` — see connectControl's and connectOpenTerminalControl's header
+// comments above.
+module.exports = {
+  __test: {
+    connectControl,
+    connectOpenTerminalControl,
+    handleOpenTerminalUrl,
+    closeControlConnection,
+    getControlWs: () => controlWs,
+    resetOpenTerminalCooldown: () => { openTerminalCooldownUntil = 0; },
+  },
+};

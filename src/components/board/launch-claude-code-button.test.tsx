@@ -377,14 +377,21 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
     location.restore();
   });
 
-  it("no helper known: shows a toast, never fires a link", async () => {
+  it("helper idle/unknown (null status) STILL fires the link when a folder is known — the launch cold-launches the sleeping helper", async () => {
+    // Regression: the helper sleeps when idle, so it is usually NOT connected
+    // at click time. A null/disconnected status must NOT block — firing the
+    // vibecodes://open-terminal link is what wakes the helper (which then runs
+    // its own codex/version checks). Blocking here made "Launch in Codex" a
+    // no-op whenever the helper wasn't already running.
     mockFetchHelperStatus.mockResolvedValue(null);
     const location = stubLocationAssign();
 
-    clickLaunchInCodex(false);
+    clickLaunchInCodex(true);
 
-    await waitFor(() => expect(mockCapture).toHaveBeenCalledWith("launch_claude_code_clicked", expect.anything()));
-    expect(location.assign).not.toHaveBeenCalled();
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(url.startsWith("vibecodes://open-terminal?")).toBe(true);
+    expect(url).toContain("agent=codex");
 
     location.restore();
   });

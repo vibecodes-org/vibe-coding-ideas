@@ -515,28 +515,34 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     launchingRef.current = true;
     void (async () => {
       try {
+        // Helper-status is a PRE-flight courtesy, never a hard gate. The helper
+        // sleeps when idle, so it is usually NOT connected at click time — and
+        // firing the vibecodes://open-terminal link is exactly what cold-
+        // launches it (macOS routes the scheme to the installed app), after
+        // which it runs its OWN codex/version pre-checks at attach and the
+        // relay-authenticated gate decides. So a null/disconnected/unknown
+        // status must fall through to the launch — the design's "unknown reads
+        // as enabled" rule (§7b/§12d). We only short-circuit on a POSITIVE
+        // negative from a LIVE helper (too old, or codex definitely absent),
+        // where we can give a better message than the cold-launch would.
         const status = await fetchHelperStatus();
-        if (!status || !status.connected) {
-          toast("Opening Codex in a Terminal window needs the VibeCodes helper app", {
-            description: "Install or start the VibeCodes helper, then try again.",
-          });
-          return;
-        }
-        if (shouldShowHelperUpdateNudge(status.version)) {
-          toast(`Your VibeCodes helper needs an update to open Codex (v${MINIMUM_RECOMMENDED_HELPER_VERSION}+)`, {
-            description: "Update the helper from the terminal dock, then try again.",
-          });
-          return;
-        }
-        if (status.codexInstalled === false) {
-          toast("Codex isn't installed on this Mac", {
-            description: 'Use "Launch Codex in browser terminal" for now, or install Codex.',
-            action: {
-              label: "How to install Codex",
-              onClick: () => window.open(CODEX_INSTALL_GUIDE_URL, "_blank", "noopener,noreferrer"),
-            },
-          });
-          return;
+        if (status?.connected) {
+          if (shouldShowHelperUpdateNudge(status.version)) {
+            toast(`Your VibeCodes helper needs an update to open Codex (v${MINIMUM_RECOMMENDED_HELPER_VERSION}+)`, {
+              description: "Update the helper from the terminal dock, then try again.",
+            });
+            return;
+          }
+          if (status.codexInstalled === false) {
+            toast("Codex isn't installed on this Mac", {
+              description: 'Use "Launch Codex in browser terminal" for now, or install Codex.',
+              action: {
+                label: "How to install Codex",
+                onClick: () => window.open(CODEX_INSTALL_GUIDE_URL, "_blank", "noopener,noreferrer"),
+              },
+            });
+            return;
+          }
         }
 
         const { state, cwd } = await resolveFreshLaunch();
