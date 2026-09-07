@@ -24,8 +24,18 @@ files:
   - proto-reg.js
   - lifecycle.js
   - tray-icon.js
-  - agent-availability.mjs
-  - open-terminal.mjs
+  # Every helper-local ESM module (agent-availability, open-terminal,
+  # open-terminal-gate, control-url, …) via a GLOB — never an explicit list.
+  # 0.3.13 shipped WITHOUT control-url.mjs + open-terminal-gate.mjs because
+  # they were added to the code but not to this list; main.js imports
+  # control-url.mjs on EVERY control connection, so the missing module threw an
+  # unhandledRejection → the crash handler's app.exit(1) → the helper died and
+  # NO terminal session could start (browser or desktop). Card 3e9d525e is the
+  # earlier instance of the same class of bug. A glob makes it structurally
+  # impossible to forget a new *.mjs the helper requires.
+  - "*.mjs"
+  - "!*.test.mjs"
+  - "!verify-helper-launch.mjs"
   - package.json
 
 extraResources:

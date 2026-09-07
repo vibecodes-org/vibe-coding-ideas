@@ -57,14 +57,16 @@
  *  open-terminal at all, so this bump is what actually gives users the Codex
  *  option. (0.3.12 was an internal build superseded by 0.3.13's launch fixes:
  *  a desktop Codex launch no longer tears down a live in-browser session.)
- *  ROLLED BACK to 0.3.11 on 2026-09-07: 0.3.13 broke ALL browser terminal
- *  launches on Nick's Mac (sessions would not start at all — suspected the
- *  bridge's new pre-flight agent-installed PATH check failing to find `claude`
- *  in the forked bridge's minimal PATH, ending the session before spawn).
- *  0.3.11 is the last known-good release; do NOT re-bump until the launch
- *  regression is fixed and a fresh helper is live-verified to START A NORMAL
- *  CLAUDE BROWSER SESSION on a real Mac. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.11";
+ *  0.3.13 was ROLLED BACK on 2026-09-07: it broke ALL browser terminal launches
+ *  (sessions would not start at all). ROOT CAUSE was a packaging omission, NOT
+ *  the code — electron-builder.yml's `files:` list didn't include
+ *  `control-url.mjs` (loaded on every control connection) + `open-terminal-gate.mjs`,
+ *  so the helper hit a missing-module import → unhandledRejection → the crash
+ *  handler's app.exit(1) → the whole helper died and no session could start.
+ *  0.3.14 fixes it: electron-builder.yml now globs `*.mjs` (verified both
+ *  modules present in the shipped app.asar), and Codex support is otherwise
+ *  identical to 0.3.13. Re-bumped to 0.3.14 for Nick's live test. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.14";
 
 export type HelperVersionParts = readonly [number, number, number];
 
