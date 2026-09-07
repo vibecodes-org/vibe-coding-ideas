@@ -56,8 +56,15 @@
  *  ignores the `agent` param (spawns Claude) and doesn't understand
  *  open-terminal at all, so this bump is what actually gives users the Codex
  *  option. (0.3.12 was an internal build superseded by 0.3.13's launch fixes:
- *  a desktop Codex launch no longer tears down a live in-browser session.) */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.13";
+ *  a desktop Codex launch no longer tears down a live in-browser session.)
+ *  ROLLED BACK to 0.3.11 on 2026-09-07: 0.3.13 broke ALL browser terminal
+ *  launches on Nick's Mac (sessions would not start at all — suspected the
+ *  bridge's new pre-flight agent-installed PATH check failing to find `claude`
+ *  in the forked bridge's minimal PATH, ending the session before spawn).
+ *  0.3.11 is the last known-good release; do NOT re-bump until the launch
+ *  regression is fixed and a fresh helper is live-verified to START A NORMAL
+ *  CLAUDE BROWSER SESSION on a real Mac. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.11";
 
 export type HelperVersionParts = readonly [number, number, number];
 
