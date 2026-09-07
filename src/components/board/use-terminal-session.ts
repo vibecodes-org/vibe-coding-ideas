@@ -1349,6 +1349,15 @@ export function useTerminalSession(
       // or, now, a recorded DB path) emits the same verify-folder step.
       existingPath:
         s.mode === "existing" && s.path.trim() ? s.path.trim() : undefined,
+      // FR-6: thread the chosen agent into the board-connect copy. A chooser
+      // "Start new session" launch reaches here with `carried` holding only
+      // `{ agent }` (no essentials — see the guard above), so without this the
+      // essentials were built with the default "claude" board-connect commands
+      // while the bridge spawned Codex — Codex was told to run `claude mcp add`
+      // and `/mcp` and could not connect (Nick, 7 Sep 2026). The launch button
+      // path already threads agent (buildCompactEssentials); this closes the
+      // hook path's gap.
+      agent: carried?.agent,
     });
     return { essentials, cwd: resolveLaunchCwd(s, effectiveTarget.cwd), agent: carried?.agent };
   }, [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths]);
