@@ -15,10 +15,23 @@
 // identical mechanism to Claude's, which is why the bridge's existing
 // "prompt as one argv element" / "cwd via PTY spawn opts" plumbing needs no
 // change. What does NOT carry over: pre-assigned session ids, worktree
-// isolation, model ids, and the auto-accept flag — none of those are ever
-// safe to forward to Codex (they're either meaningless or actively wrong), so
-// this resolver refuses to emit them regardless of what the caller passes in
-// (AC-3's hard requirement).
+// isolation, and the auto-accept flag — none of those are ever safe to forward
+// to Codex (they're either meaningless or actively wrong), so this resolver
+// refuses to emit them regardless of what the caller passes in (AC-3).
+//
+// MODEL (FR-4, agent-aware model tiers): a FRESH Codex launch MAY open on a
+// chosen Codex model + reasoning effort via `codex -m <model> -c
+// model_reasoning_effort=<effort>`. This is the ONE thing FR-4 deliberately
+// un-strips for Codex — but ONLY the Codex-native `codexModel`/`codexEffort`
+// pair (never the Claude-only `model`/`permissionMode`/`worktree`), only on a
+// fresh launch (never on `codex resume`), and ONLY after both values pass the
+// shell-safe validators (validateCodexModelValue / validateReasoningEffort):
+// a value that fails validation is DROPPED and the launch proceeds bare —
+// never interpolated. Post-validation the values carry no whitespace or shell
+// metacharacters, so they ride as their own argv elements exactly like
+// Claude's `--model` (AC-8: one element per value, fixed `codex` binary).
+
+import { validateCodexModelValue, validateReasoningEffort } from "@/lib/codex-models";
 
 /** The two agents VibeCodes can launch. */
 export type LaunchAgent = "claude" | "codex";
@@ -58,8 +71,21 @@ export interface AgentLaunchOptions {
    */
   resume?: boolean;
   /** Claude-only. Ignored outright for Codex — never reaches the command
-   *  (AC-3), even if a caller passes one through by mistake. */
+   *  (AC-3), even if a caller passes one through by mistake. The Codex-native
+   *  model is `codexModel` below, NOT this. */
   model?: string | null;
+  /**
+   * Codex-only (FR-4): the Codex model id to open a FRESH Codex session on
+   * (`codex -m <model>`). Dropped unless it passes validateCodexModelValue AND
+   * `codexEffort` also validates. Never emitted for Claude, never on a resume.
+   */
+  codexModel?: string | null;
+  /**
+   * Codex-only (FR-4): the reasoning effort for a fresh Codex launch
+   * (`-c model_reasoning_effort=<effort>`). Required alongside `codexModel` —
+   * one without the other emits neither.
+   */
+  codexEffort?: string | null;
   /** Claude-only. Same posture as `model`. */
   permissionMode?: string | null;
   /**
@@ -90,6 +116,25 @@ export interface ResolvedAgentLaunch {
 }
 
 /**
+ * FR-4: the ` -m <model> -c model_reasoning_effort=<effort>` suffix for a fresh
+ * Codex launch, or "" when either value is missing or fails its shell-safe
+ * validator. Both must validate TOGETHER — a valid model with an absent or
+ * invalid effort emits neither (and vice versa), so a session never opens on a
+ * half-specified pair. Post-validation neither value contains whitespace or a
+ * shell metacharacter, so interpolating them into the shell-split command is
+ * safe and each rides as its own argv element (AC-8).
+ */
+function codexModelFlags(
+  model: string | null | undefined,
+  effort: string | null | undefined
+): string {
+  if (!model || !effort) return "";
+  if (!validateCodexModelValue(model).ok) return "";
+  if (!validateReasoningEffort(effort).ok) return "";
+  return ` -m ${model} -c model_reasoning_effort=${effort}`;
+}
+
+/**
  * Resolve the command to spawn for a launch, agent-aware. See the file header
  * for what does and doesn't carry over to Codex. Claude's own branching is
  * unchanged from resolveClaudeLaunch (terminal/bridge/src/resume-cmd.js) —
@@ -103,14 +148,17 @@ export function resolveAgentLaunch(opts: AgentLaunchOptions): ResolvedAgentLaunc
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
 
   if (agent === "codex") {
-    // Never emit --model / --permission-mode / --session-id / --worktree for
-    // Codex, no matter what the caller passed in above — AC-3's hard
-    // requirement. Those options simply aren't read past this point.
+    // Never emit the Claude-only --model / --permission-mode / --session-id /
+    // --worktree for Codex, no matter what the caller passed in — AC-3. They
+    // aren't read past this point. (The Codex-native model rides codexModel.)
     if (resumeId) return { cmd: `codex resume ${resumeId}`, conv: resumeId };
     if (resume) return { cmd: "codex resume --last", conv: null };
     // Fresh Codex launch: no pre-assignable session id (§2.2) — conv is
     // honestly null, same posture as Claude's legacy `--continue` branch.
-    return { cmd: "codex", conv: null };
+    // FR-4: open on the chosen Codex model + effort, but ONLY when BOTH pass
+    // the shell-safe validators — otherwise drop both and launch bare `codex`.
+    const modelFlags = codexModelFlags(opts.codexModel, opts.codexEffort);
+    return { cmd: `codex${modelFlags}`, conv: null };
   }
 
   // Claude — unchanged from resolveClaudeLaunch's four branches.
