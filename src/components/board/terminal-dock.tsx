@@ -153,7 +153,7 @@ import {
 } from "@/lib/terminal/split-view";
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
-import { getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
   DISPLAY_NAME_COUNTER_THRESHOLD,
@@ -865,7 +865,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // in another tab" — the pre-reload set alone isn't enough once a
         // fresh mint lands.
         readTabSids(),
-        getMachineIdentity(),
+        getMachineIdentities(),
       ),
     [registryRows, ideaId],
   );
