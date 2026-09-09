@@ -41,6 +41,13 @@ export interface ResolveTerminalCodexModelInput {
   isValidEffort: (value: string) => boolean;
 }
 
+export type TerminalCodexModelSource = "user" | "machine" | "platform" | "fallback";
+
+export interface ResolvedTerminalCodexModel {
+  pair: TerminalCodexModelPair | undefined;
+  source: TerminalCodexModelSource;
+}
+
 /**
  * Codex has an atomic model+effort launch contract. A user can inherit, opt
  * out to their machine default, or supply a complete valid pair. Invalid and
@@ -55,14 +62,31 @@ export function resolveEffectiveTerminalCodexModel({
   isValidModel,
   isValidEffort,
 }: ResolveTerminalCodexModelInput): TerminalCodexModelPair | undefined {
-  if (userModel === MACHINE_DEFAULT_TERMINAL_MODEL) return undefined;
+  return resolveEffectiveTerminalCodexModelWithSource({
+    userModel, userEffort, platformPair, fallbackPair, isValidModel, isValidEffort,
+  }).pair;
+}
+
+/** Same precedence as the mint resolver, with the winning source for Profile. */
+export function resolveEffectiveTerminalCodexModelWithSource({
+  userModel,
+  userEffort,
+  platformPair,
+  fallbackPair,
+  isValidModel,
+  isValidEffort,
+}: ResolveTerminalCodexModelInput): ResolvedTerminalCodexModel {
+  if (userModel === MACHINE_DEFAULT_TERMINAL_MODEL) return { pair: undefined, source: "machine" };
   if (userModel && userEffort && isValidModel(userModel) && isValidEffort(userEffort)) {
-    return { model: userModel, effort: userEffort };
+    return { pair: { model: userModel, effort: userEffort }, source: "user" };
   }
   if (platformPair && isValidModel(platformPair.model) && isValidEffort(platformPair.effort)) {
-    return platformPair;
+    return { pair: platformPair, source: "platform" };
   }
-  return fallbackPair;
+  if (isValidModel(fallbackPair.model) && isValidEffort(fallbackPair.effort)) {
+    return { pair: fallbackPair, source: "fallback" };
+  }
+  return { pair: undefined, source: "fallback" };
 }
 
 /** The same 4 family aliases the workflow-tier UI already offers. "Known"

@@ -6,6 +6,7 @@ import {
   validateTerminalModelValue,
   resolveEffectiveTerminalModel,
   resolveEffectiveTerminalCodexModel,
+  resolveEffectiveTerminalCodexModelWithSource,
   resolveTerminalModelSource,
   terminalLaunchModelLine,
   terminalDialogModelLine,
@@ -129,6 +130,17 @@ describe("resolveEffectiveTerminalCodexModel", () => {
       platformPair: { model: "broken", effort: "high" }, fallbackPair,
       isValidModel: validModel, isValidEffort: validEffort,
     })).toEqual(fallbackPair);
+  });
+
+  it("reports the source that actually supplied the complete pair", () => {
+    expect(resolveEffectiveTerminalCodexModelWithSource({
+      userModel: "gpt-6-astra", userEffort: "high", platformPair: fallbackPair, fallbackPair,
+      isValidModel: validModel, isValidEffort: validEffort,
+    })).toEqual({ pair: { model: "gpt-6-astra", effort: "high" }, source: "user" });
+    expect(resolveEffectiveTerminalCodexModelWithSource({
+      userModel: null, userEffort: null, platformPair: { model: "broken", effort: "high" }, fallbackPair,
+      isValidModel: validModel, isValidEffort: validEffort,
+    })).toEqual({ pair: fallbackPair, source: "fallback" });
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 
 // Radix primitives use ResizeObserver/scrollIntoView, which jsdom lacks.
@@ -16,11 +16,14 @@ class ResizeObserverStub {
 (Element.prototype as any).hasPointerCapture = vi.fn();
 
 vi.mock("@/actions/profile", () => ({
+  updateTerminalPreferences: vi.fn(),
   updateAgentAwareModelTierMap: vi.fn(),
   updateTerminalModel: vi.fn(),
   updateTerminalCodexModel: vi.fn(),
   updateTerminalAutoAccept: vi.fn(),
 }));
+
+import { updateTerminalPreferences } from "@/actions/profile";
 
 vi.mock("@/hooks/use-viewer-model-tier-map", () => ({
   setViewerAgentAwareModelTierMapCache: vi.fn(),
@@ -150,6 +153,16 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
     expect(screen.getByText(/Platform default \(your machine decides\)/)).toBeInTheDocument();
   });
 
+  it("shows the resolved organization Codex pair and its source", () => {
+    renderDialog();
+    expect(screen.getByText(/Organization Standard-tier Codex pair: gpt-5\.1-codex-mini \(medium\)/)).toBeInTheDocument();
+  });
+
+  it("shows the user's saved Codex pair as the resolved source", () => {
+    renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+    expect(screen.getByText(/Your saved Codex pair: gpt-6-astra \(high\)/)).toBeInTheDocument();
+  });
+
   it("names the live platform default value when one is set", () => {
     mockUsePlatformTerminalModelDefault.mockReturnValue("opus");
     renderDialog({ terminalModel: null });
@@ -197,6 +210,48 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
     renderDialog({ terminalModel: "claude-opus-5-20260101" });
 
     expect(screen.getByText(/Not a known family alias/)).toBeInTheDocument();
+  });
+
+  it("Reset to defaults clears the independent Codex pair before Save", async () => {
+    vi.mocked(updateTerminalPreferences).mockClear();
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({
+      agentAwareModelTierMap: null,
+      terminalModel: null,
+      terminalCodexModel: null,
+      terminalCodexEffort: null,
+      terminalAutoAccept: false,
+    });
+    renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Reset to defaults/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({
+      terminalCodexModel: null,
+      terminalCodexEffort: null,
+    })));
+  });
+
+  it("keeps the saved Codex pair when only a Claude tier changes", async () => {
+    vi.mocked(updateTerminalPreferences).mockClear();
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({
+      agentAwareModelTierMap: { frontier: { claude: { model: "sonnet", effort: "high" } } },
+      terminalModel: null,
+      terminalCodexModel: "gpt-6-astra",
+      terminalCodexEffort: "high",
+      terminalAutoAccept: false,
+    });
+    renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Claude model — frontier" }));
+    fireEvent.click(screen.getByRole("option", { name: /Sonnet/ }));
+    fireEvent.click(within(screen.getAllByRole("group", { name: "Claude reasoning effort" })[0]).getByRole("button", { name: "high" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({
+      terminalCodexModel: "gpt-6-astra",
+      terminalCodexEffort: "high",
+    })));
   });
 });
 

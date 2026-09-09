@@ -28,6 +28,7 @@ import {
   getTerminalModel,
   updateTerminalModel,
   updateTerminalCodexModel,
+  updateTerminalPreferences,
   getTerminalAutoAccept,
   updateTerminalAutoAccept,
 } from "./profile";
@@ -438,6 +439,59 @@ describe("updateTerminalCodexModel", () => {
     await expect(updateTerminalCodexModel("gpt-6-astra", null)).rejects.toThrow(/model and reasoning effort/i);
     await expect(updateTerminalCodexModel("gpt;rm", "high")).rejects.toThrow(/model and reasoning effort/i);
     await expect(updateTerminalCodexModel(null, "high")).rejects.toThrow(/model with its reasoning effort/i);
+  });
+});
+
+describe("updateTerminalPreferences", () => {
+  it("validates the complete dialog before one self-scoped update", async () => {
+    let updatedWith: unknown;
+    let scopedTo: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => ({
+        eq: (column: string, value: unknown) => {
+          updatedWith = data;
+          scopedTo = { [column]: value };
+          return Promise.resolve({ error: null });
+        },
+      }),
+    }));
+
+    await expect(updateTerminalPreferences({
+      agentAwareModelTierMap: { standard: { claude: { model: "sonnet", effort: "medium" } } },
+      terminalModel: "opus",
+      terminalCodexModel: "gpt-6-astra",
+      terminalCodexEffort: "high",
+      terminalAutoAccept: true,
+    })).resolves.toMatchObject({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+
+    expect(updatedWith).toEqual({
+      model_tier_map: { standard: { claude: { model: "sonnet", effort: "medium" } } },
+      terminal_model: "opus",
+      terminal_codex_model: "gpt-6-astra",
+      terminal_codex_effort: "high",
+      terminal_auto_accept: true,
+    });
+    expect(scopedTo).toEqual({ id: FAKE_USER_ID });
+    expect(mockSupabase.from).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an invalid Codex pair before issuing any write", async () => {
+    await expect(updateTerminalPreferences({
+      agentAwareModelTierMap: {},
+      terminalModel: null,
+      terminalCodexModel: "gpt-6-astra",
+      terminalCodexEffort: null,
+      terminalAutoAccept: false,
+    })).rejects.toThrow(/model and reasoning effort/i);
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects unauthenticated callers without writing another user's row", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(updateTerminalPreferences({
+      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false,
+    })).rejects.toThrow("Not authenticated");
+    expect(mockSupabase.from).not.toHaveBeenCalled();
   });
 });
 
