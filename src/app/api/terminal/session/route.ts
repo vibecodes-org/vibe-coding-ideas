@@ -47,8 +47,15 @@ import {
 } from "@/lib/terminal/relay-budget";
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
 import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
+import {
+  getAgentAwarePlatformModelDefaults,
+  normalizeUserModelTierMap,
+  isReasoningEffort,
+  SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+} from "@/lib/platform-model-defaults";
 import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
+import { normalizeAgent } from "@/lib/terminal/agent-launch";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -85,6 +92,12 @@ const BodySchema = z.object({
   // user already has LIVE, and to stamp the new row's `claude_session_id` at
   // insert time instead of waiting for the bridge to announce it.
   resumeId: z.string().uuid().optional(),
+  // Codex support (docs/codex-terminal-requirements.md FR-1/FR-5,
+  // implementation slice 2) — which agent this launch is starting. Absent or
+  // "claude" (the only other legal value the client ever sends is the exact
+  // literal "codex") stamps the new row's `agent` column as 'claude', same
+  // as every row that predates this field — see normalizeAgent below.
+  agent: z.enum(["claude", "codex"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -145,7 +158,8 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId, taskId, taskTitle, displayName, resumeId } = parsed.data;
+    const { ideaId, taskId, taskTitle, displayName, resumeId, agent } = parsed.data;
+    const effectiveAgent = normalizeAgent(agent);
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -365,10 +379,14 @@ export async function POST(req: Request) {
     // to "off" (AC-2 equivalent: never block a launch over this), never
     // throws, never blocks the mint.
     let userAutoAccept = false;
+    // FR-4: a Codex launch's model_tier_map override for the Standard tier's
+    // Codex model+effort (its "starting model" for v1). Read in the SAME row
+    // fetch as terminal_model — one extra column, no second query.
+    let userModelTierMapRaw: unknown = null;
     try {
       const { data: userRow, error: userRowErr } = await supabase
         .from("users")
-        .select("terminal_model, terminal_auto_accept")
+        .select("terminal_model, terminal_auto_accept, model_tier_map")
         .eq("id", user.id)
         .maybeSingle();
       if (userRowErr) {
@@ -379,6 +397,7 @@ export async function POST(req: Request) {
       } else {
         userTerminalModel = userRow?.terminal_model ?? null;
         userAutoAccept = userRow?.terminal_auto_accept ?? false;
+        userModelTierMapRaw = userRow?.model_tier_map ?? null;
       }
     } catch (err) {
       logger.warn("Terminal session mint: unexpected error reading terminal_model/terminal_auto_accept — omitting user overrides", {
@@ -386,10 +405,36 @@ export async function POST(req: Request) {
       });
     }
     const platformTerminalModel = await getPlatformTerminalModelDefault(supabase);
-    const effectiveModel = resolveEffectiveTerminalModel({
+    let effectiveModel = resolveEffectiveTerminalModel({
       userValue: userTerminalModel,
       platformValue: platformTerminalModel,
     });
+    // FR-4: a fresh Codex launch opens on the user's Standard-tier Codex model
+    // + effort (override -> platform default) rather than the Claude terminal
+    // model resolved above — the deferred Codex "starting model" picker (System
+    // B, card c9837bbb) will later let this be set independently. Best-effort:
+    // any read/shape problem degrades to the seed's Standard Codex entry and
+    // never blocks the mint.
+    let effectiveEffort: string | undefined;
+    if (effectiveAgent === "codex") {
+      try {
+        const agentDefaults = await getAgentAwarePlatformModelDefaults(supabase);
+        const userTierMap = normalizeUserModelTierMap(userModelTierMapRaw);
+        const override = userTierMap.standard?.codex;
+        const entry =
+          override?.model && isReasoningEffort(override.effort)
+            ? { model: override.model, effort: override.effort }
+            : agentDefaults.defaults.standard.codex;
+        effectiveModel = entry.model;
+        effectiveEffort = entry.effort;
+      } catch (err) {
+        logger.warn("Terminal session mint: failed to resolve Codex launch model — falling back to seed Standard Codex", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        effectiveModel = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex.model;
+        effectiveEffort = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex.effort;
+      }
+    }
     // Task d3de150c: no platform-wide default exists for this by design —
     // the ONLY input is the user's own row. Resolves to the literal
     // "auto" or undefined (never any other string) so the deep link
@@ -468,6 +513,9 @@ export async function POST(req: Request) {
       status: "active",
       expires_at: computeSessionExpiresAt(nowMs),
       e2ee_session_key: e2eeSessionKey,
+      // Codex support (FR-5): stamped once from the launch request, never
+      // changed after (see migration 00170's column comment).
+      agent: effectiveAgent,
     });
     if (insertErr) {
       // The registry is best-effort (R2) — never fail an otherwise-successful
@@ -516,6 +564,10 @@ export async function POST(req: Request) {
       // passed at all — the fresh-launch call site treats absence the same
       // as an explicit undefined.
       model: effectiveModel,
+      // FR-4: the Codex reasoning effort paired with `model` for a fresh Codex
+      // launch (low/medium/high), resolved above. Undefined (and dropped by
+      // JSON.stringify) for Claude launches — byte-identical response shape.
+      effort: effectiveEffort,
       // Task d3de150c ("Terminal mode") — set ONLY when this user's own
       // terminal_auto_accept preference is on, for a FRESH launch only; the
       // client must never thread this into a resume/resumeId deep link

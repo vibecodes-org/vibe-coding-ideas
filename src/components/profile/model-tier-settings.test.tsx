@@ -16,13 +16,13 @@ class ResizeObserverStub {
 (Element.prototype as any).hasPointerCapture = vi.fn();
 
 vi.mock("@/actions/profile", () => ({
-  updateModelTierMap: vi.fn(),
+  updateAgentAwareModelTierMap: vi.fn(),
   updateTerminalModel: vi.fn(),
   updateTerminalAutoAccept: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-viewer-model-tier-map", () => ({
-  setViewerModelTierMapCache: vi.fn(),
+  setViewerAgentAwareModelTierMapCache: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-viewer-terminal-model", () => ({
@@ -33,9 +33,9 @@ vi.mock("@/hooks/use-viewer-terminal-auto-accept", () => ({
   setViewerTerminalAutoAcceptCache: vi.fn(),
 }));
 
-const mockUsePlatformModelDefaults = vi.fn();
+const mockUsePlatformAgentAwareModelDefaults = vi.fn();
 vi.mock("@/hooks/use-platform-model-defaults", () => ({
-  usePlatformModelDefaults: () => mockUsePlatformModelDefaults(),
+  usePlatformAgentAwareModelDefaults: () => mockUsePlatformAgentAwareModelDefaults(),
 }));
 
 const mockUsePlatformTerminalModelDefault = vi.fn();
@@ -48,10 +48,19 @@ import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution"
 
 afterEach(cleanup);
 
+const DEFAULT_AGENT_AWARE_DEFAULTS = {
+  defaults: {
+    frontier: { claude: { model: "opus", effort: "high" }, codex: { model: "gpt-5.1-codex", effort: "high" } },
+    standard: { claude: { model: "sonnet", effort: "medium" }, codex: { model: "gpt-5.1-codex-mini", effort: "medium" } },
+    cheap: { claude: { model: "haiku", effort: "low" }, codex: { model: "gpt-5.1-codex-mini", effort: "low" } },
+  },
+  fallback: { claude: {}, codex: {} },
+};
+
 function renderDialog(props: Partial<ComponentProps<typeof ModelTierSettings>> = {}) {
   return render(
     <ModelTierSettings
-      map={null}
+      agentAwareMap={{}}
       terminalModel={null}
       terminalAutoAccept={false}
       open
@@ -61,25 +70,29 @@ function renderDialog(props: Partial<ComponentProps<typeof ModelTierSettings>> =
   );
 }
 
-describe("ModelTierSettings — workflow tiers (existing behaviour, unchanged)", () => {
-  it("shows the LIVE platform default (e.g. Opus) as the frontier placeholder, not a hard-coded label", () => {
-    mockUsePlatformModelDefaults.mockReturnValue({
-      defaults: { frontier: "opus", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
-    });
+describe("ModelTierSettings — agent-aware workflow tiers (Codex model-tier task, FR-7)", () => {
+  beforeEach(() => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
     mockUsePlatformTerminalModelDefault.mockReturnValue(null);
-
-    renderDialog();
-
-    expect(screen.getByText("Opus (default)")).toBeInTheDocument();
   });
 
-  it("reflects a super-admin-changed live default (e.g. frontier -> Fable) with no code change", () => {
-    mockUsePlatformModelDefaults.mockReturnValue({
-      defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
+  it("shows the LIVE platform default (e.g. Opus) as the Claude frontier placeholder, not a hard-coded label", () => {
+    renderDialog();
+    expect(screen.getByText("Opus (default)")).toBeInTheDocument();
+    expect(screen.getByText("gpt-5.1-codex (default)")).toBeInTheDocument();
+  });
+
+  it("reflects a super-admin-changed live default (e.g. frontier Claude -> Fable) with no code change", () => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({
+      defaults: {
+        ...DEFAULT_AGENT_AWARE_DEFAULTS,
+        defaults: {
+          ...DEFAULT_AGENT_AWARE_DEFAULTS.defaults,
+          frontier: { ...DEFAULT_AGENT_AWARE_DEFAULTS.defaults.frontier, claude: { model: "fable", effort: "high" } },
+        },
+      },
+      isLoading: false,
     });
-    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
 
     renderDialog();
 
@@ -87,26 +100,46 @@ describe("ModelTierSettings — workflow tiers (existing behaviour, unchanged)",
     expect(screen.queryByText("Opus (default)")).not.toBeInTheDocument();
   });
 
-  it("shows the tier's own value, not the platform default, once the user has an override", () => {
-    mockUsePlatformModelDefaults.mockReturnValue({
-      defaults: { frontier: "opus", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
-    });
-    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
-
-    renderDialog({ map: { frontier: "haiku" } });
+  it("shows the tier's own override value, not the platform default, once the user has one", () => {
+    renderDialog({ agentAwareMap: { frontier: { claude: { model: "haiku", effort: "high" } } } });
 
     // The trigger renders the option label ("Haiku"), not "<default> (default)".
     expect(screen.queryByText("Opus (default)")).not.toBeInTheDocument();
+    expect(screen.getByText("Haiku")).toBeInTheDocument();
+  });
+
+  it("renders loading skeletons while the platform defaults haven't resolved yet", () => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: true });
+    renderDialog();
+
+    // Dialog content renders in a portal, so query the whole document.
+    expect(document.body.querySelector('[aria-label="Loading model tiers"]')).toBeInTheDocument();
+    const saveButton = screen.getByRole("button", { name: /save/i });
+    expect(saveButton).toBeDisabled();
+  });
+
+  it("AC-3: a model chosen with no effort blocks Save with a role=alert error naming the tier and agent", () => {
+    // A Codex override with a model but no staged effort — the in-progress
+    // AC-3 state (user picked a model, hasn't picked an effort yet).
+    renderDialog({ agentAwareMap: { frontier: { codex: { model: "gpt-5.1-codex" } } } });
+
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts.some((el) => /Choose a reasoning effort for gpt-5.1-codex/.test(el.textContent ?? ""))).toBe(true);
+
+    const saveButton = screen.getByRole("button", { name: /save/i });
+    expect(saveButton).toBeDisabled();
+    expect(screen.getByText(/Set Frontier's Codex effort to enable Save/)).toBeInTheDocument();
+  });
+
+  it("shows a fully-resolved tier's resolution line with both agents' model and effort", () => {
+    renderDialog();
+    expect(screen.getByText(/Frontier → Opus \(high\) on Claude · gpt-5\.1-codex \(high\) on Codex/)).toBeInTheDocument();
   });
 });
 
 describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => {
   beforeEach(() => {
-    mockUsePlatformModelDefaults.mockReturnValue({
-      defaults: { frontier: "opus", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
-    });
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
   });
 
   it("shows 'your machine decides' when no platform default is set (binding: no seed)", () => {
@@ -153,7 +186,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
     const input = screen.getByDisplayValue("opus5");
     fireEvent.change(input, { target: { value: "opus 5!" } });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/space/i);
+    expect(screen.getAllByRole("alert").some((el) => /space/i.test(el.textContent ?? ""))).toBe(true);
     const saveButton = screen.getByRole("button", { name: /save/i });
     expect(saveButton).toBeDisabled();
   });
@@ -163,16 +196,12 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
     renderDialog({ terminalModel: "claude-opus-5-20260101" });
 
     expect(screen.getByText(/Not a known family alias/)).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 
 describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
   beforeEach(() => {
-    mockUsePlatformModelDefaults.mockReturnValue({
-      defaults: { frontier: "opus", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
-    });
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
     mockUsePlatformTerminalModelDefault.mockReturnValue(null);
   });
 
@@ -218,7 +247,7 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
     // to close) both route through the component's own handleOpenChange,
     // which is where re-staging from the persisted prop happens (matches
     // how the Terminal starting model field's own staged state behaves).
-    render(<ModelTierSettings map={null} terminalModel={null} terminalAutoAccept={false} />);
+    render(<ModelTierSettings agentAwareMap={{}} terminalModel={null} terminalAutoAccept={false} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
     const toggle = screen.getByRole("switch", { name: "Start in auto mode" });

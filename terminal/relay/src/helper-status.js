@@ -28,6 +28,15 @@ export const STOPPED_UNEXPECTEDLY_TTL_MS = 24 * 60 * 60 * 1000;
  * @property {boolean} stoppedUnexpectedly
  * @property {number|null} lastEventAt - unix ms of the unclean disconnect, only
  *   set while `stoppedUnexpectedly` is true (drives the chip's "3:42 pm" line).
+ * @property {boolean|null} codexInstalled - Codex support (docs/
+ *   codex-terminal-requirements.md FR-3's helper-side half, UX design §15 Q11):
+ *   whether the helper found `codex` on its spawn PATH the last time it
+ *   attached. `null` means UNKNOWN (an old helper that never announced this,
+ *   or no helper has ever attached) — the design's explicit rule is that
+ *   unknown must read as "don't disable the control", never as "not
+ *   installed" (§15 Q11: "unknown must read as enabled, never disabled").
+ * @property {boolean|null} claudeInstalled - same shape, for `claude` (the
+ *   requirements' correction: report both agents, not just Codex).
  */
 
 /**
@@ -37,7 +46,8 @@ export const STOPPED_UNEXPECTEDLY_TTL_MS = 24 * 60 * 60 * 1000;
  *
  * @param {{ connected: boolean, version?: string|null, machineLabel?: string|null,
  *           alwaysOn?: boolean, uncleanAt?: number|null, now: number,
- *           unexpectedTtlMs?: number }} args
+ *           unexpectedTtlMs?: number, codexInstalled?: boolean|null,
+ *           claudeInstalled?: boolean|null }} args
  *   `uncleanAt` — set by the caller whenever a helper leg's socket closed
  *   WITHOUT a preceding goodbye frame; cleared on the next successful attach
  *   (see relay/src/index.js's helper-leg fetch path).
@@ -51,6 +61,8 @@ export function computeHelperStatus({
   uncleanAt = null,
   now,
   unexpectedTtlMs = STOPPED_UNEXPECTEDLY_TTL_MS,
+  codexInstalled = null,
+  claudeInstalled = null,
 }) {
   const stoppedUnexpectedly = !connected && uncleanAt != null && now - uncleanAt < unexpectedTtlMs;
   return {
@@ -60,5 +72,7 @@ export function computeHelperStatus({
     alwaysOn: !!alwaysOn,
     stoppedUnexpectedly,
     lastEventAt: stoppedUnexpectedly ? uncleanAt : null,
+    codexInstalled: codexInstalled === true || codexInstalled === false ? codexInstalled : null,
+    claudeInstalled: claudeInstalled === true || claudeInstalled === false ? claudeInstalled : null,
   };
 }

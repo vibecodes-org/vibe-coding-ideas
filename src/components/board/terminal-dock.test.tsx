@@ -388,14 +388,16 @@ vi.mock("./terminal-session-chooser", () => ({
     onReconnectHere,
     onOpenBoardAndReconnect,
     onResume,
+    agent,
   }: {
     sections: ChooserSections;
     onStartNew: () => void;
     onReconnectHere: (row: ChooserLiveRow) => void;
     onOpenBoardAndReconnect: (row: ChooserLiveRow) => void;
     onResume: (row: ChooserRecentRow) => void;
+    agent: string;
   }) => (
-    <div data-testid="chooser">
+    <div data-testid="chooser" data-agent={agent}>
       <button data-testid="chooser-start-new" onClick={onStartNew}>
         Start new
       </button>
@@ -689,6 +691,50 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  // Regression (Nick, 7 Sep 2026): "Codex → In the browser" opened the chooser
+  // with the toggle on Claude Code (the remembered pick), ignoring the explicit
+  // Codex click — and handleChooserStartNew would then overwrite the payload's
+  // agent with that stale toggle. The chooser's toggle must reflect the agent
+  // the launch actually carried.
+  it("seeds the chooser toggle from the explicit launch agent (Codex), not the remembered pick — registry already loaded", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    // A live session elsewhere → the resolved decision is "chooser".
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    // Default toggle before any launch is Claude (no remembered override in this test).
+    expect(screen.getByTestId("chooser").dataset.agent).toBe("claude");
+
+    act(() => {
+      requestBrowserLaunch({ agent: "codex" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
+  });
+
+  it("seeds the chooser toggle from the explicit launch agent (Codex) even when the launch races the still-loading registry", async () => {
+    const registry = deferredRegistryResponse();
+    stubFetch(registry.promise);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Launch fires before the registry resolves — deliverLaunch queues it
+    // (deferredLaunchPendingRef) without yet knowing it's a chooser outcome.
+    act(() => {
+      requestBrowserLaunch({ agent: "codex" });
+    });
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+
+    // Resolving to something worth choosing between replays the queued launch
+    // into the chooser — the deferred-replay branch must seed the toggle too.
+    registry.resolve([liveElsewhereRow()]);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    // The chooser renders as soon as the decision is "chooser" — the toggle's
+    // own state flush can trail by a tick, so poll for it (not a bare expect).
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
   });
 
   it("mints immediately with no race when the registry is already loaded before the click (unchanged behaviour)", async () => {
@@ -1118,7 +1164,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("stays hidden when the only live session here is this tab's own", async () => {
@@ -1127,7 +1173,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("shows singular copy for exactly one other live session on this board", async () => {
@@ -1140,7 +1186,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     );
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Another session is live here")).toBeInTheDocument());
     // Never worded as a stranger's session — Phase 1 is same-user-only (the
     // investigation step confirmed terminal_sessions RLS is owner-only).
     expect(screen.queryByText(/someone else/i)).not.toBeInTheDocument();
@@ -1157,7 +1203,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     );
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByText("2 other tabs are open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2 other sessions are live here")).toBeInTheDocument());
   });
 
   it("never counts a live session on a DIFFERENT board", async () => {
@@ -1166,7 +1212,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
   });
 
   it("updates reactively — appears once a registry refresh reveals a 2nd live session here", async () => {
@@ -1178,7 +1224,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
 
     // Force a registry refresh via the same fallback `performReattach`'s
     // failure path already triggers (see the Bug A retry tests above) —
@@ -1187,7 +1233,7 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     // runs and picks up the 2nd row.
     fireEvent.click(screen.getByTestId("chooser-reconnect-here-own-sid"));
 
-    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Another session is live here")).toBeInTheDocument());
   });
 });
 
@@ -2709,7 +2755,7 @@ describe("TerminalDock — multi-terminal reload restore", () => {
 
     await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
     expect(reattached.sort()).toEqual(["own-sid-1", "own-sid-2"]);
-    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sessions? (?:is|are) live here/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
   });
 

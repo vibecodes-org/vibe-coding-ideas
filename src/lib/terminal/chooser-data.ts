@@ -39,16 +39,29 @@
 //
 // MACHINE IDENTITY (Nick's sign-off change 2 — "hide conversations that
 // aren't on the machine that you're running vibecodes on"): Recent rows also
-// get filtered against `storedMachineLabel` (this browser's own recorded
-// identity — see machine-identity.ts). A row is hidden ONLY when BOTH sides
-// are known and disagree (`row.machineLabel` set AND differs from the stored
-// one) — a row with no recorded machine label stays visible (honest
+// get filtered against `storedMachineLabels` (this browser's own recorded set
+// of every hostname it has ever been paired with — see machine-identity.ts).
+// A row is hidden ONLY when we know at least one machine name for this
+// browser AND the row HAS a machine label AND that label matches NONE of
+// them — a row with no recorded machine label stays visible (honest
 // omission, not assumed foreign), and when this browser has never recorded
-// an identity at all, nothing is filtered (same honest-omission spirit as
+// any identity at all, nothing is filtered (same honest-omission spirit as
 // the null-cwd fix above: never a silently empty section over data we simply
-// don't have an opinion on yet). "Running now"
-// sections are NEVER filtered — a live session is unambiguously reachable
-// regardless of which machine it's on.
+// don't have an opinion on yet).
+//
+// Widened from a single stored label to a SET (2026-09, card 094927ee):
+// Nick's one Mac reports two different `os.hostname()` values depending on
+// network (`Nicks-MBP.home.local` vs `Nicks-MacBook-Pro.local` — genuinely
+// different short names, not just a domain suffix, so normalising case/domain
+// doesn't help). A single "latest name" got overwritten on every network
+// switch and wiped the OTHER name's sessions out of Recent. localStorage is
+// per-browser-install and never synced across physical machines, so "every
+// name this browser has seen" is exactly "every name this one Mac has
+// reported" — matching against the whole set preserves the original intent
+// (hide a genuinely different Mac this browser has never connected from)
+// while no longer punishing one Mac for having more than one network name.
+// "Running now" sections are NEVER filtered — a live session is unambiguously
+// reachable regardless of which machine it's on.
 //
 // EVERY RESUMABLE CONVERSATION (rework 8b, card cbe60db5 — Nick, explicit,
 // 2026-08-12: "is there any way we can show MORE than one resume session?"
@@ -88,8 +101,15 @@
 //      rework — more rows are now legitimately distinct, so the old cap would
 //      truncate real history), newest-ended first.
 
+import type { LaunchAgent } from "./agent-launch";
+
 export const RECENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 export const RECENT_MAX = 10;
+
+/** "Existing rows with no recorded agent read as Claude Code" (design §4c/FR-5) — the one place every row-agent reader should call through. */
+export function rowAgent(agent: LaunchAgent | undefined): LaunchAgent {
+  return agent === "codex" ? "codex" : "claude";
+}
 
 /** One row as the (extended) list route returns it — active or recently-ended. */
 export interface ChooserRegistryRow {
@@ -113,6 +133,18 @@ export interface ChooserRegistryRow {
   endedAt: string | null;
   /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `resolveSessionName`/`deriveTabLabel`. */
   displayName: string | null;
+  /**
+   * Codex support (docs/codex-terminal-requirements.md FR-5, implementation
+   * slice 2) — which agent this session ran (terminal_sessions.agent).
+   * Design §4c: every row names its agent, "Claude Code" or "Codex".
+   * Optional (rather than defaulted at this layer) so existing fixtures/
+   * callers that predate this field keep compiling; every real reader
+   * treats a missing value as "claude" (see `rowAgent` below) — the same
+   * "existing rows with no recorded agent read as Claude Code" rule the
+   * design calls for (migration 00170's NOT NULL DEFAULT 'claude' means a
+   * real API response always sets this in practice).
+   */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserLiveRow {
@@ -128,6 +160,8 @@ export interface ChooserLiveRow {
   wasOpenInThisTab: boolean;
   /** The user's own name for this session (card 3bf262ac). */
   displayName: string | null;
+  /** See ChooserRegistryRow's doc — carried through unchanged. */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserRecentRow {
@@ -144,6 +178,8 @@ export interface ChooserRecentRow {
   endedAt: string;
   /** The user's own name for this session (card 3bf262ac) — renaming an ended row is exactly where Nick needs this most (the Recent/resume list). */
   displayName: string | null;
+  /** See ChooserRegistryRow's doc — carried through unchanged; Resume never shows the picker, it fires with the ROW's own agent (design §5). */
+  agent?: LaunchAgent;
 }
 
 export interface ChooserSections {
@@ -204,18 +240,24 @@ function withinRecentWindow(endedAt: string, nowMs: number): boolean {
  * itself no longer applies. Multi-terminal reload restore (Nick's field
  * report 2026-08-22): this used to be the single last-attached sid, which
  * left every OTHER session this same tab held reading as "open in another
- * tab". `storedMachineLabel` (this browser's own recorded
- * machine identity, see machine-identity.ts) filters the Recent section per
- * this module's MACHINE IDENTITY header comment — omit/pass null to show
- * every recent row unfiltered (the pre-this-card behaviour).
+ * tab". `storedMachineLabels` (this browser's own recorded SET of every
+ * machine hostname it has ever been paired with, see machine-identity.ts's
+ * `getMachineIdentities`) filters the Recent section per this module's
+ * MACHINE IDENTITY header comment — omit/pass null (or an empty array) to
+ * show every recent row unfiltered (the pre-this-card behaviour). A bare
+ * string is also accepted, for callers that only ever have a single known
+ * label.
  */
 export function deriveChooserSections(
   rows: ChooserRegistryRow[],
   currentIdeaId: string,
   nowMs: number = Date.now(),
   tabSids: readonly string[] | string | null = null,
-  storedMachineLabel: string | null = null,
+  storedMachineLabels: readonly string[] | string | null = null,
 ): ChooserSections {
+  const knownMachineLabels = new Set(
+    typeof storedMachineLabels === "string" ? [storedMachineLabels] : (storedMachineLabels ?? []),
+  );
   const tabSidSet = new Set(typeof tabSids === "string" ? [tabSids] : (tabSids ?? []));
   const toLiveRow = (r: ChooserRegistryRow): ChooserLiveRow => ({
     sid: r.sid,
@@ -228,6 +270,7 @@ export function deriveChooserSections(
     createdAt: r.createdAt,
     wasOpenInThisTab: tabSidSet.has(r.sid),
     displayName: r.displayName,
+    agent: r.agent,
   });
 
   const live = rows.filter((r) => r.status === "active");
@@ -255,9 +298,13 @@ export function deriveChooserSections(
       // this module's header comment.
       if (!r.endedAt) return false;
       if (!withinRecentWindow(r.endedAt, nowMs)) return false;
-      // Machine identity: hide only when BOTH sides are known and disagree —
-      // see this module's header comment.
-      if (storedMachineLabel && r.machineLabel && r.machineLabel !== storedMachineLabel) return false;
+      // Machine identity: hide only when we know at least one machine name
+      // for this browser AND the row has a label that matches NONE of them —
+      // see this module's header comment (widened from single-label equality
+      // to set membership for the two-hostnames-one-Mac fix).
+      if (knownMachineLabels.size > 0 && r.machineLabel && !knownMachineLabels.has(r.machineLabel)) {
+        return false;
+      }
       return true;
     })
     .sort((a, b) => Date.parse(b.endedAt) - Date.parse(a.endedAt)); // newest-ended first
@@ -298,6 +345,7 @@ export function deriveChooserSections(
     claudeSessionId: r.claudeSessionId,
     endedAt: r.endedAt,
     displayName: r.displayName,
+    agent: r.agent,
   }));
 
   const { recentHere, recentElsewhere } = partitionRecentByBoard(recent, currentIdeaId);

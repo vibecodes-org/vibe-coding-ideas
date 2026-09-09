@@ -151,7 +151,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   const [steps, setSteps] = useState<TaskWorkflowStep[] | null>(null);
   const [run, setRun] = useState<(WorkflowRun & { template_name?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedStep, setSelectedStep] = useState<TaskWorkflowStep | null>(null);
+  // Track the OPEN step by id, not by a captured object — the dialog then always
+  // renders the freshest copy from `steps`, so an edit saved inside the dialog
+  // (or any realtime update) shows immediately instead of the pre-edit snapshot.
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
   // Apply workflow state
   const [templates, setTemplates] = useState<WorkflowTemplate[] | null>(null);
@@ -174,6 +177,11 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   const autoOpenStepHandledRef = useRef(false);
 
   const supabaseRef = useRef(createClient());
+
+  // Derived from the live `steps` list so it re-syncs on every refetch.
+  const selectedStep = selectedStepId
+    ? steps?.find((s) => s.id === selectedStepId) ?? null
+    : null;
 
   const fetchData = useCallback(async () => {
     const supabase = supabaseRef.current;
@@ -255,7 +263,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     const target = steps.find((s) => s.id === autoOpenStepId);
     if (!target) return;
     autoOpenStepHandledRef.current = true;
-    setSelectedStep(target);
+    setSelectedStepId(target.id);
     onAutoOpenConsumed();
   }, [autoOpenStepId, steps, onAutoOpenConsumed]);
 
@@ -527,7 +535,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               <div
                 key={step.id}
                 className={`group flex items-center gap-3 rounded-md border ${config.border} bg-muted/30 px-3 py-2.5 cursor-pointer transition-colors hover:bg-muted/60`}
-                onClick={() => setSelectedStep(step)}
+                onClick={() => setSelectedStepId(step.id)}
               >
                 <span
                   className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${config.numBg} text-xs font-semibold ${config.numText}`}
@@ -615,12 +623,13 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       {selectedStep && (
         <StepDetailDialog
           open={!!selectedStep}
-          onOpenChange={(open) => { if (!open) { setSelectedStep(null); fetchData(); } }}
+          onOpenChange={(open) => { if (!open) { setSelectedStepId(null); fetchData(); } }}
           step={selectedStep}
           stepNumber={steps!.findIndex((s) => s.id === selectedStep.id) + 1}
           ideaId={ideaId}
           allSteps={steps!}
           isReadOnly={isReadOnly}
+          onStepUpdated={fetchData}
         />
       )}
 

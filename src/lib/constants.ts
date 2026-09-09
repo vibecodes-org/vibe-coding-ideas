@@ -156,13 +156,57 @@ export function tierDefaultsToCopy(tier: string, platformDefaultModel?: string):
  * default (see tierDefaultsToCopy's compliance-drift note above — this
  * sentence is generated at complete/fail time, always against the
  * then-current default).
+ *
+ * `agent` (Codex model-tier task, reviewer build condition) gates
+ * capitalization: Claude aliases are family names ("Opus", "Sonnet") and
+ * read naturally capitalized, but Codex model ids ("gpt-5.1-codex") are NOT
+ * capitalized — title-casing a Codex model id would misrepresent it as a
+ * proper-noun alias it isn't. Defaults to "claude" so every pre-existing
+ * call site (all Claude-only today) is byte-identical.
  */
-export function tierMismatchSentence(tier: string, executedModel: string, platformDefaultModel?: string): string {
+export function tierMismatchSentence(
+  tier: string,
+  executedModel: string,
+  platformDefaultModel?: string,
+  agent: "claude" | "codex" = "claude"
+): string {
   const label = modelTierLabel(tier);
+  const cased = agent === "codex" ? (s: string) => s : capitalizeModelName;
   const defaultModel = platformDefaultModel
-    ? capitalizeModelName(platformDefaultModel)
-    : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
-  return `Tier not honored — this ${label} step defaults to ${defaultModel}, but the orchestrator reported running on ${capitalizeModelName(executedModel)}. ${TIER_ADHERENCE_DISCLOSURE}`;
+    ? cased(platformDefaultModel)
+    : agent === "codex"
+      ? tier
+      : (MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier);
+  return `Tier not honored — this ${label} step defaults to ${defaultModel}, but the orchestrator reported running on ${cased(executedModel)}. ${TIER_ADHERENCE_DISCLOSURE}`;
+}
+
+/**
+ * One agent's resolved model + effort, for the resolution-line helpers below.
+ * Deliberately structural (not imported from platform-model-defaults.ts) so
+ * this module stays framework-agnostic and has no dependency on that file.
+ */
+export interface AgentResolvedEntry {
+  model: string;
+  effort: string;
+}
+
+/**
+ * "<Tier> → <Claude model> (<effort>) on Claude · <codex model> (<effort>) on
+ * Codex" — the recurring resolution line (Codex model-tier task FR-7 design,
+ * docs/codex-model-tiers-ux-design.html §overview): shown under each tier row
+ * in Profile → Model Tiers and the admin Platform card, and in the step tier
+ * picker's helper text. Claude models keep their capitalised family-alias
+ * casing (capitalizeModelName); Codex model ids are shown exactly as
+ * configured — lowercase, as typed — same rule as tierMismatchSentence's
+ * `agent` parameter.
+ */
+export function tierResolutionLine(
+  tier: string,
+  claude: AgentResolvedEntry,
+  codex: AgentResolvedEntry
+): string {
+  const label = modelTierLabel(tier);
+  return `${label} → ${capitalizeModelName(claude.model)} (${claude.effort}) on Claude · ${codex.model} (${codex.effort}) on Codex`;
 }
 
 /**

@@ -163,6 +163,41 @@ open "vibecodes://launch?relay=...&session=...&token=...&cwd=..."
 
 ---
 
+## Codex support — desktop Terminal window (`vibecodes://open-terminal`, implementation slice 3)
+
+This release adds a SECOND `vibecodes://` action alongside `launch`: `open-terminal`
+opens a real Terminal.app window running `codex` (see `agent-availability.mjs` and
+`open-terminal.mjs`, wired into `main.js`'s `handleDeepLink`/`handleOpenTerminalUrl`).
+
+**New files that MUST be in `electron-builder.yml`'s `files:` list** (already added —
+verify on any future change, per the card-3e9d525e lesson at the top of that file):
+`agent-availability.mjs`, `open-terminal.mjs`.
+
+**Unverified in this implementation slice (no macOS/Electron/Terminal.app available
+in that sandbox) — verify for real before shipping:**
+- The relative `../shared/spawn-path.mjs` / `../shared/binary-check.mjs` imports
+  these two new files fall back to (only when `main.js` does NOT supply an
+  override — it always does in production) resolve correctly from INSIDE the
+  packaged app's asar out to `Resources/shared/` (extraResources). `main.js`'s
+  `checkAgentAvailabilityForHelper()` always supplies both overrides itself, so
+  this fallback path should never actually execute in the packaged app — but
+  confirm by running `npm run pack:unsigned` and launching a Codex desktop
+  launch link once, watching the helper's stderr log for any "Cannot find
+  module" error (exactly card 3e9d525e's failure mode).
+- `open -a Terminal <script>.command` actually opening a window, the window
+  title escape sequence rendering, and the script's `rm -f -- "$0"`
+  self-delete surviving Terminal's own invocation of a `.command` file (proven
+  against plain `bash` in this slice's tests, NOT against Terminal.app itself).
+- The macOS notification permission prompt (`Notification.isSupported()` /
+  `new Notification(...).show()`) on first fallback-failure use.
+- End-to-end: `codex mcp add`/`codex mcp login` against `/api/mcp` from inside
+  the opened window (Requirements spike S-1, still open).
+
+**A live sign-off on Nick's Mac is required** (per the requirements' AC-14–19
+and the Definition of Done) before this ships — see the task's Verify comment.
+
+---
+
 ## Hosting (wiring the download)
 
 The app's install button points at **`/download/terminal-helper`**

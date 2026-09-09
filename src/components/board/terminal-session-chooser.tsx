@@ -27,18 +27,22 @@ import { SessionRenameField } from "./terminal-session-rename";
 import {
   findLiveSessionForTask,
   visibleRecentRows,
+  rowAgent,
   type ChooserSections,
   type ChooserLiveRow,
   type ChooserRecentRow,
 } from "@/lib/terminal/chooser-data";
+import { AGENT_LABEL, CODEX_SIGNIN_HINT, resumeConfirmLine } from "@/lib/terminal/agent-copy";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { TerminalAgentPicker } from "./terminal-agent-picker";
 import { updateNudgeCopy, type HelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowChooserHelperNudge } from "@/lib/terminal/helper-version";
 import {
   UPDATE_CONFIRM_ACCEPT_LABEL,
   UPDATE_CONFIRM_CANCEL_LABEL,
   UPDATE_CONFIRM_HEADING,
-  UPDATE_QUIESCE_TIMEOUT_COPY,
-  UPDATE_READY_COPY,
+  isUpdateFlowSettled,
+  settledNoticeCopy,
   updateConfirmBody,
 } from "@/lib/terminal/helper-update-flow";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
@@ -133,6 +137,22 @@ export interface TerminalSessionChooserProps {
    * "Escape while renaming also closes the chooser", never a trap.
    */
   onRenamingActiveChange?: (active: boolean) => void;
+  /**
+   * Codex support (docs/codex-terminal-ux-design.html §1a, implementation
+   * slice 2) — the picker's current value and change handler. Omitted →
+   * the picker doesn't render at all (keeps this component usable standalone
+   * in a Claude-only context, e.g. older tests) and every launch behaves
+   * exactly as it did before this field existed.
+   */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
+  /**
+   * Design §6 — true when another of this user's sessions is already live on
+   * THIS board (mirrors the mint route's own "isolate" condition). Only ever
+   * shown while `agent === "codex"`: Claude isolates into a worktree
+   * automatically, so this warning is Codex-specific (it can't isolate).
+   */
+  sharesFolderWarning?: boolean;
 }
 
 export function TerminalSessionChooser({
@@ -151,6 +171,9 @@ export function TerminalSessionChooser({
   onHelperUpdateSettled,
   onDismiss,
   onRenamingActiveChange,
+  agent,
+  onAgentChange,
+  sharesFolderWarning = false,
 }: TerminalSessionChooserProps) {
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -311,7 +334,7 @@ export function TerminalSessionChooser({
         </div>
       )}
 
-      {(updateFlowPhase === "ready" || updateFlowPhase === "quiesce-timeout") && (
+      {isUpdateFlowSettled(updateFlowPhase) && (
         <div
           className={cn(
             "border-b px-3.5 py-2 text-[11px]",
@@ -320,7 +343,7 @@ export function TerminalSessionChooser({
               : "border-amber-500/30 bg-amber-500/5 text-amber-300",
           )}
         >
-          {updateFlowPhase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+          {settledNoticeCopy(updateFlowPhase)}
         </div>
       )}
 
@@ -358,6 +381,32 @@ export function TerminalSessionChooser({
           </Button>
           <span className="text-[11.5px] text-zinc-500">{newSessionTooltip(cap).replace(/^New terminal — /, "")}</span>
         </div>
+        {/* Codex support (design §1a) — a two-option picker directly under
+            the Start button, inside the same bordered block. Omitted when
+            no agent/handler is wired (keeps this component's other callers
+            byte-identical). */}
+        {agent && onAgentChange && (
+          <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Run it with" />
+        )}
+        {agent === "codex" && (
+          <p className="mt-1.5 text-[11px] text-zinc-500">{CODEX_SIGNIN_HINT}</p>
+        )}
+        {/* Design §6 — Codex-only: it can't isolate into a worktree the way
+            Claude does, so a second session on this board genuinely shares
+            files. Appears the instant Codex is selected under that
+            condition; disappears the instant Claude Code is (warn, don't
+            block — Start stays enabled). */}
+        {agent === "codex" && sharesFolderWarning && (
+          <div className="mt-2.5 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11.5px] text-amber-200">
+            <span aria-hidden="true">⚠</span>
+            <span>
+              <b className="text-amber-300">This one will share the project folder.</b> A session is
+              already running on this board. Claude Code can work in a separate copy of the folder;
+              Codex can&apos;t — so both sessions will be editing the same files. Fine for reading and
+              asking questions; take care if both are making changes.
+            </span>
+          </div>
+        )}
         {/* Task c4ca2d95: passive launch-surface visibility (design §4.2) —
             no dialog, no "Change" link in v1 (kept intentionally terse; see
             the implementation report for the scope trim). */}
@@ -482,6 +531,15 @@ export function TerminalSessionChooser({
   );
 }
 
+/** Design §4c — every row names its agent, "Claude Code" or "Codex", never colour alone. */
+function AgentChip({ agent }: { agent: LaunchAgent }) {
+  return (
+    <span className="rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] font-normal text-zinc-300">
+      {AGENT_LABEL[agent]}
+    </span>
+  );
+}
+
 function ChooserSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -537,6 +595,7 @@ function LiveRow({
               {label}
             </span>
             {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+            <AgentChip agent={rowAgent(row.agent)} />
             {badge && (
               <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
                 {badge}
@@ -661,10 +720,7 @@ function RecentRow({
                 <span className="font-mono text-zinc-300">{row.cwd}</span>.
               </>
             ) : (
-              <>
-                Starts a new terminal that picks up the most recent conversation in{" "}
-                <span className="font-mono text-zinc-300">{row.cwd}</span>.
-              </>
+              resumeConfirmLine(rowAgent(row.agent), row.cwd)
             )}
           </p>
           {limitLine && <p className="mt-1">{limitLine}</p>}

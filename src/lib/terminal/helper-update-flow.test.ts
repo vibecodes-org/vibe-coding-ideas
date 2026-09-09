@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   INITIAL_UPDATE_FLOW_STATE,
+  UPDATE_HELPER_UNREACHABLE_COPY,
+  UPDATE_QUIESCE_TIMEOUT_COPY,
+  UPDATE_READY_COPY,
+  isUpdateFlowSettled,
+  settledNoticeCopy,
   updateFlowReducer,
   updateConfirmBody,
   type UpdateFlowState,
@@ -37,9 +42,17 @@ describe("updateFlowReducer", () => {
     expect(updateFlowReducer(quiescing, { type: "quiesce-timed-out" })).toEqual({ phase: "quiesce-timeout" });
   });
 
+  it("quiescing -> quiesce-undelivered -> helper-unreachable (relay had no live helper connection — NOT 'ready')", () => {
+    // Nick, 6 Sep 2026 (card 3280f13c): the relay answered delivered:false,
+    // the old flow reported "the helper has closed", Finder said "in use".
+    const quiescing: UpdateFlowState = { phase: "quiescing" };
+    expect(updateFlowReducer(quiescing, { type: "quiesce-undelivered" })).toEqual({ phase: "helper-unreachable" });
+  });
+
   it("reset returns to idle from any phase", () => {
     expect(updateFlowReducer({ phase: "ready" }, { type: "reset" })).toEqual(INITIAL_UPDATE_FLOW_STATE);
     expect(updateFlowReducer({ phase: "quiesce-timeout" }, { type: "reset" })).toEqual(INITIAL_UPDATE_FLOW_STATE);
+    expect(updateFlowReducer({ phase: "helper-unreachable" }, { type: "reset" })).toEqual(INITIAL_UPDATE_FLOW_STATE);
   });
 
   it("out-of-phase events are no-ops (never transition from an unrelated phase)", () => {
@@ -49,6 +62,25 @@ describe("updateFlowReducer", () => {
     );
     const ready: UpdateFlowState = { phase: "ready" };
     expect(updateFlowReducer(ready, { type: "cancelled" })).toEqual(ready);
+  });
+});
+
+describe("settled-phase helpers", () => {
+  it("isUpdateFlowSettled is true for exactly the three end phases", () => {
+    expect(isUpdateFlowSettled("ready")).toBe(true);
+    expect(isUpdateFlowSettled("quiesce-timeout")).toBe(true);
+    expect(isUpdateFlowSettled("helper-unreachable")).toBe(true);
+    expect(isUpdateFlowSettled("idle")).toBe(false);
+    expect(isUpdateFlowSettled("confirming")).toBe(false);
+    expect(isUpdateFlowSettled("quiescing")).toBe(false);
+  });
+
+  it("settledNoticeCopy: only 'ready' claims the helper has closed", () => {
+    expect(settledNoticeCopy("ready")).toBe(UPDATE_READY_COPY);
+    expect(settledNoticeCopy("quiesce-timeout")).toBe(UPDATE_QUIESCE_TIMEOUT_COPY);
+    expect(settledNoticeCopy("helper-unreachable")).toBe(UPDATE_HELPER_UNREACHABLE_COPY);
+    expect(UPDATE_HELPER_UNREACHABLE_COPY).not.toContain("has closed");
+    expect(UPDATE_HELPER_UNREACHABLE_COPY).toContain("Activity Monitor");
   });
 });
 

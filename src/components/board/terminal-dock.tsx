@@ -88,6 +88,9 @@ import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-m
 import { useViewerTerminalModel } from "@/hooks/use-viewer-terminal-model";
 import { useViewerTerminalAutoAccept } from "@/hooks/use-viewer-terminal-auto-accept";
 import { terminalLaunchAutoAcceptChip } from "@/lib/terminal/auto-accept-mode";
+import { useViewerTerminalAgent, persistViewerTerminalAgent } from "@/hooks/use-viewer-terminal-agent";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { CODEX_SETTINGS_LINE, agentDedupeToast } from "@/lib/terminal/agent-copy";
 import {
   generatePopoutNonce,
   popoutChannelName,
@@ -150,7 +153,7 @@ import {
 } from "@/lib/terminal/split-view";
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
-import { getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
   DISPLAY_NAME_COUNTER_THRESHOLD,
@@ -302,6 +305,42 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const viewerTerminalModel = useViewerTerminalModel();
   const viewerAutoAccept = useViewerTerminalAutoAccept();
+  // Codex support (docs/codex-terminal-requirements.md FR-4a/US-8,
+  // implementation slice 2) — the per-account remembered agent pick, seeded
+  // into the picker's local state the first time it resolves (see the effect
+  // below); every subsequent picker interaction is local state, persisted
+  // back on change via `handleAgentPickerChange`.
+  const rememberedAgent = useViewerTerminalAgent();
+  const [chooserAgent, setChooserAgent] = useState<LaunchAgent>("claude");
+  const chooserAgentSeededRef = useRef(false);
+  useEffect(() => {
+    if (rememberedAgent !== undefined && !chooserAgentSeededRef.current) {
+      chooserAgentSeededRef.current = true;
+      setChooserAgent(rememberedAgent);
+    }
+  }, [rememberedAgent]);
+  // Every picker write updates the remembered column (design §1, Q4/Q7) —
+  // fire-and-forget: a failed write just means next launch re-defaults from
+  // whatever the server still has, never blocks THIS launch.
+  const handleAgentPickerChange = useCallback((agent: LaunchAgent) => {
+    setChooserAgent(agent);
+    void persistViewerTerminalAgent(agent).catch(() => {});
+  }, []);
+  // An incoming launch (bus payload) carries the agent the user explicitly
+  // clicked — "Codex → In the browser" sends agent:"codex". The board-level
+  // chooser's toggle (chooserAgent) must reflect THAT, not the remembered
+  // pick, or the panel shows Claude after a Codex click AND
+  // handleChooserStartNew's `{ ...pendingLaunch, agent: chooserAgent }` then
+  // overwrites the explicit choice with the stale toggle (the task dialog
+  // already honours this via taskDialogAgent — see the effect below). Also
+  // marks the seed ref so a late-resolving rememberedAgent can't clobber it.
+  // No persist: this mirrors an explicit launch, not a manual toggle write.
+  const seedChooserAgentFromLaunch = useCallback((payload: BrowserLaunchPayload | null) => {
+    if (payload?.agent) {
+      chooserAgentSeededRef.current = true;
+      setChooserAgent(payload.agent);
+    }
+  }, []);
   // Dock-open persistence (rework 5, card cbe60db5 — Nick's field test: "fix
   // the terminal panel staying open as well"). Initial paint stays collapsed
   // (SSR-safe, matches every other install-first input use-terminal-session.ts
@@ -406,6 +445,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // `TerminalTaskLaunchChoice`). Mutually exclusive with `chooserOpen` —
   // `deliverLaunch` only ever sets one of the two.
   const [taskChoiceOpen, setTaskChoiceOpen] = useState(false);
+  // The per-task launch dialog's OWN picker value (design §1c: "Start fresh
+  // with", pre-set to whatever the triggering item/launch already carried —
+  // never silently the remembered pick). Reset every time the dialog opens.
+  const [taskDialogAgent, setTaskDialogAgent] = useState<LaunchAgent>("claude");
+  useEffect(() => {
+    if (taskChoiceOpen) setTaskDialogAgent(pendingLaunch?.agent ?? chooserAgent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskChoiceOpen, pendingLaunch]);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -818,7 +865,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // in another tab" — the pre-reload set alone isn't enough once a
         // fresh mint lands.
         readTabSids(),
-        getMachineIdentity(),
+        getMachineIdentities(),
       ),
     [registryRows, ideaId],
   );
@@ -1559,6 +1606,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         identity,
         readOnly: summary.readOnly,
         autoAccept: summary.autoAccept,
+        // Codex support (design §4d): this tab's own agent, captured once at
+        // entry creation — see SessionEntry.agent's doc.
+        agent: entry?.agent === "codex" ? "codex" : "claude",
         // Pop-out fix (2 Sep 2026): the popped window opens its OWN attach
         // (attachToExisting → a fresh socket), so it needs the session's E2EE
         // key just like a reattach does. Without it, it painted ciphertext
@@ -1772,7 +1822,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     if (dedupe.action === "focus") {
       setActiveKey(dedupe.key);
       setExpanded(true);
-      toast.info("This task already has a terminal — switched to it.");
+      // Codex support (design §10 taskMenu.dedupeToast): name the EXISTING
+      // tab's own agent, not the just-clicked launch's — that's the session
+      // the user is actually being switched to.
+      const existingAgent = currentSessions.find((s) => s.key === dedupe.key)?.agent;
+      toast.info(agentDedupeToast(existingAgent === "codex" ? "codex" : "claude"));
       return;
     }
 
@@ -1822,6 +1876,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // `?reconnect=` round trip before ever reaching here), so the
                 // dock's own `ideaTitle` prop is this entry's true title.
                 ideaTitle,
+                // Codex support (FR-5): captured alongside ideaId/taskId —
+                // see SessionEntry.agent's doc.
+                agent: payload?.agent,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1857,6 +1914,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // Board-switch UX fix (task b70bcbeb): see the reclaim
                 // branch's identical comment above.
                 ideaTitle,
+                agent: payload?.agent,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1877,6 +1935,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // Board-switch UX fix (task b70bcbeb): see the reclaim branch's
       // identical comment above.
       ideaTitle,
+      // Codex support (FR-5): see SessionEntry.agent's doc.
+      agent: payload?.agent,
       createdAt: Date.now(),
       launchSeq: 1,
       launchPayload: payload ?? null,
@@ -1939,12 +1999,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // visible underneath.
         setExpanded(true);
         setPendingLaunch(payload);
+        seedChooserAgentFromLaunch(payload);
         if (sessionsRef.current.length > 0) setChooserMode("launch");
         return;
       }
       mintAndDeliver(payload);
     },
-    [mintAndDeliver],
+    [mintAndDeliver, seedChooserAgentFromLaunch],
   );
 
   // The "In the browser" menu item (board toolbar) and task-card menus fire the
@@ -2007,6 +2068,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         displayName?: string | null;
         /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only. */
         sessionKey?: string;
+        /** Codex support (FR-5): the row's agent, so the rebuilt tab keeps its
+         *  Codex label across a reload/reconnect (bug: read as Claude Code after
+         *  a hard refresh — Nick, 7 Sep 2026). */
+        agent?: LaunchAgent;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2068,6 +2133,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         launchPayload: null,
         attach,
         showReconnectedNoHistoryNote: !initialBuffer,
+        // Codex support (FR-5): carry the row's agent onto the rebuilt tab so a
+        // reload-reattached / instant-continue Codex session keeps its "Codex"
+        // label — without this the tab read as Claude Code after a hard refresh
+        // (Nick, 7 Sep 2026). Normalised the same way every other row-agent
+        // reader does (chooser-data.ts's rowAgent): only the literal "codex".
+        agent: data.agent === "codex" ? "codex" : "claude",
       };
       setSessions((prev) => (pristineKey ? prev.map((s) => (s.key === pristineKey ? entry : s)) : [...prev, entry]));
       setActiveKey(entry.key);
@@ -2122,7 +2193,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // from that state alone — nothing else to do. With a tab already
         // open, `deliverLaunch` couldn't know the resolved kind yet at queue
         // time, so the overlay hasn't been shown — open it now,
-        // non-destructively.
+        // non-destructively. Either way, seed the toggle from the explicit
+        // launch agent — the queue-time branch in `deliverLaunch` set
+        // `pendingLaunch` before the decision was known and couldn't do it.
+        seedChooserAgentFromLaunch(pendingLaunch);
         if (sessions.length > 0) setChooserMode("launch");
         return;
       }
@@ -2145,7 +2219,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections, seedChooserAgentFromLaunch]);
 
   // Cross-board resume fix (bug 62e57071, Sentinel's investigation): a
   // Recent row can belong to ANY board — chooser-data.ts's Recent section is
@@ -2220,6 +2294,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // exactly like taskId/taskTitle already do.
       displayName: row.displayName ?? undefined,
       ideaId: row.ideaId,
+      // Codex support (FR-2/FR-5): Resume never shows the picker — it fires
+      // with the ROW's own recorded agent, never a current picker value.
+      agent: row.agent,
     }),
     [],
   );
@@ -2280,13 +2357,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // the ways to close the overlay by ACTING; `handleChooserDismiss` below is
   // the way to close it by walking away, and both are always available.
   const handleChooserStartNew = useCallback(() => {
-    const payload = pendingLaunch;
+    // Codex support (design §1, §11 Q3): the picker's CURRENT value rides
+    // this fresh launch — merged in here (never applied silently to a
+    // Resume/Reconnect, which never call this handler at all). `payload` may
+    // be null (a plain "+"/chooser open with no button-built essentials —
+    // see resolveLaunchPromptParts's own fallback in use-terminal-session.ts,
+    // which still reads `agent` off this minimal payload).
+    const payload: BrowserLaunchPayload = { ...pendingLaunch, agent: chooserAgent };
     const originKey = chooserOriginKey;
     setPendingLaunch(null);
     setChooserOriginKey(null);
     setChooserMode(null);
     mintAndDeliver(payload, null, originKey);
-  }, [pendingLaunch, chooserOriginKey, mintAndDeliver]);
+  }, [pendingLaunch, chooserOriginKey, mintAndDeliver, chooserAgent]);
 
   // Nick, 2026-08-19: "HOW THE HELL AM I GOING TO CLOSE THIS?" — the
   // launch-mode overlay was a dead end by design (forced choice: no close
@@ -2401,11 +2484,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   }, [pendingLaunch, mintAndDeliver, buildResumePayload, ideaId, performReattach, router, reconnectIfConversationLive]);
 
   const handleTaskChoiceStartFresh = useCallback(() => {
-    const payload = pendingLaunch;
+    // Codex support (design §1c): "Start fresh anyway" carries the dialog's
+    // OWN picker value — Reconnect/Resume above never read it (AC-7).
+    const payload: BrowserLaunchPayload = { ...pendingLaunch, agent: taskDialogAgent };
     setPendingLaunch(null);
     setTaskChoiceOpen(false);
+    void persistViewerTerminalAgent(taskDialogAgent).catch(() => {});
     mintAndDeliver(payload);
-  }, [pendingLaunch, mintAndDeliver]);
+  }, [pendingLaunch, mintAndDeliver, taskDialogAgent]);
 
   // Propagation fix (Sentinel's finding — "perpetuates a mis-file forever"):
   // an already-mounted tab's OWN "Resume this conversation" button
@@ -2528,6 +2614,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // posture.
   const terminalAutoAcceptChip =
     viewerAutoAccept === undefined ? null : terminalLaunchAutoAcceptChip(viewerAutoAccept);
+  // Codex support (design §1a annotation 3): Codex has none of our model/
+  // auto-accept settings — replace both footer lines with one grey line,
+  // keeping the block's height stable (never hide, only replace).
+  const chooserModelLine = chooserAgent === "codex" ? CODEX_SETTINGS_LINE : terminalModelLine;
+  const chooserAutoAcceptChip = chooserAgent === "codex" ? null : terminalAutoAcceptChip;
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
@@ -2597,6 +2688,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Task d3de150c — same chip, terser dedupe-dialog slot (design §2.2).
   const terminalTaskDialogAutoAcceptChip =
     viewerAutoAccept === undefined ? null : terminalLaunchAutoAcceptChip(viewerAutoAccept);
+  // Codex support (design §1c) — same one-line swap as the chooser's footer,
+  // scoped to "Start fresh anyway" (Reconnect/Resume never read either line).
+  const taskDialogModelLine = taskDialogAgent === "codex" ? CODEX_SETTINGS_LINE : terminalTaskDialogModelLine;
+  const taskDialogAutoAcceptChip = taskDialogAgent === "codex" ? null : terminalTaskDialogAutoAcceptChip;
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
   // status is usually mid-preemption at this exact moment and would
@@ -2680,17 +2775,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               sessions is live on THIS board. Phase 1 only (see the
               investigation step): `terminal_sessions` RLS is owner-only, so
               every `liveHere` row is guaranteed to be this same person's,
-              never a collaborator's — the copy says "tab", never "someone
-              else". */}
+              never a collaborator's — the copy says "session", never "someone
+              else". It says "session" and NOT "tab" deliberately: a live row
+              means a session the server still has marked active, which need
+              NOT have any window open — closing a tab (or an orphaned/ghost
+              row) leaves the session live with no tab at all (Nick, 6 Sep
+              2026: badge said "Another tab is open here" with no other tab —
+              a stale no-task session was still active on the board). */}
           {otherLiveHere.length > 0 && (
             <span
               className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300"
-              title={`Also open here: ${otherLiveHere.map((r) => r.taskTitle ?? r.cwd ?? "another folder").join(", ")}`}
+              title={`Also live on this board: ${otherLiveHere.map((r) => r.taskTitle ?? r.cwd ?? "another folder").join(", ")}`}
             >
               <span aria-hidden="true">⚠</span>
               {otherLiveHere.length === 1
-                ? "Another tab is open here"
-                : `${otherLiveHere.length} other tabs are open here`}
+                ? "Another session is live here"
+                : `${otherLiveHere.length} other sessions are live here`}
             </span>
           )}
           {/* Card b70bcbeb: same amber "other board" marker as the tab strip,
@@ -2833,8 +2933,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
-            modelLine={terminalModelLine}
-            autoAcceptChip={terminalAutoAcceptChip}
+            modelLine={chooserModelLine}
+            autoAcceptChip={chooserAutoAcceptChip}
+            agent={chooserAgent}
+            onAgentChange={handleAgentPickerChange}
+            sharesFolderWarning={otherLiveHere.length > 0}
             onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
@@ -2973,7 +3076,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       // the mid-interaction reflow the comment below forbids:
                       // `isOtherBoard` only changes on a board navigation,
                       // never between an arm click and its confirm click.
-                      boardIdentity.isOtherBoard ? "min-w-[190px] max-w-[270px]" : "min-w-[110px] max-w-[190px]",
+                      boardIdentity.isOtherBoard
+                        ? "min-w-[190px] max-w-[270px]"
+                        : "min-w-[110px] max-w-[190px]",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
                       // Deliberately NO width change while renaming/confirming.
@@ -3089,6 +3194,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                           {meta.glyph}
                         </span>
                         <span className="sr-only">{meta.ariaText}</span>
+                        {/* The per-agent tab pill was removed (Nick, 7 Sep
+                            2026) — the agent is now named in the session panel
+                            header instead, so tabs are unlabelled for every
+                            agent. */}
                         <span
                           className="min-w-0 flex-1 truncate"
                           onDoubleClick={(e) => {
@@ -3298,7 +3407,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                         )}
                       >
                         {entry && renderTab(entry, originalIndex)}
-                        {isLast && stripControls}
+                        {/* Right-align the utility cluster inside the last
+                            column (Nick, 7 Sep 2026): in single view the
+                            toggle/+ already sit hard right (they follow a
+                            flex-1 tab strip); in split they used to bunch up
+                            against the last tab with dead space trailing to
+                            the pane's right edge. `ml-auto` pushes them to
+                            that edge so both layouts read the same. When the
+                            tab overflows there's no spare space, so `ml-auto`
+                            collapses to 0 and the column scrolls as before. */}
+                        {isLast && <div className="ml-auto flex flex-none items-stretch">{stripControls}</div>}
                       </div>
                     );
                   })}
@@ -3368,6 +3486,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onCapExceeded={openMySessions}
             onConversationLive={reconnectToLiveSession}
             onBrowseSessions={() => openChooserToBrowse(entry.key)}
+            agent={chooserAgent}
+            onAgentChange={handleAgentPickerChange}
             liveSessionCount={liveSessionCount}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
@@ -3377,6 +3497,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResumeEndedSession={handleResumeEndedSession}
             lastHelperStatus={lastHelperStatus}
             wakeResume={wakeResumeByKey[entry.key] ?? null}
+            // Keep the pane's visual position tied to `paneKeys` (the canonical
+            // left→right order), not this map's `sessions` array order — else a
+            // resume/reconnect that reorders `paneKeys` leaves the tab strip
+            // (which maps `paneKeys`) crossed over the body (Nick, 7 Sep 2026).
+            paneOrder={inPane ? paneIndex : undefined}
           />
           );
         })}
@@ -3496,8 +3621,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
-            modelLine={terminalModelLine}
-            autoAcceptChip={terminalAutoAcceptChip}
+            modelLine={chooserModelLine}
+            autoAcceptChip={chooserAutoAcceptChip}
+            agent={chooserAgent}
+            onAgentChange={handleAgentPickerChange}
+            sharesFolderWarning={otherLiveHere.length > 0}
             onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
@@ -3526,8 +3654,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onReconnect={handleTaskChoiceReconnect}
           onStartFresh={handleTaskChoiceStartFresh}
           onCancel={handleTaskChoiceCancel}
-          modelLine={terminalTaskDialogModelLine}
-          autoAcceptChip={terminalTaskDialogAutoAcceptChip}
+          modelLine={taskDialogModelLine}
+          autoAcceptChip={taskDialogAutoAcceptChip}
+          agent={taskDialogAgent}
+          onAgentChange={setTaskDialogAgent}
         />
       )}
     </div>

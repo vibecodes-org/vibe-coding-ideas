@@ -123,8 +123,10 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
   }, []);
 
   useEffect(() => {
-    document.title = `Terminal · ${payload.label}`;
-  }, [payload.label]);
+    // Codex support (design §4d): " · Codex" suffix on the pop-out title.
+    document.title =
+      payload.agent === "codex" ? `Terminal · ${payload.label} · Codex` : `Terminal · ${payload.label}`;
+  }, [payload.label, payload.agent]);
 
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
@@ -170,6 +172,16 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
           <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
           {meta.label}
         </span>
+        {/* Codex support (design §4d/§14) — mirrors terminal-session-view.tsx's chip. */}
+        {payload.agent === "codex" && (
+          <span
+            className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
+            title="This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model."
+            tabIndex={0}
+          >
+            Codex
+          </span>
+        )}
         {/* Auto-accept badge (task d3de150c) — same "whole session life, not
             gated on connected" rule as terminal-session-view.tsx's badge;
             see that file's comment for why. */}

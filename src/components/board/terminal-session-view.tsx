@@ -53,7 +53,6 @@ import {
   Undo2,
   RefreshCw,
   X,
-  Zap,
   Shield,
   ShieldAlert,
 } from "lucide-react";
@@ -66,6 +65,9 @@ import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 import { HelperUpdateButton, HelperUpdateFlowNotice } from "./terminal-helper-update-button";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
+import type { LaunchAgent } from "@/lib/terminal/agent-launch";
+import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
+import { TerminalAgentPicker } from "./terminal-agent-picker";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
 import {
@@ -81,7 +83,6 @@ import {
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
-import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 
@@ -229,6 +230,17 @@ interface TerminalSessionViewProps {
    */
   onBrowseSessions?: () => void;
   /**
+   * Codex support (docs/codex-terminal-ux-design.html §1b, implementation
+   * slice 2) — the picker's current value/handler for the "Ready when you
+   * are" panel (a paired, idle Mac with nothing to reattach to). Omitted →
+   * the picker doesn't render and `onConnect` fires exactly as before this
+   * field existed. Every OTHER fresh-session surface (chooser, task dialog)
+   * is owned by terminal-dock.tsx directly — this is the one launch surface
+   * that lives inside this per-tab view instead.
+   */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
+  /**
    * Live sessions across the dock (any tab that's connected / connecting /
    * waiting / reconnecting) — drives the helper-update flow's confirm copy
    * ("Your N running sessions will end first"). Falls back to this tab's
@@ -297,6 +309,19 @@ interface TerminalSessionViewProps {
    * knows its own — never overrides a value the tab already has.
    */
   wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
+  /**
+   * Split view (Nick's field report, 7 Sep 2026 — tab labels crossed after a
+   * resume/reconnect): the body maps every session in `sessions` array order
+   * to keep them all mounted, but the tab strip above lays its columns out in
+   * `paneKeys` order — the canonical left→right order the rest of the dock
+   * uses (keyboard nav, drag assignment, focus). When a resume/reconnect
+   * reorders `paneKeys` away from the array order, the two disagreed and a
+   * tab sat over the WRONG pane. This is that pane's index within `paneKeys`;
+   * applied as CSS `order` so the visual left→right of the panes always
+   * follows `paneKeys` too — a pure style change, so no live xterm DOM node
+   * ever moves. Undefined in tabbed mode (only one pane is visible anyway).
+   */
+  paneOrder?: number;
 }
 
 export function TerminalSessionView({
@@ -319,6 +344,8 @@ export function TerminalSessionView({
   onRetryReconnect,
   onResumeEndedSession,
   onBrowseSessions,
+  agent,
+  onAgentChange,
   liveSessionCount,
   paneFocused,
   onFocusPane,
@@ -327,6 +354,7 @@ export function TerminalSessionView({
   onPaneFocusChange,
   lastHelperStatus,
   wakeResume,
+  paneOrder,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -594,6 +622,10 @@ export function TerminalSessionView({
         inPane && paneFocused && "border-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_0_14px_rgba(56,189,248,0.12)]",
         inPane && !paneFocused && "border-zinc-800",
       )}
+      // Pane visual order follows `paneKeys` (see `paneOrder` prop doc) so the
+      // tab strip and the pane body can never cross. Style-only: the DOM order
+      // (and so the live xterm node) never moves.
+      style={inPane && typeof paneOrder === "number" ? { order: paneOrder } : undefined}
       aria-hidden={!isActive}
       role={inPane ? "tabpanel" : undefined}
       aria-label={inPane ? paneAccessibleName(label, !!paneFocused) : undefined}
@@ -713,21 +745,29 @@ export function TerminalSessionView({
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
           </span>
-          {/* Auto-accept badge (task d3de150c, design §3.1) — deliberately
-              NOT gated on `state.status === "connected"` like Read-only just
-              below: this is a launch-time FACT about the session, not a
-              live connection state, so it must show for the session's whole
-              life (connected, disconnected, reconnecting) — the forget
-              scenario the design is built around only works if the badge
-              never disappears just because the connection blipped. */}
-          {autoAccept && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/55 bg-amber-500/10 px-2 py-1 text-[11px] font-bold text-amber-300"
-              title={AUTO_ACCEPT_BADGE_TITLE}
-            >
-              <Zap className="h-3 w-3" /> {AUTO_ACCEPT_BADGE_LABEL}
-            </span>
-          )}
+          {/* Agent chip (Nick, 7 Sep 2026) — every in-browser session names
+              its agent here, Claude Code as well as Codex. Consolidated: the
+              tab strip's own agent badge was removed (redundant with this
+              panel), so this is now the single place the agent is shown. A
+              launch-time fact, so it persists through disconnects/reconnects.
+              Focusable with a tooltip like the E2EE chip above; text never
+              collapses to an icon (no glyph reads "Claude Code"/"Codex" to a
+              non-coder). */}
+          <span
+            className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
+            title={
+              entry.agent === "codex"
+                ? "This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model."
+                : "This session runs Claude Code. The model follows your Model Tiers for each workflow step; permissions are Claude Code's own settings."
+            }
+            tabIndex={0}
+          >
+            {AGENT_LABEL[entry.agent === "codex" ? "codex" : "claude"]}
+          </span>
+          {/* Auto-accept / "auto mode" is deliberately NOT shown as a header
+              chip for in-browser terminals (Nick, 7 Sep 2026): the terminal
+              body itself already prints "auto mode on", so a second indicator
+              here is redundant. */}
           {readOnly && state.status === "connected" && (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
               <Lock className="h-3 w-3" /> Read-only
@@ -910,8 +950,10 @@ export function TerminalSessionView({
               canResume={canResume}
               canResumeFromError={canResumeFromError}
               pairingTimedOut={pairingTimedOut}
-              onConnect={() => void actions.connect({ autoLaunch: true })}
+              onConnect={() => void actions.connect({ autoLaunch: true, agent })}
               onDownloadHelper={helperUpdate.start}
+              agent={agent}
+              onAgentChange={onAgentChange}
               onRetry={() => {
                 // Reconnect-relaunch fix: re-attempt THIS session (a fresh
                 // reattach → fresh deep link) instead of minting an unrelated
@@ -1057,6 +1099,8 @@ function StateOverlay({
   onBrowseSessions,
   onCapExceeded,
   onDownloadHelper,
+  agent,
+  onAgentChange,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -1096,6 +1140,9 @@ function StateOverlay({
   onCapExceeded?: () => void;
   /** Every download affordance runs the shared stand-down-first flow. */
   onDownloadHelper: () => void;
+  /** Codex support (docs/codex-terminal-ux-design.html §1b, implementation slice 2) — see TerminalSessionViewProps' same-named prop. */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -1103,7 +1150,14 @@ function StateOverlay({
 
       {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} onDownload={onDownloadHelper} />}
 
-      {view === "ready" && <ReadyPanel onConnect={onConnect} onBrowseSessions={onBrowseSessions} />}
+      {view === "ready" && (
+        <ReadyPanel
+          onConnect={onConnect}
+          onBrowseSessions={onBrowseSessions}
+          agent={agent}
+          onAgentChange={onAgentChange}
+        />
+      )}
 
       {(view === "connecting" || view === "connecting-returning") && (
         <ConnectingPanel returning={view === "connecting-returning"} />
@@ -1352,11 +1406,25 @@ function StateOverlay({
 // explicit End never relaunches a session). Before this existed the idle
 // branch fell through to the install wizard below, telling an already-set-up
 // Mac to download the helper (Nick, 2026-08-25).
-function ReadyPanel({ onConnect, onBrowseSessions }: { onConnect: () => void; onBrowseSessions?: () => void }) {
+function ReadyPanel({
+  onConnect,
+  onBrowseSessions,
+  agent,
+  onAgentChange,
+}: {
+  onConnect: () => void;
+  onBrowseSessions?: () => void;
+  /** Codex support (design §1b) — omitted → the picker doesn't render, byte-identical to before this field existed. */
+  agent?: LaunchAgent;
+  onAgentChange?: (agent: LaunchAgent) => void;
+}) {
   return (
     <div className="flex max-w-md flex-col items-center gap-3" data-testid="ready-panel">
       <p className="text-sm font-semibold text-zinc-100">{FIRST_RUN_COPY.ready.title}</p>
       <p className="text-xs text-zinc-400">{FIRST_RUN_COPY.ready.body}</p>
+      {agent && onAgentChange && (
+        <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Run it with" className="w-full" />
+      )}
       <button
         type="button"
         onClick={onConnect}

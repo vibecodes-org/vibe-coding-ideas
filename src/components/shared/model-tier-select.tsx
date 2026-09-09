@@ -9,19 +9,20 @@ import { Badge } from "@/components/ui/badge";
 import { SelectContent } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useViewerModelTierMap } from "@/hooks/use-viewer-model-tier-map";
-import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
+import { useViewerModelTierMap, useViewerAgentAwareModelTierMap } from "@/hooks/use-viewer-model-tier-map";
+import { usePlatformModelDefaults, usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
 import {
   MODEL_TIERS,
   MODEL_TIER_AUTO_GLOSS,
-  MODEL_TIER_RUNS_ON_HELPER,
   modelTierLabel,
   modelTierGloss,
   capitalizeModelName,
   tierMismatchSentence,
+  tierResolutionLine,
   type ModelTierMap,
   type ModelTierValue,
 } from "@/lib/constants";
+import type { AgentAwarePlatformModelDefaults, AgentAwareUserModelTierMap, AgentTierEntry } from "@/lib/platform-model-defaults";
 
 // Radix Select can't use "" as an item value, so Auto (null) uses this sentinel.
 const AUTO_VALUE = "__auto__";
@@ -87,6 +88,40 @@ function TierItem({ value, label, gloss }: TierOption) {
   );
 }
 
+/** Auto's gloss, reworded for the agent-aware helper (design §3 note: "make
+ *  clear no tier is promised on either agent, so a later 'model not
+ *  reported' reads as expected rather than as a gap"). */
+const AUTO_HELPER_TEXT = "Auto — orchestrator picks freely on either agent. No tier is promised, so nothing is honoured or not.";
+
+/**
+ * "<Tier> → <Claude model> (<effort>) on Claude · <codex model> (<effort>) on
+ * Codex. Whichever agent claims this step runs it on that model." — the
+ * tier picker's helper text (design §3: format is fixed, viewer-resolved
+ * first, then the live platform default, then seed). Reuses
+ * tierResolutionLine (constants.ts) rather than inventing new copy logic.
+ */
+function buildTierHelperText(
+  tierValue: string | null,
+  viewerMap: AgentAwareUserModelTierMap | undefined,
+  platformDefaults: AgentAwarePlatformModelDefaults
+): string {
+  if (tierValue === null) return AUTO_HELPER_TEXT;
+
+  const tier = tierValue as ModelTierValue;
+  const platformEntry = platformDefaults.defaults[tier];
+  const viewerEntry = viewerMap?.[tier];
+  const claude: AgentTierEntry = {
+    model: viewerEntry?.claude?.model ?? platformEntry.claude.model,
+    effort: viewerEntry?.claude?.effort ?? platformEntry.claude.effort,
+  };
+  const codex: AgentTierEntry = {
+    model: viewerEntry?.codex?.model ?? platformEntry.codex.model,
+    effort: viewerEntry?.codex?.effort ?? platformEntry.codex.effort,
+  };
+
+  return `${tierResolutionLine(tier, claude, codex)}. Whichever agent claims this step runs it on that model. Live sessions pick up a tier change on their next step.`;
+}
+
 export interface ModelTierSelectProps {
   value: string | null;
   onChange: (value: string | null) => void;
@@ -117,10 +152,15 @@ export function ModelTierSelect({
   const helperId = `${triggerId}-helper`;
   const viewerMap = useViewerModelTierMap();
   const platformDefaults = usePlatformModelDefaults();
+  const viewerAgentAwareMap = useViewerAgentAwareModelTierMap();
+  const { defaults: agentAwarePlatformDefaults, isLoading: agentAwareLoading } = usePlatformAgentAwareModelDefaults();
   const options = React.useMemo(
     () => buildOptions(viewerMap, platformDefaults.defaults),
     [viewerMap, platformDefaults]
   );
+  const helperText = agentAwareLoading
+    ? "Loading…"
+    : buildTierHelperText(value, viewerAgentAwareMap, agentAwarePlatformDefaults);
 
   const selectValue = value ?? AUTO_VALUE;
   const handleChange = (v: string) => onChange(v === AUTO_VALUE ? null : v);
@@ -168,8 +208,8 @@ export function ModelTierSelect({
           </SelectPrimitive.Trigger>
           {listbox}
         </SelectPrimitive.Root>
-        <p id={helperId} className="text-[11px] text-muted-foreground">
-          {MODEL_TIER_RUNS_ON_HELPER}
+        <p id={helperId} className="text-[11px] text-muted-foreground" aria-busy={agentAwareLoading || undefined}>
+          {helperText}
         </p>
       </div>
     );
@@ -194,8 +234,8 @@ export function ModelTierSelect({
         </SelectPrimitive.Trigger>
         {listbox}
       </SelectPrimitive.Root>
-      <span id={helperId} className="min-w-0 flex-1 text-[10px] text-muted-foreground">
-        {MODEL_TIER_RUNS_ON_HELPER}
+      <span id={helperId} className="min-w-0 flex-1 text-[10px] text-muted-foreground" aria-busy={agentAwareLoading || undefined}>
+        {helperText}
       </span>
     </div>
   );

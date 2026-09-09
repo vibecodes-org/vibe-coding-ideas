@@ -2093,6 +2093,54 @@ describe("useTerminalSession", () => {
     });
   });
 
+  // Nick, 7 Sep 2026: a Codex "Start new session" (chooser) launch reaches
+  // fireLaunchDeepLink with promptPartsRef = { agent: "codex" } only — no
+  // pre-built essentials — so resolveLaunchPromptParts builds them fresh. That
+  // build was NOT threading the agent, so Codex was handed Claude's
+  // board-connect step (`claude mcp add … -s local` / `/mcp`) and ran `claude`
+  // instead of connecting. The board-connect copy must follow the chosen agent
+  // on this hook path exactly as it already does on the launch-button path.
+  describe("Codex board-connect wiring (Nick, 7 Sep 2026)", () => {
+    function promptFromLastIframe(): string {
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      const q = src.split("?")[1] ?? "";
+      const raw = new URLSearchParams(q).get("prompt") ?? "";
+      return decodeURIComponent(raw.replace(/\+/g, "%20"));
+    }
+
+    it("injects Codex's connector commands, not Claude's, for a Codex 'start new session' launch", async () => {
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true, agent: "codex" });
+      });
+
+      const prompt = promptFromLastIframe();
+      expect(prompt).toContain("codex mcp add vibecodes");
+      expect(prompt).toContain("codex mcp login vibecodes");
+      // The Claude command form must never be handed to Codex (the Codex copy
+      // may still NAME `claude mcp add` in a "do NOT use" clause, so key off the
+      // command's `-s local` form, which only the Claude branch emits).
+      expect(prompt).not.toContain("claude mcp add -s local");
+    });
+
+    it("still uses Claude's connector commands for a default (claude) launch — unchanged", async () => {
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const prompt = promptFromLastIframe();
+      expect(prompt).toContain("claude mcp add -s local");
+      expect(prompt).not.toContain("codex mcp add");
+    });
+  });
+
   // Task c4ca2d95 ("Terminal starting model") — the mint response's resolved
   // `model` field must reach the fresh-launch deep link, positioned before
   // `prompt`, and must NEVER reach a resume-shaped link.

@@ -48,8 +48,37 @@
  *  whose project folder has no commits yet (or isn't a git repo) no longer
  *  dies with "Error creating worktree" — the bridge checks the folder before
  *  appending `--worktree`, falls back to the main folder, and prints a
- *  one-line note into the terminal. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.11";
+ *  one-line note into the terminal. 0.3.13 (Codex support, task
+ *  bde102c1): the first helper that can launch Codex as well as Claude Code —
+ *  the bridge spawns the chosen agent (with a pre-flight install check for
+ *  both), and a new `vibecodes://open-terminal` action opens Codex in a real
+ *  Terminal.app window, gated on a relay-authenticated token. An older helper
+ *  ignores the `agent` param (spawns Claude) and doesn't understand
+ *  open-terminal at all, so this bump is what actually gives users the Codex
+ *  option. (0.3.12 was an internal build superseded by 0.3.13's launch fixes:
+ *  a desktop Codex launch no longer tears down a live in-browser session.)
+ *  0.3.13 was ROLLED BACK on 2026-09-07: it broke ALL browser terminal launches
+ *  (sessions would not start at all). ROOT CAUSE was a packaging omission, NOT
+ *  the code — electron-builder.yml's `files:` list didn't include
+ *  `control-url.mjs` (loaded on every control connection) + `open-terminal-gate.mjs`,
+ *  so the helper hit a missing-module import → unhandledRejection → the crash
+ *  handler's app.exit(1) → the whole helper died and no session could start.
+ *  0.3.14 fixes it: electron-builder.yml now globs `*.mjs` (verified both
+ *  modules present in the shipped app.asar), and Codex support is otherwise
+ *  identical to 0.3.13. Re-bumped to 0.3.14 for Nick's live test.
+ *  0.3.15 (7 Sep 2026): FR-4 — a fresh in-browser Codex launch opens on the
+ *  Standard-tier Codex model + reasoning effort (`codex -m … -c
+ *  model_reasoning_effort=…`). Old helpers degrade gracefully (Codex opens on
+ *  its own default), so this stays a soft "update recommended" nudge.
+ *  0.3.15 was BROKEN on install (7 Sep 2026): it was built from a fresh git
+ *  worktree where `terminal/bridge/node_modules` had never been installed, so
+ *  the extraResources copy shipped the bridge WITHOUT `ws` and `node-pty`.
+ *  main.js require()s `ws` at startup → "Cannot find module …/bridge/
+ *  node_modules/ws" → the helper crashed on every launch and no session could
+ *  start. 0.3.16 is the same code rebuilt with the deps present; the helper's
+ *  `predist` guard (scripts/check-bridge-deps.mjs) now refuses to build
+ *  without them. Hard nudge: every 0.3.15 install is dead. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.16";
 
 export type HelperVersionParts = readonly [number, number, number];
 

@@ -100,6 +100,23 @@
 // All three are skew-safe the same way as every frame above: an old relay/helper
 // that doesn't know a tag treats it as an unknown control frame and ignores it.
 //
+// OPEN-TERMINAL RELAY AUTHORIZATION (desktop Codex security fix, Finding 1)
+// adds ONE more control frame, scoped to a `helper` leg that connected with
+// `purpose=open-terminal` on its query string:
+//   - `{"t":"open-terminal-authorized"}` — sent by the RELAY to that helper
+//     leg IMMEDIATELY after `authorizeAttach` succeeds for the connection
+//     (same place/ordering as the bridge's `attached` frame above). The
+//     helper's `vibecodes://open-terminal` handler MUST NOT write the launch
+//     script or call `open -a Terminal` until this frame arrives — an
+//     `onopen` alone does not prove the token was accepted (the relay
+//     accepts then closes a bad token with 4006, exactly like every other
+//     role), and the local `decodeTokenClaims` shape-check the helper does
+//     first is a cheap early reject, never sufficient authorization on its
+//     own. Skew-safe: an old helper never sends `purpose`, so an old relay
+//     has nothing to gate and an old helper never waits for this frame; a
+//     new helper talking to an old relay (no `purpose` handling) times out
+//     and correctly refuses to open a window.
+//
 // EXACT-CONVERSATION RESUME (rework 5, card cbe60db5 — Nick's field test: a
 // Resume click resumed the wrong conversation because `claude --continue`
 // only ever continues whatever's most recent ON DISK in a folder, not the
@@ -581,4 +598,24 @@ export function parseMergeResultFrame(text) {
   } catch {
     return null;
   }
+}
+
+// ── open-terminal-authorized frame (relay -> helper leg, desktop Codex Finding 1 fix) ──
+
+/**
+ * The TEXT frame the relay sends a `helper` leg that connected with
+ * `purpose=open-terminal`, confirming its token genuinely passed
+ * `authorizeAttach` (signature + expiry + sid/role match). See this module's
+ * OPEN-TERMINAL RELAY AUTHORIZATION header comment above for the full
+ * rationale — the helper MUST treat this frame, not a bare `onopen`, as the
+ * gate for creating a Terminal window.
+ * @returns {string}
+ */
+export function encodeOpenTerminalAuthorizedFrame() {
+  return JSON.stringify({ t: "open-terminal-authorized" });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isOpenTerminalAuthorizedFrame(text) {
+  return isControlFrame(text, "open-terminal-authorized");
 }

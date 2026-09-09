@@ -10,6 +10,7 @@ import {
   liveSessionsElsewhereOnThisBoard,
   visibleRecentRows,
   partitionRecentByBoard,
+  rowAgent,
   type ChooserRegistryRow,
   type ChooserRecentRow,
 } from "./chooser-data";
@@ -31,6 +32,7 @@ function row(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserR
     status: "active",
     endedAt: null,
     displayName: null,
+    agent: "claude",
     ...overrides,
   };
 }
@@ -447,6 +449,57 @@ describe("deriveChooserSections", () => {
       const rows = [row({ sid: "live-mismatch", ideaId: IDEA_A, status: "active", machineLabel: "Nicks-Mac-Studio" })];
       const sections = deriveChooserSections(rows, IDEA_A, NOW, null, "Nicks-MacBook-Pro");
       expect(sections.liveHere.map((r) => r.sid)).toEqual(["live-mismatch"]);
+    });
+
+    // Two-hostnames-one-Mac fix (card 094927ee): the browser now remembers
+    // EVERY machine name it has been paired with, not just the latest one, so
+    // a row matches if its label is ANY of them.
+    describe("matches ANY known machine name (multi-name set)", () => {
+      it("shows a Recent row whose label is the SECOND name in the known set — the core regression", () => {
+        // Nick's Mac reports "Nicks-MBP.home.local" on one network and
+        // "Nicks-MacBook-Pro.local" on another. A session that ended while on
+        // the SECOND name must still show once this browser has recorded
+        // BOTH names, even though only the second is "most recent".
+        const rows = [endedRow({ sid: "second-name", machineLabel: "Nicks-MBP.home.local" })];
+        const recent = deriveChooserSections(
+          rows,
+          IDEA_A,
+          NOW,
+          null,
+          ["Nicks-MBP.home.local", "Nicks-MacBook-Pro.local"],
+        ).recent;
+        expect(recent.map((r) => r.sid)).toEqual(["second-name"]);
+      });
+
+      it("still hides a row from a genuinely unknown machine label", () => {
+        const rows = [endedRow({ sid: "foreign-mac", machineLabel: "Some-Other-Mac.local" })];
+        const recent = deriveChooserSections(
+          rows,
+          IDEA_A,
+          NOW,
+          null,
+          ["Nicks-MBP.home.local", "Nicks-MacBook-Pro.local"],
+        ).recent;
+        expect(recent).toEqual([]);
+      });
+
+      it("filters nothing when the known-name set is empty", () => {
+        const rows = [endedRow({ sid: "any-label", machineLabel: "Nicks-Mac-Studio" })];
+        const recent = deriveChooserSections(rows, IDEA_A, NOW, null, []).recent;
+        expect(recent.map((r) => r.sid)).toEqual(["any-label"]);
+      });
+
+      it("still shows a row with a null machineLabel against a multi-name known set", () => {
+        const rows = [endedRow({ sid: "no-label", machineLabel: null })];
+        const recent = deriveChooserSections(
+          rows,
+          IDEA_A,
+          NOW,
+          null,
+          ["Nicks-MBP.home.local", "Nicks-MacBook-Pro.local"],
+        ).recent;
+        expect(recent.map((r) => r.sid)).toEqual(["no-label"]);
+      });
     });
   });
 });
@@ -938,5 +991,35 @@ describe("live-conversation guard (card 0301fe8e)", () => {
   it("findLiveSessionForConversation with excludeSid returns null when the excluded row is the only match", () => {
     const rows = [row({ sid: "self-sid", status: "active", claudeSessionId: CONV })];
     expect(findLiveSessionForConversation(rows, CONV, "self-sid")).toBeNull();
+  });
+});
+
+// ── Codex support (implementation slice 2) ──────────────────────────────────
+
+describe("rowAgent", () => {
+  it("passes through the exact literal 'codex'", () => {
+    expect(rowAgent("codex")).toBe("codex");
+  });
+
+  it("reads a missing/legacy value as Claude Code (design §4c/FR-5)", () => {
+    expect(rowAgent(undefined)).toBe("claude");
+    expect(rowAgent("claude")).toBe("claude");
+  });
+});
+
+describe("deriveChooserSections — agent propagation", () => {
+  it("carries each row's own agent through to every derived section", () => {
+    const rows = [
+      row({ sid: "live-codex", status: "active", agent: "codex" }),
+      row({
+        sid: "recent-claude",
+        status: "ended",
+        endedAt: new Date(NOW - 60_000).toISOString(),
+        agent: "claude",
+      }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(sections.liveHere.find((r) => r.sid === "live-codex")?.agent).toBe("codex");
+    expect(sections.recent.find((r) => r.sid === "recent-claude")?.agent).toBe("claude");
   });
 });

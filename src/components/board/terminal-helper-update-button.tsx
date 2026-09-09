@@ -15,8 +15,8 @@ import {
   UPDATE_CONFIRM_ACCEPT_LABEL,
   UPDATE_CONFIRM_CANCEL_LABEL,
   UPDATE_CONFIRM_HEADING,
-  UPDATE_QUIESCE_TIMEOUT_COPY,
-  UPDATE_READY_COPY,
+  isUpdateFlowSettled,
+  settledNoticeCopy,
   updateConfirmBody,
   type UpdateFlowPhase,
 } from "@/lib/terminal/helper-update-flow";
@@ -89,7 +89,7 @@ export function HelperUpdateFlowNotice({
       </div>
     );
   }
-  if (phase === "ready" || phase === "quiesce-timeout") {
+  if (isUpdateFlowSettled(phase)) {
     return (
       <div
         className={cn(
@@ -97,7 +97,7 @@ export function HelperUpdateFlowNotice({
           phase === "ready" ? "border-sky-500/30 bg-sky-500/5 text-sky-300" : "border-amber-500/30 bg-amber-500/5 text-amber-300",
         )}
       >
-        {phase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+        {settledNoticeCopy(phase)}
       </div>
     );
   }

@@ -104,3 +104,76 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
   const worktreeFlag = worktree ? ` --worktree ${conv}` : "";
   return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`, conv };
 }
+
+// ── Codex support (docs/codex-terminal-requirements.md FR-2, AC-3) ──────────
+//
+// A second agent the bridge can spawn. Pure mirror of
+// src/lib/terminal/agent-launch.ts's `resolveAgentLaunch` — that TS module
+// exists so the command-shape decision is unit-testable app-side without a
+// real PTY/bridge/CLI (it predates this port and documents the Codex CLI
+// findings in full); THIS is the bridge's own copy, duplicated rather than
+// imported for the same reason deep-link.ts/.mjs duplicate their own logic
+// across the TS/JS build-graph boundary. Both are drift-tested to agree —
+// see resume-cmd.test.js's "matches src/lib/terminal/agent-launch.ts" block.
+//
+// Codex (v0.135.0) takes the prompt positionally and inherits its cwd from
+// the spawning process — identical mechanism to Claude's, so index.js's
+// existing "prompt as one argv element" / "cwd via PTY spawn opts" plumbing
+// needs no change for Codex. What does NOT carry over: pre-assigned session
+// ids, worktree isolation, model ids, and the auto-accept flag — none of
+// those are ever safe to forward to Codex (either meaningless or actively
+// wrong), so the codex branch below refuses to emit them regardless of what
+// the caller passes in (AC-3's hard requirement) — `model`/`permissionMode`/
+// `worktree` are simply never read on that branch.
+
+// Dependency-free mirrors of validateCodexModelValue / validateReasoningEffort
+// (src/lib/codex-models.ts) — the bridge can't import the app's TS. Kept in
+// lock-step by the drift test against agent-launch.ts. FR-4: a fresh Codex
+// launch may open on a chosen model + effort, but only after BOTH pass here.
+const CODEX_SHELL_METACHARS = /[\]`$(){}<>\\'"*?~#!;&|[]/;
+const CODEX_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
+function isCodexModelSafe(value) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.trim().length <= 100 &&
+    !/\s/.test(value) &&
+    !CODEX_SHELL_METACHARS.test(value)
+  );
+}
+/** ` -m <model> -c model_reasoning_effort=<effort>` or "" — both must validate together. */
+function codexModelFlags(model, effort) {
+  if (!model || !effort) return "";
+  if (!isCodexModelSafe(model)) return "";
+  if (!CODEX_EFFORT_LEVELS.has(effort)) return "";
+  return ` -m ${model} -c model_reasoning_effort=${effort}`;
+}
+
+/**
+ * Resolve the command to spawn for a launch, agent-aware. `agent` absent or
+ * anything other than the exact literal `"codex"` delegates straight to
+ * {@link resolveClaudeLaunch} (Claude's own four branches, unchanged).
+ *
+ * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
+ * @returns {{ cmd: string, conv: string | null }}
+ */
+export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, mintId }) {
+  if (agent !== "codex") {
+    return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId });
+  }
+  // An explicit --cmd/BRIDGE_CMD override always wins (dev/test convenience),
+  // identical posture to Claude's branch 1 — `conv` is null either way.
+  if (explicitCmd) return { cmd: explicitCmd, conv: null };
+  // Exact resume (deferred feature, requirements FR-2: "the resolver should
+  // support it now so the deep link shape is settled" — only reachable once
+  // Codex conversation ids are tracked; harmless to support today). Never
+  // carries a model/effort — a resumed conversation keeps its own model.
+  if (resumeId) return { cmd: `codex resume ${resumeId}`, conv: resumeId };
+  // Legacy/most-recent resume — Codex's closest analogue to `--continue`.
+  if (resume) return { cmd: "codex resume --last", conv: null };
+  // Fresh launch: Codex has no pre-assignable session id (§2.2), so `conv` is
+  // honestly null. FR-4: open on the chosen Codex model + effort when both
+  // validate, else bare `codex`. `model`/`permissionMode`/`worktree` (Claude's)
+  // are still never read here.
+  return { cmd: `codex${codexModelFlags(codexModel, codexEffort)}`, conv: null };
+}

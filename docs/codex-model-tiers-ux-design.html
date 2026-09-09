@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent-aware model tiers — UX design</title>
+<style>
+  /* ── Tokens: the app's own dark Zinc palette (shadcn New York / Zinc) ── */
+  :root {
+    --bg: #09090b;          /* page */
+    --card: #18181b;        /* zinc-900 */
+    --card-2: #1f1f23;      /* raised input surface */
+    --border: #27272a;      /* zinc-800 */
+    --border-strong: #3f3f46;
+    --fg: #fafafa;
+    --muted: #a1a1aa;       /* 7.0:1 on card */
+    --muted-2: #d4d4d8;
+    --ring: #a1a1aa;
+    --emerald: #34d399;     /* honored */
+    --amber: #fbbf24;       /* not honored / novel */
+    --rose: #fb7185;        /* invalid */
+    --emerald-bg: rgba(16,185,129,.07);
+    --amber-bg: rgba(245,158,11,.10);
+    --rose-bg: rgba(244,63,94,.08);
+    --r-sm: 6px; --r-md: 8px; --r-lg: 12px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  code, .mono { font-family: var(--mono); font-size: .92em; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; border-radius: 4px; }
+
+  /* ── Document frame ── */
+  .doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+  .rail {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow: auto;
+    border-right: 1px solid var(--border); padding: 28px 18px;
+  }
+  .rail h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -.01em; }
+  .rail .sub { color: var(--muted); font-size: 12px; margin: 0 0 22px; }
+  .rail ol { list-style: none; padding: 0; margin: 0; }
+  .rail li { margin: 0; }
+  .rail a {
+    display: block; padding: 7px 8px; border-radius: var(--r-sm); text-decoration: none;
+    color: var(--muted-2); font-size: 13px; min-height: 36px;
+  }
+  .rail a:hover { background: var(--card); color: var(--fg); }
+  .rail a small { display: block; color: var(--muted); font-size: 11px; }
+  main { padding: 40px 48px 96px; max-width: 1080px; }
+  .lede { max-width: 68ch; }
+  .lede h2 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 12px; line-height: 1.2; }
+  .lede p { color: var(--muted-2); margin: 0 0 10px; }
+  .keyline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 26px 0 8px; }
+  .keyline > div { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; }
+  .keyline b { display: block; font-weight: 600; margin-bottom: 4px; }
+  .keyline p { color: var(--muted); font-size: 13px; margin: 0; }
+
+  section.surface { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); }
+  section.surface > header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  section.surface h3 { font-size: 20px; margin: 0; letter-spacing: -.015em; }
+  .ref { color: var(--muted); font-size: 12px; }
+  .ref code { background: var(--card); padding: 1px 5px; border-radius: 4px; }
+  section.surface > p.intro { color: var(--muted-2); max-width: 72ch; margin: 6px 0 20px; }
+  .notes { margin: 18px 0 0; padding: 0 0 0 18px; color: var(--muted-2); max-width: 78ch; }
+  .notes li { margin: 4px 0; }
+  .notes b { color: var(--fg); font-weight: 600; }
+  .fr { display: inline-block; font-size: 11px; border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 8px; color: var(--muted-2); vertical-align: middle; }
+
+  /* Variant strip: several states of the same screen side by side */
+  .variants { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+  .variants.full { grid-template-columns: minmax(0, 1fr); }   /* dialog-width mockups: never squeeze below the real 2xl dialog */
+  .variants.full .frame.dialog { max-width: 720px; }
+  .variant > .cap { font-size: 12px; color: var(--muted); margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+  .variant > .cap b { color: var(--fg); font-weight: 600; }
+  .variant > .cap .st { font-size: 11px; border-radius: 999px; padding: 1px 7px; border: 1px solid var(--border-strong); }
+
+  /* ── App-faithful primitives (mirror shadcn dark) ── */
+  .frame { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: 0 10px 30px rgba(0,0,0,.35); overflow: hidden; }
+  .frame.dialog { max-width: 720px; }
+  .frame.wide { max-width: 100%; }
+  .dlg-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .dlg-desc { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .lbl { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .lbl .when { color: var(--muted); font-weight: 400; }
+  .sel, .inp {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px;
+    width: 100%; padding: 0 10px; background: rgba(39,39,42,.3); border: 1px solid var(--border-strong);
+    border-radius: var(--r-sm); font-size: 13px; color: var(--fg); text-align: left; font-family: inherit; cursor: default;
+    min-width: 0;
+  }
+  .sel > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .sel .ph { color: var(--muted); }
+  .sel .chev { color: var(--muted); font-size: 11px; flex: none; }
+  .sel.invalid, .inp.invalid { border-color: var(--rose); box-shadow: 0 0 0 3px rgba(244,63,94,.18); }
+  .sel.novel { border-color: var(--amber); }
+  .sel[aria-disabled="true"] { opacity: .55; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-sm); overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 12px; color: var(--muted-2); background: transparent; border: 0; border-right: 1px solid var(--border-strong);
+    min-width: 54px; min-height: 36px; padding: 0 8px; cursor: default;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--fg); color: #09090b; font-weight: 600; }
+  .seg.invalid { border-color: var(--rose); box-shadow: 0 0 0 3px rgba(244,63,94,.18); }
+  .seg[aria-disabled="true"] button { opacity: .5; }
+  .help { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+  .err { font-size: 12px; color: var(--rose); margin: 6px 0 0; display: flex; gap: 6px; align-items: flex-start; }
+  .warn { font-size: 12px; color: var(--amber); margin: 6px 0 0; display: flex; gap: 6px; align-items: flex-start; }
+  .ico { display: inline-block; width: 14px; height: 14px; flex: none; vertical-align: -2px; }
+  .btn { font: inherit; font-size: 13px; font-weight: 500; min-height: 36px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid transparent; cursor: default; }
+  .btn.primary { background: var(--fg); color: #09090b; }
+  .btn.outline { background: transparent; color: var(--fg); border-color: var(--border-strong); }
+  .btn.ghost { background: transparent; color: var(--fg); }
+  .btn.destructive { background: #7f1d1d; color: #fecaca; }
+  .btn[aria-disabled="true"] { opacity: .5; }
+  .footer { display: flex; gap: 8px; align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .footer .spacer { flex: 1; }
+  .footer .why { font-size: 11px; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); background: rgba(39,39,42,.6); border-radius: var(--r-sm); padding: 4px 8px; font-size: 11px; font-weight: 600; color: var(--muted-2); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 7px; color: var(--muted-2); }
+  .badge .k { color: var(--muted); }
+  .badge.amber { border-color: rgba(245,158,11,.4); color: var(--amber); }
+  .group-h { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
+  .skel { background: linear-gradient(90deg, #26262b 25%, #2f2f35 50%, #26262b 75%); background-size: 200% 100%; border-radius: 4px; height: 14px; }
+  @media (prefers-reduced-motion: no-preference) { .skel { animation: sh 1.4s infinite; } }
+  @keyframes sh { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+
+  /* ── The tier grid (profile + admin) ──
+     Three columns: tier label · Claude · Codex. The two agent columns are EQUAL
+     width and every agent cell has the SAME shape (model select on top, Effort
+     segmented control beneath). Because each row of the grid shares one track
+     height and every cell is top-aligned with identical internals, the selects
+     line up across rows, the effort controls line up across rows, and the
+     resolution line sits on its own full-width track. Nothing is placed beside
+     the select, so nothing can overflow the column. */
+  .tiers { display: grid; grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+  .tiers .colh { font-size: 12px; font-weight: 600; color: var(--muted-2); padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+  .tiers .colh small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+  .tiers .tier { padding-top: 8px; }
+  .tiers .tier b { display: block; font-weight: 600; }
+  .tiers .tier span { font-size: 11px; color: var(--muted); }
+  .tiers .cell { padding-top: 6px; min-width: 0; }
+  /* One agent's control pair: fixed vertical rhythm so rows align cell-to-cell. */
+  .pair { display: grid; grid-template-rows: 36px 14px 36px; row-gap: 4px; min-width: 0; }
+  .pair .sel { width: 100%; }
+  .pair .eff-l { display: block; font-size: 10px; line-height: 14px; color: var(--muted); align-self: end; }
+  .pair .seg { display: flex; width: 100%; }
+  .pair .seg button { flex: 1; min-width: 0; }
+  .pair .err, .pair .warn { grid-row: 4; margin-top: 8px; }
+  .pair:has(.err), .pair:has(.warn) { grid-template-rows: 36px 14px 36px auto; }
+  .resolve { grid-column: 1 / -1; font-size: 11px; color: var(--muted); padding: 2px 0 6px; border-bottom: 1px dashed var(--border); }
+  .resolve b { color: var(--muted-2); font-weight: 500; }
+  .resolve .arrow { color: var(--border-strong); margin: 0 6px; }
+  .colh .eff-note { display: block; font-weight: 400; color: var(--muted); font-size: 10px; margin-top: 2px; }
+  @media (max-width: 760px) {
+    .doc { grid-template-columns: minmax(0, 1fr); }
+    .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    main { padding: 28px 18px 80px; min-width: 0; }
+    .variants { grid-template-columns: minmax(0, 1fr); }
+    .keyline { grid-template-columns: 1fr; }
+    .tiers { grid-template-columns: 1fr; }
+    .tiers .colh { display: none; }
+    .tiers .cell::before { content: attr(data-agent); display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  }
+
+  /* Listbox (tier picker) */
+  .listbox { border: 1px solid var(--border-strong); background: var(--card-2); border-radius: var(--r-md); padding: 4px; width: 340px; max-width: 100%; }
+  .opt { padding: 6px 28px 6px 8px; border-radius: 4px; position: relative; }
+  .opt.active { background: #27272a; }
+  .opt .n { font-size: 13px; font-weight: 500; display: block; line-height: 1.25; }
+  .opt .g { font-size: 11px; color: var(--muted); display: block; line-height: 1.3; }
+  .opt .g b { color: var(--muted-2); font-weight: 500; }
+  .opt .tick { position: absolute; right: 8px; top: 8px; font-size: 12px; }
+  .row-compact { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-left: 28px; }
+  .row-compact .lbl { margin: 0; font-size: 10px; color: var(--muted); font-weight: 400; }
+  .row-compact .sel { width: 150px; min-height: 28px; font-size: 12px; }
+  .row-compact .help { margin: 0; font-size: 10px; flex: 1; min-width: 200px; }
+
+  /* Execution line */
+  .exec { display: flex; gap: 8px; align-items: flex-start; border-radius: var(--r-sm); padding: 8px 12px; font-size: 12px; border: 1px solid var(--border); }
+  .exec.ok { border-color: rgba(16,185,129,.3); background: var(--emerald-bg); }
+  .exec.ok .ico { color: var(--emerald); }
+  .exec.no { border-color: rgba(245,158,11,.3); background: var(--amber-bg); }
+  .exec.no .ico { color: var(--amber); }
+  .exec.no em { font-style: normal; color: var(--amber); }
+  .exec.unk { border-style: dashed; }
+  .exec.unk .ico { color: var(--muted); }
+  .exec .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .exec .m { color: var(--muted); }
+  .exec .agent { margin-left: 6px; }
+
+  /* Terminal header */
+  .term { background: #0c0c0e; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+  .term .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .term .bar .name { font-weight: 600; }
+  .term .bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); }
+  .term .bar .sp { flex: 1; }
+  .term pre { margin: 0; padding: 12px; font: 12px/1.5 var(--mono); color: var(--muted-2); white-space: pre-wrap; }
+  .tip { position: relative; display: inline-block; margin-top: 10px; background: #fafafa; color: #09090b; border-radius: var(--r-sm); padding: 8px 10px; font-size: 12px; max-width: 360px; line-height: 1.4; }
+  .tip::before { content: ""; position: absolute; top: -6px; left: 18px; border: 6px solid transparent; border-top: 0; border-bottom-color: #fafafa; }
+  .oldnew { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .oldnew > div { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; }
+  .oldnew h4 { margin: 0 0 8px; font-size: 13px; }
+  .oldnew .old { text-decoration: line-through; color: var(--muted); }
+  @media (max-width: 760px) { .oldnew { grid-template-columns: 1fr; } }
+
+  /* Tables */
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .tbl-wrap { overflow-x: auto; }
+  table .pair { max-width: 260px; }
+
+  /* Decisions / open item */
+  .oq { border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; margin-top: 28px; }
+  .oq h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  .oq h4 + dl { margin-bottom: 22px; }
+  .oq dl { margin: 0; display: grid; grid-template-columns: 70px 1fr; gap: 8px 14px; }
+  .oq dt { font-weight: 600; }
+  .oq dd { margin: 0; color: var(--muted-2); }
+  .oq dd b { color: var(--fg); font-weight: 600; }
+  .decided { display: inline-block; font-size: 10px; border: 1px solid rgba(16,185,129,.4); color: var(--emerald); border-radius: 999px; padding: 0 7px; margin-left: 6px; vertical-align: middle; }
+  .pending { display: inline-block; font-size: 10px; border: 1px solid rgba(245,158,11,.4); color: var(--amber); border-radius: 999px; padding: 0 7px; margin-left: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <nav class="rail" aria-label="Sections">
+    <h1>Agent-aware model tiers</h1>
+    <p class="sub">UX design · Feature Development step 2 · rev 2, 7 Sep 2026</p>
+    <ol>
+      <li><a href="#overview">Overview<small>the one idea, the one line</small></a></li>
+      <li><a href="#s1">1 · Profile → Model Tiers<small>model + effort, both agents · AC-3</small></a></li>
+      <li><a href="#s2">2 · Admin → Platform defaults<small>per-agent defaults + fallback · AC-4</small></a></li>
+      <li><a href="#s3">3 · Step tier picker<small>abstract tier, both resolutions</small></a></li>
+      <li><a href="#s4">4 · Completed-step detail<small>ran on model (effort) · AC-11</small></a></li>
+      <li><a href="#s5">5 · Terminal copy fix<small>old → new · AC-12</small></a></li>
+      <li><a href="#states">State matrix<small>loading, default, error, long values</small></a></li>
+      <li><a href="#oq">Decisions &amp; open item<small>what Nick settled, what's left</small></a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="lede" id="overview">
+      <h2>One tier, two agents: what Frontier / Standard / Cheap mean when Codex runs the step</h2>
+      <p>The Requirements step (FR-1…FR-8, AC-1…AC-15) settled the shape: tiers stay abstract, and each tier now resolves to a <b>Claude</b> model and a <b>Codex</b> model. Nick's review added one symmetry: <b>both</b> sides carry a reasoning effort, so an override on either agent is always a model <i>plus</i> an effort. This document implements <b>FR-7 (UI surfaces)</b> and supports <b>AC-3, AC-4, AC-11 and AC-12</b>.</p>
+      <p>The design has one recurring element: a <b>resolution line</b>. Wherever a tier appears, the same short line says what it becomes on each agent — <span class="mono">Frontier → Opus (high) on Claude · gpt-5.2 (high) on Codex</span>. It sits under each tier row in settings, in the tier picker's helper text, and in the completed-step record. Learn it once, read it everywhere.</p>
+      <div class="keyline">
+        <div><b>Refines FR-7</b><p>An override on either agent is <i>one</i> value (model + effort), never two independent fields. You can't set an effort without picking a model, and picking a model makes effort required. This is what makes AC-3's error possible to explain in one sentence — and it now applies to Claude exactly as it does to Codex.</p></div>
+        <div><b>Refines FR-7</b><p>The Profile dialog widens (Nick approved) rather than gaining Claude/Codex tabs. Tabs would hide one agent's values while you edit the other; a reviewer needs both on one screen to see that a tier means the same thing on both. Both agent cells share one shape, so the grid reads as a clean table.</p></div>
+        <div><b>Unchanged from today</b><p>Save is the only write. Reset stages locally. Cancel/Esc discards. "Platform default" remains the unset state per agent. Existing Claude-only users see their model values exactly as before, with effort and the Codex column reading "Platform default" (AC-2).</p></div>
+      </div>
+    </div>
+
+    <!-- ───────────────────────── 1 · PROFILE ───────────────────────── -->
+    <section class="surface" id="s1">
+      <header><h3>1 · Profile → Model Tiers</h3><span class="ref"><code>src/components/profile/model-tier-settings.tsx</code> · <span class="fr">FR-7</span> <span class="fr">FR-6</span> <span class="fr">AC-2</span> <span class="fr">AC-3</span></span></header>
+      <p class="intro">The existing dialog keeps its title, description and footer. The body becomes a three-column grid: tier · Claude · Codex. Each agent cell is the same stacked pair — model select on top, Effort segmented control directly beneath — so the selects align across all three tier rows, the effort controls align across all three rows, and the resolution line sits under each row. On phones the grid stacks with the agent name printed above each pair. Four states shown: the default, a saved override being edited, the AC-3 error, and loading.</p>
+
+      <div class="variants full">
+        <div class="variant">
+          <p class="cap"><b>A · Everything on platform default</b><span class="st">what an existing user sees after upgrade</span></p>
+          <div class="frame dialog">
+            <p class="dlg-title"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg> Model tier mapping</p>
+            <p class="dlg-desc">Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+            <div class="tiers">
+              <div class="colh">Tier</div>
+              <div class="colh">Claude<small>model + reasoning effort</small><span class="eff-note">Effort sets Claude's thinking level — exact values pending a quick check</span></div>
+              <div class="colh">Codex<small>model + reasoning effort</small><span class="eff-note">Effort maps to Codex's reasoning ladder — pending a quick check</span></div>
+
+              <div class="tier"><b>Frontier</b><span>decisions &amp; design</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel" aria-label="Frontier, Claude model"><span class="ph">Opus · high (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true" aria-label="Claude reasoning effort, follows the platform default"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel" aria-label="Frontier, Codex model"><span class="ph">gpt-5.2 · high (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true" aria-label="Codex reasoning effort, follows the platform default"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+              </div></div>
+              <div class="resolve">Frontier<span class="arrow">→</span><b>Opus (high)</b> on Claude<span class="arrow">·</span><b>gpt-5.2 (high)</b> on Codex</div>
+
+              <div class="tier"><b>Standard</b><span>most build steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Sonnet · medium (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1 · medium (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Standard<span class="arrow">→</span><b>Sonnet (medium)</b> on Claude<span class="arrow">·</span><b>gpt-5.1 (medium)</b> on Codex</div>
+
+              <div class="tier"><b>Cheap</b><span>mechanical steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Haiku · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1-mini · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Cheap<span class="arrow">→</span><b>Haiku (low)</b> on Claude<span class="arrow">·</span><b>gpt-5.1-mini (low)</b> on Codex</div>
+            </div>
+            <p class="help">Workflow steps with a tier run on that tier's model and effort for whichever agent picks the step up. Live sessions pick up a change on their next step — a step already running finishes on what it started with. If a model isn't available, the orchestrator substitutes that tier's fallback and notes it in the step output.</p>
+
+            <p class="group-h">TERMINAL SESSIONS</p>
+            <label class="lbl">Starting model <span class="when">— for new in-browser Claude Code sessions</span></label>
+            <button class="sel"><span class="ph">Platform default (Sonnet)</span><span class="chev">▾</span></button>
+            <p class="help">Applies to Claude Code launches. Codex launches start on your Standard tier's Codex model (gpt-5.1 · medium). A Codex starting-model picker is tracked as its own separate task — it is deliberately outside this feature's first release, not missing.</p>
+
+            <div class="footer">
+              <button class="btn ghost" aria-disabled="true">Reset to defaults</button>
+              <span class="spacer"></span>
+              <button class="btn outline">Cancel</button>
+              <button class="btn primary" aria-disabled="true">Save</button>
+            </div>
+            <p class="help" style="text-align:right">Save enables when you change a tier.</p>
+          </div>
+        </div>
+
+        <div class="variant">
+          <p class="cap"><b>B · Overrides on both agents, being edited</b><span class="st">effort segments become live</span></p>
+          <div class="frame dialog">
+            <p class="dlg-title">Model tier mapping</p>
+            <p class="dlg-desc">Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+            <div class="tiers">
+              <div class="colh">Tier</div>
+              <div class="colh">Claude<small>model + reasoning effort</small></div>
+              <div class="colh">Codex<small>model + reasoning effort</small></div>
+
+              <div class="tier"><b>Frontier</b><span>decisions &amp; design</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span>Fable</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" role="group" aria-label="Claude reasoning effort"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span>gpt-5.2-codex</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" role="group" aria-label="Codex reasoning effort"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+              </div></div>
+              <div class="resolve">Frontier<span class="arrow">→</span><b>Fable (high)</b> on Claude<span class="arrow">·</span><b>gpt-5.2-codex (high)</b> on Codex</div>
+
+              <div class="tier"><b>Standard</b><span>most build steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span>Sonnet</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" role="group" aria-label="Claude reasoning effort"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1 · medium (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Standard<span class="arrow">→</span><b>Sonnet (low)</b> on Claude<span class="arrow">·</span><b>gpt-5.1 (medium)</b> on Codex</div>
+
+              <div class="tier"><b>Cheap</b><span>mechanical steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Haiku · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1-mini · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Cheap<span class="arrow">→</span><b>Haiku (low)</b> on Claude<span class="arrow">·</span><b>gpt-5.1-mini (low)</b> on Codex</div>
+            </div>
+
+            <p class="group-h" style="margin-top:14px">CODEX MODEL LIST (the open select, for reference — the Claude list has the same shape with Opus / Sonnet / Haiku / Fable)</p>
+            <div class="listbox" aria-hidden="true">
+              <div class="opt"><span class="n">Platform default (gpt-5.2 · high)</span></div>
+              <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+              <div class="opt"><span class="n">gpt-5.2</span><span class="g">Frontier family — strongest reasoning</span></div>
+              <div class="opt active"><span class="n">gpt-5.2-codex</span><span class="g">Tuned for agentic coding</span><span class="tick">✓</span></div>
+              <div class="opt"><span class="n">gpt-5.1</span><span class="g">Balanced speed &amp; quality</span></div>
+              <div class="opt"><span class="n">gpt-5.1-mini</span><span class="g">Fastest &amp; lowest cost</span></div>
+              <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+              <div class="opt"><span class="n">Custom… (type a model id)</span></div>
+            </div>
+
+            <div class="footer">
+              <button class="btn ghost">Reset to defaults</button>
+              <span class="spacer"></span>
+              <button class="btn outline">Cancel</button>
+              <button class="btn primary">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="variant">
+          <p class="cap"><b>C · AC-3: model chosen, no effort</b><span class="st">blocked, explained, adjacent — same rule on either agent</span></p>
+          <div class="frame dialog">
+            <p class="dlg-title">Model tier mapping</p>
+            <p class="dlg-desc">Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+            <div class="tiers">
+              <div class="colh">Tier</div>
+              <div class="colh">Claude<small>model + reasoning effort</small></div>
+              <div class="colh">Codex<small>model + reasoning effort</small></div>
+
+              <div class="tier"><b>Frontier</b><span>decisions &amp; design</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Opus · high (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span>gpt-5.2-codex</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg invalid" role="group" aria-label="Codex reasoning effort" aria-invalid="true" aria-describedby="err-frontier"><button>Low</button><button>Medium</button><button>High</button></div>
+                <p class="err" id="err-frontier" role="alert"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg><span><b>Choose a reasoning effort for gpt-5.2-codex.</b> A model needs an effort — pick Low, Medium or High, or switch the model back to Platform default.</span></p>
+              </div></div>
+              <div class="resolve">Frontier<span class="arrow">→</span><b>Opus (high)</b> on Claude<span class="arrow">·</span><b>gpt-5.2-codex (effort not set)</b> on Codex</div>
+
+              <div class="tier"><b>Standard</b><span>most build steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Sonnet · medium (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1 · medium (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Standard<span class="arrow">→</span><b>Sonnet (medium)</b> on Claude<span class="arrow">·</span><b>gpt-5.1 (medium)</b> on Codex</div>
+
+              <div class="tier"><b>Cheap</b><span>mechanical steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair">
+                <button class="sel"><span class="ph">Haiku · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="cell" data-agent="Codex"><div class="pair">
+                <button class="sel"><span class="ph">gpt-5.1-mini · low (default)</span><span class="chev">▾</span></button>
+                <span class="eff-l">Effort</span>
+                <div class="seg" aria-disabled="true"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+              </div></div>
+              <div class="resolve">Cheap<span class="arrow">→</span><b>Haiku (low)</b> on Claude<span class="arrow">·</span><b>gpt-5.1-mini (low)</b> on Codex</div>
+            </div>
+            <div class="footer">
+              <button class="btn ghost">Reset to defaults</button>
+              <span class="spacer"></span>
+              <button class="btn outline">Cancel</button>
+              <button class="btn primary" aria-disabled="true" aria-describedby="save-why">Save</button>
+            </div>
+            <p class="help" id="save-why" style="text-align:right">Set Frontier's Codex effort to enable Save.</p>
+          </div>
+        </div>
+
+        <div class="variant">
+          <p class="cap"><b>D · Loading</b><span class="st">platform defaults not yet fetched</span></p>
+          <div class="frame dialog">
+            <p class="dlg-title">Model tier mapping</p>
+            <p class="dlg-desc">Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+            <div class="tiers" aria-busy="true" aria-label="Loading model tiers">
+              <div class="colh">Tier</div>
+              <div class="colh">Claude<small>model + reasoning effort</small></div>
+              <div class="colh">Codex<small>model + reasoning effort</small></div>
+              <div class="tier"><b>Frontier</b><span>decisions &amp; design</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:60%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="cell" data-agent="Codex"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:70%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="resolve"><span class="skel" style="width:55%;display:inline-block;height:10px"></span></div>
+              <div class="tier"><b>Standard</b><span>most build steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:55%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="cell" data-agent="Codex"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:65%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="resolve"><span class="skel" style="width:50%;display:inline-block;height:10px"></span></div>
+              <div class="tier"><b>Cheap</b><span>mechanical steps</span></div>
+              <div class="cell" data-agent="Claude"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:50%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="cell" data-agent="Codex"><div class="pair"><div class="sel" aria-disabled="true"><span class="skel" style="width:60%"></span></div><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></div>
+              <div class="resolve"><span class="skel" style="width:52%;display:inline-block;height:10px"></span></div>
+            </div>
+            <p class="help">Tier labels render immediately; the controls stay disabled with placeholder bars until the platform defaults arrive (usually under a second). The dialog never opens on an empty body.</p>
+            <div class="footer">
+              <button class="btn ghost" aria-disabled="true">Reset to defaults</button>
+              <span class="spacer"></span>
+              <button class="btn outline">Cancel</button>
+              <button class="btn primary" aria-disabled="true">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="notes">
+        <li><b>One cell shape for both agents (rev 2).</b> Every agent cell is a vertical pair — model select over an Effort segmented control — with fixed row heights (36 / 14 / 36 px). Because the grid's two agent columns are equal width and each cell is top-aligned with identical internals, selects align with selects and effort controls with effort controls across Frontier, Standard and Cheap. Nothing sits beside the select any more, so nothing can overflow the dialog edge; the segmented control stretches to the column width. An inline error or warning adds a fourth line under its own cell without shifting the controls in neighbouring cells.</li>
+        <li><b>Effort is a segmented control, not a select.</b> Three fixed values, all visible, one tap each — no menu to open (Hick's Law, recognition over recall). It only becomes live when a model is chosen; while the model is "Platform default" it shows the default's effort pressed but greyed, so the reader still sees what will run.</li>
+        <li><b>Claude effort = thinking level.</b> For Claude the Low / Medium / High segment maps to the extended-thinking / reasoning level; the exact values behind each label are pending the same quick check as the Codex effort ladder, and the column header says so in a small caption. Only the labels are fixed by this design.</li>
+        <li><b>The pair is atomic on either agent (refines FR-7).</b> Choosing a model clears the effort to "unset" rather than silently inheriting the default — the person must confirm the effort, which is the whole point of FR-6. Switching back to Platform default clears both and removes any error. The AC-3 error is drawn on the Codex side above; the Claude side uses the identical rose treatment and sentence ("Choose a reasoning effort for Fable.").</li>
+        <li><b>AC-3 error is inline, adjacent, iconed and worded.</b> Rose border + triangle icon + a sentence that names the model and says exactly what to do. The Save button's hint names the tier and agent that is blocking. Never colour alone.</li>
+        <li><b>"Custom…" on the Codex model</b> mirrors the existing terminal starting-model escape hatch: a free-text input with the same shell-safety validation (FR-1) and the same amber "not a known family" advisory. Effort is still required for a custom id.</li>
+        <li><b>Mid-run tier change.</b> The tier help says "Live sessions pick this up on their next step" — a step already running finishes on the model and effort it started with; the next claim resolves against the new mapping.</li>
+        <li><b>Terminal starting model</b> is unchanged for Claude and gains one help sentence stating how Codex launches pick their model. The Codex starting-model picker is a separate, deferred task on the board, not part of this feature's first release — the copy says so, so nobody reads the gap as an omission.</li>
+        <li><b>Width.</b> The dialog moves from <code>sm:max-w-md</code> to <code>sm:max-w-2xl</code> (Nick approved). At that width the grid is 120 px + two equal 264 px agent columns with 14 px gutters — the longest default label ("gpt-5.1-mini · low (default)") and the three-button segment both fit with room to spare. Below 640 px the grid stacks (tier, then "Claude" pair, then "Codex" pair with the agent name as a small caption above each).</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 2 · ADMIN ───────────────────────── -->
+    <section class="surface" id="s2">
+      <header><h3>2 · Admin → Platform defaults</h3><span class="ref"><code>src/components/admin/admin-platform-dashboard.tsx</code> · <span class="fr">FR-2</span> <span class="fr">FR-7</span> <span class="fr">AC-1</span> <span class="fr">AC-4</span></span></header>
+      <p class="intro">The "Model tier defaults" card keeps its two panels. Panel A (tier defaults) becomes the same tier · Claude · Codex grid as Profile — model + effort on both sides — so an admin and a user are looking at the same shape. Panel B (fallback chain) carries an effort on both agents too. "Reset to seed" restores both agents at once and says so before you click.</p>
+
+      <div class="frame wide">
+        <h4 style="margin:0 0 4px;font-size:15px">Model tier defaults</h4>
+        <p class="dlg-desc">The model and reasoning effort each workflow tier runs on platform-wide, for Claude Code and for Codex. Changing a value takes effect on the <b>next</b> claim — live sessions pick it up on their next step, no deploy. Per-user overrides in Profile → Model Tiers are unaffected.</p>
+
+        <p class="group-h">PANEL A · TIER DEFAULTS</p>
+        <div class="tiers" style="max-width:720px">
+          <div class="colh">Tier</div>
+          <div class="colh">Claude<small>model alias + reasoning effort</small></div>
+          <div class="colh">Codex<small>model id + reasoning effort</small></div>
+
+          <div class="tier"><b>Frontier</b><span>decisions &amp; design</span></div>
+          <div class="cell" data-agent="Claude"><div class="pair">
+            <button class="sel"><span>Opus</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Claude reasoning effort"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+          </div></div>
+          <div class="cell" data-agent="Codex"><div class="pair">
+            <button class="sel"><span>gpt-5.2</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Codex reasoning effort"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div>
+          </div></div>
+          <div class="resolve">Seed: <b>Opus (high)</b> on Claude<span class="arrow">·</span><b>gpt-5.2 (high)</b> on Codex</div>
+
+          <div class="tier"><b>Standard</b><span>most build steps</span></div>
+          <div class="cell" data-agent="Claude"><div class="pair">
+            <button class="sel"><span>Sonnet</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Claude reasoning effort"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+          </div></div>
+          <div class="cell" data-agent="Codex"><div class="pair">
+            <button class="sel"><span>gpt-5.1</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Codex reasoning effort"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div>
+          </div></div>
+          <div class="resolve">Seed: <b>Sonnet (medium)</b> on Claude<span class="arrow">·</span><b>gpt-5.1 (medium)</b> on Codex</div>
+
+          <div class="tier"><b>Cheap</b><span>mechanical steps</span></div>
+          <div class="cell" data-agent="Claude"><div class="pair">
+            <button class="sel"><span>Haiku</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Claude reasoning effort"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+          </div></div>
+          <div class="cell" data-agent="Codex"><div class="pair">
+            <button class="sel novel" aria-describedby="novel-cheap"><span>gpt-5.1-nano-preview</span><span class="chev">▾</span></button>
+            <span class="eff-l">Effort</span>
+            <div class="seg" role="group" aria-label="Codex reasoning effort"><button aria-pressed="true">Low</button><button>Medium</button><button>High</button></div>
+            <p class="warn" id="novel-cheap"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg><span>Not a known Codex family — sent to Codex exactly as typed as <code>-m gpt-5.1-nano-preview</code>. If Codex rejects it, steps fall back at claim time.</span></p>
+          </div></div>
+          <div class="resolve">Seed: <b>Haiku (low)</b> on Claude<span class="arrow">·</span><b>gpt-5.1-mini (low)</b> on Codex — <b>Codex changed</b></div>
+        </div>
+
+        <p class="group-h">PANEL B · FALLBACK CHAIN <span style="font-weight:400;letter-spacing:0">— used when a resolved model isn't available to the caller</span></p>
+        <div class="tbl-wrap">
+        <table>
+          <thead><tr><th style="width:110px">Claude</th><th>falls back to<small style="display:block;font-weight:400;font-size:11px">model + effort</small></th><th style="width:110px">Codex</th><th>falls back to<small style="display:block;font-weight:400;font-size:11px">model + effort</small></th></tr></thead>
+          <tbody>
+            <tr><td>Fable (high)</td><td><div class="pair"><button class="sel"><span>Opus</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div></div></td>
+                <td>gpt-5.2 (high)</td><td><div class="pair"><button class="sel"><span>gpt-5.1</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div></div></td></tr>
+            <tr><td>Opus (high)</td><td><div class="pair"><button class="sel"><span>Sonnet</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div></div></td>
+                <td>gpt-5.2-codex (high)</td><td><div class="pair"><button class="sel"><span>gpt-5.2</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button>Medium</button><button aria-pressed="true">High</button></div></div></td></tr>
+            <tr><td>Sonnet (medium)</td><td><div class="pair"><button class="sel"><span>Haiku</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div></div></td>
+                <td>gpt-5.1 (medium)</td><td><div class="pair"><button class="sel"><span>gpt-5.1-mini</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" role="group"><button>Low</button><button aria-pressed="true">Medium</button><button>High</button></div></div></td></tr>
+            <tr><td>Haiku (low)</td><td><div class="pair"><button class="sel"><span class="ph">None (last resort)</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></td>
+                <td>gpt-5.1-mini (low)</td><td><div class="pair"><button class="sel"><span class="ph">None (last resort)</span><span class="chev">▾</span></button><span class="eff-l">Effort</span><div class="seg" aria-disabled="true"><button>Low</button><button>Medium</button><button>High</button></div></div></td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <div style="margin-top:14px;border:1px solid var(--border);background:rgba(39,39,42,.3);border-radius:var(--r-sm);padding:8px 12px;font-size:12px;color:var(--muted)">Last changed by <b style="color:var(--fg)">Nick Ball</b> · 2 days ago · Claude and Codex blocks are saved together as one row.</div>
+
+        <div class="footer">
+          <span class="why">Confirm the checkbox for the unknown Codex family to enable Save.</span>
+          <span class="spacer"></span>
+          <button class="btn destructive">Reset to seed (both agents)</button>
+          <button class="btn outline">Cancel</button>
+          <button class="btn primary" aria-disabled="true">Save</button>
+        </div>
+      </div>
+
+      <ul class="notes">
+        <li><b>AC-4 · Reset to seed restores both agents.</b> The button label says "(both agents)" so nobody expects a Claude-only reset. It stages locally like today; the confirming toast reads "Reset to seed · Frontier now runs on Opus (high) · gpt-5.2 (high)".</li>
+        <li><b>The same grid as Profile</b>, on purpose — same stacked model + effort pair in both columns, same 720 px maximum, so an admin can screenshot this and a user's dialog and compare cell for cell.</li>
+        <li><b>Novel-value warning</b> (existing amber pattern) now names the exact argument that will be passed (<code>-m …</code>) so it is obvious what "verbatim" means for Codex. The existing "I've verified this alias" checkbox gates Save as before. The warning occupies the pair's fourth line, so the Claude cell beside it keeps its controls exactly in place.</li>
+        <li><b>Fallback is a pair on both agents.</b> A fallback that changes only the effort (same model, lower thinking level) is a legitimate choice — cheaper, same family — so the effort segment is live on every fallback row except "None". The seed fallback for each agent carries the seed effort of the tier it lands on.</li>
+        <li><b>Backward compatibility (AC-1)</b> is invisible here by design: an old flat row shows Claude models as saved with seed efforts, and Codex values as seed, with no warning banner. The audit line is the only hint ("Codex block: seed · Claude effort: seed").</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 3 · STEP TIER PICKER ───────────────────────── -->
+    <section class="surface" id="s3">
+      <header><h3>3 · Step tier picker</h3><span class="ref"><code>src/components/shared/model-tier-select.tsx</code> via <code>step-detail-dialog.tsx</code> · <span class="fr">FR-7</span></span></header>
+      <p class="intro">Tier choices stay abstract: Auto / Frontier / Standard / Cheap. What changes is the helper text and each option's second line, which now show the resolution — model and effort — on both agents. Nothing about the step's stored value changes.</p>
+
+      <div class="variants">
+        <div class="variant">
+          <p class="cap"><b>A · Full variant (step-detail dialog)</b></p>
+          <div class="frame dialog" style="max-width:420px">
+            <label class="lbl" style="font-size:12px">Model tier</label>
+            <button class="sel"><span>Frontier</span><span class="chev">▾</span></button>
+            <p class="help">Frontier → <b style="color:var(--muted-2);font-weight:500">Opus (high)</b> on Claude · <b style="color:var(--muted-2);font-weight:500">gpt-5.2 (high)</b> on Codex. Whichever agent claims this step runs it on that model. Live sessions pick up a tier change on their next step.</p>
+            <p class="group-h" style="margin-top:16px">OPEN LISTBOX</p>
+            <div class="listbox">
+              <div class="opt"><span class="n">Auto</span><span class="g">Orchestrator picks — no tier promise, nothing to honour</span></div>
+              <div class="opt active"><span class="n">Frontier</span><span class="g">Runs on <b>Opus (high)</b> · <b>gpt-5.2 (high)</b> — decisions &amp; design</span><span class="tick">✓</span></div>
+              <div class="opt"><span class="n">Standard</span><span class="g">Runs on <b>Sonnet (medium)</b> · <b>gpt-5.1 (medium)</b> — most build steps</span></div>
+              <div class="opt"><span class="n">Cheap</span><span class="g">Runs on <b>Haiku (low)</b> · <b>gpt-5.1-mini (low)</b> — mechanical steps</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="variant">
+          <p class="cap"><b>B · Compact variant (template editor row)</b></p>
+          <div class="frame" style="max-width:100%">
+            <div class="row-compact">
+              <span class="lbl">Model tier</span>
+              <button class="sel"><span>Standard</span><span class="chev">▾</span></button>
+              <span class="help">Standard → Sonnet (medium) · gpt-5.1 (medium). Steps run on this tier's model for whichever agent picks them up.</span>
+            </div>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>C · Loading</b><span class="st">viewer map or platform defaults not resolved</span></p>
+          <div class="frame dialog" style="max-width:420px">
+            <label class="lbl" style="font-size:12px">Model tier</label>
+            <button class="sel"><span>Frontier</span><span class="chev">▾</span></button>
+            <p class="help" aria-busy="true">Frontier → <span class="skel" style="display:inline-block;width:64px;height:10px;vertical-align:middle"></span> on Claude · <span class="skel" style="display:inline-block;width:88px;height:10px;vertical-align:middle"></span> on Codex</p>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>D · Viewer override in effect</b><span class="st">user mapped Frontier → Fable (high) / gpt-5.2-codex (high)</span></p>
+          <div class="frame dialog" style="max-width:420px">
+            <label class="lbl" style="font-size:12px">Model tier</label>
+            <button class="sel"><span>Frontier</span><span class="chev">▾</span></button>
+            <p class="help">Frontier → <b style="color:var(--muted-2);font-weight:500">Fable (high)</b> on Claude · <b style="color:var(--muted-2);font-weight:500">gpt-5.2-codex (high)</b> on Codex <span class="badge" style="margin-left:4px">your mapping</span></p>
+          </div>
+        </div>
+      </div>
+
+      <ul class="notes">
+        <li><b>Format is fixed:</b> <code>&lt;Tier&gt; → &lt;Claude model&gt; (&lt;effort&gt;) on Claude · &lt;codex model&gt; (&lt;effort&gt;) on Codex</code>. Claude models keep their capitalised alias (Opus); Codex ids stay lowercase as typed, because that is what a person will see in their terminal. Effort is always lowercase in brackets on both sides.</li>
+        <li><b>Viewer-resolved, as today.</b> The helper follows the viewer's own mapping first, then the live platform default, then seed — the existing Design-Review condition 3 extends to Codex and to effort. A small "your mapping" badge appears when the viewer's override changed the line.</li>
+        <li><b>Auto's gloss is reworded</b> to make clear no tier is promised on either agent, so a later "model not reported" reads as expected rather than as a gap.</li>
+        <li><b>No agent picker here (refines FR-7).</b> The step doesn't know which agent will claim it; adding a Claude/Codex toggle would invite people to set per-agent tiers, which the Requirements explicitly rejected. Per-step resolution is confirmed (Nick's decision), so the promise "whichever agent claims this step runs it on that model" stands.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 4 · COMPLETED STEP ───────────────────────── -->
+    <section class="surface" id="s4">
+      <header><h3>4 · Completed-step detail</h3><span class="ref"><code>StepExecutionLine</code> in <code>step-detail-dialog.tsx</code> · <span class="fr">FR-8</span> <span class="fr">AC-10</span> <span class="fr">AC-11</span></span></header>
+      <p class="intro">The existing three-state execution line (honored / not honored / not reported) keeps its icons, borders and wording, and gains the reasoning effort in brackets plus a small agent chip. Effort is shown for both agents. Five states shown: a Claude step and a Codex step that honored their tier; the AC-10 case where the model was right but the effort was lower; a wrong-model case; and the unchanged "not reported" fallback.</p>
+
+      <div class="variants">
+        <div class="variant">
+          <p class="cap"><b>A · Honored — Claude</b></p>
+          <div class="frame" style="padding:14px">
+            <div class="exec ok" aria-label="Execution: ran on Opus (high), tier honored">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>
+              <span><b>Ran on Opus (high)</b> <span class="m">· tier honored</span><span class="chip agent">Claude</span>
+                <span class="sub">Frontier defaults to Opus (high) on Claude. Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.</span></span>
+            </div>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>B · Honored — Codex</b></p>
+          <div class="frame" style="padding:14px">
+            <div class="exec ok" aria-label="Execution: ran on gpt-5.2 (high), tier honored">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>
+              <span><b>Ran on gpt-5.2 (high)</b> <span class="m">· tier honored</span><span class="chip agent">Codex</span>
+                <span class="sub">Frontier defaults to gpt-5.2 (high) on Codex. Self-reported — not verified.</span></span>
+            </div>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>C · Not honored — right model, lower effort (AC-10)</b></p>
+          <div class="frame" style="padding:14px">
+            <div class="exec no" aria-label="Execution: ran on gpt-5.2 (medium), tier not honored">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>
+              <span><b>Ran on <em>gpt-5.2 (medium)</em></b> <span class="m">· tier not honored</span><span class="chip agent">Codex</span>
+                <span class="sub">Frontier defaults to gpt-5.2 <b style="color:var(--amber);font-weight:500">(high)</b> on Codex — same model, lower reasoning effort. Self-reported — not verified.</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="variant">
+          <p class="cap"><b>D · Not honored — different model</b></p>
+          <div class="frame" style="padding:14px">
+            <div class="exec no" aria-label="Execution: ran on Sonnet (medium), tier not honored">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>
+              <span><b>Ran on <em>Sonnet (medium)</em></b> <span class="m">· tier not honored</span><span class="chip agent">Claude</span>
+                <span class="sub">Frontier defaults to Opus (high) on Claude. Self-reported — not verified.</span></span>
+            </div>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>E · Not reported (unchanged)</b></p>
+          <div class="frame" style="padding:14px">
+            <div class="exec unk" aria-label="Execution: model not reported">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/></svg>
+              <span><b style="color:var(--muted)">Model not reported</b>
+                <span class="sub">Not a failure — the orchestrator completed this step without saying which model ran it.</span></span>
+            </div>
+          </div>
+          <p class="cap" style="margin-top:18px"><b>F · Row badge (step list), not-honored only</b></p>
+          <div class="frame" style="padding:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="badge"><span class="k">tier:</span> Frontier</span>
+            <span class="badge amber"><span class="k">tier:</span> Frontier ▲ ran on gpt-5.2 (medium)</span>
+            <span class="badge amber"><span class="k">tier:</span> Frontier ▲ ran on Sonnet (medium)</span>
+            <span class="help" style="margin:0">Honored and unknown rows stay silent, as today.</span>
+          </div>
+        </div>
+      </div>
+
+      <ul class="notes">
+        <li><b>Effort always in brackets after the model, on both agents.</b> A Claude record that predates effort (or a report that omits it) reads "Ran on Opus" with no brackets — never "(n/a)" — and is judged on model alone, so old records don't turn amber overnight.</li>
+        <li><b>The mismatch sentence names the part that differed.</b> When only the effort was wrong, the expected effort is highlighted and the sentence says "same model, lower reasoning effort" — otherwise a reviewer sees two identical model names and can't tell why it's amber. This works identically for a Claude step that ran Opus (medium) against a Frontier (high) promise.</li>
+        <li><b>Agent chip on every line.</b> Now that both agents carry effort, the chip is the one thing that tells a reader which ladder the effort belongs to, so it shows for Claude as well as Codex. It reuses the terminal's existing neutral chip. Pre-existing records with no agent recorded show no chip, exactly as today.</li>
+        <li><b>Status is never colour alone:</b> tick / triangle / question-mark icons, distinct border styles (solid / solid / dashed), and the words "honored", "not honored", "not reported".</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── 5 · TERMINAL COPY ───────────────────────── -->
+    <section class="surface" id="s5">
+      <header><h3>5 · Terminal copy fix</h3><span class="ref"><code>terminal-session-view.tsx</code> · <code>terminal-popout-view.tsx</code> · <span class="fr">FR-7</span> <span class="fr">AC-12</span></span></header>
+      <p class="intro">The Codex chip in the terminal header carries a tooltip that currently says the model is Codex's own business. Once tiers are agent-aware that is false. The chip stays; the sentence changes in both places (dock and pop-out).</p>
+
+      <div class="oldnew">
+        <div>
+          <h4>Before</h4>
+          <div class="term">
+            <div class="bar"><span class="dot" aria-hidden="true"></span><span class="name">VibeCodes · Frontier step</span><span class="chip">Codex</span><span class="chip" style="font-weight:500">E2EE</span><span class="sp"></span><span style="color:var(--muted)">Connected</span></div>
+            <pre>$ codex
+Codex v0.9 · signed in</pre>
+          </div>
+          <div class="tip"><span class="old">This session runs Codex (OpenAI). Model and permissions are Codex's own settings.</span></div>
+        </div>
+        <div>
+          <h4>After</h4>
+          <div class="term">
+            <div class="bar"><span class="dot" aria-hidden="true"></span><span class="name">VibeCodes · Frontier step</span><span class="chip">Codex</span><span class="chip" style="font-weight:500">E2EE</span><span class="sp"></span><span style="color:var(--muted)">Connected</span></div>
+            <pre>$ codex -m gpt-5.2 -c model_reasoning_effort=high
+Codex v0.9 · signed in · gpt-5.2 (high)</pre>
+          </div>
+          <div class="tip">This session runs Codex (OpenAI). Permissions are Codex's own settings. The model and reasoning effort follow your Model Tiers for each workflow step; new sessions start on your Standard tier's Codex model.</div>
+        </div>
+      </div>
+
+      <ul class="notes">
+        <li><b>Same chip, same place, same length class.</b> The tooltip grows by one short sentence; it still fits the existing <code>title</code> attribute and reads in one breath.</li>
+        <li><b>Starting model is deferred, and the copy says what happens meanwhile.</b> Because the Codex starting-model picker is a separate task outside this release, the last clause states the interim rule ("new sessions start on your Standard tier's Codex model") rather than promising a setting that doesn't exist yet. When that task lands, the clause becomes "…and your terminal settings when the session starts."</li>
+        <li><b>Resumed sessions</b> keep their model (FR-4 never passes model flags on resume). "New sessions" is true for fresh launches only, which is the intent.</li>
+        <li>The command line shown in the "After" terminal is illustrative of AC-8 (one argument per value); the tooltip is the deliverable.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── STATE MATRIX ───────────────────────── -->
+    <section class="surface" id="states">
+      <header><h3>State matrix</h3><span class="ref">every surface × every state a person can hit</span></header>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Surface</th><th>Loading</th><th>Platform default fall-through</th><th>Missing effort (AC-3)</th><th>Long / custom value</th></tr></thead>
+        <tbody>
+          <tr><td>Profile dialog</td><td>Tier labels immediately; both agents' pairs disabled with placeholder bars; Save disabled with "Loading platform defaults…" hint.</td><td>Trigger reads "Opus · high (default)" / "gpt-5.2 · high (default)" in muted text; the effort segment shows the default pressed but greyed.</td><td>Rose segment border + triangle + sentence naming the model, on whichever agent's pair is incomplete; Save hint names the blocking tier and agent.</td><td>Custom id truncates with an ellipsis in the trigger and shows in full in the amber advisory; effort still required. The pair never widens the column.</td></tr>
+          <tr><td>Admin card</td><td>Existing card skeleton; Panel B renders after Panel A.</td><td>n/a — admin edits the defaults themselves; seed values (model + effort, both agents) shown under each row.</td><td>Same rose treatment; Save hint "Set Cheap's Codex effort to enable Save."</td><td>Amber novel-family advisory names the exact <code>-m</code> argument; checkbox gates Save.</td></tr>
+          <tr><td>Tier picker</td><td>Helper line with two placeholder bars in place of the model (effort) names.</td><td>Helper shows the platform default; no badge.</td><td>Cannot occur — an invalid saved map is rejected at save time, and read paths degrade to seed (FR-2).</td><td>Helper line wraps at the "·"; no truncation, the row grows.</td></tr>
+          <tr><td>Step detail</td><td>Not applicable — the line only renders on completed/failed steps.</td><td>"Frontier defaults to Opus (high) on Claude" / "…gpt-5.2 (high) on Codex" always names the platform default, never the viewer's map (existing Condition 1).</td><td>A report with model but no effort is stored and shown as "gpt-5.2 (effort not reported)" and judged not honored, with the sentence saying so. Records older than this feature are judged on model alone.</td><td>Custom ids wrap inside the box; the row badge truncates after 24 characters with a tooltip.</td></tr>
+          <tr><td>Terminal chip</td><td>Chip appears at launch, before connect (launch-time fact).</td><td>Copy is static.</td><td>n/a</td><td>n/a</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <ul class="notes">
+        <li><b>Accessibility floor across all surfaces:</b> every control has a visible label; each effort group is a labelled <code>role="group"</code> of pressed/unpressed buttons (arrow keys move, space selects), with the agent named in the label so a screen-reader user hears "Claude reasoning effort" vs "Codex reasoning effort"; errors are <code>role="alert"</code> and linked via <code>aria-describedby</code>; disabled Save always has an adjacent "what's needed" hint; interactive targets are 36px tall on desktop and 44px on coarse pointers, as the current picker already does.</li>
+        <li><b>Contrast:</b> muted text is zinc-400 on zinc-900 (7.0:1); amber and rose text on their tinted backgrounds exceed 4.5:1; the white-on-black pressed segment is 18:1.</li>
+      </ul>
+    </section>
+
+    <!-- ───────────────────────── DECISIONS & OPEN ITEM ───────────────────────── -->
+    <section class="surface" id="oq">
+      <header><h3>Decisions &amp; open item</h3><span class="ref">the Requirements OQs that changed what people see — now settled by Nick, bar one</span></header>
+      <div class="oq">
+        <h4>DECIDED (Nick, 7 Sep 2026)<span class="decided">applied in this revision</span></h4>
+        <dl>
+          <dt>OQ-2</dt><dd><b>Per-step model resolution on Codex — yes.</b> The tier picker keeps its promise that whichever agent claims a step runs it on that tier's model. No session-level softening of the "not honored" state is needed.</dd>
+          <dt>OQ-5</dt><dd><b>Effort is a separate field, on both agents — yes.</b> Claude gains the same model + effort pair as Codex; the two columns are now the same shape, the resolution line carries effort on both sides, and AC-3's "model without effort" rule applies to either agent.</dd>
+          <dt>OQ-4</dt><dd><b>Terminal starting model for Codex — deferred to a separate task.</b> Not part of this feature's first release. Until it lands, Codex launches start on the Standard tier's Codex model, and both the Profile help text and the terminal tooltip say so. The Claude starting-model control is unchanged.</dd>
+          <dt>OQ-6</dt><dd><b>Mid-run tier change — applies on the next step.</b> A step already running finishes on what it started with. Help text on the Profile dialog, the admin card and the tier picker reads "Live sessions pick this up on their next step."</dd>
+          <dt>Design</dt><dd><b>Dialog width — widened, approved.</b> <code>sm:max-w-2xl</code>. With the stacked pair in both agent columns (120 px + 264 px + 264 px at that width) every control fits inside the column and nothing overflows the dialog edge.</dd>
+        </dl>
+        <h4>STILL OPEN<span class="pending">one quick check</span></h4>
+        <dl>
+          <dt>OQ-1</dt><dd><b>Confirm the exact model ids and effort ladders.</b> The mockups use placeholders pending a quick check of current Codex models: Frontier = gpt-5.2 (high), Standard = gpt-5.1 (medium), Cheap = gpt-5.1-mini (low). The same check should pin down what Low / Medium / High map to on Claude's thinking level (the labels are fixed; the values behind them are not). If either ladder turns out to have extra levels (e.g. minimal, xhigh), the segmented control grows to at most five options; beyond that it becomes a select. No layout change is needed for up to five — the pair stays the same height.</dd>
+        </dl>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

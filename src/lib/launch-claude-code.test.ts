@@ -1763,6 +1763,124 @@ describe("buildCompactBootstrapPromptParts (in-browser terminal parity)", () => 
   });
 });
 
+// ── FR-6: agent-aware board-connect step (Codex can't use claude mcp add//mcp) ──
+
+describe("buildCompactPromptEssentials — agent param (FR-6)", () => {
+  const baseArgs: CompactBootstrapArgs = {
+    appUrl: APP_URL,
+    ideaId: "idea-1",
+    ideaTitle: "My Idea",
+    mode: "existing",
+    repoUrl: null,
+  };
+
+  it("agent omitted is byte-identical to the pre-FR-6 essentials (claude default)", () => {
+    const withoutAgent = buildCompactPromptEssentials(baseArgs);
+    const explicitClaude = buildCompactPromptEssentials({ ...baseArgs, agent: "claude" });
+    expect(withoutAgent).toEqual(explicitClaude);
+    expect((withoutAgent.headSteps ?? []).join("\n")).toContain(
+      `claude mcp add -s local --transport http vibecodes ${APP_URL}/api/mcp`
+    );
+    expect((withoutAgent.headSteps ?? []).join("\n")).toContain("/mcp");
+  });
+
+  it("agent: 'codex' swaps in Codex's own connector commands and drops the Claude ones", () => {
+    const codex = buildCompactPromptEssentials({ ...baseArgs, agent: "codex" });
+    const head = (codex.headSteps ?? []).join("\n");
+    expect(head).toContain(`codex mcp add vibecodes --url ${APP_URL}/api/mcp`);
+    expect(head).toContain("codex mcp login vibecodes");
+    expect(head).toContain('agent: "codex"');
+    expect(head).toContain("spawn a fresh subagent with the model/effort and context returned by claim_next_step");
+    expect(head).toContain("report its launch settings");
+    // "claude mcp add"/"/mcp" DO still appear, but only inside the "do NOT
+    // use" warning — assert there is no actionable Claude command left
+    // (no `run \`claude mcp add`, no `/mcp\` flow instruction).
+    expect(head).not.toContain("run `claude mcp add");
+    expect(head).not.toContain("then `/mcp`");
+    expect(head).not.toContain("-s local --transport http");
+  });
+
+  it("buildCompactBootstrapPrompt/Parts: agent: 'codex' end to end", () => {
+    const p = buildCompactBootstrapPrompt({ ...baseArgs, agent: "codex" });
+    expect(p).toContain("codex mcp add vibecodes --url");
+    expect(p).toContain("codex mcp login vibecodes");
+    expect(p).not.toContain("run `claude mcp add");
+    expect(p).not.toContain("then `/mcp`");
+
+    const { head } = buildCompactBootstrapPromptParts({ ...baseArgs, agent: "codex" });
+    expect(head).toContain("codex mcp add vibecodes --url");
+    expect(head).not.toContain("run `claude mcp add");
+  });
+});
+
+describe("mcpSetupHead (verbose bootstrap) — agent param (FR-6)", () => {
+  it("buildBoardBootstrapPrompt/buildTaskBootstrapPrompt default to claude, unchanged", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(p).toContain("claude mcp add -s local --transport http vibecodes");
+    expect(p).toContain("/mcp");
+  });
+});
+
+describe("realistic Codex launch fits the same URL budget as Claude (FR-6, cwdPolicy 'keep')", () => {
+  const relay = "wss://vibecodes-terminal-relay.nickball.workers.dev";
+  const session = "3960fe51-6010-44e8-9e77-a3c5882afffd";
+  const realToken = "x".repeat(283);
+  const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
+  const realTitle = "Personal spending and financial analysis and tracking";
+  const CAP = 2048;
+
+  function realVibecodesLink(parts: { prompt: string; cwd?: string }): string {
+    const p = [
+      `relay=${encodeURIComponent(relay)}`,
+      `session=${encodeURIComponent(session)}`,
+      `token=${encodeURIComponent(realToken)}`,
+      `helperToken=${encodeURIComponent(realToken)}`,
+    ];
+    if (parts.cwd) p.push(`cwd=${encodeURIComponent(parts.cwd)}`);
+    p.push("cols=213", "rows=33", "model=sonnet", "permissionMode=auto");
+    if (parts.prompt) p.push(`prompt=${encodeURIComponent(parts.prompt)}`);
+    return `vibecodes://launch?${p.join("&")}`;
+  }
+  const decodePrompt = (url: string) => decodeURIComponent(url.split("prompt=")[1] ?? "");
+
+  it("codex-headed essentials keep the folder and fit under the cap, same as claude", () => {
+    const essentials = buildCompactPromptEssentials({
+      appUrl: APP_URL,
+      ideaId: realIdeaId,
+      ideaTitle: realTitle,
+      mode: "existing",
+      repoUrl: null,
+      existingPath: realPath,
+      agent: "codex",
+    });
+    const result = buildBoundedDeepLink({
+      essentials,
+      cwd: realPath,
+      cap: CAP,
+      promptKeyOverhead: "&prompt=".length,
+      cwdPolicy: "keep",
+      buildLink: realVibecodesLink,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.droppedCwd).toBe(false);
+    expect(result.url.length).toBeLessThanOrEqual(CAP);
+    expect(result.url).toContain(`cwd=${encodeURIComponent(realPath)}`);
+    const prompt = decodePrompt(result.url);
+    expect(prompt).toContain("codex mcp add vibecodes --url");
+    expect(prompt).toContain("codex mcp login vibecodes");
+    expect(prompt).toContain("spawn a fresh subagent");
+    expect(prompt).not.toContain("run `claude mcp add");
+  });
+});
+
 describe("enforcePromptLength with a custom cap (in-browser URL budget)", () => {
   it("still defaults to MAX_DEEP_LINK_PROMPT_LENGTH", () => {
     const head = "H".repeat(10);

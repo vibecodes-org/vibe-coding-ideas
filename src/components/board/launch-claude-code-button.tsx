@@ -25,6 +25,7 @@ import {
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
   buildCompactPromptEssentials,
+  formEncodedLength,
   mergeRecordedPath,
   readLaunchPath,
   resolveAppUrl,
@@ -34,12 +35,19 @@ import {
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
 import { listRecordedProjectPaths } from "@/actions/launch-path";
-import { isTerminalEnabled } from "@/lib/terminal/connection";
+import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
+import { buildOpenTerminalDeepLink, MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
+import { fetchHelperStatus } from "@/lib/terminal/helper-row";
+import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 
 const APP_URL = resolveAppUrl();
 const INSTALL_GUIDE_URL = "https://docs.claude.com/en/docs/claude-code";
+// Codex support (docs/codex-terminal-ux-design.html §2/§10, implementation
+// slice 2) — placeholder, per the design's Q6: "confirm at implementation
+// time." OpenAI's Codex CLI install page moves; verify before shipping.
+const CODEX_INSTALL_GUIDE_URL = "https://developers.openai.com/codex/cli/";
 // Visibility-race window: if the page never blurs/hides within this, assume no handler.
 const SCHEME_RACE_MS = 1200;
 
@@ -249,7 +257,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // passes `true`; handleLaunchInBrowser leaves it `false` (default) so the
   // note never rides alongside vibecodes://'s real, enforced flag.
   const buildCompactEssentials = useCallback(
-    (state: LaunchPathState, includeIsolationAdvisory = false): CompactPromptEssentials => {
+    (
+      state: LaunchPathState,
+      includeIsolationAdvisory = false,
+      agent: "claude" | "codex" = "claude"
+    ): CompactPromptEssentials => {
       const { newProject, existingPath } = compactDirArgsFor(state);
       return buildCompactPromptEssentials({
         appUrl: APP_URL,
@@ -261,6 +273,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         existingPath,
         taskId: props.variant === "board" ? undefined : props.taskId,
         includeIsolationAdvisory,
+        agent,
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
@@ -435,37 +448,177 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // as a whole, though: multiple sessions (terminal windows and/or browser tabs) can
   // run concurrently — see the terminal dock's "My sessions" / pop-out support.
   const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
-  const handleLaunchInBrowser = useCallback(() => {
-    posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });
-    // Carry the SAME compact bootstrap ESSENTIALS AND cwd the terminal-window
-    // deep link would use for this state (bootstrap-prompt + folder parity).
-    // Sent as essentials (not the unconditional head/tail parts) so the dock
-    // can hand off to fitCompactEssentials against its OWN vibecodes:// URL
-    // budget, exactly like openInClaudeCode does for the claude-cli:// deep
-    // link. `essentials.isolate` also rides along — the dock reads it to
-    // decide whether to fire the launch with `claude --worktree` (this
-    // destination, unlike claude-cli://, is our own bridge, so it can act on
-    // it). cwd rides the payload so a pinned/recorded existing folder is
-    // honoured in the browser too.
-    void resolveFreshLaunch().then(({ state, cwd }) => {
-      const essentials = buildCompactEssentials(state);
-      requestBrowserLaunch({
-        essentials,
-        cwd,
-        // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
-        // variants carry a task identity — a board-level launch never does, so
-        // B10's dedupe never mistakes two board launches for the same task.
-        taskId: props.variant === "board" ? undefined : props.taskId,
-        taskTitle: props.variant === "board" ? undefined : props.taskTitle,
+  // Codex support (docs/codex-terminal-requirements.md FR-1, implementation
+  // slice 2) — the ONE browser-launch builder, agent-parameterised. "claude"
+  // (the default) produces the byte-identical payload/event this always
+  // fired before `agent` existed.
+  const handleLaunchInBrowser = useCallback(
+    (agent: "claude" | "codex" = "claude") => {
+      posthog?.capture("launch_claude_code_clicked", { method: "in_browser", agent });
+      // Carry the SAME compact bootstrap ESSENTIALS AND cwd the terminal-window
+      // deep link would use for this state (bootstrap-prompt + folder parity).
+      // Sent as essentials (not the unconditional head/tail parts) so the dock
+      // can hand off to fitCompactEssentials against its OWN vibecodes:// URL
+      // budget, exactly like openInClaudeCode does for the claude-cli:// deep
+      // link. `essentials.isolate` also rides along — the dock reads it to
+      // decide whether to fire the launch with `claude --worktree` (this
+      // destination, unlike claude-cli://, is our own bridge, so it can act on
+      // it). cwd rides the payload so a pinned/recorded existing folder is
+      // honoured in the browser too.
+      void resolveFreshLaunch().then(({ state, cwd }) => {
+        const essentials = buildCompactEssentials(state, false, agent);
+        requestBrowserLaunch({
+          essentials,
+          cwd,
+          // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
+          // variants carry a task identity — a board-level launch never does, so
+          // B10's dedupe never mistakes two board launches for the same task.
+          taskId: props.variant === "board" ? undefined : props.taskId,
+          taskTitle: props.variant === "board" ? undefined : props.taskTitle,
+          // Carry the EXPLICIT agent choice verbatim — including "claude". A
+          // launch fired from "Launch Claude Code in browser" MUST record
+          // agent:"claude" so the dock's task-launch dialog pre-selects Claude
+          // (it reads `pendingLaunch.agent ?? rememberedPick`; sending undefined
+          // here silently dropped the explicit choice and fell back to the
+          // remembered agent — e.g. showing Codex after a Codex launch). The
+          // final vibecodes:// link is still byte-identical for "claude" vs
+          // absent (deep-link.ts treats them the same), so the wire format is
+          // unchanged — only the internal choice is now preserved.
+          agent,
+        });
       });
-    });
-  }, [posthog, buildCompactEssentials, resolveFreshLaunch, props]);
+    },
+    [posthog, buildCompactEssentials, resolveFreshLaunch, props],
+  );
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);
     setDialogMode(mode);
     setDialogOpen(true);
   }, []);
+
+  // Codex support (docs/codex-terminal-requirements.md §12, FR-11–FR-14,
+  // implementation slice 3) — the helper now handles a `vibecodes://open-terminal`
+  // link by opening a real Terminal.app window running `codex`. This mirrors
+  // openInClaudeCode's claude-cli:// flow (same cwd resolution, same
+  // budgeted-deep-link discipline via buildBoundedDeepLink with
+  // cwdPolicy:"keep" — FR-12), but through OUR OWN scheme + helper instead of
+  // a third-party handler, since Codex has no scheme of its own (§2.3).
+  //
+  // FR-6 (now implemented): the prompt below reuses the SAME essentials
+  // builder as the "in the browser" Codex launch (buildCompactEssentials),
+  // passing agent: "codex" so the board-connect step uses Codex's own
+  // connector commands (`codex mcp add … --url` / `codex mcp login`) instead
+  // of Claude's `claude mcp add`/`/mcp`.
+  //
+  // Pre-flight gating here is deliberately MINIMAL (fails toward "let the
+  // helper's own runtime checks decide" rather than a full disabled-menu-item
+  // treatment — UX design §7b/§12d/§12f describe the richer version, which is
+  // a follow-up): unknown helper/codex state never blocks the click, matching
+  // the design's "unknown must read as enabled, never disabled" rule.
+  const handleLaunchCodexDesktop = useCallback(() => {
+    posthog?.capture("launch_claude_code_clicked", { method: "desktop_window", agent: "codex" });
+    if (launchingRef.current) return;
+    launchingRef.current = true;
+    void (async () => {
+      try {
+        // Helper-status is a PRE-flight courtesy, never a hard gate. The helper
+        // sleeps when idle, so it is usually NOT connected at click time — and
+        // firing the vibecodes://open-terminal link is exactly what cold-
+        // launches it (macOS routes the scheme to the installed app), after
+        // which it runs its OWN codex/version pre-checks at attach and the
+        // relay-authenticated gate decides. So a null/disconnected/unknown
+        // status must fall through to the launch — the design's "unknown reads
+        // as enabled" rule (§7b/§12d). We only short-circuit on a POSITIVE
+        // negative from a LIVE helper (too old, or codex definitely absent),
+        // where we can give a better message than the cold-launch would.
+        const status = await fetchHelperStatus();
+        if (status?.connected) {
+          if (shouldShowHelperUpdateNudge(status.version)) {
+            toast(`Your VibeCodes helper needs an update to open Codex (v${MINIMUM_RECOMMENDED_HELPER_VERSION}+)`, {
+              description: "Update the helper from the terminal dock, then try again.",
+            });
+            return;
+          }
+          if (status.codexInstalled === false) {
+            toast("Codex isn't installed on this Mac", {
+              description: 'Use "Launch Codex in browser terminal" for now, or install Codex.',
+              action: {
+                label: "How to install Codex",
+                onClick: () => window.open(CODEX_INSTALL_GUIDE_URL, "_blank", "noopener,noreferrer"),
+              },
+            });
+            return;
+          }
+        }
+
+        const { state, cwd } = await resolveFreshLaunch();
+        const resolvedCwd = cwd ?? effectiveTarget.cwd;
+        if (!resolvedCwd) {
+          // FR-12: "If the board has no recorded folder, the launch goes
+          // through the existing 'pick a folder' dialog first — same as
+          // Claude today." Unlike Claude's own desktop launch (which can
+          // proceed folder-less in "new" mode — the agent creates it), the
+          // Codex Terminal-window script always needs a REAL, existing
+          // folder to `cd` into (FR-11's fixed-binary/existing-directory
+          // security posture), so there is no folder-less fallback here.
+          // Opens the dialog rather than auto-continuing after save (that
+          // would need tracking WHICH launch is pending, Claude vs desktop
+          // Codex — a small follow-up); the user re-clicks once it's set.
+          toast("Set a project folder first", {
+            description: "Codex needs a real folder to open — set one, then launch again.",
+          });
+          openDialog("new", false);
+          return;
+        }
+
+        const tokenRes = await fetch("/api/terminal/helper/token", { method: "POST" });
+        const tokenBody: { helperToken?: string } = tokenRes.ok ? await tokenRes.json() : {};
+        if (!tokenRes.ok || !tokenBody.helperToken) {
+          toast.error("Couldn't reach VibeCodes to start this launch");
+          return;
+        }
+        const helperToken = tokenBody.helperToken;
+
+        const essentials = buildCompactEssentials(state, true, "codex");
+        const result = buildBoundedDeepLink({
+          essentials,
+          cwd: resolvedCwd,
+          cap: MAX_LAUNCH_URL_LENGTH,
+          promptKeyOverhead: "&prompt=".length,
+          // FR-12: the folder is never traded away to make the prompt fit —
+          // same rule the in-browser vibecodes:// launch already follows.
+          cwdPolicy: "keep",
+          promptMeasure: formEncodedLength,
+          buildLink: ({ prompt, cwd: linkCwd }) =>
+            buildOpenTerminalDeepLink({
+              relay: relayBaseUrl(),
+              helperToken,
+              cwd: linkCwd ?? resolvedCwd,
+              agent: "codex",
+              prompt,
+            }),
+        });
+        if (!result.ok) {
+          toast.error("Project path too long to launch — open the folder manually and run Codex there");
+          return;
+        }
+
+        window.location.assign(result.url);
+        window.setTimeout(() => {
+          if (!document.hasFocus()) return;
+          toast("Opening Codex in a Terminal window…", {
+            description:
+              "Look for a new Terminal window and press Enter there. Didn't open? Check the VibeCodes helper is installed and running.",
+          });
+        }, SCHEME_RACE_MS);
+      } catch {
+        toast.error("Couldn't open Codex in a Terminal window");
+      } finally {
+        launchingRef.current = false;
+      }
+    })();
+  }, [posthog, resolveFreshLaunch, effectiveTarget.cwd, buildCompactEssentials, openDialog]);
 
   const handleSaved = useCallback(
     (state: LaunchPathState, recordedPath?: RecordedProjectPath) => {
@@ -520,7 +673,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       return (
         <DropdownMenuItem disabled className="py-2.5 text-muted-foreground sm:py-1.5">
           <Terminal className="mr-2 h-4 w-4" />
-          Open on desktop to launch Claude Code
+          Open on desktop to launch Claude Code or Codex
         </DropdownMenuItem>
       );
     }
@@ -531,7 +684,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           Launch in Claude Code
         </DropdownMenuItem>
         {browserLaunchAvailable && (
-          <DropdownMenuItem onSelect={handleLaunchInBrowser} className="py-2.5 sm:py-1.5">
+          <DropdownMenuItem onSelect={() => handleLaunchInBrowser("claude")} className="py-2.5 sm:py-1.5">
             <Globe className="mr-2 h-4 w-4" />
             <span className="inline-flex items-center gap-1.5">
               Launch in browser terminal
@@ -540,6 +693,33 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               </span>
             </span>
           </DropdownMenuItem>
+        )}
+        {/* Codex support (design §7b) — twins of the two Claude items above:
+            "Launch in <agent>" = a Terminal window, "…browser terminal" = the
+            dock. Gated on the same switch as the Claude browser item (both
+            Codex paths need the helper, which ships with the terminal
+            feature). Slice 3 TODO: the desktop item can't fire a real
+            helper action yet — see handleLaunchCodexDesktop's doc. */}
+        {browserLaunchAvailable && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={handleLaunchCodexDesktop} className="py-2.5 sm:py-1.5">
+              <Terminal className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Launch in Codex</span>
+                <span className="text-[11px] text-muted-foreground">Opens a Terminal window on this Mac</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")} className="py-2.5 sm:py-1.5">
+              <Globe className="mr-2 h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                Launch Codex in browser terminal
+                <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
+                  Beta
+                </span>
+              </span>
+            </DropdownMenuItem>
+          </>
         )}
         {dialog}
       </>
@@ -600,23 +780,66 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             {browserLaunchAvailable ? (
-              // Pick-one: where should Claude run? "In a terminal window" is today's
-              // unchanged behaviour; "In the browser" opens the docked terminal.
+              // Codex support (design §13) — CORRECTED from a plain pick-one:
+              // the dropdown is now agent × location, two labelled groups.
+              // Claude Code first (the default; ↓ then Enter still does
+              // exactly what it did yesterday), Codex second. Within each
+              // group: terminal window, then browser (today's order).
               <>
+                <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
+                  Claude Code
+                </div>
                 <DropdownMenuItem onSelect={handleLaunch}>
                   <Terminal className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
-                    <span>In a terminal window</span>
+                    <span>
+                      <span className="sr-only">Claude Code, </span>In a terminal window
+                    </span>
                     <span className="text-[11px] text-muted-foreground">
                       On your computer — how it works today
                     </span>
                   </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleLaunchInBrowser}>
+                <DropdownMenuItem onSelect={() => handleLaunchInBrowser("claude")}>
                   <Globe className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
                     <span className="inline-flex items-center gap-1.5">
-                      In the browser
+                      <span className="sr-only">Claude Code, </span>In the browser
+                      <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
+                        Beta
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      A live terminal docked on this board
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
+                  Codex
+                </div>
+                {/* Slice 3 TODO: the helper doesn't yet report whether Codex
+                    is installed on this Mac, so this item can't be
+                    disabled-with-reason per design §12d/§13c yet — it fires
+                    handleLaunchCodexDesktop's not-yet-implemented stub
+                    (status-unknown reads as enabled, per the design's own
+                    fallback rule). */}
+                <DropdownMenuItem onSelect={handleLaunchCodexDesktop}>
+                  <Terminal className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>
+                      <span className="sr-only">Codex, </span>In a terminal window
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Opens Terminal on this Mac — needs the VibeCodes helper
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="sr-only">Codex, </span>In the browser
                       <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
                         Beta
                       </span>

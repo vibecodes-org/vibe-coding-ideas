@@ -118,7 +118,7 @@ import {
   resolveTerminalPlatform,
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
-import { getMachineIdentity, setMachineIdentity } from "@/lib/terminal/machine-identity";
+import { addMachineIdentity, getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 import {
@@ -488,7 +488,7 @@ export interface PairInfo {
 
 export interface TerminalSessionActions {
   /** Mint a session and open the browser leg; autoLaunch fires the vibecodes:// deep link. */
-  connect: (options?: { autoLaunch?: boolean }) => Promise<void>;
+  connect: (options?: { autoLaunch?: boolean; agent?: "claude" | "codex" }) => Promise<void>;
   /**
    * Install-first entry gate. This is the ONE place a browser "open" is turned into
    * either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
@@ -1332,7 +1332,19 @@ export function useTerminalSession(
   // real folder was on file, hiding the ended-session overlay's Resume button).
   const resolveLaunchPromptParts = useCallback((): BrowserLaunchPayload => {
     const carried = promptPartsRef.current;
-    if (carried) return carried;
+    // Codex support (implementation slice 2): a board-level "+"/chooser
+    // "Start new session" launch with no button-built payload still carries
+    // the chooser's chosen `agent` alone (no `essentials`, no `resume`/
+    // `resumeId` — see terminal-dock.tsx's handleChooserStartNew). Only treat
+    // `carried` as fully resolved when it's essentials- or resume-shaped —
+    // otherwise fall through and build essentials fresh below, but keep
+    // `carried.agent` so the fresh-launch deep link still gets it. (A
+    // resume/resumeId payload normally never reaches this function at all —
+    // fireLaunchDeepLink's resume branch is checked first — but this OR
+    // keeps that shape returned verbatim here too, exactly as it was before
+    // this field existed, for any caller that reaches this function
+    // directly, e.g. this file's own tests.)
+    if (carried && (carried.essentials || carried.resume || carried.resumeId)) return carried;
     const fresh = freshRecordedPathsRef.current;
     const effectiveTarget = resolveEffectiveLaunchTarget({
       hasRepo: !!ideaGithubUrl,
@@ -1357,8 +1369,17 @@ export function useTerminalSession(
       // or, now, a recorded DB path) emits the same verify-folder step.
       existingPath:
         s.mode === "existing" && s.path.trim() ? s.path.trim() : undefined,
+      // FR-6: thread the chosen agent into the board-connect copy. A chooser
+      // "Start new session" launch reaches here with `carried` holding only
+      // `{ agent }` (no essentials — see the guard above), so without this the
+      // essentials were built with the default "claude" board-connect commands
+      // while the bridge spawned Codex — Codex was told to run `claude mcp add`
+      // and `/mcp` and could not connect (Nick, 7 Sep 2026). The launch button
+      // path already threads agent (buildCompactEssentials); this closes the
+      // hook path's gap.
+      agent: carried?.agent,
     });
-    return { essentials, cwd: resolveLaunchCwd(s, effectiveTarget.cwd) };
+    return { essentials, cwd: resolveLaunchCwd(s, effectiveTarget.cwd), agent: carried?.agent };
   }, [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths]);
 
   // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
@@ -1468,6 +1489,12 @@ export function useTerminalSession(
          */
         model?: string;
         /**
+         * FR-4 (agent-aware model tiers) — the Codex reasoning effort paired
+         * with `model` for a fresh Codex launch (low/medium/high), from the
+         * mint response. Same fresh-launch-only threading rule as `model`.
+         */
+        effort?: string;
+        /**
          * Task d3de150c ("Terminal mode" auto-accept toggle) — the mint
          * route's resolved permission mode (set only when the user's own
          * `terminal_auto_accept` preference is on). Same threading rule as
@@ -1518,12 +1545,12 @@ export function useTerminalSession(
       const carriedForResume = promptPartsRef.current;
       const forcedCwd = opts?.forceResumeCwd?.trim() || null;
       const resumeSource = forcedCwd
-        ? { cwd: forcedCwd, resumeId: opts?.forceResumeId ?? undefined, forced: true }
+        ? { cwd: forcedCwd, resumeId: opts?.forceResumeId ?? undefined, forced: true, agent: carriedForResume?.agent }
         : carriedForResume?.resume || carriedForResume?.resumeId
-          ? { cwd: carriedForResume.cwd, resumeId: carriedForResume.resumeId, forced: false }
+          ? { cwd: carriedForResume.cwd, resumeId: carriedForResume.resumeId, forced: false, agent: carriedForResume.agent }
           : null;
       if (resumeSource) {
-        const { cwd, resumeId, forced } = resumeSource;
+        const { cwd, resumeId, forced, agent } = resumeSource;
         if (!cwd) {
           // Should never happen — the chooser only offers Resume for a row
           // with a recorded folder (F4) — but stay honest rather than fire a
@@ -1545,6 +1572,11 @@ export function useTerminalSession(
             resumeId,
             cols: dims?.cols,
             rows: dims?.rows,
+            // Codex support (FR-2, implementation slice 2) — Resume never
+            // shows the picker; it fires with the ROW's own recorded agent
+            // (carried on the payload by chooser-data.ts's row.agent /
+            // buildResumePayload), never the chooser's current picker value.
+            agent: agent === "codex" ? "codex" : undefined,
           });
         } catch (err) {
           logger.error("Terminal resume deep-link build failed", {
@@ -1635,6 +1667,9 @@ export function useTerminalSession(
               // Task c4ca2d95: fresh-launch only — the resume branch above
               // never reaches this call.
               model: opts?.model,
+              // FR-4: the Codex reasoning effort, paired with `model` for a
+              // fresh Codex launch. Same fresh-launch-only posture as `model`.
+              effort: opts?.effort,
               // Task d3de150c: same fresh-launch-only posture as `model`.
               permissionMode: opts?.permissionMode,
               // Concurrent-terminal isolation (QA-flagged fix): this destination
@@ -1667,6 +1702,12 @@ export function useTerminalSession(
               // copy, which then got recorded as the project folder and sent
               // every later launch there too (Nick, 28 Aug 2026).
               worktree: essentials.isolate && !!linkCwd && opts?.isolate === true,
+              // Codex support (FR-1, implementation slice 2) — the payload
+              // carried through resolveLaunchPromptParts() below (which
+              // reads promptPartsRef.current, itself the BrowserLaunchPayload
+              // the launch button/chooser built). Absent/"claude" is dropped
+              // entirely by buildLaunchDeepLink (byte-identical link, AC-1).
+              agent: promptPartsRef.current?.agent === "codex" ? "codex" : undefined,
             }),
         });
         let result = buildWithHelperToken(effectiveHelperToken);
@@ -1863,16 +1904,22 @@ export function useTerminalSession(
             if (v) setHelperVersion(v);
             // Machine identity (Nick's sign-off change 2): the SAME frame
             // optionally carries the bridge's hostname. Recorded once per
-            // session (see machineIdentityAnnouncedSidRef's doc) — (1) as this
-            // browser's own remembered identity (machine-identity.ts, read by
-            // the chooser's Recent filter), and (2) a best-effort PATCH onto
-            // the registry row so OTHER browsers can filter against it too.
-            // Never awaited/blocking — an old bridge that omits `host` simply
-            // never triggers this (parses to null, nothing to record).
+            // session (see machineIdentityAnnouncedSidRef's doc) — (1) ADDED
+            // to this browser's remembered set of every hostname it has seen
+            // (machine-identity.ts, read by the chooser's Recent filter — one
+            // Mac can report more than one name across networks, so this
+            // accumulates rather than overwrites; accumulating is idempotent,
+            // so re-announcing an already-known name on a later session is
+            // harmless and the once-per-session guard below is purely to
+            // avoid redundant work, not correctness), and (2) a best-effort
+            // PATCH onto the registry row so OTHER browsers can filter
+            // against it too. Never awaited/blocking — an old bridge that
+            // omits `host` simply never triggers this (parses to null,
+            // nothing to record).
             const host = parseBridgeVersionHost(ev.data);
             if (host && machineIdentityAnnouncedSidRef.current !== sessionId) {
               machineIdentityAnnouncedSidRef.current = sessionId;
-              setMachineIdentity(host);
+              addMachineIdentity(host);
               void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -2251,7 +2298,7 @@ export function useTerminalSession(
   // (manual reconnect), we stay in the cross-machine "copy a command" flow. Callers
   // must gate autoLaunch behind the install-first flow (setup Connect / paired
   // auto-connect / Retry) — never on a bare "open" for an unpaired browser.
-  const connect = useCallback(async (opts?: { autoLaunch?: boolean }) => {
+  const connect = useCallback(async (opts?: { autoLaunch?: boolean; agent?: "claude" | "codex" }) => {
     // Claim this attempt's generation. A later connect() bumps it, which makes this
     // one abort at the post-mint checkpoint below instead of racing a 2nd session.
     const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
@@ -2281,6 +2328,19 @@ export function useTerminalSession(
       // A newer connect() started while we awaited the read → it owns the
       // outcome; don't mint a session nobody is waiting on.
       if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      // Codex support (design §1b, implementation slice 2) — the "Ready when
+      // you are" panel's own picker calls connect() directly (no
+      // launchFromBus payload precedes it, unlike every other launch
+      // surface), so this is the one place `agent` is seeded onto
+      // `promptPartsRef` rather than read off an already-carried payload.
+      // Seeded AFTER the fresh-paths read above so this launch still gets
+      // the same folder-freshness fix every other hook-initiated connect()
+      // gets; only ever seeds an otherwise-still-null ref (a resume/task
+      // launch that somehow also reaches here already carries its own
+      // payload and is left untouched).
+      if (opts?.agent === "codex" && !promptPartsRef.current) {
+        promptPartsRef.current = { agent: "codex" };
+      }
     }
 
     let data: {
@@ -2291,6 +2351,8 @@ export function useTerminalSession(
       expiresAt: number;
       /** Task c4ca2d95 — the mint route's resolved effective terminal model, fresh-launch only. */
       model?: string;
+      /** FR-4 — the Codex reasoning effort paired with `model` for a fresh Codex launch. */
+      effort?: string;
       /** Task d3de150c — the mint route's resolved permission mode ("auto" or absent), fresh-launch only. */
       permissionMode?: string;
       /** Concurrent-session isolation — true when another of this user's sessions is already live on this board (fires `--worktree`), fresh-launch only. */
@@ -2317,6 +2379,12 @@ export function useTerminalSession(
           // the legacy `--continue` resume has no `resumeId` and sends
           // nothing here.
           ...(promptPartsRef.current?.resumeId ? { resumeId: promptPartsRef.current.resumeId } : {}),
+          // Codex support (FR-1/FR-5, implementation slice 2): tell the mint
+          // route which agent this launch is starting so it stamps the new
+          // registry row's `agent` column correctly. Omitted for "claude"
+          // (the mint route's own default) — same posture as every other
+          // optional field here.
+          ...(promptPartsRef.current?.agent === "codex" ? { agent: "codex" as const } : {}),
         }),
       });
       if (!res.ok) {
@@ -2433,6 +2501,7 @@ export function useTerminalSession(
       fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, {
         trigger: "connect",
         model: data.model,
+        effort: data.effort,
         permissionMode: data.permissionMode,
         isolate: data.isolate,
       });

@@ -31,8 +31,15 @@ vi.mock("@/lib/terminal/launch-mode", () => ({
   requestBrowserLaunch: (payload: unknown) => mockRequestBrowserLaunch(payload),
 }));
 
+const mockRelayBaseUrl = vi.fn(() => "ws://127.0.0.1:8787");
 vi.mock("@/lib/terminal/connection", () => ({
   isTerminalEnabled: () => true,
+  relayBaseUrl: () => mockRelayBaseUrl(),
+}));
+
+const mockFetchHelperStatus = vi.fn();
+vi.mock("@/lib/terminal/helper-row", () => ({
+  fetchHelperStatus: () => mockFetchHelperStatus(),
 }));
 
 // The launch-time re-read of the recorded folders (Nick, 3 Sep 2026 — see
@@ -78,12 +85,20 @@ beforeEach(() => {
   vi.clearAllMocks();
   mediaMatches.mockReturnValue(true); // desktop
   mockIsBrowserLaunchAvailable.mockReturnValue(true);
+  mockRelayBaseUrl.mockReturnValue("ws://127.0.0.1:8787");
+  mockFetchHelperStatus.mockResolvedValue(null);
+  global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ helperToken: "helper-tok" }) });
 });
 
 /** Renders the task-menu-item variant inside a real, always-open DropdownMenu
  * (matching how task-card-menu.tsx hosts it), so the items land in the DOM via
  * Radix's portal. */
-function renderMenuItem(overrides: { taskId?: string } = {}) {
+function renderMenuItem(
+  overrides: {
+    taskId?: string;
+    recordedProjectPaths?: import("@/lib/launch-claude-code").RecordedProjectPath[];
+  } = {}
+) {
   render(
     <DropdownMenu open onOpenChange={() => {}}>
       <DropdownMenuContent>
@@ -94,6 +109,7 @@ function renderMenuItem(overrides: { taskId?: string } = {}) {
           ideaGithubUrl={null}
           taskId={overrides.taskId ?? "task-123"}
           taskTitle="Do the thing"
+          recordedProjectPaths={overrides.recordedProjectPaths}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -105,10 +121,15 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     renderMenuItem();
 
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(2);
+    // Codex support (implementation slice 2): the Claude items keep their
+    // exact positions; two Codex twins follow (design §7b).
+    expect(items).toHaveLength(4);
     expect(items[0]).toHaveTextContent("Launch in Claude Code");
     expect(items[1]).toHaveTextContent("Launch in browser terminal");
     expect(items[1]).toHaveTextContent("Beta");
+    expect(items[2]).toHaveTextContent("Launch in Codex");
+    expect(items[3]).toHaveTextContent("Launch Codex in browser terminal");
+    expect(items[3]).toHaveTextContent("Beta");
   });
 
   it("clicking the browser item calls requestBrowserLaunch and does not navigate", async () => {
@@ -133,6 +154,24 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     };
     const promptText = `${payload.essentials.head}\n${payload.essentials.tail}`;
     expect(promptText).toContain("task-abc-789");
+  });
+
+  it("carries an EXPLICIT agent:'claude' in the browser-launch payload (regression: an explicit Claude choice must not be dropped to undefined, which the dock reads as 'remembered pick' and defaults to Codex)", async () => {
+    renderMenuItem({ taskId: "task-abc-789" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Launch in browser terminal/i }));
+
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string };
+    expect(payload.agent).toBe("claude");
+  });
+
+  it("carries agent:'codex' when launching Codex in the browser", async () => {
+    renderMenuItem({ taskId: "task-abc-789" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Launch Codex in browser terminal/i }));
+
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string };
+    expect(payload.agent).toBe("codex");
   });
 
   // Nick, 3 Sep 2026: the board page's recorded-folder list is a one-shot SSR
@@ -295,7 +334,10 @@ describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:/
     const trigger = screen.getByRole("button", { name: "Launch options" });
     fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
     fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("menuitem", { name: /In the browser/i }));
+    // Codex support (implementation slice 2): the dropdown now has TWO "In
+    // the browser" items (Claude Code, then Codex — design §13) — the first
+    // is Claude's, which this test targets.
+    fireEvent.click(screen.getAllByRole("menuitem", { name: /In the browser/i })[0]);
 
     await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
     const payload = mockRequestBrowserLaunch.mock.calls[0][0] as {
@@ -304,5 +346,157 @@ describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:/
     expect(payload.essentials.isolate).toBe(true);
     const promptText = `${payload.essentials.head}\n${payload.essentials.tail}`;
     expect(promptText).not.toContain("git worktree add");
+  });
+});
+
+// ── Desktop Codex — "Launch in Codex" (implementation slice 3, FR-11–FR-14) ──
+
+describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () => {
+  const MACHINE_IDENTITY_KEY = "vc:term:machine";
+  const recordedProjectPaths = [{ hostname: "nick-mbp", absolute_path: "/Users/nick/projects/widgets" }];
+
+  afterEach(() => {
+    window.localStorage.removeItem(MACHINE_IDENTITY_KEY);
+  });
+
+  /** A resolvable cwd needs a recorded path AND a matching "this machine"
+   *  identity — set both so resolveFreshLaunch finds a real folder (FR-12
+   *  requires an existing folder; see the "no folder recorded" test below
+   *  for the other branch). */
+  function clickLaunchInCodex(withKnownFolder: boolean) {
+    window.localStorage.setItem(MACHINE_IDENTITY_KEY, withKnownFolder ? "nick-mbp" : "some-other-machine");
+    renderMenuItem({ recordedProjectPaths: withKnownFolder ? recordedProjectPaths : [] });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Launch in Codex/i }));
+  }
+
+  it("fires a vibecodes://open-terminal link with agent=codex when the helper reports codex installed", async () => {
+    mockFetchHelperStatus.mockResolvedValue({
+      connected: true,
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
+      machineLabel: null,
+      alwaysOn: false,
+      stoppedUnexpectedly: false,
+      lastEventAt: null,
+      codexInstalled: true,
+      claudeInstalled: true,
+    });
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(true);
+
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(url.startsWith("vibecodes://open-terminal?")).toBe(true);
+    expect(url).toContain("agent=codex");
+    expect(url).toContain("helperToken=");
+    expect(url).not.toContain("session=");
+    expect(global.fetch).toHaveBeenCalledWith("/api/terminal/helper/token", { method: "POST" });
+
+    location.restore();
+  });
+
+  it("helper idle/unknown (null status) STILL fires the link when a folder is known — the launch cold-launches the sleeping helper", async () => {
+    // Regression: the helper sleeps when idle, so it is usually NOT connected
+    // at click time. A null/disconnected status must NOT block — firing the
+    // vibecodes://open-terminal link is what wakes the helper (which then runs
+    // its own codex/version checks). Blocking here made "Launch in Codex" a
+    // no-op whenever the helper wasn't already running.
+    mockFetchHelperStatus.mockResolvedValue(null);
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(true);
+
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(url.startsWith("vibecodes://open-terminal?")).toBe(true);
+    expect(url).toContain("agent=codex");
+
+    location.restore();
+  });
+
+  it("helper too old: shows an update toast, never fires a link", async () => {
+    mockFetchHelperStatus.mockResolvedValue({
+      connected: true,
+      version: "0.1.0",
+      machineLabel: null,
+      alwaysOn: false,
+      stoppedUnexpectedly: false,
+      lastEventAt: null,
+      codexInstalled: true,
+      claudeInstalled: true,
+    });
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(false);
+
+    await waitFor(() => expect(mockCapture).toHaveBeenCalledWith("launch_claude_code_clicked", expect.anything()));
+    expect(location.assign).not.toHaveBeenCalled();
+
+    location.restore();
+  });
+
+  it("codex reported missing: shows the not-installed toast with an install link, never fires a link", async () => {
+    mockFetchHelperStatus.mockResolvedValue({
+      connected: true,
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
+      machineLabel: null,
+      alwaysOn: false,
+      stoppedUnexpectedly: false,
+      lastEventAt: null,
+      codexInstalled: false,
+      claudeInstalled: true,
+    });
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(false);
+
+    await waitFor(() => expect(mockCapture).toHaveBeenCalledWith("launch_claude_code_clicked", expect.anything()));
+    expect(location.assign).not.toHaveBeenCalled();
+
+    location.restore();
+  });
+
+  it("unknown codex-installed state (older helper, null) does NOT block the launch (unknown reads as enabled)", async () => {
+    mockFetchHelperStatus.mockResolvedValue({
+      connected: true,
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
+      machineLabel: null,
+      alwaysOn: false,
+      stoppedUnexpectedly: false,
+      lastEventAt: null,
+      codexInstalled: null,
+      claudeInstalled: null,
+    });
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(true);
+
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(url).toContain("agent=codex");
+
+    location.restore();
+  });
+
+  it("no folder known: opens the pick-a-folder dialog instead of firing a folder-less launch (FR-12)", async () => {
+    mockFetchHelperStatus.mockResolvedValue({
+      connected: true,
+      version: "99.0.0", // future-proof: a "current-enough" helper regardless of the min-version bump
+      machineLabel: null,
+      alwaysOn: false,
+      stoppedUnexpectedly: false,
+      lastEventAt: null,
+      codexInstalled: true,
+      claudeInstalled: true,
+    });
+    const location = stubLocationAssign();
+
+    clickLaunchInCodex(false);
+
+    // The dialog (rendered by LaunchPathDialog) opens instead of a link firing.
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(location.assign).not.toHaveBeenCalled();
+
+    location.restore();
   });
 });

@@ -43,9 +43,11 @@ import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
-import { resolveClaudeLaunch } from "./resume-cmd.js";
+import { resolveAgentLaunch } from "./resume-cmd.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
+import { agentNotInstalledBanner } from "./agent-copy.js";
+import { isBinaryInstalled } from "../../shared/binary-check.mjs";
 import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
@@ -139,6 +141,12 @@ if (!isRelayHostAllowed(RELAY, { allowLoopback: ALLOW_LOOPBACK_RELAY })) {
 }
 const SESSION = launched?.session || args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
 const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
+// Codex support (docs/codex-terminal-requirements.md FR-1/FR-2) — which agent
+// to spawn. The shared deep-link parser already whitelists this to exactly
+// "codex" or absent (see deep-link.mjs's isAgentSafe); re-normalized here as
+// defense in depth, same posture as RESUME_ID's re-check below. `BRIDGE_AGENT`
+// mirrors BRIDGE_CMD/BRIDGE_MODEL's own dev/test convenience env fallback.
+const AGENT = (launched?.agent || process.env.BRIDGE_AGENT) === "codex" ? "codex" : "claude";
 // Session entry chooser — Resume (card cbe60db5, design item 7/F4), LEGACY
 // path: a `resume=1` launch (no tracked conversation id) runs
 // `claude --continue`, continuing whatever's most recent ON DISK in CWD —
@@ -164,6 +172,12 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 // resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
 // (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
+// FR-4 (agent-aware model tiers): the Codex reasoning effort, already
+// parse-time whitelisted (low/medium/high) by the shared module. Only ever
+// applied on a FRESH Codex launch (see resolveAgentLaunch's codex branch),
+// alongside MODEL — which, for a Codex launch, is the Codex model id the mint
+// resolved. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
+const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
 // `permissionMode` param, already parse-time whitelisted by the shared
 // module's isPermissionModeSafe (only the literal "auto" ever
@@ -206,11 +220,17 @@ if (WORKTREE_FALLBACK_BANNER) {
     reason: WORKTREE_ELIGIBILITY.reason,
   });
 }
-const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
+const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
+  agent: AGENT,
   explicitCmd,
   resumeId: RESUME_ID,
   resume: RESUME,
   model: MODEL,
+  // FR-4: for a Codex launch MODEL is the Codex model id (mint-resolved); the
+  // codex branch reads codexModel/codexEffort, the claude branch reads model —
+  // only one fires per AGENT, so passing MODEL to both is safe.
+  codexModel: MODEL,
+  codexEffort: EFFORT,
   permissionMode: PERMISSION_MODE,
   worktree: WORKTREE,
   mintId: () => crypto.randomUUID(),
@@ -467,6 +487,13 @@ async function main() {
   let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
+  // Pre-flight "is the agent installed?" check (FR-3): set the moment
+  // spawnPty() discovers `file` doesn't resolve on the spawn PATH. Once true,
+  // spawnPty() never attempts pty.spawn again — the banner has already been
+  // queued (see checkAgentInstalled below); only WHEN the session actually
+  // ends differs by launch shape (see the two call sites).
+  let agentMissing = false;
+  let cachedSpawnEnv = null; // resolveSpawnEnv() does a bounded subprocess call — compute once
   // Terminal P2 (E2EE): re-created fresh on EVERY attach/reconnect in
   // openRelay() below — FR-4's rekey-per-attach requirement. `null` for both
   // for the life of the process whenever E2EE_KEY (outer scope) was never
@@ -599,6 +626,26 @@ async function main() {
   }
 
   /**
+   * Pre-flight "is the chosen agent actually installed?" (FR-3): checks the
+   * SAME PATH the real spawn below will use. On a miss, queues ONE calm
+   * banner line into the output stream (never `command not found`) and sets
+   * `agentMissing` so spawnPty() never attempts pty.spawn. Runs exactly once
+   * — cheap the second time either way since spawnPty() itself no-ops once
+   * `agentMissing` is set.
+   * @returns {boolean} true iff the agent resolved and spawning may proceed
+   */
+  function checkAgentInstalled() {
+    cachedSpawnEnv = cachedSpawnEnv || resolveSpawnEnv();
+    if (isBinaryInstalled(file, cachedSpawnEnv.PATH)) return true;
+    agentMissing = true;
+    log("error", "agent binary not found on PATH — not spawning", { agent: AGENT, file });
+    const banner = Buffer.from(agentNotInstalledBanner(AGENT), "utf8");
+    bytesOut += banner.length;
+    outputBatcher.queueBinary(banner);
+    return false;
+  }
+
+  /**
    * Spawn the PTY and wire its handlers. Called immediately for promptless
    * launches (today's behaviour, unchanged) and ONLY after the relay's
    * `attached` confirmation for prompt-carrying launches (R1 — see below).
@@ -606,7 +653,21 @@ async function main() {
    * logged (only its length is).
    */
   function spawnPty() {
-    if (term || shuttingDown) return;
+    if (term || shuttingDown || agentMissing) return;
+    if (!checkAgentInstalled()) {
+      // Nothing to spawn — FR-3: no `command not found`, no half-started
+      // session. For a PROMPT-carrying launch this runs after the relay's
+      // `attached` frame, so the socket is already open and the banner (just
+      // queued above) can be flushed and the session ended right away. For a
+      // PROMPTLESS launch this runs BEFORE the relay socket ever opens (see
+      // the top-level `if (!PROMPT) spawnPty()` call) — the banner is queued
+      // into preOpenBuffer instead, `open` is still false here, so we simply
+      // return and let the normal flow continue to openRelay(); the ws
+      // "open" handler below flushes the banner and ends the session once
+      // both have happened (it checks `agentMissing` for exactly this case).
+      if (open) shutdown(1, "agent-not-installed");
+      return;
+    }
     log("info", "spawning PTY", {
       file,
       args: cmdArgs,
@@ -622,7 +683,7 @@ async function main() {
         cols: SPAWN_COLS,
         rows: SPAWN_ROWS,
         cwd: CWD,
-        env: resolveSpawnEnv(),
+        env: cachedSpawnEnv,
       });
     } catch (e) {
       log("error", "PTY spawn failed", { err: String(e?.message || e) });
@@ -989,6 +1050,14 @@ async function main() {
       // after a reconnect gap doesn't turn into one relay message per chunk.
       while (preOpenBuffer.length > 0) {
         outputBatcher.queueBinary(preOpenBuffer.shift());
+      }
+      // FR-3, promptless-launch case: checkAgentInstalled() ran (and queued
+      // its banner into preOpenBuffer, just flushed above) BEFORE the socket
+      // ever opened, so the session could only be ended here — now that the
+      // banner has actually reached the wire.
+      if (agentMissing) {
+        shutdown(1, "agent-not-installed");
+        return;
       }
     });
 

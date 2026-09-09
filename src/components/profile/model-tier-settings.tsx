@@ -16,6 +16,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -25,17 +26,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { updateModelTierMap, updateTerminalModel, updateTerminalAutoAccept } from "@/actions/profile";
-import { setViewerModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
+import { updateAgentAwareModelTierMap, updateTerminalModel, updateTerminalAutoAccept } from "@/actions/profile";
+import { setViewerAgentAwareModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
 import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
 import { setViewerTerminalAutoAcceptCache } from "@/hooks/use-viewer-terminal-auto-accept";
-import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
+import { usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import {
   MODEL_TIER_WHEN_TO_USE,
   capitalizeModelName,
+  tierResolutionLine,
   type ModelAlias,
-  type ModelTierMap,
   type ModelTierValue,
 } from "@/lib/constants";
 import {
@@ -46,14 +47,25 @@ import {
   capitalizeTerminalModelName,
 } from "@/lib/terminal/model-resolution";
 import { AUTO_ACCEPT_FRESH_ONLY_HELP, AUTO_ACCEPT_ON_CONSEQUENCE } from "@/lib/terminal/auto-accept-mode";
+import {
+  KNOWN_CODEX_MODELS,
+  isKnownCodexModel,
+  validateCodexModelValue,
+  type ReasoningEffort,
+} from "@/lib/codex-models";
+import type { AgentAwareUserModelTierMap, AgentKind, AgentTierEntry } from "@/lib/platform-model-defaults";
+import { EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
 
 // Radix Select can't use "" as an item value, so "follow the platform
-// default" uses this sentinel (unset key in the stored map).
+// default" uses this sentinel (unset key in the staged map).
 const PLATFORM_DEFAULT_VALUE = "__platform_default__";
 // Terminal sessions group only: swaps the Select for a free-text Input
 // (mirrors the admin platform card's TierModelField "Custom…" escape hatch —
 // design handoff note: a novel model family needs no code change here either).
 const TERMINAL_CUSTOM_VALUE = "__custom__";
+// Codex model column's own "Custom…" escape hatch (same pattern, own sentinel
+// so it never collides with the terminal group's).
+const CODEX_CUSTOM_VALUE = "__codex_custom__";
 
 const MODEL_OPTIONS: { value: ModelAlias; label: string; gloss: string }[] = [
   { value: "fable", label: "Fable", gloss: "Most capable — frontier reasoning" },
@@ -72,9 +84,14 @@ const TIER_FIELDS: { tier: ModelTierValue; label: string }[] = [
   { tier: "cheap", label: "Cheap" },
 ];
 
+const AGENT_LABELS: Record<AgentKind, string> = { claude: "Claude", codex: "Codex" };
+
 interface ModelTierSettingsProps {
-  /** The signed-in user's model_tier_map, fetched server-side (like hasKey). */
-  map: ModelTierMap | null;
+  /** The signed-in user's agent-aware model_tier_map override, already
+   *  normalized server-side (normalizeUserModelTierMap) — a legacy flat row
+   *  upgrades transparently, so this component only ever sees the
+   *  agent-aware shape (AC-2 backward compat). */
+  agentAwareMap: AgentAwareUserModelTierMap;
   /** The signed-in user's terminal_model override (task c4ca2d95), fetched server-side. */
   terminalModel: string | null;
   /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
@@ -91,17 +108,182 @@ function isTerminalCustomValue(value: string | null): boolean {
 }
 
 /**
- * "Model tier mapping" settings dialog (own-profile only, FR-13/14). Modelled
- * on api-key-settings.tsx: outline trigger → sm:max-w-md dialog. Save is the
- * only write path — Reset stages an all-cleared map locally, Cancel/Esc
- * discards staged changes (Design §02/§03).
+ * One agent's tier cell: model control (Select for Claude, Select+free-text
+ * for Codex) stacked over the effort control (design §1: "every agent cell
+ * is a vertical pair"). Choosing a model clears the effort to unset;
+ * switching back to Platform default clears both (refines FR-7 — the pair is
+ * atomic per agent).
+ */
+function AgentTierCell({
+  tier,
+  agent,
+  staged,
+  platformEntry,
+  disabled,
+  customMode,
+  onToggleCustom,
+  onModelChange,
+  onEffortChange,
+}: {
+  tier: ModelTierValue;
+  agent: AgentKind;
+  staged: Partial<AgentTierEntry> | undefined;
+  platformEntry: AgentTierEntry;
+  disabled: boolean;
+  customMode: boolean;
+  onToggleCustom: (custom: boolean) => void;
+  onModelChange: (model: string | null) => void;
+  onEffortChange: (effort: ReasoningEffort) => void;
+}) {
+  const idBase = `model-tier-${tier}-${agent}`;
+  const errorId = `${idBase}-error`;
+  const codexErrorId = `${idBase}-codex-error`;
+  const codexNovelId = `${idBase}-codex-novel`;
+  const hasOverride = staged?.model !== undefined;
+  const missingEffort = hasOverride && staged?.effort === undefined;
+  const platformLabel =
+    agent === "claude" ? capitalizeModelName(platformEntry.model) : platformEntry.model;
+
+  const codexValidation =
+    agent === "codex" && customMode && staged?.model !== undefined
+      ? validateCodexModelValue(staged.model)
+      : { ok: true as const };
+  const codexBlocked = agent === "codex" && customMode && !codexValidation.ok;
+  const codexIsNovel =
+    agent === "codex" &&
+    customMode &&
+    codexValidation.ok &&
+    staged?.model !== undefined &&
+    staged.model.trim().length > 0 &&
+    !isKnownCodexModel(staged.model.trim());
+
+  const modelControl =
+    agent === "codex" && customMode ? (
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            id={idBase}
+            value={staged?.model ?? ""}
+            onChange={(e) => onModelChange(e.target.value)}
+            placeholder="e.g. gpt-6-astra"
+            disabled={disabled}
+            aria-invalid={codexBlocked || undefined}
+            aria-describedby={codexBlocked ? codexErrorId : codexIsNovel ? codexNovelId : undefined}
+            className={cn(
+              "min-w-0 flex-1",
+              codexBlocked && "border-rose-500 focus-visible:ring-rose-500/30",
+              !codexBlocked && codexIsNovel && "border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-500"
+            )}
+          />
+          <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onToggleCustom(false)}>
+            Choose known…
+          </Button>
+        </div>
+        {codexBlocked && !codexValidation.ok && (
+          <p id={codexErrorId} role="alert" className="flex items-center gap-1.5 text-[11px] text-rose-500">
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            {codexValidation.reason}
+          </p>
+        )}
+        {!codexBlocked && codexIsNovel && (
+          <p id={codexNovelId} className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-500">
+            <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+            Not a known Codex family — sent to Codex exactly as typed. If Codex rejects it, the step falls back at
+            claim time.
+          </p>
+        )}
+      </div>
+    ) : (
+      <Select
+        value={staged?.model ?? PLATFORM_DEFAULT_VALUE}
+        onValueChange={(v) => {
+          if (v === CODEX_CUSTOM_VALUE) {
+            onToggleCustom(true);
+            return;
+          }
+          onModelChange(v === PLATFORM_DEFAULT_VALUE ? null : v);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger id={idBase} className="w-full" aria-label={`${AGENT_LABELS[agent]} model — ${tier}`}>
+          <SelectValue>
+            {hasOverride ? (
+              agent === "claude" ? (
+                MODEL_OPTIONS.find((m) => m.value === staged?.model)?.label ?? staged?.model
+              ) : (
+                staged?.model
+              )
+            ) : (
+              <span className="text-muted-foreground">{platformLabel} (default)</span>
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={PLATFORM_DEFAULT_VALUE}>Platform default ({platformLabel})</SelectItem>
+          <SelectSeparator />
+          {agent === "claude"
+            ? MODEL_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label} <span className="text-muted-foreground">— {opt.gloss}</span>
+                </SelectItem>
+              ))
+            : KNOWN_CODEX_MODELS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+          {agent === "codex" && (
+            <>
+              <SelectSeparator />
+              <SelectItem value={CODEX_CUSTOM_VALUE}>Custom… (type a model id)</SelectItem>
+            </>
+          )}
+        </SelectContent>
+      </Select>
+    );
+
+  return (
+    <div className="min-w-0 space-y-1.5" data-agent={AGENT_LABELS[agent]}>
+      {modelControl}
+      <div className="space-y-1">
+        <span className="block text-[10px] text-muted-foreground">Effort</span>
+        <EffortSegmentedControl
+          agent={agent}
+          value={staged?.effort}
+          showDefaultPressed={!hasOverride ? platformEntry.effort : undefined}
+          disabled={disabled || !hasOverride}
+          onChange={onEffortChange}
+          invalid={missingEffort}
+          describedById={missingEffort ? errorId : undefined}
+        />
+      </div>
+      {missingEffort && (
+        <p id={errorId} role="alert" className="flex items-start gap-1.5 text-[11px] text-rose-500">
+          <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            <b>
+              Choose a reasoning effort for {agent === "claude" ? capitalizeModelName(staged!.model!) : staged!.model}.
+            </b>{" "}
+            A model needs an effort — pick Low, Medium or High, or switch the model back to Platform default.
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Model tier mapping" settings dialog (own-profile only, FR-13/14, now
+ * agent-aware — Codex model-tier task FR-7). Modelled on api-key-settings.tsx:
+ * outline trigger → dialog. Save is the only write path — Reset stages an
+ * all-cleared map locally, Cancel/Esc discards staged changes.
  *
  * Also houses the "Terminal sessions" group (task c4ca2d95) — Nick's binding
  * approval-gate note: the setting lives HERE, inside this (unrenamed)
  * dialog, rather than a separate settings surface.
  */
 export function ModelTierSettings({
-  map,
+  agentAwareMap,
   terminalModel,
   terminalAutoAccept,
   open: controlledOpen,
@@ -112,8 +294,9 @@ export function ModelTierSettings({
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange! : setInternalOpen;
   const [isPending, startTransition] = useTransition();
-  const [staged, setStaged] = useState<ModelTierMap>(map ?? {});
-  const platformDefaults = usePlatformModelDefaults();
+  const [staged, setStaged] = useState<AgentAwareUserModelTierMap>(agentAwareMap);
+  const [codexCustomFields, setCodexCustomFields] = useState<Record<string, boolean>>({});
+  const { defaults: platformDefaults, isLoading: platformLoading } = usePlatformAgentAwareModelDefaults();
   const platformTerminalDefault = usePlatformTerminalModelDefault();
 
   // Terminal sessions group state — null = platform default; the sentinel
@@ -122,7 +305,7 @@ export function ModelTierSettings({
   const [terminalStaged, setTerminalStaged] = useState<string | null>(terminalModel);
   const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
   // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
-  // escape hatch: the only two legal states are on/off (design §0, AC-6 —
+  // escape hatch: the only two legal states are on/off (design AC-6 —
   // "no dropdown, no free text, ever").
   const [autoAcceptStaged, setAutoAcceptStaged] = useState(terminalAutoAccept);
 
@@ -130,7 +313,8 @@ export function ModelTierSettings({
   // leaks into the next open.
   function handleOpenChange(next: boolean) {
     if (next) {
-      setStaged(map ?? {});
+      setStaged(agentAwareMap);
+      setCodexCustomFields({});
       setTerminalStaged(terminalModel);
       setTerminalCustomMode(isTerminalCustomValue(terminalModel));
       setAutoAcceptStaged(terminalAutoAccept);
@@ -138,27 +322,80 @@ export function ModelTierSettings({
     setOpen(next);
   }
 
-  const isTierDirty = TIER_FIELDS.some(
-    ({ tier }) => (staged[tier] ?? null) !== (map?.[tier] ?? null)
-  );
+  const isTierDirty = JSON.stringify(staged) !== JSON.stringify(agentAwareMap);
   const isTerminalDirty = terminalStaged !== terminalModel;
   const isAutoAcceptDirty = autoAcceptStaged !== terminalAutoAccept;
   const isDirty = isTierDirty || isTerminalDirty || isAutoAcceptDirty;
   const hasAnyOverride =
-    TIER_FIELDS.some(({ tier }) => staged[tier] !== undefined) || terminalStaged !== null || autoAcceptStaged;
+    Object.keys(staged).length > 0 || terminalStaged !== null || autoAcceptStaged;
 
   const terminalValidation = terminalCustomMode ? validateTerminalModelValue(terminalStaged ?? "") : { ok: true as const };
   const terminalIsNovel =
     terminalCustomMode && terminalValidation.ok && !isKnownTerminalModelAlias((terminalStaged ?? "").trim());
   const terminalBlocked = terminalCustomMode && !terminalValidation.ok;
 
-  function handleTierChange(tier: ModelTierValue, value: string) {
+  // AC-3: a tier entry with a model but no effort blocks Save — find the
+  // first offender (tier + agent) to name in the Save hint.
+  let missingEffortHint: string | null = null;
+  for (const { tier, label } of TIER_FIELDS) {
+    for (const agent of ["claude", "codex"] as const) {
+      const entry = staged[tier]?.[agent];
+      if (entry?.model !== undefined && entry?.effort === undefined) {
+        missingEffortHint = `Set ${label}'s ${AGENT_LABELS[agent]} effort to enable Save.`;
+      }
+    }
+    if (missingEffortHint) break;
+  }
+
+  // A Codex custom (free-text) model must also pass the shell-safety check
+  // (FR-1) before Save — same rule as the terminal starting-model field above.
+  let codexInvalidHint: string | null = null;
+  for (const { tier, label } of TIER_FIELDS) {
+    if (!codexCustomFields[tier]) continue;
+    const model = staged[tier]?.codex?.model;
+    if (model === undefined) continue;
+    const validation = validateCodexModelValue(model);
+    if (!validation.ok) {
+      codexInvalidHint = `${label} (Codex): ${validation.reason}`;
+      break;
+    }
+  }
+
+  const tierBlocked = missingEffortHint !== null || codexInvalidHint !== null;
+
+  function updateAgentEntry(
+    tier: ModelTierValue,
+    agent: AgentKind,
+    entry: Partial<AgentTierEntry> | undefined
+  ) {
     setStaged((prev) => {
       const next = { ...prev };
-      if (value === PLATFORM_DEFAULT_VALUE) delete next[tier];
-      else next[tier] = value;
+      const tierEntry = { ...(next[tier] ?? {}) };
+      if (entry === undefined) {
+        delete tierEntry[agent];
+      } else {
+        tierEntry[agent] = entry;
+      }
+      if (Object.keys(tierEntry).length > 0) {
+        next[tier] = tierEntry;
+      } else {
+        delete next[tier];
+      }
       return next;
     });
+  }
+
+  function handleModelChange(tier: ModelTierValue, agent: AgentKind, model: string | null) {
+    if (agent === "codex") setCodexCustomFields((prev) => ({ ...prev, [tier]: false }));
+    // Choosing a model clears the effort to "unset" (design §1 — the pair is
+    // atomic); switching back to Platform default clears the whole entry.
+    updateAgentEntry(tier, agent, model === null ? undefined : { model });
+  }
+
+  function handleEffortChange(tier: ModelTierValue, agent: AgentKind, effort: ReasoningEffort) {
+    const current = staged[tier]?.[agent];
+    if (current?.model === undefined) return; // shouldn't happen — effort control is disabled without a model
+    updateAgentEntry(tier, agent, { model: current.model, effort });
   }
 
   function handleTerminalSelectChange(value: string) {
@@ -173,21 +410,23 @@ export function ModelTierSettings({
 
   function handleReset() {
     setStaged({});
+    setCodexCustomFields({});
     setTerminalStaged(null);
     setTerminalCustomMode(false);
     setAutoAcceptStaged(false);
   }
 
   function handleSave() {
+    if (tierBlocked) return;
     startTransition(async () => {
       try {
         const terminalToSave = terminalCustomMode ? (terminalStaged ?? "").trim() : terminalStaged;
         const [savedTiers, savedTerminal, savedAutoAccept] = await Promise.all([
-          updateModelTierMap(staged),
+          updateAgentAwareModelTierMap(staged),
           updateTerminalModel(terminalToSave),
           updateTerminalAutoAccept(autoAcceptStaged),
         ]);
-        setViewerModelTierMapCache(savedTiers);
+        setViewerAgentAwareModelTierMapCache(savedTiers ?? {});
         setViewerTerminalModelCache(savedTerminal);
         setViewerTerminalAutoAcceptCache(savedAutoAccept);
         toast.success("Model tiers saved");
@@ -208,63 +447,126 @@ export function ModelTierSettings({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cpu className="h-5 w-5" />
             Model tier mapping
           </DialogTitle>
           <DialogDescription>
-            Choose which Claude model runs each workflow tier. Tiers you leave unset use the platform default.
+            Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers
+            you leave unset use the platform default.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {TIER_FIELDS.map(({ tier, label }) => {
-            const selectValue = staged[tier] ?? PLATFORM_DEFAULT_VALUE;
-            const platformLabel = capitalizeModelName(platformDefaults.defaults[tier]);
-            const selectedOption = MODEL_OPTIONS.find((m) => m.value === staged[tier]);
-            const triggerId = `model-tier-map-${tier}`;
+          <div
+            className="grid grid-cols-[100px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-3"
+            aria-busy={platformLoading || undefined}
+            aria-label={platformLoading ? "Loading model tiers" : undefined}
+          >
+            <div />
+            <div className="border-b pb-1 text-xs font-semibold text-muted-foreground">Claude</div>
+            <div className="border-b pb-1 text-xs font-semibold text-muted-foreground">Codex</div>
 
-            return (
-              <div key={tier} className="space-y-1.5">
-                <Label htmlFor={triggerId} className="text-sm">
-                  {label}{" "}
-                  <span className="font-normal text-muted-foreground">— {MODEL_TIER_WHEN_TO_USE[tier]}</span>
-                </Label>
-                <Select
-                  value={selectValue}
-                  onValueChange={(v) => handleTierChange(tier, v)}
-                  disabled={isPending}
-                >
-                  <SelectTrigger id={triggerId} aria-describedby="model-tier-fallback-help" className="w-full">
-                    <SelectValue>
-                      {selectedOption ? (
-                        selectedOption.label
-                      ) : (
-                        <span className="text-muted-foreground">{platformLabel} (default)</span>
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={PLATFORM_DEFAULT_VALUE}>
-                      Platform default ({platformLabel})
-                    </SelectItem>
-                    <SelectSeparator />
-                    {MODEL_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            );
-          })}
-          <p id="model-tier-fallback-help" className="text-[11px] text-muted-foreground">
-            Workflow steps with a tier run on that tier&apos;s model. If a model isn&apos;t available on your plan
-            or session, the orchestrator substitutes the closest available alternative and notes it in the step
-            output.
+            {TIER_FIELDS.map(({ tier, label }) => {
+              const claudeStaged = staged[tier]?.claude;
+              const codexStaged = staged[tier]?.codex;
+              const claudePlatform = platformDefaults.defaults[tier].claude;
+              const codexPlatform = platformDefaults.defaults[tier].codex;
+              const claudeEffective: AgentTierEntry = {
+                model: claudeStaged?.model ?? claudePlatform.model,
+                effort: claudeStaged?.effort ?? claudePlatform.effort,
+              };
+              const codexEffective: AgentTierEntry = {
+                model: codexStaged?.model ?? codexPlatform.model,
+                effort: codexStaged?.effort ?? codexPlatform.effort,
+              };
+              const claudeIncomplete = claudeStaged?.model !== undefined && claudeStaged?.effort === undefined;
+              const codexIncomplete = codexStaged?.model !== undefined && codexStaged?.effort === undefined;
+
+              return (
+                <div key={tier} className="contents">
+                  <div className="pt-1.5">
+                    <p className="text-sm font-semibold">{label}</p>
+                    <p className="text-[11px] text-muted-foreground">{MODEL_TIER_WHEN_TO_USE[tier]}</p>
+                  </div>
+
+                  {platformLoading ? (
+                    <>
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-9 w-full" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-9 w-full" />
+                        <Skeleton className="h-9 w-full" />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <AgentTierCell
+                        tier={tier}
+                        agent="claude"
+                        staged={claudeStaged}
+                        platformEntry={claudePlatform}
+                        disabled={isPending}
+                        customMode={false}
+                        onToggleCustom={() => {}}
+                        onModelChange={(m) => handleModelChange(tier, "claude", m)}
+                        onEffortChange={(e) => handleEffortChange(tier, "claude", e)}
+                      />
+                      <AgentTierCell
+                        tier={tier}
+                        agent="codex"
+                        staged={codexStaged}
+                        platformEntry={codexPlatform}
+                        disabled={isPending}
+                        customMode={codexCustomFields[tier] ?? false}
+                        onToggleCustom={(c) => setCodexCustomFields((prev) => ({ ...prev, [tier]: c }))}
+                        onModelChange={(m) => handleModelChange(tier, "codex", m)}
+                        onEffortChange={(e) => handleEffortChange(tier, "codex", e)}
+                      />
+                    </>
+                  )}
+
+                  <div className="col-span-3 border-b border-dashed pb-2 text-[11px] text-muted-foreground">
+                    {platformLoading ? (
+                      <Skeleton className="h-3 w-1/2" />
+                    ) : claudeIncomplete || codexIncomplete ? (
+                      <>
+                        {label} → {claudeIncomplete ? (
+                          <b className="text-muted-foreground">
+                            {capitalizeModelName(claudeStaged!.model!)} (effort not set)
+                          </b>
+                        ) : (
+                          <b className="text-foreground">
+                            {capitalizeModelName(claudeEffective.model)} ({claudeEffective.effort})
+                          </b>
+                        )}{" "}
+                        on Claude ·{" "}
+                        {codexIncomplete ? (
+                          <b className="text-muted-foreground">{codexStaged!.model} (effort not set)</b>
+                        ) : (
+                          <b className="text-foreground">
+                            {codexEffective.model} ({codexEffective.effort})
+                          </b>
+                        )}{" "}
+                        on Codex
+                      </>
+                    ) : (
+                      tierResolutionLine(tier, claudeEffective, codexEffective)
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Workflow steps with a tier run on that tier&apos;s model and effort for whichever agent claims the step.
+            Live sessions pick up a change on their next step — a step already running finishes on what it started
+            with. If a model isn&apos;t available, the orchestrator substitutes that tier&apos;s fallback and notes
+            it in the step output.
           </p>
 
           {/* Terminal sessions group (task c4ca2d95) — the setting stays inside
@@ -276,7 +578,7 @@ export function ModelTierSettings({
           <div className="space-y-1.5">
             <Label htmlFor="terminal-starting-model" className="text-sm">
               Starting model{" "}
-              <span className="font-normal text-muted-foreground">— for new in-browser terminal sessions</span>
+              <span className="font-normal text-muted-foreground">— for new in-browser Claude Code sessions</span>
             </Label>
             {terminalCustomMode ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -361,8 +663,9 @@ export function ModelTierSettings({
             )}
             {!terminalCustomMode && (
               <p id="terminal-model-help" className="text-[11px] text-muted-foreground">
-                Applies when a fresh session starts. Resumed sessions keep the model they were on; you can switch
-                any time by typing /model in the terminal.
+                Applies to Claude Code launches. Codex launches start on your Standard tier&apos;s Codex model. A
+                Codex starting-model picker is tracked as its own separate task. Resumed sessions keep the model
+                they were on; you can switch any time by typing /model in the terminal.
               </p>
             )}
           </div>
@@ -409,14 +712,18 @@ export function ModelTierSettings({
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={isPending || !isDirty || terminalBlocked}
-              aria-describedby={!isDirty || terminalBlocked ? "model-tier-save-why" : undefined}
+              disabled={isPending || !isDirty || terminalBlocked || tierBlocked}
+              aria-describedby={!isDirty || terminalBlocked || tierBlocked ? "model-tier-save-why" : undefined}
             >
               {isPending ? "Saving…" : "Save"}
             </Button>
           </div>
         </DialogFooter>
-        {terminalBlocked ? (
+        {tierBlocked ? (
+          <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
+            {missingEffortHint ?? codexInvalidHint}
+          </p>
+        ) : terminalBlocked ? (
           <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
             Fix the starting model to enable Save.
           </p>

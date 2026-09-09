@@ -774,8 +774,28 @@ interface CommonPromptArgs {
  * placed at the very front of every prompt (existing and create-new) so the
  * length guard never trims it. In create-new mode it reads as step 1 of the
  * numbered setup sequence (steps 2/3 = mkdir + clone/init).
+ *
+ * `agent` (FR-6, default "claude") switches which CLI's own connector
+ * commands are used — a Codex session has no `claude mcp add`/`/mcp` and
+ * needs its own `codex mcp add`/`codex mcp login` instead (confirmed against
+ * real codex 0.153.4). No existing caller passes "codex" yet (see the
+ * SCOPE NOTE in launch-claude-code-button.tsx's handleLaunchCodexDesktop —
+ * these two verbose builders aren't on the Codex desktop/browser launch path
+ * today), so leaving `agent` unset keeps every current call byte-identical.
  */
-function mcpSetupHead(appUrl: string): string {
+function mcpSetupHead(appUrl: string, agent: "claude" | "codex" = "claude"): string {
+  if (agent === "codex") {
+    return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
+
+If they are NOT available, add the hosted connector, then sign in:
+1. run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`
+2. Then run \`codex mcp login vibecodes\` and sign in with your ChatGPT/OpenAI account.
+3. Once signed in, re-check the board tools and continue.
+
+Do NOT use \`claude mcp add\` or \`/mcp\` — those are Claude Code commands and do nothing for Codex. Do NOT debug or reconfigure other MCP servers. If the board tools still aren't available after signing in, stop and tell me rather than guessing.
+
+You are Codex: whenever you call claim_next_step, complete_step or fail_step, pass agent: "codex". For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its accepted launch settings on completion.`;
+  }
   return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
 
 If they are NOT available, add the hosted connector, then hand sign-in back to me. IMPORTANT: do NOT build an OAuth URL or run the authorization yourself — Claude Code's built-in \`/mcp\` flow manages the browser sign-in (and its localhost callback) reliably; a hand-driven flow fails with "localhost refused to connect".
@@ -986,6 +1006,16 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
    * never sets this) never gets the note duplicated alongside its real flag.
    */
   includeIsolationAdvisory?: boolean;
+  /**
+   * FR-6: which CLI this launch is bootstrapping — switches the board-connect
+   * step's commands. Defaults to "claude", which reproduces today's step
+   * BYTE-IDENTICAL (existing tests + the URL-length budget depend on this —
+   * never touch the "claude" branch's wording). "codex" swaps in Codex's own
+   * connector commands (`codex mcp add … --url` / `codex mcp login`) — a
+   * Codex session has no `claude mcp add`/`/mcp`, so sending it that text left
+   * Codex unable to connect to the board (the bug this fixes).
+   */
+  agent?: "claude" | "codex";
 }
 
 /**
@@ -1074,6 +1104,7 @@ function buildCompactStepPieces({
   existingPath,
   taskId,
   includeIsolationAdvisory,
+  agent = "claude",
 }: CompactBootstrapArgs): CompactStepPieces {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
@@ -1134,8 +1165,18 @@ function buildCompactStepPieces({
     );
   }
 
+  // FR-6: byte-identical to the pre-agent-param text when agent is "claude"
+  // (the default/absent case) — existing tests + the URL-length budget both
+  // depend on that string never changing. "codex" is Codex's own connector
+  // commands (confirmed against real codex 0.153.4): `claude mcp add`/`/mcp`
+  // do nothing for Codex, which was the bug (Codex couldn't connect to the
+  // board).
+  const connectStep =
+    agent === "codex"
+      ? `Connect if board tools are unavailable: run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`, then \`codex mcp login vibecodes\` (ChatGPT/OpenAI sign-in). Do NOT use \`claude mcp add\` or \`/mcp\`. Pass agent: "codex" to claim_next_step/complete_step/fail_step. For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its launch settings.`
+      : `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`;
   const essentialSteps = [
-    `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`,
+    connectStep,
     // Deliberately says nothing about worktrees: this step lives in the
     // never-trimmed head of a URL-capped launch link, and even one extra
     // clause here truncates the realistic repo-backed fixture's "work" step

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "vibecodes-v3";
+const CACHE_NAME = "vibecodes-v4";
 
 const STATIC_EXTENSIONS = /\.(js|css|png|jpg|jpeg|gif|svg|webp|ico|woff2?)$/;
 

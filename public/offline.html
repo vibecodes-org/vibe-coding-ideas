@@ -21,19 +21,33 @@
     }
     h1 { font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem; }
     p { color: #a1a1aa; }
-    a {
+    .status { font-size: 0.8125rem; color: #71717a; min-height: 1.1em; }
+    .actions { display: flex; gap: 0.75rem; align-items: center; }
+    button, a {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       border-radius: 0.375rem;
-      background-color: #fafafa;
-      color: #09090b;
       padding: 0.5rem 1rem;
       font-size: 0.875rem;
       font-weight: 500;
       text-decoration: none;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
     }
-    a:hover { background-color: #e4e4e7; }
+    button {
+      background-color: #fafafa;
+      color: #09090b;
+    }
+    button:hover { background-color: #e4e4e7; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    a {
+      background-color: transparent;
+      color: #fafafa;
+      border: 1px solid #27272a;
+    }
+    a:hover { background-color: #18181b; }
   </style>
 </head>
 <body>
@@ -49,8 +63,88 @@
   </svg>
   <div>
     <h1>You're offline</h1>
-    <p>Check your internet connection and try again.</p>
+    <p>We'll keep trying and reload automatically as soon as you're back online.</p>
   </div>
-  <a href="/dashboard">Go to Dashboard</a>
+  <div class="actions">
+    <button id="retry-button" type="button">Try again</button>
+    <a href="/dashboard">Go to Dashboard</a>
+  </div>
+  <div class="status" id="status-line">Checking connection&hellip;</div>
+
+  <script>
+    (function () {
+      // Plain ES5-ish: this page must run entirely from the service worker cache, offline.
+      var MIN_DELAY_MS = 4000;
+      var MAX_DELAY_MS = 15000;
+
+      var retryButton = document.getElementById("retry-button");
+      var statusLine = document.getElementById("status-line");
+      var pollTimer = null;
+      var currentDelay = MIN_DELAY_MS;
+      var probing = false;
+
+      function nextDelay(delay) {
+        // Gentle backoff so an idle offline tab doesn't hammer the network.
+        var doubled = delay * 2;
+        return doubled > MAX_DELAY_MS ? MAX_DELAY_MS : doubled;
+      }
+
+      function setStatus(text) {
+        statusLine.textContent = text;
+      }
+
+      function probe(onProbeStart) {
+        if (probing) return;
+        probing = true;
+        if (onProbeStart) onProbeStart();
+
+        fetch("/api/health", { method: "GET", cache: "no-store" })
+          .then(function () {
+            // Any HTTP response at all means DNS + network are working again.
+            setStatus("Back online, reloading…");
+            location.reload();
+          })
+          .catch(function () {
+            probing = false;
+            setStatus("Still offline");
+            scheduleNextPoll();
+          });
+      }
+
+      function scheduleNextPoll() {
+        if (pollTimer) clearTimeout(pollTimer);
+        // Wait the current delay (4s first), then lengthen it for the next miss.
+        pollTimer = setTimeout(function () {
+          probe();
+        }, currentDelay);
+        currentDelay = nextDelay(currentDelay);
+      }
+
+      retryButton.addEventListener("click", function () {
+        retryButton.disabled = true;
+        retryButton.textContent = "Retrying…";
+        probe(function () {
+          setStatus("Checking connection…");
+        });
+        // Re-enable the button shortly in case the probe rejects.
+        setTimeout(function () {
+          retryButton.disabled = false;
+          retryButton.textContent = "Try again";
+        }, 3000);
+      });
+
+      window.addEventListener("online", function () {
+        currentDelay = MIN_DELAY_MS;
+        setStatus("Reconnecting…");
+        probe();
+      });
+
+      // Kick off the first probe; scheduleNextPoll (called from the .catch
+      // handler above) takes over polling from there.
+      probe(function () {
+        setStatus("Checking connection…");
+      });
+    })();
+  </script>
 </body>
 </html>

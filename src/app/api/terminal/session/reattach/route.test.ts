@@ -96,6 +96,30 @@ describe("POST /api/terminal/session/reattach", () => {
     expect(body.browserToken).toBe("browser-tok");
   });
 
+  it("returns the row's agent so a reattached Codex session keeps its label after a reload (Nick, 7 Sep 2026)", async () => {
+    mockFrom.mockReturnValue(
+      makeChain({
+        data: {
+          sid: SID,
+          idea_id: "idea-1",
+          status: "active",
+          expires_at: new Date(Date.parse(NOW_ISO) + 60_000).toISOString(),
+          cwd: "/repo",
+          claude_session_id: null,
+          display_name: null,
+          e2ee_session_key: null,
+          agent: "codex",
+        },
+        error: null,
+      }),
+    );
+
+    const res = await POST(req({ sid: SID }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.agent).toBe("codex");
+  });
+
   it("returns null sessionKey for a session that predates the feature (no key ever stored)", async () => {
     mockFrom.mockReturnValue(
       makeChain({

@@ -12,14 +12,21 @@
 // the update never races a still-running helper (the whole point: drag-to-
 // Applications must always succeed, no Finder "in use" dialog).
 
-export type UpdateFlowPhase = "idle" | "confirming" | "quiescing" | "ready" | "quiesce-timeout";
+export type UpdateFlowPhase =
+  | "idle"
+  | "confirming"
+  | "quiescing"
+  | "ready"
+  | "quiesce-timeout"
+  | "helper-unreachable";
 
 export type UpdateFlowState =
   | { phase: "idle" }
   | { phase: "confirming"; sessionCount: number }
   | { phase: "quiescing" }
   | { phase: "ready" }
-  | { phase: "quiesce-timeout" };
+  | { phase: "quiesce-timeout" }
+  | { phase: "helper-unreachable" };
 
 export type UpdateFlowEvent =
   | { type: "update-clicked"; sessionCount: number }
@@ -27,6 +34,7 @@ export type UpdateFlowEvent =
   | { type: "cancelled" }
   | { type: "quiesce-settled" }
   | { type: "quiesce-timed-out" }
+  | { type: "quiesce-undelivered" }
   | { type: "reset" };
 
 export const INITIAL_UPDATE_FLOW_STATE: UpdateFlowState = { phase: "idle" };
@@ -60,6 +68,13 @@ export function updateFlowReducer(state: UpdateFlowState, event: UpdateFlowEvent
       return state.phase === "quiescing" ? { phase: "ready" } : state;
     case "quiesce-timed-out":
       return state.phase === "quiescing" ? { phase: "quiesce-timeout" } : state;
+    case "quiesce-undelivered":
+      // The relay had no live helper connection to hand the quiesce command
+      // to (`delivered:false`). That is NOT "the helper has quit" — Nick,
+      // 6 Sep 2026 (card 3280f13c): the helper was alive on the Mac with its
+      // control connection down, the flow said "the helper has closed", and
+      // Finder refused the drag as "in use". Say so honestly instead.
+      return state.phase === "quiescing" ? { phase: "helper-unreachable" } : state;
     case "reset":
       return INITIAL_UPDATE_FLOW_STATE;
     default:
@@ -80,3 +95,19 @@ export const UPDATE_READY_COPY =
   "Ready to update — the helper has closed. Drag the new VibeCodes app into Applications to finish.";
 export const UPDATE_QUIESCE_TIMEOUT_COPY =
   'The helper is taking a moment to close. If the install says the app is "in use", wait a few seconds and try again.';
+export const UPDATE_HELPER_UNREACHABLE_COPY =
+  'Couldn\'t reach the helper to close it — it may already be closed. If the install says the app is "in use", quit VibeCodes from the menu bar or Activity Monitor, then drag again.';
+
+/** The phases the flow ends in: the download has started and one of the
+ *  three notices above is showing. */
+export function isUpdateFlowSettled(phase: UpdateFlowPhase): boolean {
+  return phase === "ready" || phase === "quiesce-timeout" || phase === "helper-unreachable";
+}
+
+/** The notice for a settled phase. Only "ready" is good news (sky tone); the
+ *  other two are warnings (amber) because the helper may still be running. */
+export function settledNoticeCopy(phase: UpdateFlowPhase): string {
+  if (phase === "ready") return UPDATE_READY_COPY;
+  if (phase === "helper-unreachable") return UPDATE_HELPER_UNREACHABLE_COPY;
+  return UPDATE_QUIESCE_TIMEOUT_COPY;
+}

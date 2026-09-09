@@ -18,21 +18,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  getPlatformModelDefaultsForAdmin,
-  updatePlatformModelDefaults,
   getPlatformTerminalModelDefaultForAdmin,
   updatePlatformTerminalModelDefault,
-  type PlatformModelDefaultsAudit,
+  getAgentAwarePlatformModelDefaultsForAdmin,
+  updateAgentAwarePlatformModelDefaults,
   type PlatformTerminalModelAudit,
+  type AgentAwarePlatformModelDefaultsAudit,
 } from "@/actions/admin-platform";
-import { setPlatformModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
+import { setPlatformAgentAwareModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
 import { setPlatformTerminalModelDefaultCache } from "@/hooks/use-platform-terminal-model-default";
 import {
-  SEED_PLATFORM_MODEL_DEFAULTS,
-  type PlatformModelDefaults,
+  SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  type AgentAwarePlatformModelDefaults,
+  type AgentTierEntry,
+  type AgentKind,
 } from "@/lib/platform-model-defaults";
-import { MODEL_TIER_WHEN_TO_USE, capitalizeModelName, type ModelTierValue } from "@/lib/constants";
+import { MODEL_TIER_WHEN_TO_USE, capitalizeModelName, tierResolutionLine, type ModelTierValue } from "@/lib/constants";
 import { validateTerminalModelValue, capitalizeTerminalModelName } from "@/lib/terminal/model-resolution";
+import { KNOWN_CODEX_MODELS, isKnownCodexModel, validateCodexModelValue, type ReasoningEffort } from "@/lib/codex-models";
+import { EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
 
 // The 4 aliases the per-user Models dialog already offers (model-tier-settings.tsx's
 // MODEL_OPTIONS) — "known" here means "selectable with one tap, no typo-guard needed".
@@ -52,27 +56,50 @@ const TIER_FIELDS: { tier: ModelTierValue; label: string }[] = [
   { tier: "cheap", label: "Cheap" },
 ];
 
-// Fixed set of fallback rows (Panel B) — mirrors the seed's alias-keyed chain.
-// The fallback map is keyed by resolved MODEL, not by tier (Design-Review
-// discrepancy note in docs/design-platform-model-defaults.html) — editing a
-// 5th row for a brand-new family is a follow-up, not this MVP.
-const FALLBACK_ROWS = ["fable", "opus", "sonnet", "haiku"] as const;
+// Fixed set of fallback rows (Panel B) — mirrors the seed's alias/model-keyed
+// chain per agent. The fallback map is keyed by resolved MODEL, not by tier
+// (Design-Review discrepancy note in docs/design-platform-model-defaults.html)
+// — editing a 5th row for a brand-new family is a follow-up, not this MVP.
+// The fallback shape (AgentAwarePlatformModelDefaults["fallback"]) carries no
+// effort field — only the tier defaults (Panel A) do — so fallback rows are
+// model-only, same as the pre-agent-aware UI; this is a deliberate deviation
+// from the mockup's fallback-effort-pair illustration, constrained by the
+// already-built resolution type shared with mcp-server.
+const FALLBACK_ROWS_CLAUDE = ["fable", "opus", "sonnet", "haiku"] as const;
+const FALLBACK_ROWS_CODEX = KNOWN_CODEX_MODELS.map((m) => m.value);
 
-type StagedState = { defaults: PlatformModelDefaults["defaults"]; fallback: PlatformModelDefaults["fallback"] };
+const AGENT_LABELS: Record<AgentKind, string> = { claude: "Claude", codex: "Codex" };
+
+type StagedState = AgentAwarePlatformModelDefaults;
 
 function stateEquals(a: StagedState, b: StagedState): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function allStagedValues(state: StagedState): string[] {
-  return [state.defaults.frontier, state.defaults.standard, state.defaults.cheap, ...FALLBACK_ROWS.map((k) => state.fallback[k] ?? "")];
+function allStagedModelValues(state: StagedState): { agent: AgentKind; value: string }[] {
+  const values: { agent: AgentKind; value: string }[] = [];
+  for (const tier of ["frontier", "standard", "cheap"] as const) {
+    values.push({ agent: "claude", value: state.defaults[tier].claude.model });
+    values.push({ agent: "codex", value: state.defaults[tier].codex.model });
+  }
+  for (const v of Object.values(state.fallback.claude)) values.push({ agent: "claude", value: v });
+  for (const v of Object.values(state.fallback.codex)) values.push({ agent: "codex", value: v });
+  return values;
 }
 
-/** One tier-default or fallback-chain row: a known-alias Select with a
- *  "Custom…" escape hatch that swaps to a free-text Input (novel model
- *  family, no schema change). */
-function TierModelField({
+function isKnownAgentModel(agent: AgentKind, value: string): boolean {
+  return agent === "claude" ? KNOWN_MODEL_VALUES.has(value) : isKnownCodexModel(value);
+}
+
+/** One tier-default or fallback-chain model field, agent-aware: a known
+ *  Select (Claude aliases, or the Codex model catalogue) with a "Custom…"
+ *  escape hatch that swaps to a free-text Input (novel model family, no
+ *  schema change). Codex custom values are also shell-safety validated
+ *  (FR-1) — a structural error blocks Save independently of the novel-value
+ *  confirm checkbox. */
+function AgentModelField({
   id,
+  agent,
   label,
   value,
   onChange,
@@ -81,6 +108,7 @@ function TierModelField({
   disabled,
 }: {
   id: string;
+  agent: AgentKind;
   label: string;
   value: string;
   onChange: (v: string) => void;
@@ -88,8 +116,10 @@ function TierModelField({
   onToggleCustom: (custom: boolean) => void;
   disabled: boolean;
 }) {
-  const isCustom = forceCustom || (value.length > 0 && !KNOWN_MODEL_VALUES.has(value));
-  const isNovel = value.trim().length > 0 && !KNOWN_MODEL_VALUES.has(value);
+  const isCustom = forceCustom || (value.length > 0 && !isKnownAgentModel(agent, value));
+  const isNovel = value.trim().length > 0 && !isKnownAgentModel(agent, value);
+  const codexValidation = agent === "codex" && isCustom ? validateCodexModelValue(value) : { ok: true as const };
+  const codexBlocked = agent === "codex" && isCustom && !codexValidation.ok;
 
   return (
     <div className="space-y-1.5">
@@ -102,12 +132,14 @@ function TierModelField({
             id={id}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="e.g. opus-5.5"
+            placeholder={agent === "claude" ? "e.g. opus-5.5" : "e.g. gpt-6-astra"}
             disabled={disabled}
-            aria-describedby={isNovel ? `${id}-novel-warning` : undefined}
+            aria-invalid={codexBlocked || undefined}
+            aria-describedby={codexBlocked ? `${id}-error` : isNovel ? `${id}-novel-warning` : undefined}
             className={cn(
               "min-w-[10rem] flex-1",
-              isNovel && "border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-500"
+              codexBlocked && "border-rose-500 focus-visible:ring-rose-500/30",
+              !codexBlocked && isNovel && "border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-500"
             )}
           />
           <Button
@@ -134,18 +166,77 @@ function TierModelField({
           }}
         >
           <SelectTrigger id={id} className="w-full">
-            <SelectValue>{KNOWN_MODEL_OPTIONS.find((o) => o.value === value)?.label ?? value}</SelectValue>
+            <SelectValue>
+              {agent === "claude"
+                ? KNOWN_MODEL_OPTIONS.find((o) => o.value === value)?.label ?? value
+                : KNOWN_CODEX_MODELS.find((o) => o.value === value)?.label ?? value}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {KNOWN_MODEL_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label} <span className="text-muted-foreground">— {o.gloss}</span>
-              </SelectItem>
-            ))}
+            {agent === "claude"
+              ? KNOWN_MODEL_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label} <span className="text-muted-foreground">— {o.gloss}</span>
+                  </SelectItem>
+                ))
+              : KNOWN_CODEX_MODELS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
             <SelectItem value={CUSTOM_VALUE}>Custom… (type a new family)</SelectItem>
           </SelectContent>
         </Select>
       )}
+      {codexBlocked && !codexValidation.ok && (
+        <p id={`${id}-error`} role="alert" className="flex items-center gap-1.5 text-xs text-rose-500">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+          {codexValidation.reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** One tier default's agent cell (Panel A): AgentModelField stacked over the
+ *  reasoning-effort segmented control — the same vertical-pair shape as the
+ *  Profile dialog's agent-aware grid (design §2: "the same grid as Profile,
+ *  on purpose"). */
+function AgentTierDefaultCell({
+  tier,
+  agent,
+  entry,
+  onModelChange,
+  onEffortChange,
+  forceCustom,
+  onToggleCustom,
+  disabled,
+}: {
+  tier: ModelTierValue;
+  agent: AgentKind;
+  entry: AgentTierEntry;
+  onModelChange: (model: string) => void;
+  onEffortChange: (effort: ReasoningEffort) => void;
+  forceCustom: boolean;
+  onToggleCustom: (custom: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <AgentModelField
+        id={`platform-default-${tier}-${agent}`}
+        agent={agent}
+        label={`${AGENT_LABELS[agent]} model`}
+        value={entry.model}
+        onChange={onModelChange}
+        forceCustom={forceCustom}
+        onToggleCustom={onToggleCustom}
+        disabled={disabled}
+      />
+      <div className="space-y-1">
+        <span className="block text-[10px] text-muted-foreground">Effort</span>
+        <EffortSegmentedControl agent={agent} value={entry.effort} disabled={disabled} onChange={onEffortChange} />
+      </div>
     </div>
   );
 }
@@ -174,9 +265,9 @@ function PlatformAccessDenied() {
 export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
   const [reloadToken, setReloadToken] = useState(0);
-  const [audit, setAudit] = useState<PlatformModelDefaultsAudit | null>(null);
-  const [persisted, setPersisted] = useState<StagedState>(SEED_PLATFORM_MODEL_DEFAULTS);
-  const [staged, setStaged] = useState<StagedState>(SEED_PLATFORM_MODEL_DEFAULTS);
+  const [audit, setAudit] = useState<AgentAwarePlatformModelDefaultsAudit | null>(null);
+  const [persisted, setPersisted] = useState<StagedState>(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS);
+  const [staged, setStaged] = useState<StagedState>(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS);
   const [customFields, setCustomFields] = useState<Record<string, boolean>>({});
   const [confirmedNovel, setConfirmedNovel] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -185,7 +276,7 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
     if (!isSuperAdmin) return;
     let cancelled = false;
     setLoadState("loading");
-    getPlatformModelDefaultsForAdmin()
+    getAgentAwarePlatformModelDefaultsForAdmin()
       .then((result) => {
         if (cancelled) return;
         setAudit(result);
@@ -230,19 +321,43 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
   }
 
   const isDirty = !stateEquals(staged, persisted);
-  const hasNovelValue = allStagedValues(staged).some((v) => v.trim().length > 0 && !KNOWN_MODEL_VALUES.has(v));
-  const saveDisabled = saving || !isDirty || (hasNovelValue && !confirmedNovel);
+  const hasNovelValue = allStagedModelValues(staged).some(
+    ({ agent, value }) => value.trim().length > 0 && !isKnownAgentModel(agent, value)
+  );
+  const hasBlockedCodexValue = allStagedModelValues(staged).some(
+    ({ agent, value }) => agent === "codex" && !validateCodexModelValue(value).ok
+  );
+  const saveDisabled = saving || !isDirty || hasBlockedCodexValue || (hasNovelValue && !confirmedNovel);
 
   function setFieldCustom(id: string, custom: boolean) {
     setCustomFields((prev) => ({ ...prev, [id]: custom }));
   }
 
-  function handleDefaultChange(tier: ModelTierValue, value: string) {
-    setStaged((prev) => ({ ...prev, defaults: { ...prev.defaults, [tier]: value } }));
+  function handleDefaultModelChange(tier: ModelTierValue, agent: AgentKind, model: string) {
+    setStaged((prev) => ({
+      ...prev,
+      defaults: {
+        ...prev.defaults,
+        [tier]: { ...prev.defaults[tier], [agent]: { ...prev.defaults[tier][agent], model } },
+      },
+    }));
   }
 
-  function handleFallbackChange(alias: string, value: string) {
-    setStaged((prev) => ({ ...prev, fallback: { ...prev.fallback, [alias]: value } }));
+  function handleDefaultEffortChange(tier: ModelTierValue, agent: AgentKind, effort: ReasoningEffort) {
+    setStaged((prev) => ({
+      ...prev,
+      defaults: {
+        ...prev.defaults,
+        [tier]: { ...prev.defaults[tier], [agent]: { ...prev.defaults[tier][agent], effort } },
+      },
+    }));
+  }
+
+  function handleFallbackChange(agent: AgentKind, key: string, value: string) {
+    setStaged((prev) => ({
+      ...prev,
+      fallback: { ...prev.fallback, [agent]: { ...prev.fallback[agent], [key]: value } },
+    }));
   }
 
   function handleCancel() {
@@ -253,8 +368,9 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
 
   function handleResetToSeed() {
     // Local staging only — like the per-user Models dialog's "Reset to
-    // defaults", this doesn't persist until Save is clicked.
-    setStaged(SEED_PLATFORM_MODEL_DEFAULTS);
+    // defaults", this doesn't persist until Save is clicked. "(both agents)"
+    // in the button label (AC-4) so nobody expects a Claude-only reset.
+    setStaged(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS);
     setCustomFields({});
     setConfirmedNovel(false);
   }
@@ -262,16 +378,17 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
   async function handleSave() {
     setSaving(true);
     try {
-      await updatePlatformModelDefaults(staged);
-      const fresh = await getPlatformModelDefaultsForAdmin();
+      await updateAgentAwarePlatformModelDefaults(staged);
+      const fresh = await getAgentAwarePlatformModelDefaultsForAdmin();
       setAudit(fresh);
       setPersisted(fresh.value);
       setStaged(fresh.value);
       setCustomFields({});
       setConfirmedNovel(false);
-      setPlatformModelDefaultsCache(fresh.value);
+      setPlatformAgentAwareModelDefaultsCache(fresh.value);
+      const frontier = fresh.value.defaults.frontier;
       toast.success(
-        `Model tier defaults saved · frontier now runs on ${capitalizeModelName(fresh.value.defaults.frontier)}`
+        `Model tier defaults saved · frontier now runs on ${capitalizeModelName(frontier.claude.model)} (${frontier.claude.effort}) · ${frontier.codex.model} (${frontier.codex.effort})`
       );
     } catch (err) {
       // Staged values are retained on error so the super-admin can retry
@@ -287,25 +404,47 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
       <div>
         <h3 className="font-semibold">Model tier defaults</h3>
         <p className="text-sm text-muted-foreground">
-          The Claude model each workflow tier runs on platform-wide. Changing a value takes effect on the{" "}
-          <b>next</b> claim — no deploy. Per-user overrides in Profile → Model Tiers are unaffected.
+          The model and reasoning effort each workflow tier runs on platform-wide, for Claude Code and for Codex.
+          Changing a value takes effect on the <b>next</b> claim — no deploy. Per-user overrides in Profile → Model
+          Tiers are unaffected.
         </p>
       </div>
 
       <div className="space-y-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Panel A · Tier defaults</p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-3">
+          <div />
+          <div className="border-b pb-1 text-xs font-semibold text-muted-foreground">Claude</div>
+          <div className="border-b pb-1 text-xs font-semibold text-muted-foreground">Codex</div>
           {TIER_FIELDS.map(({ tier, label }) => (
-            <div key={tier}>
-              <TierModelField
-                id={`platform-default-${tier}`}
-                label={`${label} — ${MODEL_TIER_WHEN_TO_USE[tier]}`}
-                value={staged.defaults[tier]}
-                onChange={(v) => handleDefaultChange(tier, v)}
-                forceCustom={customFields[`default:${tier}`] ?? false}
-                onToggleCustom={(c) => setFieldCustom(`default:${tier}`, c)}
+            <div key={tier} className="contents">
+              <div className="pt-1.5">
+                <p className="text-sm font-semibold">{label}</p>
+                <p className="text-[11px] text-muted-foreground">{MODEL_TIER_WHEN_TO_USE[tier]}</p>
+              </div>
+              <AgentTierDefaultCell
+                tier={tier}
+                agent="claude"
+                entry={staged.defaults[tier].claude}
+                onModelChange={(v) => handleDefaultModelChange(tier, "claude", v)}
+                onEffortChange={(e) => handleDefaultEffortChange(tier, "claude", e)}
+                forceCustom={customFields[`default:${tier}:claude`] ?? false}
+                onToggleCustom={(c) => setFieldCustom(`default:${tier}:claude`, c)}
                 disabled={saving}
               />
+              <AgentTierDefaultCell
+                tier={tier}
+                agent="codex"
+                entry={staged.defaults[tier].codex}
+                onModelChange={(v) => handleDefaultModelChange(tier, "codex", v)}
+                onEffortChange={(e) => handleDefaultEffortChange(tier, "codex", e)}
+                forceCustom={customFields[`default:${tier}:codex`] ?? false}
+                onToggleCustom={(c) => setFieldCustom(`default:${tier}:codex`, c)}
+                disabled={saving}
+              />
+              <p className="col-span-3 border-b border-dashed pb-2 text-[11px] text-muted-foreground">
+                {tierResolutionLine(tier, staged.defaults[tier].claude, staged.defaults[tier].codex)}
+              </p>
             </div>
           ))}
         </div>
@@ -315,23 +454,47 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Panel B · Fallback chain{" "}
           <span className="font-normal normal-case tracking-normal text-muted-foreground">
-            — used when a resolved model isn&apos;t on the caller&apos;s plan
+            — used when a resolved model isn&apos;t on the caller&apos;s plan (model only — the tier defaults above
+            carry the effort)
           </span>
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {FALLBACK_ROWS.map((alias) => (
-            <div key={alias}>
-              <TierModelField
-                id={`platform-fallback-${alias}`}
-                label={`${alias} falls back to`}
-                value={staged.fallback[alias] ?? ""}
-                onChange={(v) => handleFallbackChange(alias, v)}
-                forceCustom={customFields[`fallback:${alias}`] ?? false}
-                onToggleCustom={(c) => setFieldCustom(`fallback:${alias}`, c)}
-                disabled={saving}
-              />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-4">
+            <p className="text-[11px] font-medium text-muted-foreground">Claude</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {FALLBACK_ROWS_CLAUDE.map((alias) => (
+                <AgentModelField
+                  key={alias}
+                  id={`platform-fallback-claude-${alias}`}
+                  agent="claude"
+                  label={`${alias} falls back to`}
+                  value={staged.fallback.claude[alias] ?? ""}
+                  onChange={(v) => handleFallbackChange("claude", alias, v)}
+                  forceCustom={customFields[`fallback:claude:${alias}`] ?? false}
+                  onToggleCustom={(c) => setFieldCustom(`fallback:claude:${alias}`, c)}
+                  disabled={saving}
+                />
+              ))}
             </div>
-          ))}
+          </div>
+          <div className="space-y-4">
+            <p className="text-[11px] font-medium text-muted-foreground">Codex</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {FALLBACK_ROWS_CODEX.map((model) => (
+                <AgentModelField
+                  key={model}
+                  id={`platform-fallback-codex-${model}`}
+                  agent="codex"
+                  label={`${model} falls back to`}
+                  value={staged.fallback.codex[model] ?? ""}
+                  onChange={(v) => handleFallbackChange("codex", model, v)}
+                  forceCustom={customFields[`fallback:codex:${model}`] ?? false}
+                  onToggleCustom={(c) => setFieldCustom(`fallback:codex:${model}`, c)}
+                  disabled={saving}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -343,13 +506,14 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           <div className="space-y-2">
             <p>
-              A value above isn&apos;t a known model alias. It will be sent verbatim as the Task-tool{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">model</code> on every affected step. If it&apos;s
-              a typo, steps fall back at claim time.
+              A value above isn&apos;t a known model. It will be sent verbatim (as the Task-tool{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">model</code> for Claude, or{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">-m</code> for Codex) on every affected step. If
+              it&apos;s a typo, steps fall back at claim time.
             </p>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <Checkbox checked={confirmedNovel} onCheckedChange={(c) => setConfirmedNovel(c === true)} />
-              I&apos;ve verified this alias is valid for the Task tool
+              I&apos;ve verified this value is valid
             </label>
           </div>
         </div>
@@ -362,7 +526,8 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
           ) : (
             <span>
               Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
-              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
+              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""} · Claude and Codex blocks are
+              saved together as one row.
             </span>
           )}
         </div>
@@ -374,11 +539,14 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
             Save enables when you change a value.
           </span>
         )}
-        {isDirty && hasNovelValue && !confirmedNovel && (
+        {isDirty && hasNovelValue && !confirmedNovel && !hasBlockedCodexValue && (
           <span className="mr-auto text-xs text-muted-foreground">Confirm the checkbox above to enable Save.</span>
         )}
+        {isDirty && hasBlockedCodexValue && (
+          <span className="mr-auto text-xs text-muted-foreground">Fix the invalid Codex model to enable Save.</span>
+        )}
         <Button type="button" variant="destructive" size="sm" onClick={handleResetToSeed} disabled={saving}>
-          Reset to seed
+          Reset to seed (both agents)
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving || !isDirty}>
           Cancel

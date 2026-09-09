@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
@@ -968,6 +969,40 @@ function makePersonaClaimContext(opts: {
 }
 
 describe("claimNextStep — persona embedding", () => {
+  // Captured before the Codex handoff fix: pin the COMPLETE Claude instruction,
+  // including Auto and missing-persona paths, without eight large text snapshots.
+  it("preserves pre-fix Claude instruction bytes for every tier and persona path", async () => {
+    const hashes: Record<string, string> = {};
+    for (const tier of [null, "frontier", "standard", "cheap"]) {
+      for (const systemPrompt of [null, "You are Atlas. Preserve the user's work."]) {
+        const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: tier });
+        const ctx = () => makePersonaClaimContext({
+          pendingStep: step,
+          updatedStep: { ...step, status: "in_progress" },
+          systemPrompt,
+        });
+        const implicit = await claimNextStep(ctx(), { task_id: TASK_ID });
+        const explicit = await claimNextStep(ctx(), { task_id: TASK_ID, agent: "claude" });
+        expect(explicit.instruction).toBe(implicit.instruction);
+        expect(explicit).not.toHaveProperty("execution");
+        hashes[`${tier ?? "auto"}/${systemPrompt ? "embedded" : "missing"}`] =
+          createHash("sha256").update(implicit.instruction!).digest("hex");
+      }
+    }
+    expect(hashes).toMatchInlineSnapshot(`
+      {
+        "auto/embedded": "6c0e1d9ccac5c053aaa402a618554c12773080f7de0e5abd739be8879fe4c3b7",
+        "auto/missing": "3ec8590a73b2a0a6ca188252d0943c8c71f0ece3c7e9e41ff78b205a547a857f",
+        "cheap/embedded": "8f76854012debb83a204bdca30607c954d6b8fc0e3210fff9e79779d4e5269e2",
+        "cheap/missing": "04333fec60b1aefe462e4124ce7274c0a763db2090041ab3f723eb31eb643114",
+        "frontier/embedded": "ff10e31dc0b3bb718391252d05a57433bd11106b01c5562011298472ae763493",
+        "frontier/missing": "0cdbc0a35fd7e55099fd35ce353e44688b65d0ff95eeff54ee04f79d6dc8757d",
+        "standard/embedded": "2b54917712906865a921416b14d89998a38988f63a20201cf4448c4358259699",
+        "standard/missing": "dfe5538ff1eb30bcd2752479538ec124c558f023ce417d3852dacd208fdde648",
+      }
+    `);
+  });
+
   it("embeds persona_prompt/persona_name/persona_role when the matched bot has a system_prompt", async () => {
     const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
@@ -1284,6 +1319,32 @@ describe("completeStep", () => {
 // ---------------------------------------------------------------------------
 
 describe("completeStep — tier adherence (P2c)", () => {
+  it.each(["frontier", "standard", "cheap"] as const)(
+    "records the Codex %s launch settings on completion, including a launched fallback", async (tier) => {
+      const step = makeStepRow({ model_tier: tier });
+      const claim = await claimNextStep(makeClaimContext({
+        pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [],
+      }), { task_id: TASK_ID, agent: "codex" });
+      if (!("execution" in claim) || !claim.execution) throw new Error("Expected a Codex claim");
+      const { model, reasoning_effort, fallback_model } = claim.execution;
+      if (!model || !reasoning_effort || !fallback_model) throw new Error("Expected tier settings");
+      for (const launchedModel of [model, fallback_model]) {
+        const { ctx, getUpdate } = ctxFor({
+          stepData: { ...baseStep, model_tier: tier, claim_token_hash: hashClaimToken(claim.claim_token!) },
+          updatedStep: baseUpdatedStep,
+        });
+        await completeStep(ctx, {
+          step_id: STEP_ID, claim_token: claim.claim_token!, agent: "codex",
+          model_used: launchedModel, reasoning_effort_used: reasoning_effort,
+          output: "A deliverable that does not claim to know its model.",
+        });
+        expect(getUpdate()).toMatchObject({
+          executed_model: launchedModel, reasoning_effort_used: reasoning_effort, tier_honored: true,
+        });
+      }
+    }
+  );
+
   /** run_id: null throughout so checkAndCompleteRun never fires — keeps these
    * tests focused on the tier-adherence write path only. */
   function ctxFor(opts: {
@@ -1355,7 +1416,36 @@ describe("completeStep — tier adherence (P2c)", () => {
     completed_at: "2026-01-01T00:00:00Z",
   };
 
-  it("model_used = resolved model (seed: frontier -> opus) -> executed_model set, tier_honored=true, no comment", async () => {
+  it("model_used = resolved model (seed: frontier -> opus/high), effort reported and matches -> executed_model+effort set, tier_honored=true, no comment", async () => {
+    const { ctx, getUpdate, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "high" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("opus");
+    expect(update.reasoning_effort_used).toBe("high");
+    expect(update.tier_honored).toBe(true);
+    expect(getComment()).toBeNull();
+  });
+
+  it("model_used = the tier's allowed fallback, effort matches -> tier_honored=true (fallback counts as honored)", async () => {
+    const { ctx, getUpdate, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable", reasoning_effort_used: "high" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("fable");
+    expect(update.tier_honored).toBe(true);
+    expect(getComment()).toBeNull();
+  });
+
+  it("QA Bug-1: model matches but effort omitted -> tier_honored=NULL (not reported), no mismatch comment", async () => {
     const { ctx, getUpdate, getComment } = ctxFor({
       stepData: { ...baseStep, model_tier: "frontier" },
       updatedStep: baseUpdatedStep,
@@ -1365,25 +1455,26 @@ describe("completeStep — tier adherence (P2c)", () => {
 
     const update = getUpdate();
     expect(update.executed_model).toBe("opus");
-    expect(update.tier_honored).toBe(true);
+    expect(update.tier_honored).toBeNull();
     expect(getComment()).toBeNull();
   });
 
-  it("model_used = the tier's allowed fallback -> tier_honored=true (fallback counts as honored)", async () => {
+  it("FR-6: model matches but effort is reported-and-wrong -> tier_honored=false, posts mismatch comment", async () => {
     const { ctx, getUpdate, getComment } = ctxFor({
       stepData: { ...baseStep, model_tier: "frontier" },
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "low" });
 
     const update = getUpdate();
-    expect(update.executed_model).toBe("fable");
-    expect(update.tier_honored).toBe(true);
-    expect(getComment()).toBeNull();
+    expect(update.executed_model).toBe("opus");
+    expect(update.reasoning_effort_used).toBe("low");
+    expect(update.tier_honored).toBe(false);
+    expect(getComment()).not.toBeNull();
   });
 
-  it("model_used = an unrelated concrete model -> tier_honored=false and posts a 'comment' (not 'failure') mismatch comment", async () => {
+  it("model_used = an unrelated concrete model -> tier_honored=false REGARDLESS of effort and posts a 'comment' (not 'failure') mismatch comment", async () => {
     const { ctx, getUpdate, getComment } = ctxFor({
       stepData: { ...baseStep, model_tier: "frontier" },
       updatedStep: baseUpdatedStep,
@@ -1483,7 +1574,9 @@ describe("completeStep — tier adherence (P2c)", () => {
     });
 
     // Override maps frontier -> opus, so opus is now the *resolved* model (not the fallback).
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
+    // The legacy flat override carries no effort, so the platform default's
+    // (seed) effort for frontier ("high") still applies.
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "high" });
 
     const update = getUpdate();
     expect(update.tier_honored).toBe(true);
@@ -3137,7 +3230,22 @@ describe("failStep — tier adherence (P2c)", () => {
     expect(getComments()).toHaveLength(0);
   });
 
-  it("model_used = resolved model -> tier_honored=true, no mismatch comment", async () => {
+  it("model_used = resolved model, effort matches -> tier_honored=true, no mismatch comment", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet", reasoning_effort_used: "medium" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("sonnet");
+    expect(update.reasoning_effort_used).toBe("medium");
+    expect(update.tier_honored).toBe(true);
+    expect(getComments()).toHaveLength(0);
+  });
+
+  it("QA Bug-1: model matches but effort omitted -> tier_honored=NULL, no mismatch comment", async () => {
     const { ctx, getUpdate, getComments } = ctxFor({
       stepData: { ...baseStep, model_tier: "standard" },
       updatedStep: baseUpdatedStep,
@@ -3147,7 +3255,7 @@ describe("failStep — tier adherence (P2c)", () => {
 
     const update = getUpdate();
     expect(update.executed_model).toBe("sonnet");
-    expect(update.tier_honored).toBe(true);
+    expect(update.tier_honored).toBeNull();
     expect(getComments()).toHaveLength(0);
   });
 });
@@ -4255,62 +4363,90 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveModelTier", () => {
-  it("resolves each tier to its platform default and single-hop fallback (seed: frontier -> opus)", () => {
-    expect(resolveModelTier("frontier")).toEqual({ resolved: "opus", fallback: "fable" });
-    expect(resolveModelTier("standard")).toEqual({ resolved: "sonnet", fallback: "opus" });
-    expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", fallback: "sonnet" });
+  it("resolves each Claude tier to its platform default, effort, and single-hop fallback (seed: frontier -> opus)", () => {
+    expect(resolveModelTier("frontier")).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
+    expect(resolveModelTier("standard")).toEqual({ resolved: "sonnet", effort: "medium", fallback: "opus" });
+    expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", effort: "low", fallback: "sonnet" });
   });
 
-  it("uses the caller's override when the tier is present and valid", () => {
-    expect(resolveModelTier("frontier", { frontier: "opus" })).toEqual({ resolved: "opus", fallback: "fable" });
+  it("resolves each Codex tier to its confirmed seed model/effort/fallback", () => {
+    expect(resolveModelTier("frontier", "codex")).toEqual({ resolved: "gpt-6-astra", effort: "high", fallback: "gpt-5.6-sol" });
+    expect(resolveModelTier("standard", "codex")).toEqual({ resolved: "gpt-5.6-sol", effort: "medium", fallback: "gpt-5.6-luna" });
+    expect(resolveModelTier("cheap", "codex")).toEqual({ resolved: "gpt-5.6-luna", effort: "low", fallback: "gpt-5.6-sol" });
+  });
+
+  it("uses the caller's Claude override when the tier is present and valid", () => {
+    expect(resolveModelTier("frontier", "claude", { frontier: { claude: { model: "opus" } } })).toEqual({
+      resolved: "opus", effort: "high", fallback: "fable",
+    });
+  });
+
+  it("uses the caller's Codex override (free text always valid); unknown to the fallback map -> falls back to itself", () => {
+    expect(resolveModelTier("frontier", "codex", { frontier: { codex: { model: "o4-mini" } } })).toEqual({
+      resolved: "o4-mini", effort: "high", fallback: "o4-mini",
+    });
+  });
+
+  it("an effort-only override keeps the platform-default model but overrides effort", () => {
+    expect(resolveModelTier("frontier", "claude", { frontier: { claude: { effort: "low" } } })).toEqual({
+      resolved: "opus", effort: "low", fallback: "fable",
+    });
   });
 
   it("ignores an override for a different tier and falls back to the platform default", () => {
-    expect(resolveModelTier("standard", { frontier: "opus" })).toEqual({ resolved: "sonnet", fallback: "opus" });
+    expect(resolveModelTier("standard", "claude", { frontier: { claude: { model: "opus" } } })).toEqual({
+      resolved: "sonnet", effort: "medium", fallback: "opus",
+    });
   });
 
-  it("ignores an invalid/unrecognised override value and falls back to the platform default", () => {
-    expect(resolveModelTier("cheap", { cheap: "gpt-4" })).toEqual({ resolved: "haiku", fallback: "sonnet" });
+  it("ignores an invalid/unrecognised Claude override value and falls back to the platform default", () => {
+    expect(resolveModelTier("cheap", "claude", { cheap: { claude: { model: "gpt-4" } } })).toEqual({
+      resolved: "haiku", effort: "low", fallback: "sonnet",
+    });
+  });
+
+  it("accepts a legacy flat user-map string as a Claude-only override", () => {
+    expect(resolveModelTier("frontier", "claude", { frontier: "opus" })).toEqual({
+      resolved: "opus", effort: "high", fallback: "fable",
+    });
+    // The legacy flat shape carries no Codex information — Codex still resolves to its own platform default.
+    expect(resolveModelTier("frontier", "codex", { frontier: "opus" })).toEqual({
+      resolved: "gpt-6-astra", effort: "high", fallback: "gpt-5.6-sol",
+    });
   });
 
   it("treats a null/undefined map the same as no override", () => {
-    expect(resolveModelTier("frontier", null)).toEqual({ resolved: "opus", fallback: "fable" });
-    expect(resolveModelTier("frontier", undefined)).toEqual({ resolved: "opus", fallback: "fable" });
+    expect(resolveModelTier("frontier", "claude", null)).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
+    expect(resolveModelTier("frontier", "claude", undefined)).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
   });
 
-  it("thread a live platformDefaults argument through — overrides the seed default", () => {
+  it("threads a live agent-aware platformDefaults argument through — overrides the seed default", () => {
     const live = {
-      defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" },
-      fallback: { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+      defaults: {
+        frontier: { claude: { model: "fable", effort: "high" as const }, codex: { model: "gpt-5.1-codex", effort: "high" as const } },
+        standard: { claude: { model: "sonnet", effort: "medium" as const }, codex: { model: "gpt-5.1-codex-mini", effort: "medium" as const } },
+        cheap: { claude: { model: "haiku", effort: "low" as const }, codex: { model: "gpt-5.1-codex-mini", effort: "low" as const } },
+      },
+      fallback: {
+        claude: { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+        codex: { "gpt-5.1-codex": "gpt-5.1-codex-mini", "gpt-5.1-codex-mini": "gpt-5.1-codex" },
+      },
     };
-    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "fable", fallback: "opus" });
+    expect(resolveModelTier("frontier", "claude", null, live)).toEqual({ resolved: "fable", effort: "high", fallback: "opus" });
   });
 
-  it("resolves a novel platform-default model family end-to-end (no schema change)", () => {
+  it("precedence: a valid Claude user override wins over even a live (non-seed) platform default", () => {
     const live = {
-      defaults: { frontier: "opus-5.5", standard: "sonnet", cheap: "haiku" },
-      fallback: { "opus-5.5": "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+      defaults: {
+        frontier: { claude: { model: "sonnet", effort: "medium" as const }, codex: { model: "gpt-5.1-codex", effort: "high" as const } },
+        standard: { claude: { model: "sonnet", effort: "medium" as const }, codex: { model: "gpt-5.1-codex-mini", effort: "medium" as const } },
+        cheap: { claude: { model: "haiku", effort: "low" as const }, codex: { model: "gpt-5.1-codex-mini", effort: "low" as const } },
+      },
+      fallback: { claude: {}, codex: {} },
     };
-    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "opus-5.5", fallback: "opus" });
-  });
-
-  it("falls back to the resolved model itself when the live fallback map doesn't know it and the seed doesn't either", () => {
-    const live = {
-      defaults: { frontier: "opus-5.5", standard: "sonnet", cheap: "haiku" },
-      fallback: {},
-    };
-    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "opus-5.5", fallback: "opus-5.5" });
-  });
-
-  it("precedence: a valid user override wins over even a live (non-seed) platform default", () => {
-    const live = { defaults: { frontier: "sonnet", standard: "sonnet", cheap: "haiku" }, fallback: {} };
-    expect(resolveModelTier("frontier", { frontier: "opus" }, live)).toEqual({ resolved: "opus", fallback: "fable" });
-  });
-
-  it("precedence: an invalid user override still falls through to the LIVE platform default, not the seed", () => {
-    const live = { defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" }, fallback: {} };
-    // "gpt-4" isn't one of the four known override aliases, so it's ignored.
-    expect(resolveModelTier("frontier", { frontier: "gpt-4" }, live)).toEqual({ resolved: "fable", fallback: "opus" });
+    expect(resolveModelTier("frontier", "claude", { frontier: { claude: { model: "opus" } } }, live)).toEqual({
+      resolved: "opus", effort: "medium", fallback: "fable",
+    });
   });
 });
 
@@ -4324,16 +4460,32 @@ describe("modelTierClause", () => {
   });
 
   // Design-Review CONDITION 1 — exact directive string, verbatim.
-  it("produces the exact MANDATORY MODEL directive string for the platform default (standard)", () => {
+  it("produces the exact MANDATORY MODEL directive string for the Claude platform default (standard)", () => {
     expect(modelTierClause("standard")).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet" and reasoning effort "medium". If "sonnet" is unavailable on this plan/session, use model: "opus" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
   });
 
-  it("produces the exact directive string for a user-overridden tier", () => {
-    expect(modelTierClause("frontier", { frontier: "opus" })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+  it("produces the exact directive string for a user-overridden Claude tier", () => {
+    expect(modelTierClause("frontier", "claude", { frontier: { claude: { model: "opus" } } })).toBe(
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus" and reasoning effort "high". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
+  });
+
+  it("produces the Codex-worded directive — never mentions the Task tool", () => {
+    const clause = modelTierClause("standard", "codex");
+    expect(clause).toContain('model: "gpt-5.6-sol" and reasoning_effort: "medium" as actual spawn parameters');
+    expect(clause).not.toContain("Task tool");
+    expect(clause).toContain('fork_turns: "none"');
+    expect(clause).toContain("Do not switch the parent with /model");
+    expect(clause).toContain("Do not ask the child to identify its model");
+    expect(clause).toContain("Never report a requested configuration if the launch rejected it");
+  });
+
+  it("never capitalises a Codex model id in the clause", () => {
+    const clause = modelTierClause("standard", "codex");
+    expect(clause).toContain("gpt-5.6-sol");
+    expect(clause).not.toContain("Gpt-5.6-Sol");
   });
 
   it("includes the doc-precedence rule for the platform-default path (URGENT stale-CLAUDE.md fix)", () => {
@@ -4343,114 +4495,161 @@ describe("modelTierClause", () => {
     expect(clause).toContain("Never edit project docs");
   });
 
-  it("includes the doc-precedence rule for the user-override path (URGENT stale-CLAUDE.md fix)", () => {
-    const clause = modelTierClause("frontier", { frontier: "opus" });
+  it("includes the doc-precedence rule for the Codex path too", () => {
+    const clause = modelTierClause("standard", "codex");
     expect(clause).toContain("resolved live at claim time");
     expect(clause).toContain("OVERRIDES");
     expect(clause).toContain("Never edit project docs");
   });
 
-  it("includes the model_used capture sentence (P2c FR-1/2/3)", () => {
+  it("includes the model_used + reasoning_effort_used capture sentence", () => {
     expect(modelTierClause("cheap")).toContain(
       "pass model_used = the model you actually ran the subagent on"
     );
+    expect(modelTierClause("cheap")).toContain("reasoning_effort_used = the effort you actually ran with");
   });
 
-  it("names the resolved model and its fallback for every tier", () => {
-    for (const tier of ["frontier", "standard", "cheap"] as const) {
-      const { resolved, fallback } = resolveModelTier(tier)!;
-      const clause = modelTierClause(tier);
-      expect(clause).toContain("MANDATORY MODEL");
-      expect(clause).toContain(`model: "${resolved}"`);
-      expect(clause).toContain(`model: "${fallback}"`);
-      expect(clause).not.toContain("Advisory");
+  it("names the resolved model, effort and fallback for every tier and agent", () => {
+    for (const agent of ["claude", "codex"] as const) {
+      for (const tier of ["frontier", "standard", "cheap"] as const) {
+        const { resolved, effort, fallback } = resolveModelTier(tier, agent)!;
+        const clause = modelTierClause(tier, agent);
+        expect(clause).toContain("MANDATORY MODEL");
+        expect(clause).toContain(resolved);
+        expect(clause).toContain(fallback);
+        expect(clause).toContain(effort);
+      }
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// resolveTierAdherence — P2c FR-6/7/8 (exact cases, NULL ≠ false)
+// resolveTierAdherence — P2c FR-6/7/8 (exact cases, NULL ≠ false), extended
+// agent-aware + effort-aware (Codex model-tier task), QA Bug-1 hardened:
+// a model match with UNREPORTED effort is NULL, never false.
 // ---------------------------------------------------------------------------
 
 describe("resolveTierAdherence", () => {
   it("model_used omitted -> executed=NULL, honored=NULL (never false)", () => {
-    expect(resolveTierAdherence("frontier", undefined)).toEqual({
+    expect(resolveTierAdherence("frontier", "claude", undefined, undefined)).toEqual({
       executedModel: null,
+      executedEffort: null,
       tierHonored: null,
+      viaFallback: false,
     });
   });
 
   it("model_used='unknown' -> executed='unknown', honored=NULL (never false), regardless of tier", () => {
-    expect(resolveTierAdherence("frontier", "unknown")).toEqual({
+    expect(resolveTierAdherence("frontier", "claude", "unknown", undefined)).toEqual({
       executedModel: "unknown",
+      executedEffort: null,
       tierHonored: null,
+      viaFallback: false,
     });
-    expect(resolveTierAdherence(null, "unknown")).toEqual({
+    expect(resolveTierAdherence(null, "claude", "unknown", undefined)).toEqual({
       executedModel: "unknown",
+      executedEffort: null,
       tierHonored: null,
+      viaFallback: false,
     });
   });
 
   it("tier is null (Auto) -> executed=model_used, honored=NULL", () => {
-    expect(resolveTierAdherence(null, "sonnet")).toEqual({
+    expect(resolveTierAdherence(null, "claude", "sonnet", "medium")).toEqual({
       executedModel: "sonnet",
+      executedEffort: "medium",
       tierHonored: null,
-    });
-    expect(resolveTierAdherence(undefined, "opus")).toEqual({
-      executedModel: "opus",
-      tierHonored: null,
+      viaFallback: false,
     });
   });
 
-  it("tier set, model_used = platform-resolved model (seed: frontier -> opus) -> honored=true", () => {
-    expect(resolveTierAdherence("frontier", "opus")).toEqual({
+  it("tier set, model+effort = platform-resolved (seed: frontier -> opus/high) -> honored=true, not via fallback", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", "high")).toEqual({
       executedModel: "opus",
+      executedEffort: "high",
       tierHonored: true,
+      viaFallback: false,
     });
   });
 
-  it("tier set, model_used = the tier's allowed fallback -> honored=true", () => {
-    // frontier resolves to opus, whose fallback is fable.
-    expect(resolveTierAdherence("frontier", "fable")).toEqual({
+  it("tier set, model = the tier's allowed fallback, effort matches -> honored=true, viaFallback=true", () => {
+    // frontier resolves to opus (effort high), whose fallback is fable.
+    expect(resolveTierAdherence("frontier", "claude", "fable", "high")).toEqual({
       executedModel: "fable",
+      executedEffort: "high",
       tierHonored: true,
+      viaFallback: true,
+    });
+  });
+
+  it("FR-6: model matches but effort is reported-and-wrong -> honored=false (effort is first-class)", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", "low")).toEqual({
+      executedModel: "opus",
+      executedEffort: "low",
+      tierHonored: false,
+      viaFallback: false,
+    });
+  });
+
+  it("QA Bug-1: model matches but effort omitted -> honored=NULL (not reported, never false)", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", undefined)).toEqual({
+      executedModel: "opus",
+      executedEffort: null,
+      tierHonored: null,
+      viaFallback: false,
+    });
+  });
+
+  it("QA Bug-1: model matches but effort='unknown' -> honored=NULL (not reported, never false)", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", "unknown")).toEqual({
+      executedModel: "opus",
+      executedEffort: "unknown",
+      tierHonored: null,
+      viaFallback: false,
+    });
+  });
+
+  it("QA Bug-1: model neither resolved nor fallback -> honored=false REGARDLESS of effort (even if effort matches)", () => {
+    // frontier resolves to opus/fable — sonnet is neither, even though "high" is frontier's own effort.
+    expect(resolveTierAdherence("frontier", "claude", "sonnet", "high")).toEqual({
+      executedModel: "sonnet",
+      executedEffort: "high",
+      tierHonored: false,
+      viaFallback: false,
+    });
+    // ... and effort omitted doesn't rescue a model mismatch into NULL either.
+    expect(resolveTierAdherence("frontier", "claude", "sonnet", undefined)).toEqual({
+      executedModel: "sonnet",
+      executedEffort: null,
+      tierHonored: false,
+      viaFallback: false,
     });
   });
 
   it("tier set, model_used = a user's overridden resolved model -> honored=true", () => {
-    expect(resolveTierAdherence("frontier", "opus", { frontier: "opus" })).toEqual({
+    expect(resolveTierAdherence("frontier", "claude", "opus", "high", { frontier: { claude: { model: "opus" } } })).toEqual({
       executedModel: "opus",
+      executedEffort: "high",
       tierHonored: true,
+      viaFallback: false,
     });
   });
 
-  it("tier set, model_used = an unrelated concrete alias -> honored=false (never NULL)", () => {
-    // frontier resolves to opus/fable — sonnet is neither.
-    expect(resolveTierAdherence("frontier", "sonnet")).toEqual({
-      executedModel: "sonnet",
-      tierHonored: false,
-    });
-  });
-
-  it("threads a live platformDefaults argument through, so adherence is judged against the LIVE default, not the seed", () => {
-    const live = { defaults: { frontier: "sonnet", standard: "sonnet", cheap: "haiku" }, fallback: { sonnet: "haiku" } };
-    // Under the live default frontier resolves to sonnet (fallback haiku) —
-    // "opus" (the seed's resolved model for frontier) is now neither the
-    // resolved model nor its fallback.
-    expect(resolveTierAdherence("frontier", "opus", null, live)).toEqual({
-      executedModel: "opus",
-      tierHonored: false,
-    });
-    expect(resolveTierAdherence("frontier", "sonnet", null, live)).toEqual({
-      executedModel: "sonnet",
+  it("resolves and honors a Codex model+effort report", () => {
+    expect(resolveTierAdherence("standard", "codex", "gpt-5.6-sol", "medium")).toEqual({
+      executedModel: "gpt-5.6-sol",
+      executedEffort: "medium",
       tierHonored: true,
+      viaFallback: false,
     });
   });
 
-  it("tier set, model_used='other' -> honored=false", () => {
-    expect(resolveTierAdherence("standard", "other")).toEqual({
+  it("tier set, model_used='other', effort reported and wrong -> honored=false", () => {
+    expect(resolveTierAdherence("standard", "claude", "other", "medium")).toEqual({
       executedModel: "other",
+      executedEffort: "medium",
       tierHonored: false,
+      viaFallback: false,
     });
   });
 });
@@ -4480,6 +4679,88 @@ describe("resolvePersonaAdherence", () => {
 // ---------------------------------------------------------------------------
 // claimNextStep — MANDATORY MODEL directive in the instruction (P2b)
 // ---------------------------------------------------------------------------
+
+describe("claimNextStep — Codex handoff", () => {
+  it.each([
+    ["frontier", "gpt-6-astra", "high", "gpt-5.6-sol"],
+    ["standard", "gpt-5.6-sol", "medium", "gpt-5.6-luna"],
+    ["cheap", "gpt-5.6-luna", "low", "gpt-5.6-sol"],
+  ])("returns launch controls and carries prior context for %s", async (tier, model, effort, fallback) => {
+    const step = makeStepRow({ model_tier: tier });
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      priorSteps: [{ id: "prior-step", title: "Requirements", step_order: 1, output: "Preserve Claude behavior." }],
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toEqual({
+      agent: "codex", mode: "subagent", fork_turns: "none",
+      model, reasoning_effort: effort, fallback_model: fallback,
+      reporting_source: "accepted_launch_configuration",
+    });
+    expect(result.context).toEqual([
+      { step_id: "prior-step", step_title: "Requirements", output: "Preserve Claude behavior." },
+    ]);
+    expect(result.instruction).toContain("spawn_agent");
+    expect(result.instruction).not.toContain("Agent/Task tool");
+    expect(result.instruction).not.toContain("Completed inline — no subagent capability.");
+    expect(result.instruction).not.toContain("switch this Codex session");
+    expect(result.instruction).toContain("actual spawn parameters");
+    expect(result.instruction).toContain("Keep claim_token in the orchestrator only");
+    expect(result.instruction).toContain("context (prior outputs with step names and IDs)");
+    expect(result.instruction).toContain("approval_notes, rework_instructions, available_skills");
+    expect(result.instruction).toContain("actual working directory");
+    expect(result.instruction).toContain("It must not claim another step, complete/fail this step, or approve anything");
+    expect(result.instruction).toContain("CAPABILITY CHECK");
+    expect(result.instruction).toContain("stop before doing the work");
+    expect(result.instruction).toContain("get_agent_prompt"); // unassigned persona lookup
+  });
+
+  it("uses the user's live Codex override, including effort, in both text and launch fields", async () => {
+    const step = makeStepRow({ model_tier: "standard" });
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      priorSteps: [],
+      userModelTierMap: { standard: { codex: { model: "gpt-5.6-terra", effort: "high" } } },
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toMatchObject({ model: "gpt-5.6-terra", reasoning_effort: "high" });
+    expect(result.instruction).toContain('model: "gpt-5.6-terra" and reasoning_effort: "high"');
+  });
+
+  it.each([null, "Preserve this full persona.\nDo not rewrite its constraints."])(
+    "handles assigned persona %s without the Claude inline exception", async (systemPrompt) => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "cheap", human_check_required: true });
+      const result = await claimNextStep(makePersonaClaimContext({
+        pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt,
+      }), { task_id: TASK_ID, agent: "codex" });
+      if (!("execution" in result)) throw new Error("Expected a Codex claim");
+      expect(result.persona_prompt).toBe(systemPrompt ?? undefined);
+      expect(result.work_token).toMatch(/^wt_/);
+      expect(result.claim_token).toMatch(/^ct_/);
+      expect(result.instruction).not.toContain("Agent/Task tool");
+      expect(result.instruction).toContain(systemPrompt
+        ? "Use persona_prompt verbatim"
+        : `Call get_agent_prompt with agent_id "${PERSONA_BOT_ID}"`);
+      expect(result.instruction).toContain("HUMAN APPROVAL REQUIRED");
+      expect(result.instruction).toContain("do not claim to have changed the child's system prompt");
+    }
+  );
+
+  it("keeps Auto model selection open, with no tier lookups or inline fallback", async () => {
+    const step = makeStepRow({ model_tier: null });
+    const usersQueryIds: string[] = [];
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [], usersQueryIds,
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toMatchObject({ model: null, reasoning_effort: null, fallback_model: null });
+    expect(result.instruction).not.toContain("MANDATORY MODEL");
+    expect(result.instruction).toContain("FRESH SUBAGENT");
+    expect(usersQueryIds).toEqual([]);
+  });
+});
 
 describe("claimNextStep — model_tier directive", () => {
   it("null model_tier leaves the instruction free of the directive and queries no users row (FR-12)", async () => {

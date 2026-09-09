@@ -55,8 +55,8 @@ import {
   UPDATE_CONFIRM_ACCEPT_LABEL,
   UPDATE_CONFIRM_CANCEL_LABEL,
   UPDATE_CONFIRM_HEADING,
-  UPDATE_QUIESCE_TIMEOUT_COPY,
-  UPDATE_READY_COPY,
+  isUpdateFlowSettled,
+  settledNoticeCopy,
   updateConfirmBody,
 } from "@/lib/terminal/helper-update-flow";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
@@ -77,6 +77,8 @@ interface ListedSession {
   endedAt: string | null;
   /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `deriveTabLabel`. */
   displayName: string | null;
+  /** Codex support (docs/codex-terminal-requirements.md FR-5, implementation slice 2) — see chooser-data.ts's ChooserRegistryRow.agent doc. */
+  agent?: "claude" | "codex";
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -529,6 +531,10 @@ export function TerminalMySessionsPanel({
                             {s.ideaTitle}
                           </span>
                         )}
+                        {/* Codex support (design §4c) — every row names its agent. */}
+                        <span className="flex-none rounded border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] font-normal text-zinc-300">
+                          {s.agent === "codex" ? "Codex" : "Claude Code"}
+                        </span>
                       </div>
                       <div className="truncate font-mono text-[11px] text-zinc-500">{identity}</div>
                     </div>
@@ -735,7 +741,7 @@ export function TerminalMySessionsPanel({
           </div>
         )}
 
-        {(updateFlowPhase === "ready" || updateFlowPhase === "quiesce-timeout") && (
+        {isUpdateFlowSettled(updateFlowPhase) && (
           <div
             className={cn(
               "border-t px-3.5 py-2 text-[11.5px]",
@@ -744,7 +750,7 @@ export function TerminalMySessionsPanel({
                 : "border-amber-500/30 bg-amber-500/5 text-amber-300",
             )}
           >
-            {updateFlowPhase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+            {settledNoticeCopy(updateFlowPhase)}
           </div>
         )}
 
