@@ -282,10 +282,14 @@ function baseEntry(overrides: Partial<SessionEntry> = {}): SessionEntry {
   };
 }
 
-function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void) {
+function renderView(
+  poppedOut: boolean,
+  onRetryReconnect?: (sid: string) => void,
+  entryOverrides: Partial<SessionEntry> = {},
+) {
   return render(
     <TerminalSessionView
-      entry={baseEntry()}
+      entry={baseEntry(entryOverrides)}
       descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
       label="Session 1"
       isActive
@@ -932,11 +936,10 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
   });
 });
 
-// ── auto-accept badge (task d3de150c) ────────────────────────────────────
-// Design review note 2: this badge must NOT copy the Read-only pill's
-// `state.status === "connected"` gate — it needs to show for the session's
-// whole life (launched, connected, disconnected, reconnecting/waiting), not
-// just while actively connected.
+// ── agent chip (Nick, 7 Sep 2026) ────────────────────────────────────────
+// Every in-browser session names its agent in the panel header — Claude Code
+// as well as Codex — and the old per-agent tab-strip pill and the "Auto mode"
+// header chip were both removed as redundant.
 
 function installMockSessionWithStatus(status: TerminalConnectionState["status"], autoAccept: boolean) {
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
@@ -972,38 +975,29 @@ function installMockSessionWithStatus(status: TerminalConnectionState["status"],
   });
 }
 
-describe("TerminalSessionView — auto-accept badge (task d3de150c)", () => {
-  it("shows the Auto-accept badge while connected", () => {
+describe("TerminalSessionView — agent chip (Nick, 7 Sep 2026)", () => {
+  it("names a Codex session in the panel header", () => {
     installMockSessionWithStatus("connected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+    renderView(false, undefined, { agent: "codex" });
+    expect(screen.getByText("Codex")).toBeInTheDocument();
   });
 
-  it("shows the Auto-accept badge while disconnected — NOT gated on status === connected", () => {
-    installMockSessionWithStatus("disconnected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+  it("names a Claude Code session in the panel header (previously unlabelled)", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false, undefined, { agent: "claude" });
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("shows the Auto-accept badge while waiting-to-pair/reconnecting", () => {
-    installMockSessionWithStatus("waiting-to-pair", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode")).toBeInTheDocument();
+  it("defaults a legacy entry with no recorded agent to Claude Code", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false); // no agent override
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("never shows the badge when the session was not launched with the flag", () => {
-    installMockSessionWithStatus("connected", false);
-    renderView(false);
+  it("no longer shows the 'Auto mode' header chip, even when launched with auto-accept", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false, undefined, { agent: "claude" });
     expect(screen.queryByText("Auto mode")).not.toBeInTheDocument();
-  });
-
-  it("renders an accessible title explaining the mode, not just an icon", () => {
-    installMockSessionWithStatus("connected", true);
-    renderView(false);
-    expect(screen.getByText("Auto mode").closest("span")).toHaveAttribute(
-      "title",
-      expect.stringContaining("approves routine edits and commands itself"),
-    );
   });
 });
 
@@ -1219,5 +1213,55 @@ describe("TerminalSessionView — 'not encrypted yet' chip (Terminal P2 E2EE)", 
     fireEvent.click(screen.getByLabelText("Dismiss not-encrypted notice"));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByText(E2EE_COPY.chip.notE2ee)).toBeInTheDocument();
+  });
+});
+
+// Split view — pane visual order (Nick's field report, 7 Sep 2026: after a
+// resume/reconnect the two tabs showed each other's session id, because the
+// tab strip lays out in `paneKeys` order while the body maps `sessions` array
+// order). `paneOrder` (the pane's index within `paneKeys`) is applied as CSS
+// `order` so the body's visual left→right always follows `paneKeys` too —
+// then the two can never cross. Style-only, so no live xterm node moves.
+describe("TerminalSessionView pane order", () => {
+  function renderPane(paneOrder: number | undefined) {
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        poppedOut={false}
+        onBringBack={vi.fn()}
+        // A defined `paneFocused` is what marks this view as one of the split's
+        // panes (`inPane`), which is when `paneOrder` is honoured.
+        paneFocused={false}
+        paneOrder={paneOrder}
+      />,
+    );
+  }
+
+  it("applies paneOrder as the pane's CSS order so the body follows paneKeys", () => {
+    installMockSession();
+    renderPane(1);
+    // The pane root is the tabpanel (only present when inPane).
+    expect(screen.getByRole("tabpanel").style.order).toBe("1");
+  });
+
+  it("honours order 0 (a paneKeys[0] pane must not be treated as 'no order')", () => {
+    installMockSession();
+    renderPane(0);
+    expect(screen.getByRole("tabpanel").style.order).toBe("0");
+  });
+
+  it("sets no order when paneOrder is omitted (tabbed mode)", () => {
+    installMockSession();
+    renderPane(undefined);
+    expect(screen.getByRole("tabpanel").style.order).toBe("");
   });
 });

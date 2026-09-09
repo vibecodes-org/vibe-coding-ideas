@@ -33,6 +33,8 @@ export const KNOWN_CODEX_MODELS = [
   { value: "gpt-5.6-terra", label: "gpt-5.6-terra", tier: "standard" as const },
   { value: "gpt-5.6-luna", label: "gpt-5.6-luna", tier: "cheap" as const },
   { value: "gpt-5.5", label: "gpt-5.5", tier: "standard" as const },
+  { value: "gpt-daybreak-blue-latest", label: "gpt-daybreak-blue-latest", tier: "frontier" as const },
+  { value: "gpt-5.4-mini", label: "gpt-5.4-mini", tier: "cheap" as const },
 ] as const;
 
 export function isKnownCodexModel(value: string): boolean {

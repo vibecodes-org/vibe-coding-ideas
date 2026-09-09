@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
@@ -968,6 +969,40 @@ function makePersonaClaimContext(opts: {
 }
 
 describe("claimNextStep — persona embedding", () => {
+  // Captured before the Codex handoff fix: pin the COMPLETE Claude instruction,
+  // including Auto and missing-persona paths, without eight large text snapshots.
+  it("preserves pre-fix Claude instruction bytes for every tier and persona path", async () => {
+    const hashes: Record<string, string> = {};
+    for (const tier of [null, "frontier", "standard", "cheap"]) {
+      for (const systemPrompt of [null, "You are Atlas. Preserve the user's work."]) {
+        const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: tier });
+        const ctx = () => makePersonaClaimContext({
+          pendingStep: step,
+          updatedStep: { ...step, status: "in_progress" },
+          systemPrompt,
+        });
+        const implicit = await claimNextStep(ctx(), { task_id: TASK_ID });
+        const explicit = await claimNextStep(ctx(), { task_id: TASK_ID, agent: "claude" });
+        expect(explicit.instruction).toBe(implicit.instruction);
+        expect(explicit).not.toHaveProperty("execution");
+        hashes[`${tier ?? "auto"}/${systemPrompt ? "embedded" : "missing"}`] =
+          createHash("sha256").update(implicit.instruction!).digest("hex");
+      }
+    }
+    expect(hashes).toMatchInlineSnapshot(`
+      {
+        "auto/embedded": "6c0e1d9ccac5c053aaa402a618554c12773080f7de0e5abd739be8879fe4c3b7",
+        "auto/missing": "3ec8590a73b2a0a6ca188252d0943c8c71f0ece3c7e9e41ff78b205a547a857f",
+        "cheap/embedded": "8f76854012debb83a204bdca30607c954d6b8fc0e3210fff9e79779d4e5269e2",
+        "cheap/missing": "04333fec60b1aefe462e4124ce7274c0a763db2090041ab3f723eb31eb643114",
+        "frontier/embedded": "ff10e31dc0b3bb718391252d05a57433bd11106b01c5562011298472ae763493",
+        "frontier/missing": "0cdbc0a35fd7e55099fd35ce353e44688b65d0ff95eeff54ee04f79d6dc8757d",
+        "standard/embedded": "2b54917712906865a921416b14d89998a38988f63a20201cf4448c4358259699",
+        "standard/missing": "dfe5538ff1eb30bcd2752479538ec124c558f023ce417d3852dacd208fdde648",
+      }
+    `);
+  });
+
   it("embeds persona_prompt/persona_name/persona_role when the matched bot has a system_prompt", async () => {
     const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
@@ -1284,6 +1319,32 @@ describe("completeStep", () => {
 // ---------------------------------------------------------------------------
 
 describe("completeStep — tier adherence (P2c)", () => {
+  it.each(["frontier", "standard", "cheap"] as const)(
+    "records the Codex %s launch settings on completion, including a launched fallback", async (tier) => {
+      const step = makeStepRow({ model_tier: tier });
+      const claim = await claimNextStep(makeClaimContext({
+        pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [],
+      }), { task_id: TASK_ID, agent: "codex" });
+      if (!("execution" in claim) || !claim.execution) throw new Error("Expected a Codex claim");
+      const { model, reasoning_effort, fallback_model } = claim.execution;
+      if (!model || !reasoning_effort || !fallback_model) throw new Error("Expected tier settings");
+      for (const launchedModel of [model, fallback_model]) {
+        const { ctx, getUpdate } = ctxFor({
+          stepData: { ...baseStep, model_tier: tier, claim_token_hash: hashClaimToken(claim.claim_token!) },
+          updatedStep: baseUpdatedStep,
+        });
+        await completeStep(ctx, {
+          step_id: STEP_ID, claim_token: claim.claim_token!, agent: "codex",
+          model_used: launchedModel, reasoning_effort_used: reasoning_effort,
+          output: "A deliverable that does not claim to know its model.",
+        });
+        expect(getUpdate()).toMatchObject({
+          executed_model: launchedModel, reasoning_effort_used: reasoning_effort, tier_honored: true,
+        });
+      }
+    }
+  );
+
   /** run_id: null throughout so checkAndCompleteRun never fires — keeps these
    * tests focused on the tier-adherence write path only. */
   function ctxFor(opts: {
@@ -4413,9 +4474,12 @@ describe("modelTierClause", () => {
 
   it("produces the Codex-worded directive — never mentions the Task tool", () => {
     const clause = modelTierClause("standard", "codex");
-    expect(clause).toContain('switch this Codex session to model "gpt-5.6-sol" with reasoning effort "medium"');
+    expect(clause).toContain('model: "gpt-5.6-sol" and reasoning_effort: "medium" as actual spawn parameters');
     expect(clause).not.toContain("Task tool");
-    expect(clause).not.toContain("subagent");
+    expect(clause).toContain('fork_turns: "none"');
+    expect(clause).toContain("Do not switch the parent with /model");
+    expect(clause).toContain("Do not ask the child to identify its model");
+    expect(clause).toContain("Never report a requested configuration if the launch rejected it");
   });
 
   it("never capitalises a Codex model id in the clause", () => {
@@ -4615,6 +4679,88 @@ describe("resolvePersonaAdherence", () => {
 // ---------------------------------------------------------------------------
 // claimNextStep — MANDATORY MODEL directive in the instruction (P2b)
 // ---------------------------------------------------------------------------
+
+describe("claimNextStep — Codex handoff", () => {
+  it.each([
+    ["frontier", "gpt-6-astra", "high", "gpt-5.6-sol"],
+    ["standard", "gpt-5.6-sol", "medium", "gpt-5.6-luna"],
+    ["cheap", "gpt-5.6-luna", "low", "gpt-5.6-sol"],
+  ])("returns launch controls and carries prior context for %s", async (tier, model, effort, fallback) => {
+    const step = makeStepRow({ model_tier: tier });
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      priorSteps: [{ id: "prior-step", title: "Requirements", step_order: 1, output: "Preserve Claude behavior." }],
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toEqual({
+      agent: "codex", mode: "subagent", fork_turns: "none",
+      model, reasoning_effort: effort, fallback_model: fallback,
+      reporting_source: "accepted_launch_configuration",
+    });
+    expect(result.context).toEqual([
+      { step_id: "prior-step", step_title: "Requirements", output: "Preserve Claude behavior." },
+    ]);
+    expect(result.instruction).toContain("spawn_agent");
+    expect(result.instruction).not.toContain("Agent/Task tool");
+    expect(result.instruction).not.toContain("Completed inline — no subagent capability.");
+    expect(result.instruction).not.toContain("switch this Codex session");
+    expect(result.instruction).toContain("actual spawn parameters");
+    expect(result.instruction).toContain("Keep claim_token in the orchestrator only");
+    expect(result.instruction).toContain("context (prior outputs with step names and IDs)");
+    expect(result.instruction).toContain("approval_notes, rework_instructions, available_skills");
+    expect(result.instruction).toContain("actual working directory");
+    expect(result.instruction).toContain("It must not claim another step, complete/fail this step, or approve anything");
+    expect(result.instruction).toContain("CAPABILITY CHECK");
+    expect(result.instruction).toContain("stop before doing the work");
+    expect(result.instruction).toContain("get_agent_prompt"); // unassigned persona lookup
+  });
+
+  it("uses the user's live Codex override, including effort, in both text and launch fields", async () => {
+    const step = makeStepRow({ model_tier: "standard" });
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      priorSteps: [],
+      userModelTierMap: { standard: { codex: { model: "gpt-5.6-terra", effort: "high" } } },
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toMatchObject({ model: "gpt-5.6-terra", reasoning_effort: "high" });
+    expect(result.instruction).toContain('model: "gpt-5.6-terra" and reasoning_effort: "high"');
+  });
+
+  it.each([null, "Preserve this full persona.\nDo not rewrite its constraints."])(
+    "handles assigned persona %s without the Claude inline exception", async (systemPrompt) => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "cheap", human_check_required: true });
+      const result = await claimNextStep(makePersonaClaimContext({
+        pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt,
+      }), { task_id: TASK_ID, agent: "codex" });
+      if (!("execution" in result)) throw new Error("Expected a Codex claim");
+      expect(result.persona_prompt).toBe(systemPrompt ?? undefined);
+      expect(result.work_token).toMatch(/^wt_/);
+      expect(result.claim_token).toMatch(/^ct_/);
+      expect(result.instruction).not.toContain("Agent/Task tool");
+      expect(result.instruction).toContain(systemPrompt
+        ? "Use persona_prompt verbatim"
+        : `Call get_agent_prompt with agent_id "${PERSONA_BOT_ID}"`);
+      expect(result.instruction).toContain("HUMAN APPROVAL REQUIRED");
+      expect(result.instruction).toContain("do not claim to have changed the child's system prompt");
+    }
+  );
+
+  it("keeps Auto model selection open, with no tier lookups or inline fallback", async () => {
+    const step = makeStepRow({ model_tier: null });
+    const usersQueryIds: string[] = [];
+    const result = await claimNextStep(makeClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [], usersQueryIds,
+    }), { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toMatchObject({ model: null, reasoning_effort: null, fallback_model: null });
+    expect(result.instruction).not.toContain("MANDATORY MODEL");
+    expect(result.instruction).toContain("FRESH SUBAGENT");
+    expect(usersQueryIds).toEqual([]);
+  });
+});
 
 describe("claimNextStep — model_tier directive", () => {
   it("null model_tier leaves the instruction free of the directive and queries no users row (FR-12)", async () => {

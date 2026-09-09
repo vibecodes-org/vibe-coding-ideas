@@ -153,7 +153,7 @@ import {
 } from "@/lib/terminal/split-view";
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
-import { getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
   DISPLAY_NAME_COUNTER_THRESHOLD,
@@ -325,6 +325,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const handleAgentPickerChange = useCallback((agent: LaunchAgent) => {
     setChooserAgent(agent);
     void persistViewerTerminalAgent(agent).catch(() => {});
+  }, []);
+  // An incoming launch (bus payload) carries the agent the user explicitly
+  // clicked — "Codex → In the browser" sends agent:"codex". The board-level
+  // chooser's toggle (chooserAgent) must reflect THAT, not the remembered
+  // pick, or the panel shows Claude after a Codex click AND
+  // handleChooserStartNew's `{ ...pendingLaunch, agent: chooserAgent }` then
+  // overwrites the explicit choice with the stale toggle (the task dialog
+  // already honours this via taskDialogAgent — see the effect below). Also
+  // marks the seed ref so a late-resolving rememberedAgent can't clobber it.
+  // No persist: this mirrors an explicit launch, not a manual toggle write.
+  const seedChooserAgentFromLaunch = useCallback((payload: BrowserLaunchPayload | null) => {
+    if (payload?.agent) {
+      chooserAgentSeededRef.current = true;
+      setChooserAgent(payload.agent);
+    }
   }, []);
   // Dock-open persistence (rework 5, card cbe60db5 — Nick's field test: "fix
   // the terminal panel staying open as well"). Initial paint stays collapsed
@@ -850,7 +865,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // in another tab" — the pre-reload set alone isn't enough once a
         // fresh mint lands.
         readTabSids(),
-        getMachineIdentity(),
+        getMachineIdentities(),
       ),
     [registryRows, ideaId],
   );
@@ -1984,12 +1999,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // visible underneath.
         setExpanded(true);
         setPendingLaunch(payload);
+        seedChooserAgentFromLaunch(payload);
         if (sessionsRef.current.length > 0) setChooserMode("launch");
         return;
       }
       mintAndDeliver(payload);
     },
-    [mintAndDeliver],
+    [mintAndDeliver, seedChooserAgentFromLaunch],
   );
 
   // The "In the browser" menu item (board toolbar) and task-card menus fire the
@@ -2052,6 +2068,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         displayName?: string | null;
         /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only. */
         sessionKey?: string;
+        /** Codex support (FR-5): the row's agent, so the rebuilt tab keeps its
+         *  Codex label across a reload/reconnect (bug: read as Claude Code after
+         *  a hard refresh — Nick, 7 Sep 2026). */
+        agent?: LaunchAgent;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2113,6 +2133,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         launchPayload: null,
         attach,
         showReconnectedNoHistoryNote: !initialBuffer,
+        // Codex support (FR-5): carry the row's agent onto the rebuilt tab so a
+        // reload-reattached / instant-continue Codex session keeps its "Codex"
+        // label — without this the tab read as Claude Code after a hard refresh
+        // (Nick, 7 Sep 2026). Normalised the same way every other row-agent
+        // reader does (chooser-data.ts's rowAgent): only the literal "codex".
+        agent: data.agent === "codex" ? "codex" : "claude",
       };
       setSessions((prev) => (pristineKey ? prev.map((s) => (s.key === pristineKey ? entry : s)) : [...prev, entry]));
       setActiveKey(entry.key);
@@ -2167,7 +2193,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // from that state alone — nothing else to do. With a tab already
         // open, `deliverLaunch` couldn't know the resolved kind yet at queue
         // time, so the overlay hasn't been shown — open it now,
-        // non-destructively.
+        // non-destructively. Either way, seed the toggle from the explicit
+        // launch agent — the queue-time branch in `deliverLaunch` set
+        // `pendingLaunch` before the decision was known and couldn't do it.
+        seedChooserAgentFromLaunch(pendingLaunch);
         if (sessions.length > 0) setChooserMode("launch");
         return;
       }
@@ -2190,7 +2219,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections, seedChooserAgentFromLaunch]);
 
   // Cross-board resume fix (bug 62e57071, Sentinel's investigation): a
   // Recent row can belong to ANY board — chooser-data.ts's Recent section is
@@ -3008,11 +3037,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // amber badge below (design item 2 — the only place it may
                 // appear).
                 const boardIdentity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
-                // Codex support (design §4a): set at tab creation (entry.agent
-                // is captured once by mintAndDeliver, never mid-interaction),
-                // so this never reflows a tab between an arm click and its
-                // confirm click — same rule the "other board" pill follows.
-                const isCodexTab = entry.agent === "codex";
                 const label = deriveTabLabel({
                   displayName: entry.displayName,
                   taskTitle: entry.taskTitle,
@@ -3034,7 +3058,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                     role="tab"
                     aria-selected={isActive}
                     tabIndex={isActive ? 0 : -1}
-                    title={isCodexTab ? `Codex · ${label}` : label}
+                    title={label}
                     onKeyDown={(e) => handleTabKeyDown(e, index, entry.key)}
                     onClick={() => {
                       setExpanded(true);
@@ -3052,17 +3076,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       // the mid-interaction reflow the comment below forbids:
                       // `isOtherBoard` only changes on a board navigation,
                       // never between an arm click and its confirm click.
-                      // Codex support (design §4a): a Codex tab gets the SAME
-                      // "+40px both bounds" treatment as the amber other-board
-                      // pill — stacked when both apply — so the pill and the
-                      // session name never crush each other.
-                      boardIdentity.isOtherBoard && isCodexTab
-                        ? "min-w-[230px] max-w-[310px]"
-                        : boardIdentity.isOtherBoard
-                          ? "min-w-[190px] max-w-[270px]"
-                          : isCodexTab
-                            ? "min-w-[150px] max-w-[230px]"
-                            : "min-w-[110px] max-w-[190px]",
+                      boardIdentity.isOtherBoard
+                        ? "min-w-[190px] max-w-[270px]"
+                        : "min-w-[110px] max-w-[190px]",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
                       // Deliberately NO width change while renaming/confirming.
@@ -3178,14 +3194,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                           {meta.glyph}
                         </span>
                         <span className="sr-only">{meta.ariaText}</span>
-                        {/* Codex pill (design §4a, §11 Q2): Codex tabs only —
-                            Claude tabs are unlabelled, exactly as today.
-                            Sits BEFORE the name so it reads "Codex: <name>". */}
-                        {isCodexTab && (
-                          <span className="flex-none rounded border border-zinc-700 bg-zinc-800/60 px-1 py-px text-[10px] font-bold uppercase tracking-wide text-zinc-300">
-                            Codex
-                          </span>
-                        )}
+                        {/* The per-agent tab pill was removed (Nick, 7 Sep
+                            2026) — the agent is now named in the session panel
+                            header instead, so tabs are unlabelled for every
+                            agent. */}
                         <span
                           className="min-w-0 flex-1 truncate"
                           onDoubleClick={(e) => {
@@ -3395,7 +3407,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                         )}
                       >
                         {entry && renderTab(entry, originalIndex)}
-                        {isLast && stripControls}
+                        {/* Right-align the utility cluster inside the last
+                            column (Nick, 7 Sep 2026): in single view the
+                            toggle/+ already sit hard right (they follow a
+                            flex-1 tab strip); in split they used to bunch up
+                            against the last tab with dead space trailing to
+                            the pane's right edge. `ml-auto` pushes them to
+                            that edge so both layouts read the same. When the
+                            tab overflows there's no spare space, so `ml-auto`
+                            collapses to 0 and the column scrolls as before. */}
+                        {isLast && <div className="ml-auto flex flex-none items-stretch">{stripControls}</div>}
                       </div>
                     );
                   })}
@@ -3476,6 +3497,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResumeEndedSession={handleResumeEndedSession}
             lastHelperStatus={lastHelperStatus}
             wakeResume={wakeResumeByKey[entry.key] ?? null}
+            // Keep the pane's visual position tied to `paneKeys` (the canonical
+            // left→right order), not this map's `sessions` array order — else a
+            // resume/reconnect that reorders `paneKeys` leaves the tab strip
+            // (which maps `paneKeys`) crossed over the body (Nick, 7 Sep 2026).
+            paneOrder={inPane ? paneIndex : undefined}
           />
           );
         })}

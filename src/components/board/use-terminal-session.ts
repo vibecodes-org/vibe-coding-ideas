@@ -118,7 +118,7 @@ import {
   resolveTerminalPlatform,
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
-import { getMachineIdentity, setMachineIdentity } from "@/lib/terminal/machine-identity";
+import { addMachineIdentity, getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 import {
@@ -1884,16 +1884,22 @@ export function useTerminalSession(
             if (v) setHelperVersion(v);
             // Machine identity (Nick's sign-off change 2): the SAME frame
             // optionally carries the bridge's hostname. Recorded once per
-            // session (see machineIdentityAnnouncedSidRef's doc) — (1) as this
-            // browser's own remembered identity (machine-identity.ts, read by
-            // the chooser's Recent filter), and (2) a best-effort PATCH onto
-            // the registry row so OTHER browsers can filter against it too.
-            // Never awaited/blocking — an old bridge that omits `host` simply
-            // never triggers this (parses to null, nothing to record).
+            // session (see machineIdentityAnnouncedSidRef's doc) — (1) ADDED
+            // to this browser's remembered set of every hostname it has seen
+            // (machine-identity.ts, read by the chooser's Recent filter — one
+            // Mac can report more than one name across networks, so this
+            // accumulates rather than overwrites; accumulating is idempotent,
+            // so re-announcing an already-known name on a later session is
+            // harmless and the once-per-session guard below is purely to
+            // avoid redundant work, not correctness), and (2) a best-effort
+            // PATCH onto the registry row so OTHER browsers can filter
+            // against it too. Never awaited/blocking — an old bridge that
+            // omits `host` simply never triggers this (parses to null,
+            // nothing to record).
             const host = parseBridgeVersionHost(ev.data);
             if (host && machineIdentityAnnouncedSidRef.current !== sessionId) {
               machineIdentityAnnouncedSidRef.current = sessionId;
-              setMachineIdentity(host);
+              addMachineIdentity(host);
               void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },

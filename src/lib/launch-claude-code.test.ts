@@ -1789,6 +1789,9 @@ describe("buildCompactPromptEssentials — agent param (FR-6)", () => {
     const head = (codex.headSteps ?? []).join("\n");
     expect(head).toContain(`codex mcp add vibecodes --url ${APP_URL}/api/mcp`);
     expect(head).toContain("codex mcp login vibecodes");
+    expect(head).toContain('agent: "codex"');
+    expect(head).toContain("spawn a fresh subagent with the model/effort and context returned by claim_next_step");
+    expect(head).toContain("report its launch settings");
     // "claude mcp add"/"/mcp" DO still appear, but only inside the "do NOT
     // use" warning — assert there is no actionable Claude command left
     // (no `run \`claude mcp add`, no `/mcp\` flow instruction).
@@ -1873,6 +1876,7 @@ describe("realistic Codex launch fits the same URL budget as Claude (FR-6, cwdPo
     const prompt = decodePrompt(result.url);
     expect(prompt).toContain("codex mcp add vibecodes --url");
     expect(prompt).toContain("codex mcp login vibecodes");
+    expect(prompt).toContain("spawn a fresh subagent");
     expect(prompt).not.toContain("run `claude mcp add");
   });
 });

@@ -378,9 +378,7 @@ export async function POST(req: Request) {
     // to "off" (AC-2 equivalent: never block a launch over this), never
     // throws, never blocks the mint.
     let userAutoAccept = false;
-    // FR-4: a Codex launch's model_tier_map override for the Standard tier's
-    // Codex model+effort (its "starting model" for v1). Read in the SAME row
-    // fetch as terminal_model — one extra column, no second query.
+    // Read independent Codex terminal preferences in the same user-row fetch.
     let userTerminalCodexModel: string | null = null;
     let userTerminalCodexEffort: string | null = null;
     try {

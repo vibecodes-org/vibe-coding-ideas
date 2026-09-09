@@ -706,9 +706,8 @@ export function ModelTierSettings({
             )}
             {!terminalCustomMode && (
               <p id="terminal-model-help" className="text-[11px] text-muted-foreground">
-                Applies to Claude Code launches. Codex launches start on your Standard tier&apos;s Codex model. A
-                Codex starting-model picker is tracked as its own separate task. Resumed sessions keep the model
-                they were on; you can switch any time by typing /model in the terminal.
+                Applies to new Claude Code sessions. Choose the Codex starting model below. Resumed sessions
+                keep their existing model; you can switch any time by typing /model in the terminal.
               </p>
             )}
           </div>
@@ -813,7 +812,7 @@ export function ModelTierSettings({
         ) : (
           !isDirty && (
             <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
-              Save enables when you change a tier.
+              Save enables when you change a setting.
             </p>
           )
         )}
