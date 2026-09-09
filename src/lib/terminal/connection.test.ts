@@ -3,6 +3,7 @@ import {
   RELAY_CLOSE,
   E2EE_CLOSE,
   RECONNECT_GRACE_MS,
+  BAD_TOKEN_CALM_THRESHOLD_MS,
   HEARTBEAT_INTERVAL_MS,
   LINK_SILENT_AFTER_MS,
   initialConnectionState,
@@ -225,13 +226,34 @@ describe("mapCloseCode", () => {
   // "connect" — see that file's grace-reconnect branch). If the relay already tore
   // the session down by then, that reattach gets refused 4006 too — but this is an
   // honest "ended while you were away", not a genuinely bad/tampered token, so it
-  // must render the calm ended copy, not the scary verify error.
-  it("4006 refusing a RECONNECT (priorStatus disconnected) → calm session-ended, not an error", () => {
-    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected")).toEqual({
+  // must render the calm ended copy, not the scary verify error — PROVIDED enough
+  // real time has actually passed to look like a genuine away-for-a-while gap (see
+  // BAD_TOKEN_CALM_THRESHOLD_MS's doc — the wire can't otherwise tell this apart
+  // from a live bug refusing every attempt instantly).
+  it("4006 refusing a RECONNECT, well past the threshold → calm session-ended, not an error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected", BAD_TOKEN_CALM_THRESHOLD_MS)).toEqual({
       status: "session-ended",
       errorKind: null,
       endedReason: "reconnect-failed",
     });
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected", 60_000).status).toBe("session-ended");
+  });
+
+  // Bug fix (regression backfill): a reconnect refused within a couple of seconds
+  // of the drop is far more likely a live bug or a genuine token problem than an
+  // honest "you were away" ending — must still surface as a real, actionable error,
+  // not be swallowed into the calm copy. This is the exact regression: the original
+  // fix B applied the calm reading to EVERY refused reconnect regardless of timing,
+  // which silently masked real freezes/drops as clean endings.
+  it("4006 refusing a RECONNECT quickly (below the threshold) → still a real bad-token error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected")).toEqual({
+      status: "error",
+      errorKind: "bad-token",
+      endedReason: null,
+    });
+    expect(
+      mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "disconnected", BAD_TOKEN_CALM_THRESHOLD_MS - 1).errorKind,
+    ).toBe("bad-token");
   });
 
   it("4001 / 4002 → duplicate error", () => {

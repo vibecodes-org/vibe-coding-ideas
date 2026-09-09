@@ -162,6 +162,26 @@ describe("recordProjectPath — a worktree pwd is stored as the MAIN project fol
     expect(result.note).toMatch(/do not cd into the main folder/i);
   });
 
+  it("scopes the stay-put rule to THIS repo's two copies — never a life sentence (Nick's field report, 9 Sep 2026)", async () => {
+    // An isolated session that had just merged its work into main went on to
+    // refuse ANY cd, even to a totally unrelated project, reading the "don't
+    // cd into the main folder" line as "never leave this folder, ever." The
+    // note has to say, explicitly, that a different project is always fine
+    // and that the fence stops mattering once the work is merged/done.
+    const { chain } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+
+    const result = await recordProjectPath(ctx, {
+      idea_id: IDEA_ID,
+      hostname: "Nicks-MacBook",
+      absolute_path: WORKTREE,
+    });
+
+    expect(result.note).toMatch(/different project.*(always fine|entirely)/i);
+    expect(result.note).toMatch(/does NOT mean you're confined/i);
+    expect(result.note).toMatch(/(merged|done).*(no reason|served its purpose|done its job)/i);
+  });
+
   it("an ordinary path carries no normalisation note", async () => {
     const { chain } = createChain(STORED);
     const ctx = normalContext(() => chain as never);

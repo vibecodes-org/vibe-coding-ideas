@@ -170,6 +170,40 @@ export default function LaunchingClaudeCodePage() {
               folder itself, unchanged — and the folder VibeCodes remembers
               for the project is always the repo itself, never one of those
               copies.
+              <br />
+              An isolated session&apos;s work stays on its own branch until
+              you bring it home: once it&apos;s done (or whenever you want to
+              save progress), open{" "}
+              <strong className="text-foreground">&quot;My sessions&quot;</strong>{" "}
+              and click{" "}
+              <strong className="text-foreground">&quot;Merge into main&quot;</strong>{" "}
+              on that session&apos;s row. This runs a real{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                git merge
+              </code>{" "}
+              into your main checkout, on your own machine — it refuses safely
+              if your main copy has unsaved changes, and if the two branches
+              genuinely clash it backs out cleanly and tells you which files
+              need a human to resolve them, rather than leaving anything
+              half-merged. Nothing is ever pushed anywhere on your behalf.
+              <br />
+              The &quot;stay where you started, don&apos;t{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                cd
+              </code>{" "}
+              between them&quot; rule an isolated session follows is narrow
+              on purpose: it only means don&apos;t hop between{" "}
+              <em>this one repo&apos;s</em> worktree copy and its main
+              checkout — that&apos;s what would corrupt the folder VibeCodes
+              has recorded for the project. It&apos;s not a rule against
+              leaving the folder altogether. The session is always free to{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                cd
+              </code>{" "}
+              into a completely different project for unrelated work, and
+              once this session&apos;s changes are merged (or you&apos;re
+              simply done with it), the worktree has done its job — there is
+              nothing left to protect.
             </li>
             <li>
               <strong className="text-foreground">My sessions</strong> — the
