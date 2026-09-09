@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePostHog } from "posthog-js/react";
-import { Loader2, Power, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
+import { GitMerge, Loader2, Power, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +24,7 @@ import {
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { formatSessionAge, formatSessionIdentity } from "@/lib/terminal/session-registry";
+import { stripClaudeWorktreeSuffix } from "@/lib/launch-claude-code";
 import { isFallbackSessionName } from "@/lib/terminal/resolve-session-name";
 import { deriveTabLabel } from "./terminal-tabs";
 import { SessionRenameField } from "./terminal-session-rename";
@@ -133,6 +134,10 @@ export function TerminalMySessionsPanel({
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [sessions, setSessions] = useState<ListedSession[]>([]);
   const [endingSid, setEndingSid] = useState<string | null>(null);
+  // Isolated-worktree merge-back (task 6366bcb1) — "Merge into main"'s own
+  // in-flight + last-outcome state, per session (a row unmounts on End/expiry,
+  // so this never needs cleanup beyond that).
+  const [mergingSid, setMergingSid] = useState<string | null>(null);
   const [renamingSid, setRenamingSid] = useState<string | null>(null);
   const [confirmingEndAll, setConfirmingEndAll] = useState(false);
   const [endingAll, setEndingAll] = useState(false);
@@ -286,6 +291,62 @@ export function TerminalMySessionsPanel({
     },
     [load],
   );
+
+  // Isolated-worktree merge-back (task 6366bcb1) — "Merge into main". Surfaces
+  // the relay/helper's structured result directly rather than a generic
+  // success/fail: the human needs to know WHICH of merged/dirty/conflict/
+  // nothing-to-merge happened, not just whether the request round-tripped.
+  const mergeOne = useCallback(async (sid: string) => {
+    setMergingSid(sid);
+    try {
+      const res = await fetch("/api/terminal/helper/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cmd: "merge-worktree", sid }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        delivered?: boolean;
+        result?: { status: string; conflicts?: string[]; message?: string };
+      } | null;
+      if (!res.ok) {
+        toast.error(body?.error || "Couldn't merge that session.");
+        return;
+      }
+      if (body?.delivered === false) {
+        toast.error("Couldn't reach your machine to merge — the helper may not be running.");
+        return;
+      }
+      const result = body?.result;
+      switch (result?.status) {
+        case "merged":
+          toast.success("Merged into main.");
+          break;
+        case "main_dirty":
+          toast.error("Main copy has unsaved changes — can't merge safely right now.");
+          break;
+        case "conflict":
+          toast.error(
+            result.conflicts?.length
+              ? `Branches clash on ${result.conflicts.length === 1 ? result.conflicts[0] : `${result.conflicts.length} files`} — needs manual resolution.`
+              : "Branches clash — needs manual resolution.",
+          );
+          break;
+        case "nothing_to_merge":
+          toast("Nothing to merge — this session hasn't diverged from main yet.");
+          break;
+        case "not_git":
+          toast.error("That folder isn't a git project — nothing to merge.");
+          break;
+        default:
+          toast.error(result?.message || "Couldn't merge that session — try again.");
+      }
+    } catch {
+      toast.error("Couldn't merge that session — try again.");
+    } finally {
+      setMergingSid(null);
+    }
+  }, []);
 
   const endAll = useCallback(async () => {
     setEndingAll(true);
@@ -444,6 +505,12 @@ export function TerminalMySessionsPanel({
               });
               const ending = endingSid === s.sid;
               const renaming = renamingSid === s.sid;
+              // Isolated-worktree merge-back (task 6366bcb1): a session is
+              // isolated exactly when its recorded cwd is (or was) inside a
+              // `.claude/worktrees/` folder — the same signal
+              // stripClaudeWorktreeSuffix uses to collapse it back to main.
+              const isIsolated = Boolean(s.cwd) && stripClaudeWorktreeSuffix(s.cwd ?? "") !== s.cwd;
+              const merging = mergingSid === s.sid;
               return (
                 <li key={s.sid} className="flex items-center gap-2.5 border-t border-zinc-800 px-3.5 py-2.5 first:border-t-0">
                   {/* Name/identity/age/Reconnect/End hide while editing THIS row
@@ -489,6 +556,19 @@ export function TerminalMySessionsPanel({
                       <RefreshCw className="h-3 w-3" /> Reconnect
                     </Button>
                   )}
+                  {!renaming && isIsolated && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="flex-none border-emerald-500/45 bg-transparent text-emerald-400 hover:bg-emerald-500/10"
+                      disabled={merging || ending}
+                      onClick={() => void mergeOne(s.sid)}
+                      aria-label={`Merge into main: ${label}`}
+                    >
+                      {merging ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3 w-3" />} Merge
+                      into main
+                    </Button>
+                  )}
                   {!renaming && (
                     <Button
                       variant="outline"
@@ -519,7 +599,8 @@ export function TerminalMySessionsPanel({
                 <div className="min-w-0 flex-1">
                   <div className="text-[12.5px] font-bold text-rose-400">End all {running.length} sessions?</div>
                   <div className="text-[11px] text-zinc-500">
-                    Claude stops on your machine in every one. Unpushed worktree changes stay on disk.
+                    Claude stops on your machine in every one. Unmerged worktree changes stay on disk — merge an
+                    isolated session into main before ending it if you want to keep the work.
                   </div>
                 </div>
                 <Button variant="ghost" size="xs" onClick={() => setConfirmingEndAll(false)} disabled={endingAll}>

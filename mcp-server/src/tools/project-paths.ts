@@ -118,7 +118,7 @@ export async function recordProjectPath(
       ? {
           normalized_from_worktree: reportedPath,
           note:
-            "You are inside a Claude Code worktree (an isolated working copy). The MAIN project folder was recorded instead — that's correct. Keep working where you are; do not cd into the main folder.",
+            "You are inside a Claude Code worktree (an isolated working copy) — this happens when another terminal session is already active on this board, so VibeCodes gave you your own branch to avoid colliding with it. The MAIN project folder was recorded instead of this worktree path — that's correct. The ONE thing this protects: do not cd into the main folder (or from the main folder into this worktree) FOR THIS SAME REPO — hopping between a repo's two copies is what poisons the recorded folder. That's the whole rule: it does NOT mean you're confined here. Moving to a different project/repo entirely for unrelated work is always fine, and once this session's work is merged (or you're done with it), this worktree has done its job and there's no reason to keep favoring it. Your commits here live on their own branch and will NOT reach main on their own — there is no push step for this. When your work is ready (or before you finish up), OFFER to merge it back: the human can click \"Merge into main\" in the VibeCodes terminal panel for this session, which safely merges your branch into main on this machine (it refuses if main has uncommitted changes, and never leaves main half-merged if there's a conflict). Do not suggest pushing this branch anywhere as a way to save your work — merging into main via that button is the sanctioned way home.",
         }
       : {}),
   };
