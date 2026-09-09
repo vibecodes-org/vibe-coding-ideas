@@ -23,7 +23,7 @@ function resolveArch(raw: string | null): HelperArch {
   return raw === "x64" ? "x64" : "arm64";
 }
 
-export function helperDownloadUrl(version: string, arch: HelperArch): string {
+function helperDownloadUrl(version: string, arch: HelperArch): string {
   return `https://github.com/vibecodes-org/vibe-coding-ideas/releases/download/terminal-helper-v${version}/VibeCodes-${version}-${arch}.dmg`;
 }
 

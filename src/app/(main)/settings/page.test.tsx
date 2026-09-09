@@ -1,14 +1,8 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { UserRound } from "lucide-react";
 
-// This is a server-component page (fetches from Supabase, calls requireAuth),
-// which this repo has no pattern for rendering in Vitest/jsdom. Per the
-// project's fallback convention, we test the pure, exported piece instead:
-// `SettingsRow`, the building block every row on the page is made from. It
-// has no server-only dependencies, so it's safe to import directly even
-// though it lives in page.tsx.
-import { SettingsRow } from "./page";
+import { SettingsRow } from "@/components/profile/settings-row";
 
 afterEach(() => cleanup());
 
