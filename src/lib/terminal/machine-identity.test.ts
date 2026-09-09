@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   MACHINE_IDENTITY_KEY,
   MACHINE_IDENTITIES_KEY,
@@ -112,20 +112,21 @@ describe("machine identities — accumulated set (two-hostnames-one-Mac fix)", (
   });
 
   it("storage-throws path doesn't throw and reads back empty", () => {
-    const originalGetItem = window.localStorage.getItem.bind(window.localStorage);
-    const originalSetItem = window.localStorage.setItem.bind(window.localStorage);
-    window.localStorage.getItem = vi.fn(() => {
-      throw new Error("storage disabled");
+    // Replace the whole storage object: patching getItem/setItem (on the
+    // instance or on Storage.prototype) is not honoured consistently across
+    // jsdom builds, so the throw never fired on CI and master went red (#287).
+    const original = window.localStorage;
+    const throwing = new Proxy({} as Storage, {
+      get: () => () => {
+        throw new Error("storage disabled");
+      },
     });
-    window.localStorage.setItem = vi.fn(() => {
-      throw new Error("storage disabled");
-    });
+    Object.defineProperty(window, "localStorage", { value: throwing, configurable: true });
     try {
       expect(() => addMachineIdentity("Nicks-MBP.home.local")).not.toThrow();
       expect(getMachineIdentities()).toEqual([]);
     } finally {
-      window.localStorage.getItem = originalGetItem;
-      window.localStorage.setItem = originalSetItem;
+      Object.defineProperty(window, "localStorage", { value: original, configurable: true });
     }
   });
 });
