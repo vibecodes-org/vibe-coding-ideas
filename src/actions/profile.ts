@@ -387,6 +387,42 @@ export async function updateTerminalModel(model: string | null): Promise<string 
   return toStore;
 }
 
+/** Save Codex's independent terminal pair without touching Claude's setting. */
+export async function updateTerminalCodexModel(
+  model: string | null,
+  effort: string | null
+): Promise<{ model: string | null; effort: string | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  let modelToStore: string | null = null;
+  let effortToStore: string | null = null;
+  if (model !== null) {
+    const trimmed = model.trim();
+    if (trimmed === MACHINE_DEFAULT_TERMINAL_MODEL) {
+      if (effort !== null) throw new Error("Machine default cannot include a reasoning effort");
+      modelToStore = trimmed;
+    } else {
+      if (effort === null || !validateCodexModelValue(trimmed).ok || !isReasoningEffort(effort)) {
+        throw new Error("Choose a valid Codex model and reasoning effort");
+      }
+      modelToStore = trimmed;
+      effortToStore = effort;
+    }
+  } else if (effort !== null) {
+    throw new Error("Choose a Codex model with its reasoning effort");
+  }
+
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_codex_model: modelToStore, terminal_codex_effort: effortToStore })
+    .eq("id", user.id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/profile/${user.id}`);
+  return { model: modelToStore, effort: effortToStore };
+}
+
 // ── Terminal auto-accept mode (task d3de150c "Terminal mode") ──────────────
 // Per-user opt-in: fresh in-app terminal sessions launch with
 // `claude --permission-mode auto` when true. Self-only, same "lives

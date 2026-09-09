@@ -27,6 +27,7 @@ import {
   updateAgentAwareModelTierMap,
   getTerminalModel,
   updateTerminalModel,
+  updateTerminalCodexModel,
   getTerminalAutoAccept,
   updateTerminalAutoAccept,
 } from "./profile";
@@ -410,6 +411,33 @@ describe("updateTerminalModel", () => {
       update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
     }));
     await expect(updateTerminalModel("opus")).rejects.toThrow("write failed");
+  });
+});
+
+describe("updateTerminalCodexModel", () => {
+  it("stores an independent complete Codex pair without changing Claude's model", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    await expect(updateTerminalCodexModel("gpt-6-astra", "high")).resolves.toEqual({
+      model: "gpt-6-astra", effort: "high",
+    });
+    expect(updatedWith).toEqual({ terminal_codex_model: "gpt-6-astra", terminal_codex_effort: "high" });
+  });
+
+  it("stores machine default with no effort and rejects incomplete or malformed pairs", async () => {
+    mockSupabase.from.mockImplementation(() => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }));
+    await expect(updateTerminalCodexModel(MACHINE_DEFAULT_TERMINAL_MODEL, null)).resolves.toEqual({
+      model: MACHINE_DEFAULT_TERMINAL_MODEL, effort: null,
+    });
+    await expect(updateTerminalCodexModel("gpt-6-astra", null)).rejects.toThrow(/model and reasoning effort/i);
+    await expect(updateTerminalCodexModel("gpt;rm", "high")).rejects.toThrow(/model and reasoning effort/i);
+    await expect(updateTerminalCodexModel(null, "high")).rejects.toThrow(/model with its reasoning effort/i);
   });
 });
 

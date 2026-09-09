@@ -5,6 +5,7 @@ import {
   isKnownTerminalModelAlias,
   validateTerminalModelValue,
   resolveEffectiveTerminalModel,
+  resolveEffectiveTerminalCodexModel,
   resolveTerminalModelSource,
   terminalLaunchModelLine,
   terminalDialogModelLine,
@@ -92,6 +93,42 @@ describe("resolveEffectiveTerminalModel (AC-7 — every branch)", () => {
   it("user override empty string is treated as unset, never spawns --model ''", () => {
     expect(resolveEffectiveTerminalModel({ userValue: "", platformValue: "opus" })).toBe("opus");
     expect(resolveEffectiveTerminalModel({ userValue: "", platformValue: null })).toBeUndefined();
+  });
+});
+
+describe("resolveEffectiveTerminalCodexModel", () => {
+  const fallbackPair = { model: "gpt-5.6-terra", effort: "medium" };
+  const validModel = (value: string) => value.startsWith("gpt-");
+  const validEffort = (value: string) => ["low", "medium", "high"].includes(value);
+
+  it("uses a complete valid user pair without mixing sources", () => {
+    expect(resolveEffectiveTerminalCodexModel({
+      userModel: "gpt-6-astra", userEffort: "high",
+      platformPair: fallbackPair, fallbackPair, isValidModel: validModel, isValidEffort: validEffort,
+    })).toEqual({ model: "gpt-6-astra", effort: "high" });
+  });
+
+  it("omits both values for the explicit machine-default opt-out", () => {
+    expect(resolveEffectiveTerminalCodexModel({
+      userModel: MACHINE_DEFAULT_TERMINAL_MODEL, userEffort: null,
+      platformPair: fallbackPair, fallbackPair, isValidModel: validModel, isValidEffort: validEffort,
+    })).toBeUndefined();
+  });
+
+  it("falls through malformed or incomplete user input to the complete platform pair", () => {
+    expect(resolveEffectiveTerminalCodexModel({
+      userModel: "gpt-6-astra", userEffort: null,
+      platformPair: { model: "gpt-5.6-sol", effort: "high" }, fallbackPair,
+      isValidModel: validModel, isValidEffort: validEffort,
+    })).toEqual({ model: "gpt-5.6-sol", effort: "high" });
+  });
+
+  it("uses the FR-4 Standard fallback when the platform pair is malformed", () => {
+    expect(resolveEffectiveTerminalCodexModel({
+      userModel: null, userEffort: null,
+      platformPair: { model: "broken", effort: "high" }, fallbackPair,
+      isValidModel: validModel, isValidEffort: validEffort,
+    })).toEqual(fallbackPair);
   });
 });
 

@@ -25,6 +25,46 @@
  */
 export const MACHINE_DEFAULT_TERMINAL_MODEL = "__machine_default__";
 
+/** A complete Codex terminal override. Kept separate from the Claude string
+ * setting: the two CLIs have different model/effort contracts. */
+export interface TerminalCodexModelPair {
+  model: string;
+  effort: string;
+}
+
+export interface ResolveTerminalCodexModelInput {
+  userModel: string | null | undefined;
+  userEffort: string | null | undefined;
+  platformPair: TerminalCodexModelPair | null | undefined;
+  fallbackPair: TerminalCodexModelPair;
+  isValidModel: (value: string) => boolean;
+  isValidEffort: (value: string) => boolean;
+}
+
+/**
+ * Codex has an atomic model+effort launch contract. A user can inherit, opt
+ * out to their machine default, or supply a complete valid pair. Invalid and
+ * partial persisted input intentionally behaves as inheritance; it must never
+ * be combined with an effort/model from another source.
+ */
+export function resolveEffectiveTerminalCodexModel({
+  userModel,
+  userEffort,
+  platformPair,
+  fallbackPair,
+  isValidModel,
+  isValidEffort,
+}: ResolveTerminalCodexModelInput): TerminalCodexModelPair | undefined {
+  if (userModel === MACHINE_DEFAULT_TERMINAL_MODEL) return undefined;
+  if (userModel && userEffort && isValidModel(userModel) && isValidEffort(userEffort)) {
+    return { model: userModel, effort: userEffort };
+  }
+  if (platformPair && isValidModel(platformPair.model) && isValidEffort(platformPair.effort)) {
+    return platformPair;
+  }
+  return fallbackPair;
+}
+
 /** The same 4 family aliases the workflow-tier UI already offers. "Known"
  *  here only changes whether the UI shows a non-blocking amber advisory —
  *  it never affects whether a value is ACCEPTED (custom free text is always

@@ -29,6 +29,8 @@ type OwnProfileSettings = Pick<
   | "has_anthropic_key"
   | "model_tier_map"
   | "terminal_model"
+  | "terminal_codex_model"
+  | "terminal_codex_effort"
   | "terminal_auto_accept"
 >;
 
@@ -81,7 +83,7 @@ export default async function SettingsPage() {
   const { data: settings } = await supabase
     .from("users")
     .select(
-      "id, full_name, avatar_url, bio, github_username, contact_info, notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model, terminal_auto_accept"
+      "id, full_name, avatar_url, bio, github_username, contact_info, notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept"
     )
     .eq("id", user.id)
     .single();
@@ -142,6 +144,8 @@ export default async function SettingsPage() {
                 // before ModelTierSettings ever sees it (AC-2 backward compat).
                 agentAwareMap={normalizeUserModelTierMap(ownSettings.model_tier_map)}
                 terminalModel={ownSettings.terminal_model}
+                terminalCodexModel={ownSettings.terminal_codex_model}
+                terminalCodexEffort={ownSettings.terminal_codex_effort}
                 terminalAutoAccept={ownSettings.terminal_auto_accept}
               />
             }

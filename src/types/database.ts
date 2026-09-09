@@ -63,6 +63,10 @@ export type Database = {
            *  in src/lib/terminal/model-resolution.ts); any other string = passed
            *  verbatim as `claude --model <value>` on fresh sessions only. */
           terminal_model: string | null;
+          /** Independent Codex terminal pair. NULL inherits the platform
+           * Standard Codex pair; '__machine_default__' omits both flags. */
+          terminal_codex_model: string | null;
+          terminal_codex_effort: string | null;
           /** Task d3de150c ("Terminal mode") — opt-in: fresh in-app terminal
            *  sessions launch with `claude --permission-mode auto`
            *  when true. Default false. Never applies to a resumed session,
@@ -121,6 +125,8 @@ export type Database = {
           feed_preferences?: { view?: string; status?: string; sort?: string };
           model_tier_map?: ModelTierMapStored | null;
           terminal_model?: string | null;
+          terminal_codex_model?: string | null;
+          terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
@@ -161,6 +167,8 @@ export type Database = {
           feed_preferences?: { view?: string; status?: string; sort?: string };
           model_tier_map?: ModelTierMapStored | null;
           terminal_model?: string | null;
+          terminal_codex_model?: string | null;
+          terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;

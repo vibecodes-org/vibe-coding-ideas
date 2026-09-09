@@ -18,6 +18,7 @@ class ResizeObserverStub {
 vi.mock("@/actions/profile", () => ({
   updateAgentAwareModelTierMap: vi.fn(),
   updateTerminalModel: vi.fn(),
+  updateTerminalCodexModel: vi.fn(),
   updateTerminalAutoAccept: vi.fn(),
 }));
 
