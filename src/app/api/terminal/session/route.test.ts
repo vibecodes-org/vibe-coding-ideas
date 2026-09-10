@@ -378,6 +378,34 @@ describe("POST /api/terminal/session — Codex support (docs/codex-terminal-requ
     expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ agent: "codex" }));
   });
 
+  it("transfers a complete independent user Codex pair on a fresh launch", async () => {
+    tableResults.users = {
+      data: { terminal_codex_model: "gpt-6-astra", terminal_codex_effort: "high" }, error: null,
+    };
+    const res = await POST(req({ ideaId: IDEA_1, agent: "codex" }));
+    expect(await res.json()).toMatchObject({ model: "gpt-6-astra", effort: "high" });
+  });
+
+  it("omits the entire Codex pair for a machine-default opt-out", async () => {
+    tableResults.users = {
+      data: { terminal_codex_model: MACHINE_DEFAULT_TERMINAL_MODEL, terminal_codex_effort: null }, error: null,
+    };
+    const res = await POST(req({ ideaId: IDEA_1, agent: "codex" }));
+    const body = await res.json();
+    expect(body).not.toHaveProperty("model");
+    expect(body).not.toHaveProperty("effort");
+  });
+
+  it("leaves Claude's existing model resolution unchanged when Codex settings exist", async () => {
+    tableResults.users = {
+      data: { terminal_model: "sonnet", terminal_codex_model: "gpt-6-astra", terminal_codex_effort: "high" }, error: null,
+    };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body.model).toBe("sonnet");
+    expect(body).not.toHaveProperty("effort");
+  });
+
   it("rejects a malformed agent value at the schema (400)", async () => {
     const res = await POST(req({ ideaId: IDEA_1, agent: "chatgpt" }));
     expect(res.status).toBe(400);

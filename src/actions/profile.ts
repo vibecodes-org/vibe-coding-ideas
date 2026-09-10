@@ -325,6 +325,120 @@ export async function updateAgentAwareModelTierMap(
   return valueToSave;
 }
 
+export interface TerminalPreferencesInput {
+  agentAwareModelTierMap: AgentAwareUserModelTierMap;
+  terminalModel: string | null;
+  terminalCodexModel: string | null;
+  terminalCodexEffort: string | null;
+  terminalAutoAccept: boolean;
+}
+
+export interface TerminalPreferences {
+  agentAwareModelTierMap: AgentAwareUserModelTierMap | null;
+  terminalModel: string | null;
+  terminalCodexModel: string | null;
+  terminalCodexEffort: string | null;
+  terminalAutoAccept: boolean;
+}
+
+/**
+ * Saves every value owned by the Model Tiers dialog in one row update. The
+ * dialog has independent Claude and Codex preferences, but its Save affordance
+ * is one transaction boundary: validate all values before mutating so a failed
+ * save never leaves a subset of the dialog persisted.
+ */
+export async function updateTerminalPreferences(input: TerminalPreferencesInput): Promise<TerminalPreferences> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  if (typeof input !== "object" || input === null || typeof input.terminalAutoAccept !== "boolean") {
+    throw new Error("Invalid terminal preferences");
+  }
+
+  // Reuse the public actions' validators before the single write. Keeping the
+  // normalisation here local also avoids a partially-written dialog when one
+  // independent setting is malformed.
+  const map = input.agentAwareModelTierMap;
+  if (typeof map !== "object" || map === null || Array.isArray(map)) {
+    throw new Error("Invalid model tier map");
+  }
+  const normalizedMap: AgentAwareUserModelTierMap = {};
+  for (const tier of ["frontier", "standard", "cheap"] as const) {
+    const tierEntry = map[tier];
+    if (tierEntry === undefined) continue;
+    if (typeof tierEntry !== "object" || tierEntry === null || Array.isArray(tierEntry)) {
+      throw new Error(`Invalid model tier map — the ${modelTierLabel(tier)} entry must be an object`);
+    }
+    const storedTier: Partial<Record<AgentKind, AgentTierEntry>> = {};
+    for (const agent of ["claude", "codex"] as const) {
+      const agentEntry = tierEntry[agent];
+      if (agentEntry === undefined) continue;
+      if (typeof agentEntry !== "object" || agentEntry === null || Array.isArray(agentEntry)) {
+        throw new Error(`Invalid model tier map — the ${modelTierLabel(tier)} (${agent}) entry must be an object`);
+      }
+      const model = typeof agentEntry.model === "string" ? agentEntry.model.trim() : "";
+      const effort = agentEntry.effort;
+      if (!model && effort === undefined) continue;
+      const agentLabel = agent === "claude" ? "Claude" : "Codex";
+      if (!model) throw new Error(`Invalid model tier map — ${modelTierLabel(tier)} (${agentLabel}) has a reasoning effort but no model. Choose a model, or clear the effort to use the platform default.`);
+      if (agent === "claude" && !(MODEL_ALIASES as readonly string[]).includes(model)) {
+        throw new Error(`Invalid model tier map — ${modelTierLabel(tier)} (Claude) must be one of: ${MODEL_ALIASES.join(", ")}`);
+      }
+      if (agent === "codex") {
+        const validation = validateCodexModelValue(model);
+        if (!validation.ok) throw new Error(`Invalid model tier map — ${modelTierLabel(tier)} (Codex): ${validation.reason}`);
+      }
+      if (effort === undefined || !isReasoningEffort(effort)) {
+        const modelDisplay = agent === "claude" ? capitalizeModelName(model) : model;
+        throw new Error(`Choose a reasoning effort for ${modelDisplay} — ${modelTierLabel(tier)} (${agentLabel}).`);
+      }
+      storedTier[agent] = { model: agent === "claude" ? (model as ModelAlias) : model, effort };
+    }
+    if (storedTier.claude || storedTier.codex) normalizedMap[tier] = storedTier;
+  }
+
+  let terminalModel: string | null = null;
+  if (input.terminalModel !== null) {
+    const model = input.terminalModel.trim();
+    if (model !== MACHINE_DEFAULT_TERMINAL_MODEL) {
+      const validation = validateTerminalModelValue(model);
+      if (!validation.ok) throw new Error(validation.reason);
+    }
+    terminalModel = model;
+  }
+
+  let terminalCodexModel: string | null = null;
+  let terminalCodexEffort: string | null = null;
+  if (input.terminalCodexModel !== null) {
+    const model = input.terminalCodexModel.trim();
+    if (model === MACHINE_DEFAULT_TERMINAL_MODEL) {
+      if (input.terminalCodexEffort !== null) throw new Error("Machine default cannot include a reasoning effort");
+      terminalCodexModel = model;
+    } else {
+      if (input.terminalCodexEffort === null || !validateCodexModelValue(model).ok || !isReasoningEffort(input.terminalCodexEffort)) {
+        throw new Error("Choose a valid Codex model and reasoning effort");
+      }
+      terminalCodexModel = model;
+      terminalCodexEffort = input.terminalCodexEffort;
+    }
+  } else if (input.terminalCodexEffort !== null) {
+    throw new Error("Choose a Codex model with its reasoning effort");
+  }
+
+  const agentAwareModelTierMap = Object.keys(normalizedMap).length > 0 ? normalizedMap : null;
+  const { error } = await supabase.from("users").update({
+    model_tier_map: agentAwareModelTierMap,
+    terminal_model: terminalModel,
+    terminal_codex_model: terminalCodexModel,
+    terminal_codex_effort: terminalCodexEffort,
+    terminal_auto_accept: input.terminalAutoAccept,
+  }).eq("id", user.id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/profile/${user.id}`);
+  return { agentAwareModelTierMap, terminalModel, terminalCodexModel, terminalCodexEffort, terminalAutoAccept: input.terminalAutoAccept };
+}
+
 // ── Terminal starting model (task c4ca2d95) ─────────────────────────────
 // Per-user override of the in-app terminal's starting model (users.terminal_model).
 // Self-only: both actions operate on the authenticated user's own row. Lives
@@ -385,6 +499,42 @@ export async function updateTerminalModel(model: string | null): Promise<string 
 
   revalidatePath(`/profile/${user.id}`);
   return toStore;
+}
+
+/** Save Codex's independent terminal pair without touching Claude's setting. */
+export async function updateTerminalCodexModel(
+  model: string | null,
+  effort: string | null
+): Promise<{ model: string | null; effort: string | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  let modelToStore: string | null = null;
+  let effortToStore: string | null = null;
+  if (model !== null) {
+    const trimmed = model.trim();
+    if (trimmed === MACHINE_DEFAULT_TERMINAL_MODEL) {
+      if (effort !== null) throw new Error("Machine default cannot include a reasoning effort");
+      modelToStore = trimmed;
+    } else {
+      if (effort === null || !validateCodexModelValue(trimmed).ok || !isReasoningEffort(effort)) {
+        throw new Error("Choose a valid Codex model and reasoning effort");
+      }
+      modelToStore = trimmed;
+      effortToStore = effort;
+    }
+  } else if (effort !== null) {
+    throw new Error("Choose a Codex model with its reasoning effort");
+  }
+
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_codex_model: modelToStore, terminal_codex_effort: effortToStore })
+    .eq("id", user.id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/profile/${user.id}`);
+  return { model: modelToStore, effort: effortToStore };
 }
 
 // ── Terminal auto-accept mode (task d3de150c "Terminal mode") ──────────────

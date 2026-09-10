@@ -25,6 +25,70 @@
  */
 export const MACHINE_DEFAULT_TERMINAL_MODEL = "__machine_default__";
 
+/** A complete Codex terminal override. Kept separate from the Claude string
+ * setting: the two CLIs have different model/effort contracts. */
+export interface TerminalCodexModelPair {
+  model: string;
+  effort: string;
+}
+
+export interface ResolveTerminalCodexModelInput {
+  userModel: string | null | undefined;
+  userEffort: string | null | undefined;
+  platformPair: TerminalCodexModelPair | null | undefined;
+  fallbackPair: TerminalCodexModelPair;
+  isValidModel: (value: string) => boolean;
+  isValidEffort: (value: string) => boolean;
+}
+
+export type TerminalCodexModelSource = "user" | "machine" | "platform" | "fallback";
+
+export interface ResolvedTerminalCodexModel {
+  pair: TerminalCodexModelPair | undefined;
+  source: TerminalCodexModelSource;
+}
+
+/**
+ * Codex has an atomic model+effort launch contract. A user can inherit, opt
+ * out to their machine default, or supply a complete valid pair. Invalid and
+ * partial persisted input intentionally behaves as inheritance; it must never
+ * be combined with an effort/model from another source.
+ */
+export function resolveEffectiveTerminalCodexModel({
+  userModel,
+  userEffort,
+  platformPair,
+  fallbackPair,
+  isValidModel,
+  isValidEffort,
+}: ResolveTerminalCodexModelInput): TerminalCodexModelPair | undefined {
+  return resolveEffectiveTerminalCodexModelWithSource({
+    userModel, userEffort, platformPair, fallbackPair, isValidModel, isValidEffort,
+  }).pair;
+}
+
+/** Same precedence as the mint resolver, with the winning source for Profile. */
+export function resolveEffectiveTerminalCodexModelWithSource({
+  userModel,
+  userEffort,
+  platformPair,
+  fallbackPair,
+  isValidModel,
+  isValidEffort,
+}: ResolveTerminalCodexModelInput): ResolvedTerminalCodexModel {
+  if (userModel === MACHINE_DEFAULT_TERMINAL_MODEL) return { pair: undefined, source: "machine" };
+  if (userModel && userEffort && isValidModel(userModel) && isValidEffort(userEffort)) {
+    return { pair: { model: userModel, effort: userEffort }, source: "user" };
+  }
+  if (platformPair && isValidModel(platformPair.model) && isValidEffort(platformPair.effort)) {
+    return { pair: platformPair, source: "platform" };
+  }
+  if (isValidModel(fallbackPair.model) && isValidEffort(fallbackPair.effort)) {
+    return { pair: fallbackPair, source: "fallback" };
+  }
+  return { pair: undefined, source: "fallback" };
+}
+
 /** The same 4 family aliases the workflow-tier UI already offers. "Known"
  *  here only changes whether the UI shows a non-blocking amber advisory —
  *  it never affects whether a value is ACCEPTED (custom free text is always

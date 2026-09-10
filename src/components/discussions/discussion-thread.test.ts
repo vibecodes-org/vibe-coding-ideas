@@ -42,6 +42,8 @@ function makeReply(
       ai_starter_credits: 10,
       model_tier_map: null,
       terminal_model: null,
+      terminal_codex_model: null,
+      terminal_codex_effort: null,
       terminal_auto_accept: false,
       terminal_agent: "claude",
       feed_preferences: {},

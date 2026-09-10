@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { updateAgentAwareModelTierMap, updateTerminalModel, updateTerminalAutoAccept } from "@/actions/profile";
+import { updateTerminalPreferences } from "@/actions/profile";
 import { setViewerAgentAwareModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
 import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
 import { setViewerTerminalAutoAcceptCache } from "@/hooks/use-viewer-terminal-auto-accept";
@@ -43,6 +43,7 @@ import {
   MACHINE_DEFAULT_TERMINAL_MODEL,
   KNOWN_TERMINAL_MODEL_ALIASES,
   isKnownTerminalModelAlias,
+  resolveEffectiveTerminalCodexModelWithSource,
   validateTerminalModelValue,
   capitalizeTerminalModelName,
 } from "@/lib/terminal/model-resolution";
@@ -50,10 +51,11 @@ import { AUTO_ACCEPT_FRESH_ONLY_HELP, AUTO_ACCEPT_ON_CONSEQUENCE } from "@/lib/t
 import {
   KNOWN_CODEX_MODELS,
   isKnownCodexModel,
+  validateReasoningEffort,
   validateCodexModelValue,
   type ReasoningEffort,
 } from "@/lib/codex-models";
-import type { AgentAwareUserModelTierMap, AgentKind, AgentTierEntry } from "@/lib/platform-model-defaults";
+import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS, type AgentAwareUserModelTierMap, type AgentKind, type AgentTierEntry } from "@/lib/platform-model-defaults";
 import { EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
 
 // Radix Select can't use "" as an item value, so "follow the platform
@@ -94,6 +96,8 @@ interface ModelTierSettingsProps {
   agentAwareMap: AgentAwareUserModelTierMap;
   /** The signed-in user's terminal_model override (task c4ca2d95), fetched server-side. */
   terminalModel: string | null;
+  terminalCodexModel?: string | null;
+  terminalCodexEffort?: string | null;
   /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
   terminalAutoAccept: boolean;
   open?: boolean;
@@ -285,6 +289,8 @@ function AgentTierCell({
 export function ModelTierSettings({
   agentAwareMap,
   terminalModel,
+  terminalCodexModel = null,
+  terminalCodexEffort = null,
   terminalAutoAccept,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
@@ -304,35 +310,61 @@ export function ModelTierSettings({
   // custom value (raw, possibly-invalid text while the user is typing).
   const [terminalStaged, setTerminalStaged] = useState<string | null>(terminalModel);
   const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
+  const [terminalCodexStaged, setTerminalCodexStaged] = useState<string | null>(terminalCodexModel);
+  const [terminalCodexEffortStaged, setTerminalCodexEffortStaged] = useState<string | null>(terminalCodexEffort);
   // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
   // escape hatch: the only two legal states are on/off (design AC-6 —
   // "no dropdown, no free text, ever").
   const [autoAcceptStaged, setAutoAcceptStaged] = useState(terminalAutoAccept);
+  const [savedValues, setSavedValues] = useState({
+    agentAwareMap,
+    terminalModel,
+    terminalCodexModel,
+    terminalCodexEffort,
+    terminalAutoAccept,
+  });
 
   // Re-stage from the persisted values on every open so a prior Cancel never
   // leaks into the next open.
   function handleOpenChange(next: boolean) {
     if (next) {
-      setStaged(agentAwareMap);
+      setStaged(savedValues.agentAwareMap);
       setCodexCustomFields({});
-      setTerminalStaged(terminalModel);
-      setTerminalCustomMode(isTerminalCustomValue(terminalModel));
-      setAutoAcceptStaged(terminalAutoAccept);
+      setTerminalStaged(savedValues.terminalModel);
+      setTerminalCustomMode(isTerminalCustomValue(savedValues.terminalModel));
+      setTerminalCodexStaged(savedValues.terminalCodexModel);
+      setTerminalCodexEffortStaged(savedValues.terminalCodexEffort);
+      setAutoAcceptStaged(savedValues.terminalAutoAccept);
     }
     setOpen(next);
   }
 
-  const isTierDirty = JSON.stringify(staged) !== JSON.stringify(agentAwareMap);
-  const isTerminalDirty = terminalStaged !== terminalModel;
-  const isAutoAcceptDirty = autoAcceptStaged !== terminalAutoAccept;
-  const isDirty = isTierDirty || isTerminalDirty || isAutoAcceptDirty;
+  const isTierDirty = JSON.stringify(staged) !== JSON.stringify(savedValues.agentAwareMap);
+  const isTerminalDirty = terminalStaged !== savedValues.terminalModel;
+  const isAutoAcceptDirty = autoAcceptStaged !== savedValues.terminalAutoAccept;
+  const isCodexTerminalDirty = terminalCodexStaged !== savedValues.terminalCodexModel || terminalCodexEffortStaged !== savedValues.terminalCodexEffort;
+  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty;
   const hasAnyOverride =
-    Object.keys(staged).length > 0 || terminalStaged !== null || autoAcceptStaged;
+    Object.keys(staged).length > 0 || terminalStaged !== null || terminalCodexStaged !== null || autoAcceptStaged;
 
   const terminalValidation = terminalCustomMode ? validateTerminalModelValue(terminalStaged ?? "") : { ok: true as const };
   const terminalIsNovel =
     terminalCustomMode && terminalValidation.ok && !isKnownTerminalModelAlias((terminalStaged ?? "").trim());
   const terminalBlocked = terminalCustomMode && !terminalValidation.ok;
+  const codexTerminalValidation = terminalCodexStaged && terminalCodexStaged !== MACHINE_DEFAULT_TERMINAL_MODEL
+    ? validateCodexModelValue(terminalCodexStaged)
+    : { ok: true as const };
+  const codexTerminalBlocked = !codexTerminalValidation.ok ||
+    (terminalCodexStaged !== null && terminalCodexStaged !== MACHINE_DEFAULT_TERMINAL_MODEL && terminalCodexEffortStaged === null) ||
+    (terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL && terminalCodexEffortStaged !== null);
+  const terminalCodexResolution = platformLoading ? null : resolveEffectiveTerminalCodexModelWithSource({
+    userModel: terminalCodexStaged,
+    userEffort: terminalCodexEffortStaged,
+    platformPair: platformDefaults.defaults.standard.codex,
+    fallbackPair: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex,
+    isValidModel: (model) => validateCodexModelValue(model).ok,
+    isValidEffort: (effort) => validateReasoningEffort(effort).ok,
+  });
 
   // AC-3: a tier entry with a model but no effort blocks Save — find the
   // first offender (tier + agent) to name in the Save hint.
@@ -413,22 +445,33 @@ export function ModelTierSettings({
     setCodexCustomFields({});
     setTerminalStaged(null);
     setTerminalCustomMode(false);
+    setTerminalCodexStaged(null);
+    setTerminalCodexEffortStaged(null);
     setAutoAcceptStaged(false);
   }
 
   function handleSave() {
-    if (tierBlocked) return;
+    if (tierBlocked || terminalBlocked || codexTerminalBlocked) return;
     startTransition(async () => {
       try {
         const terminalToSave = terminalCustomMode ? (terminalStaged ?? "").trim() : terminalStaged;
-        const [savedTiers, savedTerminal, savedAutoAccept] = await Promise.all([
-          updateAgentAwareModelTierMap(staged),
-          updateTerminalModel(terminalToSave),
-          updateTerminalAutoAccept(autoAcceptStaged),
-        ]);
-        setViewerAgentAwareModelTierMapCache(savedTiers ?? {});
-        setViewerTerminalModelCache(savedTerminal);
-        setViewerTerminalAutoAcceptCache(savedAutoAccept);
+        const saved = await updateTerminalPreferences({
+          agentAwareModelTierMap: staged,
+          terminalModel: terminalToSave,
+          terminalCodexModel: terminalCodexStaged,
+          terminalCodexEffort: terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? null : terminalCodexEffortStaged,
+          terminalAutoAccept: autoAcceptStaged,
+        });
+        setViewerAgentAwareModelTierMapCache(saved.agentAwareModelTierMap ?? {});
+        setViewerTerminalModelCache(saved.terminalModel);
+        setViewerTerminalAutoAcceptCache(saved.terminalAutoAccept);
+        setSavedValues({
+          agentAwareMap: saved.agentAwareModelTierMap ?? {},
+          terminalModel: saved.terminalModel,
+          terminalCodexModel: saved.terminalCodexModel,
+          terminalCodexEffort: saved.terminalCodexEffort,
+          terminalAutoAccept: saved.terminalAutoAccept,
+        });
         toast.success("Model tiers saved");
         setOpen(false);
       } catch (err) {
@@ -447,7 +490,7 @@ export function ModelTierSettings({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cpu className="h-5 w-5" />
@@ -459,7 +502,7 @@ export function ModelTierSettings({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="min-h-0 space-y-4 overflow-y-auto py-2 pr-1">
           <div
             className="grid grid-cols-[100px_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-3"
             aria-busy={platformLoading || undefined}
@@ -663,11 +706,48 @@ export function ModelTierSettings({
             )}
             {!terminalCustomMode && (
               <p id="terminal-model-help" className="text-[11px] text-muted-foreground">
-                Applies to Claude Code launches. Codex launches start on your Standard tier&apos;s Codex model. A
-                Codex starting-model picker is tracked as its own separate task. Resumed sessions keep the model
-                they were on; you can switch any time by typing /model in the terminal.
+                Applies to new Claude Code sessions. Choose the Codex starting model below. Resumed sessions
+                keep their existing model; you can switch any time by typing /model in the terminal.
               </p>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="terminal-codex-starting-model" className="text-sm">
+              Codex starting model <span className="font-normal text-muted-foreground">— for new in-browser Codex sessions</span>
+            </Label>
+            <Select value={terminalCodexStaged ?? PLATFORM_DEFAULT_VALUE} onValueChange={(value) => {
+              if (value === PLATFORM_DEFAULT_VALUE) { setTerminalCodexStaged(null); setTerminalCodexEffortStaged(null); }
+              else if (value === MACHINE_DEFAULT_TERMINAL_MODEL) { setTerminalCodexStaged(value); setTerminalCodexEffortStaged(null); }
+              else { setTerminalCodexStaged(value); if (!terminalCodexEffortStaged) setTerminalCodexEffortStaged("medium"); }
+            }} disabled={isPending}>
+              <SelectTrigger id="terminal-codex-starting-model" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={PLATFORM_DEFAULT_VALUE}>Use organization default</SelectItem>
+                <SelectItem value={MACHINE_DEFAULT_TERMINAL_MODEL}>My machine&apos;s default</SelectItem>
+                <SelectSeparator />
+                {KNOWN_CODEX_MODELS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {terminalCodexStaged !== null && terminalCodexStaged !== MACHINE_DEFAULT_TERMINAL_MODEL && (
+              <EffortSegmentedControl
+                agent="codex"
+                value={(terminalCodexEffortStaged ?? "medium") as ReasoningEffort}
+                onChange={(effort) => setTerminalCodexEffortStaged(effort)}
+                disabled={isPending}
+              />
+            )}
+            {codexTerminalBlocked && <p role="alert" className="flex items-center gap-1.5 text-xs text-rose-500"><TriangleAlert className="h-3.5 w-3.5 shrink-0" />Choose a valid Codex model and reasoning effort.</p>}
+            <p className="text-[11px] text-muted-foreground">
+              {terminalCodexResolution === null
+                ? "Checking the Codex terminal default…"
+                : terminalCodexResolution.source === "machine"
+                  ? "Your machine decides the Codex model and effort."
+                  : terminalCodexResolution.pair === undefined
+                  ? "No valid Codex terminal default is available"
+                  : `${terminalCodexResolution.source === "user" ? "Your saved Codex pair" : terminalCodexResolution.source === "platform" ? "Organization Standard-tier Codex pair" : "Standard Codex fallback"}: ${terminalCodexResolution.pair.model} (${terminalCodexResolution.pair.effort}).`}
+              {" "}Resumed sessions keep their existing model.
+            </p>
           </div>
 
           {/* Auto-accept toggle (task d3de150c "Terminal mode") — a two-state
@@ -712,8 +792,8 @@ export function ModelTierSettings({
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={isPending || !isDirty || terminalBlocked || tierBlocked}
-              aria-describedby={!isDirty || terminalBlocked || tierBlocked ? "model-tier-save-why" : undefined}
+              disabled={isPending || !isDirty || terminalBlocked || codexTerminalBlocked || tierBlocked}
+              aria-describedby={!isDirty || terminalBlocked || codexTerminalBlocked || tierBlocked ? "model-tier-save-why" : undefined}
             >
               {isPending ? "Saving…" : "Save"}
             </Button>
@@ -727,10 +807,12 @@ export function ModelTierSettings({
           <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
             Fix the starting model to enable Save.
           </p>
+        ) : codexTerminalBlocked ? (
+          <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">Fix the Codex starting model to enable Save.</p>
         ) : (
           !isDirty && (
             <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
-              Save enables when you change a tier.
+              Save enables when you change a setting.
             </p>
           )
         )}

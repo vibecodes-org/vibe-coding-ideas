@@ -46,16 +46,15 @@ import {
   utcDayStart,
 } from "@/lib/terminal/relay-budget";
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
-import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
+import { resolveEffectiveTerminalModel, resolveEffectiveTerminalCodexModel } from "@/lib/terminal/model-resolution";
 import {
   getAgentAwarePlatformModelDefaults,
-  normalizeUserModelTierMap,
-  isReasoningEffort,
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
 } from "@/lib/platform-model-defaults";
 import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
 import { normalizeAgent } from "@/lib/terminal/agent-launch";
+import { validateCodexModelValue, validateReasoningEffort } from "@/lib/codex-models";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -379,14 +378,13 @@ export async function POST(req: Request) {
     // to "off" (AC-2 equivalent: never block a launch over this), never
     // throws, never blocks the mint.
     let userAutoAccept = false;
-    // FR-4: a Codex launch's model_tier_map override for the Standard tier's
-    // Codex model+effort (its "starting model" for v1). Read in the SAME row
-    // fetch as terminal_model — one extra column, no second query.
-    let userModelTierMapRaw: unknown = null;
+    // Read independent Codex terminal preferences in the same user-row fetch.
+    let userTerminalCodexModel: string | null = null;
+    let userTerminalCodexEffort: string | null = null;
     try {
       const { data: userRow, error: userRowErr } = await supabase
         .from("users")
-        .select("terminal_model, terminal_auto_accept, model_tier_map")
+        .select("terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept")
         .eq("id", user.id)
         .maybeSingle();
       if (userRowErr) {
@@ -396,8 +394,9 @@ export async function POST(req: Request) {
         });
       } else {
         userTerminalModel = userRow?.terminal_model ?? null;
+        userTerminalCodexModel = userRow?.terminal_codex_model ?? null;
+        userTerminalCodexEffort = userRow?.terminal_codex_effort ?? null;
         userAutoAccept = userRow?.terminal_auto_accept ?? false;
-        userModelTierMapRaw = userRow?.model_tier_map ?? null;
       }
     } catch (err) {
       logger.warn("Terminal session mint: unexpected error reading terminal_model/terminal_auto_accept — omitting user overrides", {
@@ -409,24 +408,24 @@ export async function POST(req: Request) {
       userValue: userTerminalModel,
       platformValue: platformTerminalModel,
     });
-    // FR-4: a fresh Codex launch opens on the user's Standard-tier Codex model
-    // + effort (override -> platform default) rather than the Claude terminal
-    // model resolved above — the deferred Codex "starting model" picker (System
-    // B, card c9837bbb) will later let this be set independently. Best-effort:
-    // any read/shape problem degrades to the seed's Standard Codex entry and
-    // never blocks the mint.
+    // Codex resolves an independent atomic terminal pair. The workflow tier
+    // map is only the platform source; a user's terminal setting never alters
+    // workflow tiers and malformed/partial input can never be mixed with it.
     let effectiveEffort: string | undefined;
     if (effectiveAgent === "codex") {
       try {
         const agentDefaults = await getAgentAwarePlatformModelDefaults(supabase);
-        const userTierMap = normalizeUserModelTierMap(userModelTierMapRaw);
-        const override = userTierMap.standard?.codex;
-        const entry =
-          override?.model && isReasoningEffort(override.effort)
-            ? { model: override.model, effort: override.effort }
-            : agentDefaults.defaults.standard.codex;
-        effectiveModel = entry.model;
-        effectiveEffort = entry.effort;
+        const platformPair = agentDefaults.defaults.standard.codex;
+        const pair = resolveEffectiveTerminalCodexModel({
+          userModel: userTerminalCodexModel,
+          userEffort: userTerminalCodexEffort,
+          platformPair,
+          fallbackPair: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex,
+          isValidModel: (value) => validateCodexModelValue(value).ok,
+          isValidEffort: (value) => validateReasoningEffort(value).ok,
+        });
+        effectiveModel = pair?.model;
+        effectiveEffort = pair?.effort;
       } catch (err) {
         logger.warn("Terminal session mint: failed to resolve Codex launch model — falling back to seed Standard Codex", {
           error: err instanceof Error ? err.message : String(err),
