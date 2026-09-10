@@ -36,6 +36,10 @@ import {
   encodeAlwaysOnFrame,
   isAlwaysOnFrame,
   parseAlwaysOnValue,
+  encodeMergeResultFrame,
+  isMergeResultFrame,
+  parseMergeResultFrame,
+  MAX_MERGE_CONFLICT_PATHS,
 } from "../shared/control-frames.mjs";
 import { parseControlMessage } from "../bridge/src/framing.js";
 
@@ -80,7 +84,7 @@ test("rejects non-attached / malformed / hostile inputs", () => {
   assert.equal(isAttachedFrame('{"t":"detached"}'), false);
   assert.equal(isAttachedFrame('{"t":"attached"' /* truncated */), false);
   // Oversized frames are rejected outright (bounded parse).
-  assert.equal(isAttachedFrame(`{"t":"attached","pad":"${"x".repeat(200)}"}`), false);
+  assert.equal(isAttachedFrame(`{"t":"attached","pad":"${"x".repeat(9000)}"}`), false);
 });
 
 test("stays disjoint from the resize control namespace (an attached frame is NOT a resize)", () => {
@@ -256,6 +260,53 @@ test("parseHelperCommandFrame rejects unknown commands and a missing/non-boolean
   assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd" })), null);
   assert.equal(parseHelperCommandFrame("not json"), null);
   assert.equal(parseHelperCommandFrame(null), null);
+});
+
+// ── merge-worktree command + merge-result frames (task 6366bcb1) ──────────
+
+const REQ_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const BRANCH_ID = "11111111-2222-3333-4444-555555555555";
+
+test("merge-worktree command frame encode ⇄ detect ⇄ parse round-trips (carries worktreePath, not a branch)", () => {
+  const value = {
+    requestId: REQ_ID,
+    mainRepoRoot: "/Users/nick/projects/vibe-coding-ideas",
+    worktreePath: `/Users/nick/projects/vibe-coding-ideas/.claude/worktrees/${BRANCH_ID}`,
+  };
+  const frame = encodeHelperCommandFrame("merge-worktree", value);
+  assert.equal(isHelperCommandFrame(frame), true);
+  assert.deepEqual(parseHelperCommandFrame(frame), { cmd: "merge-worktree", value });
+});
+
+test("parseHelperCommandFrame rejects a merge-worktree frame missing/malformed fields", () => {
+  const bad = (value) => JSON.stringify({ t: "helper-cmd", cmd: "merge-worktree", value });
+  assert.equal(parseHelperCommandFrame(bad({ mainRepoRoot: "/x", worktreePath: "/x/.claude/worktrees/y" })), null); // no requestId
+  assert.equal(parseHelperCommandFrame(bad({ requestId: REQ_ID, worktreePath: "/x/.claude/worktrees/y" })), null); // no mainRepoRoot
+  assert.equal(parseHelperCommandFrame(bad({ requestId: REQ_ID, mainRepoRoot: "/x" })), null); // no worktreePath
+  assert.equal(parseHelperCommandFrame(bad({ requestId: REQ_ID, mainRepoRoot: "/x", worktreePath: "" })), null);
+  assert.equal(parseHelperCommandFrame(bad("not-an-object")), null);
+  assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd", cmd: "merge-worktree" })), null);
+});
+
+test("merge-result frame encode ⇄ detect ⇄ parse round-trips", () => {
+  const result = { status: "merged", branch: BRANCH_ID, mergeCommit: "a".repeat(40) };
+  const frame = encodeMergeResultFrame({ requestId: REQ_ID, result });
+  assert.equal(isMergeResultFrame(frame), true);
+  assert.deepEqual(parseMergeResultFrame(frame), { requestId: REQ_ID, result });
+});
+
+test("merge-result frame truncates an oversized conflicts list to the bounded cap", () => {
+  const conflicts = Array.from({ length: 200 }, (_, i) => `file-${i}.txt`);
+  const frame = encodeMergeResultFrame({ requestId: REQ_ID, result: { status: "conflict", branch: BRANCH_ID, conflicts } });
+  const parsed = parseMergeResultFrame(frame);
+  assert.equal(parsed.result.conflicts.length, MAX_MERGE_CONFLICT_PATHS);
+  assert.deepEqual(parsed.result.conflicts, conflicts.slice(0, MAX_MERGE_CONFLICT_PATHS));
+});
+
+test("parseMergeResultFrame rejects a malformed requestId or missing result", () => {
+  assert.equal(parseMergeResultFrame(JSON.stringify({ t: "merge-result", requestId: "nope", result: {} })), null);
+  assert.equal(parseMergeResultFrame(JSON.stringify({ t: "merge-result", requestId: REQ_ID })), null);
+  assert.equal(parseMergeResultFrame("not json"), null);
 });
 
 test("goodbye frame encode ⇄ detect ⇄ parse round-trips for every valid reason", () => {
