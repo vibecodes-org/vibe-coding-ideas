@@ -27,6 +27,8 @@ import {
   getPlatformTerminalModelDefaultAction,
   getPlatformTerminalModelDefaultForAdmin,
   updatePlatformTerminalModelDefault,
+  getPlatformTerminalCodexModelDefaultAction,
+  updatePlatformTerminalCodexModelDefault,
   getAgentAwarePlatformModelDefaultsAction,
   getAgentAwarePlatformModelDefaultsForAdmin,
   updateAgentAwarePlatformModelDefaults,
@@ -414,6 +416,27 @@ describe("updatePlatformTerminalModelDefault — super-admin gate", () => {
     await expect(updatePlatformTerminalModelDefault("opus")).rejects.toThrow(
       "Failed to save the terminal starting model — try again"
     );
+  });
+});
+
+describe("platform Codex terminal default", () => {
+  it("reads a complete pair for any authenticated caller", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { value: { model: "gpt-6-astra", effort: "high" } }, error: null }) }) }),
+    }));
+    await expect(getPlatformTerminalCodexModelDefaultAction()).resolves.toEqual({ model: "gpt-6-astra", effort: "high" });
+    expect(mockSupabase.auth.getUser).not.toHaveBeenCalled();
+  });
+
+  it("super-admin saves model and effort atomically in one platform row", async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+    let upsertedWith: unknown;
+    mockSupabase.from.mockImplementation((table: string) => table === "users"
+      ? { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: true }, error: null }) }) }) }
+      : { upsert: (row: unknown) => { upsertedWith = row; return Promise.resolve({ error: null }); } });
+
+    await expect(updatePlatformTerminalCodexModelDefault({ model: " gpt-6-astra ", effort: "high" })).resolves.toEqual({ model: "gpt-6-astra", effort: "high" });
+    expect(upsertedWith).toMatchObject({ key: "terminal_codex_model_default", value: { model: "gpt-6-astra", effort: "high" }, updated_by: SUPER_ADMIN_ID });
   });
 });
 

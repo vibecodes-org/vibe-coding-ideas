@@ -9,7 +9,7 @@ import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
 import { AdminTemplatesDashboard } from "./admin-templates-dashboard";
 import { AdminMcpToolsDashboard } from "./admin-mcp-tools-dashboard";
-import { AdminPlatformDashboard, AdminTerminalModelCard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import type { McpToolLogWithUser, McpToolStatsRow } from "./admin-mcp-tools-dashboard";
 import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformStatsEntry } from "@/app/(main)/admin/page";
 import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
@@ -116,6 +116,7 @@ export function AdminTabs({
           the server action independently re-checks is_super_admin too). */}
       <TabsContent value="platform" className="mt-6 space-y-6">
         <AdminPlatformDashboard isSuperAdmin={isSuperAdmin} />
+        <AdminTerminalCodexModelCard isSuperAdmin={isSuperAdmin} />
         <AdminTerminalModelCard isSuperAdmin={isSuperAdmin} />
       </TabsContent>
     </Tabs>

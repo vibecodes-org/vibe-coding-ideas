@@ -22,12 +22,16 @@ const mockGetForAdmin = vi.fn();
 const mockUpdate = vi.fn();
 const mockGetTerminalForAdmin = vi.fn();
 const mockUpdateTerminal = vi.fn();
+const mockGetCodexTerminalForAdmin = vi.fn();
+const mockUpdateCodexTerminal = vi.fn();
 
 vi.mock("@/actions/admin-platform", () => ({
   getAgentAwarePlatformModelDefaultsForAdmin: () => mockGetForAdmin(),
   updateAgentAwarePlatformModelDefaults: (input: unknown) => mockUpdate(input),
   getPlatformTerminalModelDefaultForAdmin: () => mockGetTerminalForAdmin(),
   updatePlatformTerminalModelDefault: (model: string | null) => mockUpdateTerminal(model),
+  getPlatformTerminalCodexModelDefaultForAdmin: () => mockGetCodexTerminalForAdmin(),
+  updatePlatformTerminalCodexModelDefault: (pair: unknown) => mockUpdateCodexTerminal(pair),
 }));
 
 vi.mock("@/hooks/use-platform-model-defaults", () => ({
@@ -37,10 +41,13 @@ vi.mock("@/hooks/use-platform-model-defaults", () => ({
 vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
   setPlatformTerminalModelDefaultCache: vi.fn(),
 }));
+vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
+  setPlatformTerminalCodexModelDefaultCache: vi.fn(),
+}));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { AdminPlatformDashboard, AdminTerminalModelCard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
@@ -365,5 +372,23 @@ describe("AdminTerminalModelCard (task c4ca2d95 — binding: no seed)", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Super admin access required"));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+  });
+});
+
+describe("AdminTerminalCodexModelCard", () => {
+  it("renders and saves the independent platform model and effort pair", async () => {
+    mockGetCodexTerminalForAdmin.mockResolvedValue({
+      value: { model: "gpt-5.6-sol", effort: "medium" },
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-09-10T00:00:00Z",
+    });
+    mockUpdateCodexTerminal.mockResolvedValue({ model: "gpt-5.6-sol", effort: "high" });
+    render(<AdminTerminalCodexModelCard isSuperAdmin />);
+
+    await screen.findByText("Codex terminal starting model");
+    fireEvent.click(screen.getByRole("button", { name: "high" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockUpdateCodexTerminal).toHaveBeenCalledWith({ model: "gpt-5.6-sol", effort: "high" }));
   });
 });

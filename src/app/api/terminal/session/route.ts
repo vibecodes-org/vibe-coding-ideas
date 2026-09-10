@@ -46,6 +46,7 @@ import {
   utcDayStart,
 } from "@/lib/terminal/relay-budget";
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
+import { getPlatformTerminalCodexModelDefault } from "@/lib/terminal/platform-terminal-codex-model";
 import { resolveEffectiveTerminalModel, resolveEffectiveTerminalCodexModel } from "@/lib/terminal/model-resolution";
 import {
   getAgentAwarePlatformModelDefaults,
@@ -414,13 +415,15 @@ export async function POST(req: Request) {
     let effectiveEffort: string | undefined;
     if (effectiveAgent === "codex") {
       try {
-        const agentDefaults = await getAgentAwarePlatformModelDefaults(supabase);
-        const platformPair = agentDefaults.defaults.standard.codex;
+        const [platformPair, agentDefaults] = await Promise.all([
+          getPlatformTerminalCodexModelDefault(supabase),
+          getAgentAwarePlatformModelDefaults(supabase),
+        ]);
         const pair = resolveEffectiveTerminalCodexModel({
           userModel: userTerminalCodexModel,
           userEffort: userTerminalCodexEffort,
           platformPair,
-          fallbackPair: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex,
+          fallbackPair: agentDefaults.defaults.standard.codex,
           isValidModel: (value) => validateCodexModelValue(value).ok,
           isValidEffort: (value) => validateReasoningEffort(value).ok,
         });
