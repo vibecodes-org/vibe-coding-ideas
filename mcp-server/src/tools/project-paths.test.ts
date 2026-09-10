@@ -182,6 +182,23 @@ describe("recordProjectPath — a worktree pwd is stored as the MAIN project fol
     expect(result.note).toMatch(/(merged|done).*(no reason|served its purpose|done its job)/i);
   });
 
+  it("tells the agent to merge its own branch into main when done — no button, no push-as-backup", async () => {
+    const { chain } = createChain(STORED);
+    const ctx = normalContext(() => chain as never);
+
+    const result = await recordProjectPath(ctx, {
+      idea_id: IDEA_ID,
+      hostname: "Nicks-MacBook",
+      absolute_path: WORKTREE,
+    });
+
+    expect(result.note).toMatch(/merge your branch into main/i);
+    expect(result.note).toMatch(/resolve any conflicts/i);
+    expect(result.note).toMatch(/do not just push this branch.*backup/i);
+    expect(result.note).not.toMatch(/button/i);
+    expect(result.note).not.toMatch(/click/i);
+  });
+
   it("an ordinary path carries no normalisation note", async () => {
     const { chain } = createChain(STORED);
     const ctx = normalContext(() => chain as never);
