@@ -24,9 +24,13 @@ import {
   updateAgentAwarePlatformModelDefaults,
   type PlatformTerminalModelAudit,
   type AgentAwarePlatformModelDefaultsAudit,
+  getPlatformTerminalCodexModelDefaultForAdmin,
+  updatePlatformTerminalCodexModelDefault,
+  type PlatformTerminalCodexModelAudit,
 } from "@/actions/admin-platform";
 import { setPlatformAgentAwareModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
 import { setPlatformTerminalModelDefaultCache } from "@/hooks/use-platform-terminal-model-default";
+import { setPlatformTerminalCodexModelDefaultCache } from "@/hooks/use-platform-terminal-codex-model-default";
 import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
   type AgentAwarePlatformModelDefaults,
@@ -698,7 +702,7 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
   return (
     <div className="space-y-6 rounded-lg border p-6">
       <div>
-        <h3 className="font-semibold">Terminal starting model</h3>
+        <h3 className="font-semibold">Claude terminal starting model</h3>
         <p className="text-sm text-muted-foreground">
           The model fresh in-browser terminal sessions start on, platform-wide. Takes effect on the{" "}
           <b>next</b> session launched — no deploy, running sessions untouched. Users can override it in
@@ -827,6 +831,115 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
         >
           {saving ? "Saving…" : "Save"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+const NO_CODEX_TERMINAL_DEFAULT = "__no_codex_default__";
+
+/** Independent model + effort pair used by fresh Codex terminal launches. */
+export function AdminTerminalCodexModelCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+  const [reloadToken, setReloadToken] = useState(0);
+  const [audit, setAudit] = useState<PlatformTerminalCodexModelAudit | null>(null);
+  const [persisted, setPersisted] = useState<{ model: string; effort: ReasoningEffort } | null>(null);
+  const [staged, setStaged] = useState<{ model: string; effort: ReasoningEffort } | null>(null);
+  const [forceCustom, setForceCustom] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    setLoadState("loading");
+    getPlatformTerminalCodexModelDefaultForAdmin()
+      .then((result) => {
+        if (cancelled) return;
+        setAudit(result);
+        setPersisted(result.value);
+        setStaged(result.value);
+        setLoadState("ready");
+      })
+      .catch(() => { if (!cancelled) setLoadState("error"); });
+    return () => { cancelled = true; };
+  }, [isSuperAdmin, reloadToken]);
+
+  if (!isSuperAdmin) return <PlatformAccessDenied />;
+  if (loadState === "loading") return <div className="space-y-4 rounded-lg border p-6"><Skeleton className="h-5 w-56" /><Skeleton className="h-9 w-full max-w-md" /></div>;
+  if (loadState === "error") return (
+    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+      <p className="text-sm text-red-400">Failed to load the Codex terminal starting model.</p>
+      <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>Retry</Button>
+    </div>
+  );
+
+  const isDirty = JSON.stringify(staged) !== JSON.stringify(persisted);
+  const validation = staged ? validateCodexModelValue(staged.model) : { ok: true as const };
+  const blocked = !validation.ok;
+
+  function selectModel(value: string) {
+    if (value === CUSTOM_VALUE) { setForceCustom(true); return; }
+    setForceCustom(false);
+    if (value === NO_CODEX_TERMINAL_DEFAULT) setStaged(null);
+    else setStaged({ model: value, effort: staged?.effort ?? "medium" });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updatePlatformTerminalCodexModelDefault(staged && { model: staged.model.trim(), effort: staged.effort });
+      const fresh = await getPlatformTerminalCodexModelDefaultForAdmin();
+      setAudit(fresh);
+      setPersisted(fresh.value);
+      setStaged(fresh.value);
+      setForceCustom(false);
+      setPlatformTerminalCodexModelDefaultCache(fresh.value);
+      toast.success(fresh.value ? `Codex terminal default saved · ${fresh.value.model} (${fresh.value.effort})` : "Codex terminal default cleared · fresh sessions use the Standard fallback");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save the Codex terminal starting model — try again");
+    } finally { setSaving(false); }
+  }
+
+  const custom = forceCustom || Boolean(staged && !isKnownCodexModel(staged.model));
+  return (
+    <div className="space-y-6 rounded-lg border p-6">
+      <div>
+        <h3 className="font-semibold">Codex terminal starting model</h3>
+        <p className="text-sm text-muted-foreground">The model and reasoning effort for fresh in-browser Codex sessions, platform-wide. Users can override this pair in Profile → Model Tiers.</p>
+      </div>
+      <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="platform-terminal-codex-model" className="text-xs">Codex starting model</Label>
+          {custom ? (
+            <div className="flex gap-2">
+              <Input id="platform-terminal-codex-model" value={staged?.model ?? ""} disabled={saving} aria-invalid={blocked || undefined} onChange={(e) => setStaged({ model: e.target.value, effort: staged?.effort ?? "medium" })} placeholder="e.g. gpt-6-astra" />
+              <Button type="button" variant="ghost" size="sm" onClick={() => setForceCustom(false)}>Choose known…</Button>
+            </div>
+          ) : (
+            <Select value={staged?.model ?? NO_CODEX_TERMINAL_DEFAULT} disabled={saving} onValueChange={selectModel}>
+              <SelectTrigger id="platform-terminal-codex-model"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CODEX_TERMINAL_DEFAULT}>Use Standard-tier fallback</SelectItem>
+                <SelectSeparator />
+                {KNOWN_CODEX_MODELS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                <SelectSeparator /><SelectItem value={CUSTOM_VALUE}>Custom…</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {blocked && !validation.ok && <p role="alert" className="text-xs text-rose-500">{validation.reason}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium">Reasoning effort</span>
+          <EffortSegmentedControl agent="codex" value={staged?.effort} disabled={saving || !staged} onChange={(effort) => setStaged(staged ? { ...staged, effort } : staged)} />
+        </div>
+      </div>
+      {audit && <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{audit.value ? <span>Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>{audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}</span> : <span>No Codex terminal platform pair saved — using the Standard-tier fallback.</span>}</div>}
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        {!isDirty && <span className="mr-auto text-xs text-muted-foreground">Save enables when you change a value.</span>}
+        {isDirty && blocked && <span className="mr-auto text-xs text-muted-foreground">Fix the model name to enable Save.</span>}
+        <Button type="button" variant="destructive" size="sm" disabled={saving || !staged} onClick={() => { setStaged(null); setForceCustom(false); }}>Clear</Button>
+        <Button type="button" variant="outline" size="sm" disabled={saving || !isDirty} onClick={() => { setStaged(persisted); setForceCustom(false); }}>Cancel</Button>
+        <Button type="button" size="sm" disabled={saving || !isDirty || blocked} onClick={save}>{saving ? "Saving…" : "Save"}</Button>
       </div>
     </div>
   );

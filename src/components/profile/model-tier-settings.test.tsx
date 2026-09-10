@@ -47,6 +47,13 @@ vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
   usePlatformTerminalModelDefault: () => mockUsePlatformTerminalModelDefault(),
 }));
 
+const mockUsePlatformTerminalCodexModelDefault = vi.fn(
+  (): { model: string; effort: "low" | "medium" | "high" } | null => null
+);
+vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
+  usePlatformTerminalCodexModelDefault: () => mockUsePlatformTerminalCodexModelDefault(),
+}));
+
 import { ModelTierSettings } from "./model-tier-settings";
 import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
 
@@ -144,6 +151,7 @@ describe("ModelTierSettings — agent-aware workflow tiers (Codex model-tier tas
 describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => {
   beforeEach(() => {
     mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue(null);
   });
 
   it("shows 'your machine decides' when no platform default is set (binding: no seed)", () => {
@@ -154,8 +162,9 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
   });
 
   it("shows the resolved organization Codex pair and its source", () => {
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue({ model: "gpt-5.1-codex-mini", effort: "medium" });
     renderDialog();
-    expect(screen.getByText(/Organization Standard-tier Codex pair: gpt-5\.1-codex-mini \(medium\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Organization Codex terminal pair: gpt-5\.1-codex-mini \(medium\)/)).toBeInTheDocument();
   });
 
   it("shows the user's saved Codex pair as the resolved source", () => {
@@ -259,6 +268,7 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
   beforeEach(() => {
     mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
     mockUsePlatformTerminalModelDefault.mockReturnValue(null);
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue(null);
   });
 
   it("renders as a switch (role=switch), never a select or text input", () => {

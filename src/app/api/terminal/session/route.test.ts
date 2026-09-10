@@ -33,13 +33,18 @@ function makeChain(result: { data?: unknown; error?: unknown; count?: number | n
   return chain;
 }
 
-const { mockFrom, mockGetUser, tableResults, insertSpy } = vi.hoisted(() => {
+const { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault } = vi.hoisted(() => {
   const mockFrom = vi.fn();
   const mockGetUser = vi.fn();
   const tableResults: Record<string, { data?: unknown; error?: unknown; count?: number | null }> = {};
   const insertSpy = vi.fn();
-  return { mockFrom, mockGetUser, tableResults, insertSpy };
+  const mockGetPlatformTerminalCodexDefault = vi.fn();
+  return { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault };
 });
+
+vi.mock("@/lib/terminal/platform-terminal-codex-model", () => ({
+  getPlatformTerminalCodexModelDefault: (...args: unknown[]) => mockGetPlatformTerminalCodexDefault(...args),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -85,6 +90,7 @@ beforeEach(() => {
   vi.stubEnv("TERMINAL_SESSION_SECRET", "test-secret");
   vi.setSystemTime(new Date(NOW_ISO));
   mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+  mockGetPlatformTerminalCodexDefault.mockResolvedValue(null);
   for (const key of Object.keys(tableResults)) delete tableResults[key];
   tableResults.ideas = { data: { id: IDEA_1, author_id: "user-1" }, error: null };
   tableResults.collaborators = { data: null, error: null };
@@ -384,6 +390,12 @@ describe("POST /api/terminal/session — Codex support (docs/codex-terminal-requ
     };
     const res = await POST(req({ ideaId: IDEA_1, agent: "codex" }));
     expect(await res.json()).toMatchObject({ model: "gpt-6-astra", effort: "high" });
+  });
+
+  it("uses the independent platform terminal pair when the user inherits", async () => {
+    mockGetPlatformTerminalCodexDefault.mockResolvedValue({ model: "gpt-daybreak-blue-latest", effort: "high" });
+    const res = await POST(req({ ideaId: IDEA_1, agent: "codex" }));
+    expect(await res.json()).toMatchObject({ model: "gpt-daybreak-blue-latest", effort: "high" });
   });
 
   it("omits the entire Codex pair for a machine-default opt-out", async () => {

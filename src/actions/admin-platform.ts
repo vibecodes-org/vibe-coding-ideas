@@ -22,6 +22,12 @@ import {
 } from "@/lib/terminal/platform-terminal-model";
 import { validateTerminalModelValue } from "@/lib/terminal/model-resolution";
 import { validateCodexModelValue } from "@/lib/codex-models";
+import {
+  getPlatformTerminalCodexModelDefault,
+  isValidPlatformTerminalCodexModelDefault,
+  TERMINAL_CODEX_MODEL_DEFAULT_KEY,
+  type PlatformTerminalCodexModelDefault,
+} from "@/lib/terminal/platform-terminal-codex-model";
 
 // ── Admin-configurable platform model-tier defaults ─────────────────────
 // Super-admin-only read-for-admin / write. Any authenticated user can read
@@ -323,4 +329,66 @@ export async function updatePlatformTerminalModelDefault(model: string | null): 
   }
 
   return trimmed;
+}
+
+export type PlatformTerminalCodexModelAudit = {
+  value: PlatformTerminalCodexModelDefault | null;
+  updatedBy: { id: string; full_name: string | null } | null;
+  updatedAt: string | null;
+};
+
+/** Public read used by Profile and session launch resolution. */
+export async function getPlatformTerminalCodexModelDefaultAction(): Promise<PlatformTerminalCodexModelDefault | null> {
+  const supabase = await createClient();
+  return getPlatformTerminalCodexModelDefault(supabase) as Promise<PlatformTerminalCodexModelDefault | null>;
+}
+
+export async function getPlatformTerminalCodexModelDefaultForAdmin(): Promise<PlatformTerminalCodexModelAudit> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value, updated_at, updated_by:users!platform_settings_updated_by_fkey(id, full_name)")
+    .eq("key", TERMINAL_CODEX_MODEL_DEFAULT_KEY)
+    .maybeSingle();
+
+  if (!data) return { value: null, updatedBy: null, updatedAt: null };
+  const updatedBy = Array.isArray(data.updated_by) ? data.updated_by[0] ?? null : data.updated_by ?? null;
+  return {
+    value: isValidPlatformTerminalCodexModelDefault(data.value) ? data.value : null,
+    updatedBy,
+    updatedAt: data.updated_at,
+  };
+}
+
+/** Saves model and effort as one JSON value so launch resolution never mixes sources. */
+export async function updatePlatformTerminalCodexModelDefault(
+  value: PlatformTerminalCodexModelDefault | null
+): Promise<PlatformTerminalCodexModelDefault | null> {
+  const { supabase, userId } = await requireSuperAdmin();
+  if (value === null) {
+    const { error } = await supabase.from("platform_settings").delete().eq("key", TERMINAL_CODEX_MODEL_DEFAULT_KEY);
+    if (error) {
+      logger.error("Failed to clear platform Codex terminal default", { error: error.message, userId });
+      throw new Error("Failed to clear the Codex terminal starting model — try again");
+    }
+    return null;
+  }
+
+  const model = value.model.trim();
+  const validation = validateCodexModelValue(model);
+  if (!validation.ok) throw new Error(validation.reason);
+  if (!REASONING_EFFORT_LEVELS.includes(value.effort)) throw new Error("Choose a valid Codex reasoning effort");
+
+  const saved = { model, effort: value.effort };
+  const { error } = await supabase.from("platform_settings").upsert({
+    key: TERMINAL_CODEX_MODEL_DEFAULT_KEY,
+    value: saved,
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) {
+    logger.error("Failed to save platform Codex terminal default", { error: error.message, userId });
+    throw new Error("Failed to save the Codex terminal starting model — try again");
+  }
+  return saved;
 }

@@ -32,6 +32,7 @@ import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
 import { setViewerTerminalAutoAcceptCache } from "@/hooks/use-viewer-terminal-auto-accept";
 import { usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
+import { usePlatformTerminalCodexModelDefault } from "@/hooks/use-platform-terminal-codex-model-default";
 import {
   MODEL_TIER_WHEN_TO_USE,
   capitalizeModelName,
@@ -304,6 +305,7 @@ export function ModelTierSettings({
   const [codexCustomFields, setCodexCustomFields] = useState<Record<string, boolean>>({});
   const { defaults: platformDefaults, isLoading: platformLoading } = usePlatformAgentAwareModelDefaults();
   const platformTerminalDefault = usePlatformTerminalModelDefault();
+  const platformTerminalCodexDefault = usePlatformTerminalCodexModelDefault();
 
   // Terminal sessions group state — null = platform default; the sentinel
   // string = "my machine's default"; anything else = a known alias or a
@@ -357,11 +359,11 @@ export function ModelTierSettings({
   const codexTerminalBlocked = !codexTerminalValidation.ok ||
     (terminalCodexStaged !== null && terminalCodexStaged !== MACHINE_DEFAULT_TERMINAL_MODEL && terminalCodexEffortStaged === null) ||
     (terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL && terminalCodexEffortStaged !== null);
-  const terminalCodexResolution = platformLoading ? null : resolveEffectiveTerminalCodexModelWithSource({
+  const terminalCodexResolution = platformLoading || platformTerminalCodexDefault === undefined ? null : resolveEffectiveTerminalCodexModelWithSource({
     userModel: terminalCodexStaged,
     userEffort: terminalCodexEffortStaged,
-    platformPair: platformDefaults.defaults.standard.codex,
-    fallbackPair: SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex,
+    platformPair: platformTerminalCodexDefault,
+    fallbackPair: platformDefaults.defaults.standard.codex,
     isValidModel: (model) => validateCodexModelValue(model).ok,
     isValidEffort: (effort) => validateReasoningEffort(effort).ok,
   });
@@ -745,7 +747,7 @@ export function ModelTierSettings({
                   ? "Your machine decides the Codex model and effort."
                   : terminalCodexResolution.pair === undefined
                   ? "No valid Codex terminal default is available"
-                  : `${terminalCodexResolution.source === "user" ? "Your saved Codex pair" : terminalCodexResolution.source === "platform" ? "Organization Standard-tier Codex pair" : "Standard Codex fallback"}: ${terminalCodexResolution.pair.model} (${terminalCodexResolution.pair.effort}).`}
+                  : `${terminalCodexResolution.source === "user" ? "Your saved Codex pair" : terminalCodexResolution.source === "platform" ? "Organization Codex terminal pair" : "Standard Codex fallback"}: ${terminalCodexResolution.pair.model} (${terminalCodexResolution.pair.effort}).`}
               {" "}Resumed sessions keep their existing model.
             </p>
           </div>
