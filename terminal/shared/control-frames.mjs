@@ -142,28 +142,17 @@ export const HELPER_GOODBYE_REASONS = Object.freeze([
 ]);
 
 /** The closed set of commands the web app may forward to a helper leg. */
-export const HELPER_COMMANDS = Object.freeze(["stop", "quiesce", "set-always-on", "merge-worktree"]);
-
-/** Max length accepted for a `merge-worktree` command's `mainRepoRoot`/
- *  `worktreePath` — matches the absolute-path cap
- *  `record_project_path`/`isPlausibleProjectPath` already enforce app-side
- *  (src/lib/launch-claude-code.ts), re-checked here too. `worktreePath` is
- *  always `mainRepoRoot` plus a `/.claude/worktrees/<uuid>` suffix, so the
- *  same cap comfortably covers both. */
-const MAX_MERGE_PATH_LENGTH = 4096;
+export const HELPER_COMMANDS = Object.freeze(["stop", "quiesce", "set-always-on"]);
 
 /** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded.
- *  9000 (bumped from 200 for the merge-back frames — task 6366bcb1) is sized
- *  to fit the worst case of the LARGEST control frame that shares this gate:
- *  a `helper-cmd`/`merge-worktree` frame's `mainRepoRoot` PLUS `worktreePath`
- *  (each up to the 4096-char absolute-path cap enforced app-side) plus a
- *  `merge-result` frame's
- *  (already-truncated, see encodeMergeResultFrame) conflict-path list, plus
- *  JSON overhead. Every OTHER control frame here (attached/hb/goodbye/…) is a
- *  few dozen bytes, so this stays a trivially bounded, DoS-safe size for the
- *  whole shared gate even at its new ceiling. */
+ *  200 (not the original 64, bumped from 160 for the `conv` field) is sized to
+ *  fit the bridge-version frame's worst case — `v` (semver) plus a full
+ *  80-char `host` (sanitizeMachineLabel's own cap) plus a 36-char `conv` UUID
+ *  plus JSON overhead (176 bytes measured) — while staying a trivially
+ *  bounded, DoS-safe size for every other (much shorter) control frame that
+ *  shares this same gate. */
 function isControlFrame(text, tag) {
-  if (typeof text !== "string" || text.length === 0 || text.length > 9000) return false;
+  if (typeof text !== "string" || text.length === 0 || text.length > 200) return false;
   try {
     const msg = JSON.parse(text);
     return !!msg && typeof msg === "object" && msg.t === tag;
@@ -404,22 +393,9 @@ export function sanitizeConversationId(raw) {
 
 /**
  * The TEXT frame the relay forwards to a live `helper` leg. `value` is included
- * for `set-always-on` (a boolean) and `merge-worktree` (an object — see
- * `parseHelperCommandFrame`); omitted for `stop`/`quiesce`.
- *
- * `merge-worktree`'s `value` carries `worktreePath`, NOT a `branch` name: the
- * folder is named after the claude conversation id
- * (`.claude/worktrees/<id>`), but the git BRANCH checked out there is
- * `worktree-<id>` — a prefixed name Claude Code picks, not the bare id
- * (verified live, task 6366bcb1 QA pass, 9 Sep 2026 — a first cut of this
- * frame assumed the bare id and every merge silently no-op'd as
- * `nothing_to_merge`). Reconstructing that prefix here would just be a
- * second brittle assumption; instead the helper discovers the real branch
- * itself from `git worktree list --porcelain` at merge time (see
- * terminal/bridge/src/worktree-merge.js's `resolveWorktreeBranch`) — this
- * frame only needs to say WHICH FOLDER, never guess the branch.
- * @param {"stop"|"quiesce"|"set-always-on"|"merge-worktree"} cmd
- * @param {boolean | { requestId: string, mainRepoRoot: string, worktreePath: string }} [value]
+ * only for `set-always-on` (a boolean); omitted for `stop`/`quiesce`.
+ * @param {"stop"|"quiesce"|"set-always-on"} cmd
+ * @param {boolean} [value]
  * @returns {string}
  */
 export function encodeHelperCommandFrame(cmd, value) {
@@ -432,17 +408,12 @@ export function isHelperCommandFrame(text) {
 }
 
 /**
- * Extract + validate a helper-command frame's `cmd` (and its `value`, shaped
- * per-command). Returns null for anything not shaped like a known command —
+ * Extract + validate a helper-command frame's `cmd` (and `value` for
+ * `set-always-on`). Returns null for anything not shaped like a known command —
  * a malformed or hostile frame is treated identically to "no command", never
  * forwarded to helper-side logic that could misinterpret it.
  * @param {unknown} text
- * @returns {
- *   { cmd: "stop"|"quiesce" } |
- *   { cmd: "set-always-on", value: boolean } |
- *   { cmd: "merge-worktree", value: { requestId: string, mainRepoRoot: string, worktreePath: string } } |
- *   null
- * }
+ * @returns {{ cmd: "stop"|"quiesce"|"set-always-on", value?: boolean } | null}
  */
 export function parseHelperCommandFrame(text) {
   if (!isHelperCommandFrame(text)) return null;
@@ -451,23 +422,6 @@ export function parseHelperCommandFrame(text) {
     if (typeof msg.cmd !== "string" || !HELPER_COMMANDS.includes(msg.cmd)) return null;
     if (msg.cmd === "set-always-on") {
       return typeof msg.value === "boolean" ? { cmd: msg.cmd, value: msg.value } : null;
-    }
-    if (msg.cmd === "merge-worktree") {
-      const v = msg.value;
-      if (!v || typeof v !== "object") return null;
-      const requestId = sanitizeConversationId(v.requestId);
-      const mainRepoRoot = typeof v.mainRepoRoot === "string" ? v.mainRepoRoot.trim() : "";
-      const worktreePath = typeof v.worktreePath === "string" ? v.worktreePath.trim() : "";
-      if (
-        !requestId ||
-        !mainRepoRoot ||
-        !worktreePath ||
-        mainRepoRoot.length > MAX_MERGE_PATH_LENGTH ||
-        worktreePath.length > MAX_MERGE_PATH_LENGTH
-      ) {
-        return null;
-      }
-      return { cmd: msg.cmd, value: { requestId, mainRepoRoot, worktreePath } };
     }
     return { cmd: msg.cmd };
   } catch {
@@ -540,61 +494,6 @@ export function parseAlwaysOnValue(text) {
   try {
     const msg = JSON.parse(text);
     return typeof msg.value === "boolean" ? msg.value : null;
-  } catch {
-    return null;
-  }
-}
-
-// ── merge-result frame (helper leg -> relay, replying to a `merge-worktree` command) ──
-//
-// Isolated-worktree merge-back (task 6366bcb1): `POST /helper/command` with
-// `{cmd:"merge-worktree", sid, value:{mainRepoRoot, branch}}` needs an actual
-// RESULT back to the web app in the same call (merged/main_dirty/conflict/…),
-// not just the usual fire-and-forget `delivered` boolean every other helper
-// command reports. The relay mints a `requestId`, sends it down inside the
-// `merge-worktree` command frame above, and holds the HTTP response open
-// (in-memory, request-scoped, with a timeout) until this frame's matching
-// `requestId` comes back — see relay/src/index.js's `handleHelperCommand` /
-// `handleHelperMessage`. `conflicts` is truncated to a bounded count before
-// encoding so one huge conflict set can never blow past this module's shared
-// control-frame size gate.
-
-/** Cap on how many conflicting paths a merge-result frame carries — plenty to
- *  show a human what clashed, small enough to always fit the control-frame
- *  size gate regardless of how large the real conflict set is. */
-export const MAX_MERGE_CONFLICT_PATHS = 25;
-
-/**
- * @param {{ requestId: string, result: { status: string, branch: string, conflicts?: string[], mergeCommit?: string, message?: string } }} args
- * @returns {string}
- */
-export function encodeMergeResultFrame({ requestId, result }) {
-  const truncated =
-    result && Array.isArray(result.conflicts) && result.conflicts.length > MAX_MERGE_CONFLICT_PATHS
-      ? { ...result, conflicts: result.conflicts.slice(0, MAX_MERGE_CONFLICT_PATHS) }
-      : result;
-  return JSON.stringify({ t: "merge-result", requestId, result: truncated });
-}
-
-/** @param {unknown} text @returns {boolean} */
-export function isMergeResultFrame(text) {
-  return isControlFrame(text, "merge-result");
-}
-
-/**
- * Extract + validate a merge-result frame's `requestId` + `result`. Returns
- * null for anything malformed — a hostile/corrupt frame is dropped rather
- * than resolving (or mismatching) a pending merge request.
- * @param {unknown} text
- * @returns {{ requestId: string, result: object } | null}
- */
-export function parseMergeResultFrame(text) {
-  if (!isMergeResultFrame(text)) return null;
-  try {
-    const msg = JSON.parse(text);
-    const requestId = sanitizeConversationId(msg.requestId);
-    if (!requestId || !msg.result || typeof msg.result !== "object") return null;
-    return { requestId, result: msg.result };
   } catch {
     return null;
   }

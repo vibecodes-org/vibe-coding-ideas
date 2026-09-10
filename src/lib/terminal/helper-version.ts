@@ -78,14 +78,14 @@
  *  start. 0.3.16 is the same code rebuilt with the deps present; the helper's
  *  `predist` guard (scripts/check-bridge-deps.mjs) now refuses to build
  *  without them. Hard nudge: every 0.3.15 install is dead.
- *  0.3.17 (task 6366bcb1, 10 Sep 2026): first helper that can merge an
- *  isolated worktree session's branch back into main — the bridge's
- *  worktree-merge module runs a safe `git -C <main>` merge (refuses on a
- *  dirty main, aborts cleanly on a conflict), driven by the new
- *  `merge-worktree` control command behind the board's "Merge into main"
- *  button. An older helper doesn't understand the command, so this bump is
- *  what delivers the button; existing launches are otherwise unaffected. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.17";
+ *  0.3.17 (task 6366bcb1, 10 Sep 2026) shipped a `merge-worktree` control
+ *  command behind an app "Merge into main" button — WITHDRAWN at Nick's
+ *  request (he wanted better worktree *instructions*, not a UI merge
+ *  mechanism); see the rewritten guidance in
+ *  mcp-server/src/tools/project-paths.ts instead. 0.3.17's only helper-side
+ *  change was that now-removed dispatch, so the recommended helper stays
+ *  0.3.16. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.16";
 
 export type HelperVersionParts = readonly [number, number, number];
 

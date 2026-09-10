@@ -1,6 +1,5 @@
-// Terminal helper COMMAND — the Helper row's Stop/Update actions, the
-// "Keep helper ready" toggle (card cc74a067), and the isolated-worktree
-// "Merge into main" action (task 6366bcb1).
+// Terminal helper COMMAND — the Helper row's Stop/Update actions and the
+// "Keep helper ready" toggle (card cc74a067).
 //
 // `POST { cmd: "stop"|"quiesce"|"set-always-on", value? }` forwards the
 // command to the caller's own live helper leg via the relay's authenticated
@@ -8,17 +7,6 @@
 // src/app/api/terminal/session/end/route.ts and the sibling status route).
 // `delivered:false` is an HONEST outcome (no live helper leg right now), not
 // an error — the Helper row's "may already be stopped" toast is exactly this.
-//
-// `POST { cmd: "merge-worktree", sid }` is the odd one out: unlike every other
-// command here it's SESSION-scoped (not the standing per-owner helper
-// identity) and it needs an actual RESULT back, not just `delivered`. This
-// route resolves `sid` to that session's registered `cwd`/`claude_session_id`
-// (RLS/ownership-scoped — never a raw sid trusted blind, same as
-// session/end/route.ts), derives the MAIN repo root via
-// `stripClaudeWorktreeSuffix` (never trusts a caller-supplied path), and
-// forwards `{mainRepoRoot, branch}` to the SAME relay endpoint — the relay
-// holds the HTTP call open until the helper's `merge-result` reply comes back
-// (see terminal/relay/src/index.js's `handleMergeCommand`).
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -26,7 +14,6 @@ import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { mintControlToken, helperSessionId } from "../../../../../../terminal/shared/session-token.mjs";
 import { relayHttpBaseUrl } from "@/lib/terminal/relay-http";
-import { stripClaudeWorktreeSuffix } from "@/lib/launch-claude-code";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +22,6 @@ const BodySchema = z.union([
   z.object({ cmd: z.literal("stop") }),
   z.object({ cmd: z.literal("quiesce") }),
   z.object({ cmd: z.literal("set-always-on"), value: z.boolean() }),
-  z.object({ cmd: z.literal("merge-worktree"), sid: z.string().min(1).max(128) }),
 ]);
 
 export async function POST(req: Request) {
@@ -59,42 +45,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    // The merge command is SESSION-scoped, not the standing helper identity —
-    // resolve + validate the target session before forwarding anything. The
-    // BRANCH to merge is never derived here — Claude Code checks out
-    // `worktree-<id>` in that folder, not the bare conversation id (verified
-    // live against a real repo, task 6366bcb1 QA pass) — so only the folder
-    // itself (`worktreePath`) is forwarded; the helper discovers the real
-    // branch from git at merge time (see worktree-merge.js's
-    // `resolveWorktreeBranch`), which self-heals if that naming ever changes.
-    let relayBody: { cmd: string; value?: unknown };
-    if (parsed.data.cmd === "merge-worktree") {
-      const { data: session, error: sessionErr } = await supabase
-        .from("terminal_sessions")
-        .select("cwd")
-        .eq("sid", parsed.data.sid)
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .maybeSingle();
-      if (sessionErr) {
-        logger.error("Terminal helper command: merge session lookup failed", { error: sessionErr.message });
-        return NextResponse.json({ error: "Couldn't look up that session" }, { status: 500 });
-      }
-      if (!session?.cwd) {
-        return NextResponse.json({ error: "Session not found" }, { status: 404 });
-      }
-      const worktreePath = session.cwd;
-      const mainRepoRoot = stripClaudeWorktreeSuffix(worktreePath);
-      if (mainRepoRoot === worktreePath) {
-        // Never inside a `.claude/worktrees/` path — this session isn't isolated,
-        // so there is nothing to merge back.
-        return NextResponse.json({ error: "This session isn't isolated — nothing to merge" }, { status: 400 });
-      }
-      relayBody = { cmd: "merge-worktree", value: { mainRepoRoot, worktreePath } };
-    } else {
-      relayBody = parsed.data;
-    }
-
     const sid = helperSessionId(user.id);
     const control = await mintControlToken({ sub: user.id, sid, secret });
     const httpBase = relayHttpBaseUrl();
@@ -104,7 +54,7 @@ export async function POST(req: Request) {
       res = await fetch(`${httpBase}/helper/command?session=${encodeURIComponent(sid)}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${control}`, "content-type": "application/json" },
-        body: JSON.stringify(relayBody),
+        body: JSON.stringify(parsed.data),
       });
     } catch (err) {
       logger.warn("Terminal helper command: relay unreachable", {

@@ -80,14 +80,8 @@ import {
   parseGoodbyeReason,
   isAlwaysOnFrame,
   parseAlwaysOnValue,
-  isMergeResultFrame,
-  parseMergeResultFrame,
   encodeOpenTerminalAuthorizedFrame,
 } from "../../shared/control-frames.mjs";
-
-/** How long `handleHelperCommand` will hold a `merge-worktree` request open
- *  waiting for the helper's `merge-result` reply before giving up honestly. */
-const MERGE_RESULT_TIMEOUT_MS = 25000;
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
@@ -193,16 +187,6 @@ export class TerminalRelay {
     //     cache — so it can never go stale while a session is live.
     this._lastPersistedActivityAt = null;
     this._sessionStartedAtCache = null;
-    // Isolated-worktree merge-back (task 6366bcb1): `handleHelperCommand`'s
-    // `merge-worktree` branch needs an actual RESULT back in the SAME HTTP
-    // response, not just the usual fire-and-forget `delivered`. This map holds
-    // the pending resolver for a request ONLY for the lifetime of that one
-    // in-flight `fetch()` call (which is actively awaiting it) — never read or
-    // written across a hibernation wake, so it's exempt from the "no session
-    // state in instance fields" rule above: there's no gap between a write and
-    // a read for eviction to land in. A `merge-result` frame that arrives after
-    // the wait already timed out just finds no entry and is dropped.
-    this._pendingMergeResolvers = new Map();
 
     // App-level HEARTBEAT echo (fix/terminal-dock-heartbeat): answer the browser
     // dock's `{"t":"hb"}` liveness probe with `{"t":"hb-ack"}` WITHOUT waking the
@@ -382,16 +366,10 @@ export class TerminalRelay {
       return jsonResponse({ error: "bad-body" }, 400);
     }
     const cmd = body?.cmd;
-    if (cmd !== "stop" && cmd !== "quiesce" && cmd !== "set-always-on" && cmd !== "merge-worktree") {
+    if (cmd !== "stop" && cmd !== "quiesce" && cmd !== "set-always-on") {
       return jsonResponse({ error: "bad-command" }, 400);
     }
     if (cmd === "set-always-on" && typeof body?.value !== "boolean") {
-      return jsonResponse({ error: "bad-value" }, 400);
-    }
-    if (
-      cmd === "merge-worktree" &&
-      (typeof body?.value?.mainRepoRoot !== "string" || typeof body?.value?.worktreePath !== "string")
-    ) {
       return jsonResponse({ error: "bad-value" }, 400);
     }
 
@@ -400,11 +378,6 @@ export class TerminalRelay {
       this.log("helper command: no live helper leg", { session, cmd });
       return jsonResponse({ delivered: false }, 200);
     }
-
-    if (cmd === "merge-worktree") {
-      return this.handleMergeCommand(helper, session, body.value);
-    }
-
     try {
       helper.send(encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined));
     } catch (e) {
@@ -413,41 +386,6 @@ export class TerminalRelay {
     }
     this.log("helper command delivered", { session, cmd });
     return jsonResponse({ delivered: true }, 200);
-  }
-
-  /**
-   * The `merge-worktree` command's request/reply leg: unlike every other
-   * helper command (fire-and-forget `delivered`), the caller needs the actual
-   * merge OUTCOME back — merged/main_dirty/conflict/nothing_to_merge/not_git/
-   * error (terminal/bridge/src/worktree-merge.js's closed set). Mints a fresh
-   * `requestId`, sends it down inside the command frame, and awaits the
-   * matching `merge-result` frame (see `handleHelperMessage`) with a timeout
-   * so a helper that never replies (crashed mid-merge, network drop) still
-   * gets an honest answer instead of hanging the caller forever.
-   * @param {WebSocket} helper @param {string} session
-   * @param {{ mainRepoRoot: string, worktreePath: string }} value
-   */
-  async handleMergeCommand(helper, session, value) {
-    const requestId = crypto.randomUUID();
-    try {
-      helper.send(encodeHelperCommandFrame("merge-worktree", { requestId, ...value }));
-    } catch (e) {
-      this.log("merge command send failed", { session, err: String(e) });
-      return jsonResponse({ delivered: false }, 200);
-    }
-    this.log("merge command delivered — awaiting result", { session, requestId });
-
-    const result = await new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this._pendingMergeResolvers.delete(requestId);
-        resolve({ status: "error", branch: "", message: "timed out waiting for the terminal to respond" });
-      }, MERGE_RESULT_TIMEOUT_MS);
-      this._pendingMergeResolvers.set(requestId, (r) => {
-        clearTimeout(timer);
-        resolve(r);
-      });
-    });
-    return jsonResponse({ delivered: true, result }, 200);
   }
 
   /**
@@ -897,20 +835,6 @@ export class TerminalRelay {
       if (value === null) return;
       await this.state.storage.put("helperAlwaysOn", value);
       this.log("helper always-on updated", { value });
-      return;
-    }
-    if (isMergeResultFrame(message)) {
-      const parsed = parseMergeResultFrame(message);
-      if (!parsed) return;
-      const resolve = this._pendingMergeResolvers.get(parsed.requestId);
-      if (!resolve) {
-        // Already timed out (or a stray/duplicate reply) — nothing waiting.
-        this.log("merge result: no pending request", { requestId: parsed.requestId });
-        return;
-      }
-      this._pendingMergeResolvers.delete(parsed.requestId);
-      resolve(parsed.result);
-      this.log("merge result received", { requestId: parsed.requestId, status: parsed.result?.status });
       return;
     }
     this.log("helper: ignored unknown control frame");

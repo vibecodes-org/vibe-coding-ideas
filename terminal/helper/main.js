@@ -93,14 +93,6 @@ const SHARED_CONTROL_FRAMES = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "control-frames.mjs")
   : path.resolve(__dirname, "..", "shared", "control-frames.mjs");
 
-// Isolated-worktree merge-back (task 6366bcb1) — the pure git-merge module
-// lives alongside worktree-eligibility.js in bridge/src (it's part of the same
-// "is this folder isolation-ready" git-logic family), shipped by the SAME
-// extraResources copy as BRIDGE_ENTRY above — no separate packaging entry needed.
-const SHARED_WORKTREE_MERGE = app.isPackaged
-  ? path.join(process.resourcesPath, "bridge", "src", "worktree-merge.js")
-  : path.resolve(__dirname, "..", "bridge", "src", "worktree-merge.js");
-
 // Codex support (docs/codex-terminal-requirements.md FR-3/FR-11) — the shared
 // PATH-resolution + binary-existence checks, same split as every other
 // SHARED_* constant above.
@@ -172,12 +164,6 @@ let _controlFrames = null;
 async function controlFramesMod() {
   if (!_controlFrames) _controlFrames = await import(pathToFileURL(SHARED_CONTROL_FRAMES).href);
   return _controlFrames;
-}
-
-let _worktreeMerge = null;
-async function worktreeMergeMod() {
-  if (!_worktreeMerge) _worktreeMerge = await import(pathToFileURL(SHARED_WORKTREE_MERGE).href);
-  return _worktreeMerge;
 }
 
 let _spawnPath = null;
@@ -926,7 +912,6 @@ async function connectControl(relayBase, token) {
     if (cmd.cmd === "stop") beginCleanQuit("stop");
     else if (cmd.cmd === "quiesce") beginCleanQuit("quiesce");
     else if (cmd.cmd === "set-always-on") await setAlwaysOn(cmd.value, { echo: false });
-    else if (cmd.cmd === "merge-worktree") void handleMergeCommand(cmd.value);
   });
   ws.on("error", (err) => {
     log("warn", "control connection error", { err: String(err?.message || err) });
@@ -1063,42 +1048,6 @@ async function setAlwaysOn(value, { echo = true } = {}) {
       controlWs.send(encodeAlwaysOnFrame(alwaysOn));
     } catch (e) {
       log("warn", "could not report always-on change", { err: String(e?.message || e) });
-    }
-  }
-}
-
-/**
- * Isolated-worktree merge-back (task 6366bcb1): run the actual git merge on
- * THIS machine (the helper is the one standing, per-owner process that can do
- * this without needing a specific session's bridge process to still be
- * alive), then report the outcome back over the SAME control connection so
- * the relay can resolve the web app's waiting request. Best-effort on the
- * reply send — if the control connection is gone by the time the merge
- * finishes, the app-side wait simply times out (see relay's
- * `handleMergeCommand`) rather than hanging forever.
- * `value` carries `worktreePath` (the isolated session's folder), never a
- * branch name — the branch is DISCOVERED from git itself
- * (`resolveWorktreeBranch`), not reconstructed from the folder's id, since
- * Claude Code checks out `worktree-<id>` there, not the bare id (verified
- * live, task 6366bcb1 QA pass, 9 Sep 2026).
- * @param {{ requestId: string, mainRepoRoot: string, worktreePath: string }} value
- */
-async function handleMergeCommand(value) {
-  log("info", "running worktree merge-back", { worktreePath: value.worktreePath });
-  let result;
-  try {
-    const { mergeIsolatedWorktree } = await worktreeMergeMod();
-    result = mergeIsolatedWorktree({ mainRepoRoot: value.mainRepoRoot, worktreePath: value.worktreePath });
-  } catch (e) {
-    result = { status: "error", branch: "", message: String(e?.message || e) };
-  }
-  log("info", "worktree merge-back finished", { branch: result.branch, status: result.status });
-  if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-    try {
-      const { encodeMergeResultFrame } = await controlFramesMod();
-      controlWs.send(encodeMergeResultFrame({ requestId: value.requestId, result }));
-    } catch (e) {
-      log("warn", "could not report merge result", { err: String(e?.message || e) });
     }
   }
 }
