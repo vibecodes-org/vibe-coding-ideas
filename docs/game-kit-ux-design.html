@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Kit — UX Design</title>
+<style>
+  /* ---- Page chrome (matches app: zinc dark, violet accent) ---- */
+  :root {
+    --bg: #09090b;          /* zinc-950 */
+    --panel: #18181b;       /* zinc-900 */
+    --panel-2: #27272a;     /* zinc-800 */
+    --border: #27272a;
+    --fg: #fafafa;
+    --muted: #a1a1aa;       /* zinc-400 */
+    --muted-2: #71717a;     /* zinc-500 */
+    --violet: #8b5cf6;
+    --violet-400: #a78bfa;
+    --amber-400: #fbbf24;
+    --emerald-400: #34d399;
+    --red-400: #f87171;
+    --annot: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 -apple-system, "Segoe UI", Inter, Roboto, sans-serif; padding: 24px 16px 80px; }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; margin: 48px 0 10px; padding-top: 16px; border-top: 1px solid var(--border); letter-spacing: -0.01em; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p, li { color: #d4d4d8; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .meta { font-size: 13px; color: var(--muted-2); }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; color: #e4e4e7; }
+  .note { border-left: 3px solid var(--violet); background: rgba(139,92,246,.07); padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  .warn { border-left: 3px solid var(--amber-400); background: rgba(251,191,36,.07); padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  .ok { border-left: 3px solid var(--emerald-400); background: rgba(52,211,153,.07); padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 10px 0; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .tablewrap { overflow-x: auto; }
+
+  /* ---- Mock frames ---- */
+  .frame { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin: 14px 0; position: relative; }
+  .frame.phone { max-width: 375px; }
+  .frame-label { position: absolute; top: -10px; left: 14px; background: var(--bg); color: var(--muted-2); font-size: 11px; padding: 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+  .callout { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--annot); color: #000; font-size: 11px; font-weight: 700; vertical-align: middle; margin-right: 4px; flex-shrink: 0; }
+  .callouts { list-style: none; padding: 0; margin: 10px 0 0; font-size: 14px; }
+  .callouts li { margin: 6px 0; display: flex; gap: 8px; align-items: flex-start; }
+
+  /* ---- Flow ---- */
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+  .step { flex: 1 1 160px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 13px; }
+  .step b { display: block; margin-bottom: 4px; color: var(--fg); }
+  .step .n { color: var(--violet-400); font-weight: 700; font-size: 11px; letter-spacing: .05em; }
+  .step.err { border-color: rgba(248,113,113,.4); }
+  .step.load { border-color: rgba(251,191,36,.4); }
+
+  /* ---- Form / picker mock (mirrors project-type-selector.tsx) ---- */
+  .form-title { font-size: 14px; font-weight: 500; }
+  .form-help { font-size: 12px; color: var(--muted); margin: 2px 0 8px; }
+  .picker { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; }
+  .phone .picker { grid-template-columns: repeat(2, 1fr); }
+  .card { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 2px solid var(--border); background: var(--panel); border-radius: 12px; padding: 8px 12px; min-height: 84px; }
+  .card .ic { font-size: 18px; line-height: 1; margin-bottom: 4px; }
+  .card .nm { font-weight: 700; font-size: 12.8px; line-height: 1.2; }
+  .card .ds { font-size: 11.2px; color: var(--muted); line-height: 1.3; margin-top: 2px; text-wrap: balance; }
+  .card.sel { border-color: var(--violet); background: rgba(139,92,246,.12); }
+  .card.dim { opacity: .6; filter: saturate(.5); }
+  .card .pill { margin-top: 4px; font-size: 9.6px; font-weight: 600; color: var(--muted); background: var(--panel-2); border-radius: 999px; padding: 0 6px; }
+  .card.ghost { border-style: dashed; opacity: .35; }
+
+  /* ---- Preview panel mock (mirrors kit-preview.tsx) ---- */
+  .preview { margin-top: 8px; border: 1px solid var(--violet); background: var(--panel); border-radius: 10px; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,.5), 0 0 20px rgba(139,92,246,.25); }
+  .preview .hd { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(139,92,246,.15); padding-bottom: 12px; margin-bottom: 12px; }
+  .preview .hd .ic { font-size: 20px; }
+  .preview .hd .nm { font-size: 14px; font-weight: 700; }
+  .sec { font-size: 8.8px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: rgba(161,161,170,.7); }
+  .sec .hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: rgba(161,161,170,.4); }
+  .team { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: rgba(255,255,255,.04); border-radius: 6px; padding: 2px 8px; font-size: 10.4px; color: var(--muted); white-space: nowrap; }
+  .chip .ci { font-size: 12px; }
+  .wfs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .wf { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.02); border-radius: 6px; padding: 4px 8px; font-size: 10.4px; font-weight: 500; color: var(--muted); }
+  .wf.open { border-color: var(--violet); background: rgba(139,92,246,.12); color: var(--fg); }
+  .wf .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--violet); }
+  .wf .cnt { font-size: 8.8px; color: rgba(161,161,170,.5); }
+  .steps { margin-top: 6px; border: 1px solid rgba(139,92,246,.1); background: rgba(139,92,246,.04); border-radius: 6px; padding: 8px 10px; }
+  .steps .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .st { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; padding: 2px 6px; font-size: 9.6px; color: var(--muted); background: rgba(255,255,255,.06); }
+  .st.gate { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.2); }
+  .arrow { color: rgba(161,161,170,.4); font-size: 10px; }
+  .trig { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; font-size: 8.8px; color: rgba(161,161,170,.5); }
+  .lbl { border-radius: 999px; padding: 1px 6px; font-size: 8px; font-weight: 600; }
+  .key { display: flex; gap: 12px; margin-top: 8px; font-size: 8px; color: rgba(161,161,170,.4); }
+
+  /* label colours: bg = colour at 12%, text = 400 shade — same as LABEL_COLOR_MAP */
+  .violet  { background: rgba(139,92,246,.12); color: #a78bfa; }
+  .emerald { background: rgba(16,185,129,.12); color: #34d399; }
+  .rose    { background: rgba(244,63,94,.12);  color: #fb7185; }
+  .pink    { background: rgba(236,72,153,.12); color: #f472b6; }
+  .cyan    { background: rgba(6,182,212,.12);  color: #22d3ee; }
+  .blue    { background: rgba(59,130,246,.12); color: #60a5fa; }
+  .red     { background: rgba(239,68,68,.12);  color: #f87171; }
+  .amber   { background: rgba(245,158,11,.12); color: #fbbf24; }
+  .orange  { background: rgba(249,115,22,.12); color: #fb923c; }
+  .lime    { background: rgba(132,204,22,.12); color: #a3e635; }
+
+  /* ---- Board badge + buttons + toasts ---- */
+  .badge { display: inline-flex; border-radius: 999px; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.25); padding: 2px 8px; font-size: 10px; font-weight: 600; color: #a78bfa; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 20px; border-radius: 8px; background: var(--fg); color: #000; font-weight: 600; font-size: 14px; }
+  .btn.pending { opacity: .5; }
+  .toast { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: 380px; }
+  .toast .i { font-size: 16px; }
+  .side { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .side { grid-template-columns: 1fr; } }
+  .bad { color: var(--red-400); font-weight: 600; }
+  .good { color: var(--emerald-400); font-weight: 600; }
+  .wftab { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .wftab .t { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>🎮 Game Kit — UX Design</h1>
+<p class="sub">New Idea project-type picker: add a <b>Game</b> kit in the slot Marketing Site vacates. UX Design step, task <code>f2dbf420</code>. Author: Compass.</p>
+<p class="meta">Built to the real components: <code>src/components/kits/project-type-selector.tsx</code> (the card grid), <code>src/components/kits/kit-preview.tsx</code> (the panel under the grid), <code>src/components/ideas/idea-form.tsx</code> (the form that submits), <code>src/components/board/workflows-tab.tsx</code> (the board badge), <code>src/app/api/ai/enhance/route.ts</code> (AI enhance uses the kit name). All mock styling below mirrors the Tailwind classes those files use, so what you see here is what ships. I did not load the <code>frontend-design</code> skill — the brief here is to match the existing design system, not invent a new aesthetic.</p>
+
+<div class="ok"><b>Headline decisions</b>
+<ol style="margin:6px 0 0;padding-left:20px">
+  <li><b>OQ1:</b> the kit's stored name is <code>Game</code>, not "Create a game". The "create a game" wording goes in the card description. Reason and side-by-side in §4.</li>
+  <li><b>No new components.</b> The picker and preview are data-driven; the whole feature is one data migration plus two small edits to the preview (§6).</li>
+  <li><b>One snag Requirements didn't catch:</b> a label can only trigger one workflow (database rule: one row per kit + label). The 9-label list has "Milestone/Spike" driving two workflows. Recommend splitting it into <b>Milestone</b> and <b>Spike</b> — 10 labels. Detail in §3.</li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2>1. User flow</h2>
+<p>Nothing in this flow is new — the Game kit rides the exact path Web App / Mobile / API / AI App already take. What matters is that each screen still answers "what do I do next?" with game-specific content.</p>
+
+<div class="flow">
+  <div class="step"><span class="n">1 — DASHBOARD</span><b>Click "New Idea"</b>Same entry as today. Lands on the Share Your Idea form.</div>
+  <div class="step"><span class="n">2 — TITLE</span><b>Type a title</b>e.g. "Mole Hunt — a top-down roguelike". Required before AI enhance will run (existing toast).</div>
+  <div class="step"><span class="n">3 — PICKER</span><b>Pick 🎮 Game</b>Six cards. Game sits where Marketing Site was; Custom stays last. Chosen card lights violet, the others recede (existing "promote &amp; recede").</div>
+  <div class="step"><span class="n">4 — PREVIEW</span><b>See what you'll get</b>Panel slides in under the grid: 7-person team, 5 workflows, click any workflow to see its steps and which labels trigger it.</div>
+  <div class="step"><span class="n">5 — DESCRIBE</span><b>Description + optional AI enhance</b>Enhance now says "This is a <b>Game</b> project — tailor to game projects". Reads naturally because of the OQ1 choice.</div>
+  <div class="step"><span class="n">6 — SUBMIT</span><b>"Create idea &amp; apply kit"</b>Button label already adapts when a kit is picked.</div>
+  <div class="step load"><span class="n">6a — APPLYING</span><b>"Applying Game kit..."</b>Button text swaps and the button dims for the ~2–4s the kit takes (7 agents, 10 labels, 5 templates, 10 triggers). The label itself is the explanation, so the dimmed button passes the "no unexplained disabled button" rule.</div>
+  <div class="step"><span class="n">7 — BOARD</span><b>Land on the game-ready board</b>Green toast: <i>"Kit applied — 7 agents, 10 labels, 5 workflows, 10 triggers"</i>. Workflows tab shows the <span class="badge">🎮 Game Kit</span> badge.</div>
+  <div class="step err"><span class="n">7b — KIT FAILED</span><b>Idea saved, kit didn't apply</b>Red toast: <i>"Idea created but kit application failed — you can apply it later from the board."</i> User lands on the idea page (not the board). Recovery: board → Workflows tab → "+" → Apply Kit dialog, same picker in compact mode. No data lost, no retry loop.</div>
+</div>
+
+<h3>Loading, error and empty states — where each one is handled</h3>
+<div class="tablewrap"><table>
+<tr><th>State</th><th>What the user sees</th><th>Where it lives (existing)</th></tr>
+<tr><td>Applying</td><td><span class="btn pending">Applying Game kit...</span> — button dims, text explains why</td><td><code>idea-form.tsx</code> SubmitButton, driven by <code>kitName(selectedKitId)</code> → another reason the name must be "Game"</td></tr>
+<tr><td>Kit apply failed (non-fatal)</td><td><span class="toast"><span class="i">⛔</span>Idea created but kit application failed — you can apply it later from the board.</span></td><td><code>idea-form.tsx</code> — <code>result.kitError</code>. Idea exists; user is routed to the idea page.</td></tr>
+<tr><td>Create failed (fatal)</td><td>Red toast with the server's message; user stays on the filled-in form, nothing lost</td><td><code>idea-form.tsx</code> catch block</td></tr>
+<tr><td>Success</td><td><span class="toast"><span class="i">✅</span>Kit applied — 7 agents, 10 labels, 5 workflows, 10 triggers</span></td><td><code>kit-applied-toast.tsx</code> on the board page</td></tr>
+<tr><td>No kit picked</td><td>Button reads "Create idea"; no preview panel. Unchanged.</td><td><code>idea-form.tsx</code></td></tr>
+<tr><td>Kits failed to load</td><td>Picker section is simply absent (<code>kits.length &gt; 0</code> guard); idea can still be created</td><td><code>idea-form.tsx</code></td></tr>
+</table></div>
+
+<!-- ============================================================ -->
+<h2>2. The picker grid</h2>
+<p>Desktop / tablet (3 columns from the <code>sm</code> breakpoint). Game is selected, so the other five recede. Marketing Site is shown as a ghost only to make the slot swap obvious — it does <b>not</b> render.</p>
+
+<div class="frame">
+  <span class="frame-label">New Idea form — desktop, Game selected</span>
+  <div class="form-title">What kind of project is this?</div>
+  <div class="form-help">This sets up the right workflow, agents, and board labels for you. You can customise everything later.</div>
+  <div class="picker" role="radiogroup" aria-label="Project type">
+    <div class="card dim"><div class="ic">🌐</div><div class="nm">Web Application</div><div class="ds">Ship a full-stack web app, end to end</div></div>
+    <div class="card dim"><div class="ic">📱</div><div class="nm">Mobile App</div><div class="ds">Build an iOS, Android, or cross-platform app</div></div>
+    <div class="card dim"><div class="ic">⚙️</div><div class="nm">API / Backend</div><div class="ds">Build a REST/GraphQL API or backend service</div></div>
+    <div class="card dim"><div class="ic">🤖</div><div class="nm">AI App / Agent</div><div class="ds">Build an AI-powered app or agent</div></div>
+    <div class="card sel"><div class="ic">🎮</div><div class="nm"><span class="callout">1</span>Game</div><div class="ds"><span class="callout">2</span>Create a playable game, one mechanic at a time</div></div>
+    <div class="card dim"><div class="ic">✨</div><div class="nm">Custom</div><div class="ds">Start from scratch and configure everything yourself</div><div class="pill"><span class="callout">3</span>Your choice</div></div>
+  </div>
+  <div style="margin-top:10px;font-size:11px;color:var(--muted-2)">Slot Game takes over: <span class="card ghost" style="display:inline-flex;flex-direction:row;gap:6px;padding:2px 8px;min-height:0;border-radius:6px;font-size:11px">📣 Marketing Site — Ship a landing page that converts</span> (display_order 5 → deactivated, not deleted)</div>
+</div>
+<ul class="callouts">
+  <li><span class="callout">1</span><span><b>Name = "Game".</b> One word, same weight as "Mobile App". It is also the value that becomes the board badge, the "Applying … kit" button text and the AI-enhance hint (§4).</span></li>
+  <li><span class="callout">2</span><span><b>Description carries the "create a game" intent.</b> "Create a playable game, one mechanic at a time" — imperative, outcome-led, 46 characters, same voice as the other five (migration 00127 standardised on this voice). "Playable" sets the expectation that the workflow ships builds, not documents; "one mechanic at a time" previews the primary workflow.</span></li>
+  <li><span class="callout">3</span><span><b>Custom stays last</b> — hard-coded sort in the selector; nothing to do. Give Game <code>display_order = 5</code> (Marketing Site's number) so it lands here without touching Custom's 6.</span></li>
+</ul>
+
+<h3>375px (2 columns)</h3>
+<p>Below the <code>sm</code> breakpoint the grid drops to two columns; six cards become three even rows and Game shares the bottom row with Custom. Equal-height rows mean the wrapped description doesn't make Game's row taller than Custom's.</p>
+<div class="frame phone">
+  <span class="frame-label">375px — Game selected</span>
+  <div class="picker">
+    <div class="card dim"><div class="ic">🌐</div><div class="nm">Web Application</div><div class="ds">Ship a full-stack web app, end to end</div></div>
+    <div class="card dim"><div class="ic">📱</div><div class="nm">Mobile App</div><div class="ds">Build an iOS, Android, or cross-platform app</div></div>
+    <div class="card dim"><div class="ic">⚙️</div><div class="nm">API / Backend</div><div class="ds">Build a REST/GraphQL API or backend service</div></div>
+    <div class="card dim"><div class="ic">🤖</div><div class="nm">AI App / Agent</div><div class="ds">Build an AI-powered app or agent</div></div>
+    <div class="card sel"><div class="ic">🎮</div><div class="nm">Game</div><div class="ds">Create a playable game, one mechanic at a time</div></div>
+    <div class="card dim"><div class="ic">✨</div><div class="nm">Custom</div><div class="ds">Start from scratch and configure everything yourself</div><div class="pill">Your choice</div></div>
+  </div>
+</div>
+<p class="meta">Touch target: each card is ~160×84px at 375px — well over the 44×44 minimum. Compact mode (onboarding + Apply Kit dialog) uses <code>auto-fill minmax(140px)</code> and needs no change.</p>
+
+<!-- ============================================================ -->
+<h2>3. The kit-preview panel for Game</h2>
+<p>This is the screen that has to earn the click. It holds 7 roles + 5 workflows + up to 6 steps + 10 labels, so the organising principle is the existing one: <b>show the team and the workflow names by default; reveal steps and trigger labels only for the workflow you click</b> (progressive disclosure). Below, the primary workflow is expanded — the state a first-time user sees after one click.</p>
+
+<div class="frame">
+  <span class="frame-label">Kit preview — Game, primary workflow expanded</span>
+  <div class="preview" aria-live="polite">
+    <div class="hd"><span class="ic">🎮</span><span class="nm">Game</span></div>
+
+    <div class="team">
+      <span class="sec"><span class="callout">1</span>Team</span>
+      <span class="chip" title="Producer / Scope Guard"><span class="ci">🎯</span>Producer</span>
+      <span class="chip" title="Gameplay Programmer"><span class="ci">🕹️</span>Gameplay</span>
+      <span class="chip" title="Enemy AI Engineer"><span class="ci">👾</span>Enemy AI</span>
+      <span class="chip" title="Level / Environment Designer"><span class="ci">🗺️</span>Levels</span>
+      <span class="chip" title="Technical Artist"><span class="ci">🖌️</span>Tech Art</span>
+      <span class="chip" title="Audio Designer"><span class="ci">🔊</span>Audio</span>
+      <span class="chip" title="QA / Playtester"><span class="ci">🔍</span>Playtest</span>
+    </div>
+
+    <div class="sec">Workflows <span class="hint">— click to view steps</span></div>
+    <div class="wfs">
+      <span class="wf open"><span class="dot"></span><span class="callout">2</span>Game Feature / Mechanic <span class="cnt">(6)</span></span>
+      <span class="wf">Game Bug Fix <span class="cnt">(4)</span></span>
+      <span class="wf">Level / Content <span class="cnt">(5)</span></span>
+      <span class="wf">Milestone Gate <span class="cnt">(4)</span></span>
+      <span class="wf">Technical Spike <span class="cnt">(3)</span></span>
+    </div>
+
+    <div class="steps">
+      <div class="row">
+        <span class="st">Mechanic brief</span><span class="arrow">→</span>
+        <span class="st gate">Scope check 🔒</span><span class="arrow">→</span>
+        <span class="st">Implement</span><span class="arrow">→</span>
+        <span class="st">Playtest</span><span class="arrow">→</span>
+        <span class="st">Tune &amp; polish</span><span class="arrow">→</span>
+        <span class="st gate"><span class="callout">3</span>Ship approval 🔒</span>
+      </div>
+      <div class="trig"><span class="callout">4</span><span>Triggered by:</span>
+        <span class="lbl violet">Gameplay</span>
+        <span class="lbl rose">Enemy AI</span>
+        <span class="lbl blue">UI/HUD</span>
+      </div>
+    </div>
+
+    <div class="key"><span>🔒 Requires your approval</span><span>⚡ Labels auto-assign workflows</span></div>
+  </div>
+</div>
+<ul class="callouts">
+  <li><span class="callout">1</span><span><b>Team row must wrap.</b> Today it's <code>flex items-center gap-1.5</code> with no <code>flex-wrap</code>; five chips fit, seven don't at 375px (they overflow the panel edge, and in the compact onboarding dialog too). One class addition. Each chip also needs a short label + icon entry in <code>ROLE_META</code>, otherwise it renders as 👤 plus the full role name — "Level / Environment Designer" is 28 characters and breaks the "abbreviated chips" pattern. Full role name stays in the <code>title</code> tooltip, exactly as today. Short labels are the <i>job</i>, not the person: "Producer", "Gameplay", "Enemy AI", "Levels", "Tech Art", "Audio", "Playtest".</span></li>
+  <li><span class="callout">2</span><span><b>Primary is flagged with the violet dot and sorted first</b> — existing behaviour (<code>getUniqueTemplates</code>). Non-primary workflows follow alphabetically, which is why Game Bug Fix sits second. Step counts in brackets let a user judge weight before expanding.</span></li>
+  <li><span class="callout">3</span><span><b>Approval gates</b> use the existing amber box + 🔒 icon, explained in the key. Two gates in the primary workflow: one before code is written (scope creep is the #1 game-project killer — this is the Producer's job), one before it counts as shipped.</span></li>
+  <li><span class="callout">4</span><span><b>Labels appear as the trigger list for the expanded workflow.</b> Colour is decorative; the <i>text</i> of each pill is the information — that's how the colour-alone rule is satisfied without adding icons. Each label maps to exactly one workflow (§3.1), so a user who expands all five sees every label exactly once, grouped by what it does.</span></li>
+</ul>
+
+<h3>3.1 Labels and which workflow each one triggers</h3>
+<div class="warn"><b>Constraint the Implementation step must respect:</b> the trigger table has a uniqueness rule of one row per (kit, label). A label can start one workflow only. Requirements listed "Milestone/Spike" as one label but "Milestone Gate" and "Technical Spike" as two workflows — one of them would be unreachable (and because the preview derives its workflow list <i>from</i> the trigger rows, the orphan wouldn't even appear in the panel). <b>Recommendation: split into two labels, Milestone and Spike.</b> That makes 10 labels, not 9. Alternative if the human prefers to stay at 9: drop the Technical Spike workflow into the Milestone Gate one as an optional step. I prefer the split — a spike and a milestone review are different jobs with different owners.</div>
+
+<div class="tablewrap"><table>
+<tr><th>Label</th><th>Colour (from the existing map)</th><th>Triggers</th><th>Why this colour</th></tr>
+<tr><td><span class="lbl violet">Gameplay</span></td><td>violet</td><td>Game Feature / Mechanic ● primary</td><td>Violet is the accent = "the main thing"</td></tr>
+<tr><td><span class="lbl rose">Enemy AI</span></td><td>rose</td><td>Game Feature / Mechanic</td><td>Adjacent to red (danger/enemies) but distinct from Bug</td></tr>
+<tr><td><span class="lbl blue">UI/HUD</span></td><td>blue</td><td>Game Feature / Mechanic</td><td>Cool, "interface"</td></tr>
+<tr><td><span class="lbl emerald">Level/Content</span></td><td>emerald</td><td>Level / Content</td><td>Growth, world-building</td></tr>
+<tr><td><span class="lbl pink">Art/Assets</span></td><td>pink</td><td>Level / Content</td><td>Same family as Design elsewhere in the app</td></tr>
+<tr><td><span class="lbl cyan">Audio</span></td><td>cyan</td><td>Level / Content</td><td>Distinct hue from every neighbour</td></tr>
+<tr><td><span class="lbl red">Bug</span></td><td>red</td><td>Game Bug Fix</td><td>Red = Bug in every other kit; keep the convention</td></tr>
+<tr><td><span class="lbl amber">Performance</span></td><td>amber</td><td>Game Bug Fix</td><td>Warning-ish, sits with Bug</td></tr>
+<tr><td><span class="lbl orange">Milestone</span></td><td>orange</td><td>Milestone Gate</td><td>Warm, "checkpoint"</td></tr>
+<tr><td><span class="lbl lime">Spike</span></td><td>lime</td><td>Technical Spike</td><td>Experimental / provisional</td></tr>
+</table></div>
+<p class="meta">All ten colour keys exist in <code>LABEL_COLOR_MAP</code> already; no new colours. Every text/background pairing is the 400 shade on a 12% tint over zinc-900 — the same pairs used by every kit today (≈6–9:1 contrast).</p>
+
+<h3>3.2 The other four workflows (what a click reveals)</h3>
+<div class="tablewrap"><table>
+<tr><th>Workflow</th><th>Steps (🔒 = your approval)</th><th>Triggered by</th></tr>
+<tr><td>Game Feature / Mechanic ● primary</td><td>Mechanic brief → Scope check 🔒 → Implement → Playtest → Tune &amp; polish → Ship approval 🔒</td><td>Gameplay, Enemy AI, UI/HUD</td></tr>
+<tr><td>Level / Content</td><td>Content brief → Block-out → Art &amp; audio pass → Playtest → Sign-off 🔒</td><td>Level/Content, Art/Assets, Audio</td></tr>
+<tr><td>Game Bug Fix</td><td>Reproduce → Fix → Regression playtest → Verify 🔒</td><td>Bug, Performance</td></tr>
+<tr><td>Milestone Gate</td><td>Build checklist → Playable build → Review 🔒 → Go / no-go 🔒</td><td>Milestone</td></tr>
+<tr><td>Technical Spike</td><td>Question → Prototype → Recommendation 🔒</td><td>Spike</td></tr>
+</table></div>
+<p class="meta">Step names are proposals for the workflow authors — kept to two or three words so six steps fit on one line at desktop width and wrap to two lines at 375px (the row is already <code>flex-wrap</code>).</p>
+
+<h3>3.3 375px preview</h3>
+<div class="frame phone">
+  <span class="frame-label">375px — Team wraps to two lines</span>
+  <div class="preview" style="padding:12px">
+    <div class="hd"><span class="ic">🎮</span><span class="nm">Game</span></div>
+    <div class="team" style="max-width:330px">
+      <span class="sec">Team</span>
+      <span class="chip"><span class="ci">🎯</span>Producer</span><span class="chip"><span class="ci">🕹️</span>Gameplay</span><span class="chip"><span class="ci">👾</span>Enemy AI</span><span class="chip"><span class="ci">🗺️</span>Levels</span><span class="chip"><span class="ci">🖌️</span>Tech Art</span><span class="chip"><span class="ci">🔊</span>Audio</span><span class="chip"><span class="ci">🔍</span>Playtest</span>
+    </div>
+    <div class="sec">Workflows <span class="hint">— click to view steps</span></div>
+    <div class="wfs">
+      <span class="wf"><span class="dot"></span>Game Feature / Mechanic <span class="cnt">(6)</span></span>
+      <span class="wf">Game Bug Fix <span class="cnt">(4)</span></span>
+      <span class="wf">Level / Content <span class="cnt">(5)</span></span>
+      <span class="wf">Milestone Gate <span class="cnt">(4)</span></span>
+      <span class="wf">Technical Spike <span class="cnt">(3)</span></span>
+    </div>
+    <div class="key"><span>🔒 Requires your approval</span><span>⚡ Labels auto-assign workflows</span></div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. OQ1 — what the kit is called</h2>
+<p><code>kit.name</code> is not just the card title. It is read in five places, and four of them wrap it in a sentence. Here is the same value in each place, both ways:</p>
+
+<div class="side">
+  <div class="frame" style="border-color:rgba(248,113,113,.35)">
+    <span class="frame-label">name = "Create a game"</span>
+    <div class="wftab"><div class="t">Templates</div><span class="badge">🎮 Create a game Kit</span></div>
+    <p class="meta" style="margin:8px 0 4px">Submit button while applying:</p>
+    <span class="btn pending">Applying Create a game kit...</span>
+    <p class="meta" style="margin:8px 0 4px">AI enhance system prompt:</p>
+    <p style="font-size:12px;margin:0">"This is a <b>Create a game</b> project — tailor the description to concerns specific to create a game projects"</p>
+    <p class="meta" style="margin:8px 0 4px">Success toast &amp; analytics:</p>
+    <p style="font-size:12px;margin:0"><code>kit: "Create a game"</code></p>
+    <p class="bad" style="margin-top:10px">Three of five surfaces read as broken English.</p>
+  </div>
+  <div class="frame" style="border-color:rgba(52,211,153,.35)">
+    <span class="frame-label">name = "Game" (recommended)</span>
+    <div class="wftab"><div class="t">Templates</div><span class="badge">🎮 Game Kit</span></div>
+    <p class="meta" style="margin:8px 0 4px">Submit button while applying:</p>
+    <span class="btn pending">Applying Game kit...</span>
+    <p class="meta" style="margin:8px 0 4px">AI enhance system prompt:</p>
+    <p style="font-size:12px;margin:0">"This is a <b>Game</b> project — tailor the description to concerns specific to game projects"</p>
+    <p class="meta" style="margin:8px 0 4px">Success toast &amp; analytics:</p>
+    <p style="font-size:12px;margin:0"><code>kit: "Game"</code></p>
+    <p class="good" style="margin-top:10px">Every surface reads naturally. Consistent with "Mobile App", "Web Application".</p>
+  </div>
+</div>
+
+<div class="note"><b>Decision:</b> <code>name = 'Game'</code>, <code>icon = '🎮'</code>, <code>description = 'Create a playable game, one mechanic at a time'</code>. The picker card is a noun ("what kind of project is this?" → "Game"), and the description is the verb. This is the same noun/verb split every other card already uses, so it also passes Jakob's Law: nothing on the grid looks like the odd one out. The "Create a game" phrasing the brief asked for survives — it is the first two words of the description, which is the first thing the eye reads after the icon.</div>
+
+<!-- ============================================================ -->
+<h2>5. Accessibility</h2>
+<ul>
+  <li><b>Contrast.</b> Card name <code>#fafafa</code> on zinc-900 ≈ 17:1. Description (zinc-400 on zinc-900) ≈ 7:1. Label pills: 400-shade text on a 12% tint over zinc-900 — lowest pair is amber-400 ≈ 9:1, cyan-400 ≈ 10:1. The dimmed "recede" state (60% opacity) brings zinc-400 to ≈ 4.6:1 — still passes AA for the small description text and restores to full on hover/focus. The tiny section headings (8.8px, 70% zinc-400) are ≈ 4.7:1 — they pass, but only just; they are existing and unchanged.</li>
+  <li><b>Keyboard.</b> The grid is a <code>radiogroup</code>; arrow keys move and select, Tab enters/leaves. Adding a sixth card changes nothing — the handler wraps around <code>buttons.length</code>. Workflow pills in the preview are real <code>&lt;button&gt;</code>s. No hover-only actions anywhere.</li>
+  <li><b>Not colour alone.</b> Labels are identified by their text; colour is a secondary cue. Approval gates use 🔒 + an amber border + the key line, not amber alone. The primary workflow uses a violet dot + first position, not position alone.</li>
+  <li><b>Screen readers.</b> Each team chip has the full role in <code>title</code>; the preview is <code>aria-live="polite"</code> so choosing a card announces its contents. Recommend the chips also get <code>aria-label={role.role}</code> so the abbreviation ("Levels") isn't the only thing read — a one-line optional improvement, not blocking.</li>
+  <li><b>375px.</b> Two-column grid, three rows, no horizontal scroll. Team row wraps (after the §6 fix). Six workflow steps wrap to two lines. Card touch targets ~160×84px.</li>
+  <li><b>Motion.</b> Panel slide-in is 200ms and the existing Tailwind <code>animate-in</code> honours <code>prefers-reduced-motion</code> via the app's global setup — no new animation added.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>6. What is reused, what changes</h2>
+<div class="tablewrap"><table>
+<tr><th>Piece</th><th>Reused as-is?</th><th>Change needed</th></tr>
+<tr><td>Picker grid <code>project-type-selector.tsx</code></td><td class="good">Yes</td><td>None. Fully data-driven; Custom-last sort is hard-coded and survives.</td></tr>
+<tr><td>Preview panel <code>kit-preview.tsx</code></td><td>Mostly</td><td><b>(a)</b> Add <code>flex-wrap</code> to the Team row (line 108) so 7 chips wrap. <b>(b)</b> Add 7 entries to <code>ROLE_META</code> with icon + short label. The keys must match the <code>role</code> strings in the migration <i>exactly</i> — the existing test "renders the Copywriter / Content role with its mapped short label" is the pattern to copy for at least one game role. Nothing else: labels, gates, primary flag and step chain all already work.</td></tr>
+<tr><td>Create form <code>idea-form.tsx</code></td><td class="good">Yes</td><td>None. Button text, kit-failed toast and redirect already handle any kit.</td></tr>
+<tr><td>Success toast <code>kit-applied-toast.tsx</code></td><td class="good">Yes</td><td>None. Counts come from the apply result.</td></tr>
+<tr><td>Board badge <code>workflows-tab.tsx</code></td><td class="good">Yes</td><td>None — renders "🎮 Game Kit" given the OQ1 decision.</td></tr>
+<tr><td>AI enhance <code>api/ai/enhance/route.ts</code></td><td class="good">Yes</td><td>None — reads the kit name; "game projects" reads naturally.</td></tr>
+<tr><td>Onboarding dialog + Apply Kit dialog</td><td class="good">Yes</td><td>None. Both use the same two components in compact mode; the Team-row wrap fix benefits them too.</td></tr>
+<tr><td>Data</td><td>—</td><td>One migration: insert the Game kit (display_order 5), its 7 roles, 10 labels, 5 library templates, 10 trigger rows; set Marketing Site <code>is_active = false</code> (keep the row so existing Marketing Site boards keep their badge and templates). Follow the idempotent guard pattern of migration 00124.</td></tr>
+</table></div>
+
+<h3>ROLE_META entries to add (keys must equal the migration's role strings)</h3>
+<div class="tablewrap"><table>
+<tr><th>role (exact key)</th><th>icon</th><th>short</th></tr>
+<tr><td>Producer / Scope Guard</td><td>🎯</td><td>Producer</td></tr>
+<tr><td>Gameplay Programmer</td><td>🕹️</td><td>Gameplay</td></tr>
+<tr><td>Enemy AI Engineer</td><td>👾</td><td>Enemy AI</td></tr>
+<tr><td>Level / Environment Designer</td><td>🗺️</td><td>Levels</td></tr>
+<tr><td>Technical Artist</td><td>🖌️</td><td>Tech Art</td></tr>
+<tr><td>Audio Designer</td><td>🔊</td><td>Audio</td></tr>
+<tr><td>QA / Playtester</td><td>🔍</td><td>Playtest</td></tr>
+</table></div>
+<p class="meta">Note: 🎨 is already used by both Front End Engineer and UX Designer, and 🔍 by QA Engineer. Playtest reusing 🔍 is deliberate — same job family. Nothing else collides.</p>
+
+<h3>Open for the human reviewer</h3>
+<ol>
+  <li>Approve 10 labels (Milestone + Spike split) over the 9 in Requirements — §3.1.</li>
+  <li>Approve the step names in §3.2 as a starting point for the workflow authors, or hand them a brief.</li>
+  <li>Optional: <code>aria-label</code> on team chips (§5). Tiny, but it's a visible-behaviour change to an approved component, so flagging rather than assuming.</li>
+</ol>
+
+</main>
+</body>
+</html>
