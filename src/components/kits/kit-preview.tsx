@@ -22,6 +22,13 @@ const ROLE_META: Record<string, { icon: string; short: string }> = {
   "Product Owner": { icon: "\u{1F4CB}", short: "PO" },
   "Business Analyst": { icon: "\u{1F4CA}", short: "BA" },
   "Copywriter / Content": { icon: "✍️", short: "Copy" },
+  "Producer / Scope Guard": { icon: "\u{1F3AF}", short: "Producer" },
+  "Gameplay Programmer": { icon: "\u{1F579}️", short: "Gameplay" },
+  "Enemy AI Engineer": { icon: "\u{1F47E}", short: "Enemy AI" },
+  "Level / Environment Designer": { icon: "\u{1F5FA}️", short: "Levels" },
+  "Technical Artist": { icon: "\u{1F58C}️", short: "Tech Art" },
+  "Audio Designer": { icon: "\u{1F50A}", short: "Audio" },
+  "QA / Playtester": { icon: "\u{1F50D}", short: "Playtest" },
 };
 
 const LABEL_COLOR_MAP: Record<string, { bg: string; text: string }> = {
@@ -105,7 +112,7 @@ export function KitPreview({ kit }: KitPreviewProps) {
 
       {/* AI Team */}
       {agentRoles.length > 0 && (
-        <div className="mb-2.5 flex items-center gap-1.5">
+        <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
           <span className="text-[0.55rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
             Team
           </span>
