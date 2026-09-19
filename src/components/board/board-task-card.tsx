@@ -56,6 +56,13 @@ interface BoardTaskCardProps {
   hasByokKey?: boolean;
   starterCredits?: number;
   isWiring?: boolean;
+  /**
+   * True when this card's column is the "actively being worked" column (In
+   * Progress). A non-workflow task only shows the live "X working" chip while it
+   * sits here — assigning a bot in any other column records ownership only and
+   * must never fake live activity (board cards 74699f20 / 61a127fb).
+   */
+  columnIsInProgress?: boolean;
   /** Open workflow suggestion for this task, if any — drives the card indicator. */
   suggestion?: BoardSuggestionIndicator;
 }
@@ -310,15 +317,26 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   hasByokKey = false,
   starterCredits = 0,
   isWiring = false,
+  columnIsInProgress = false,
   suggestion,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
+  // A non-workflow task counts as "actively being worked" ONLY while it sits in
+  // the In Progress column with a bot owner and a recorded start time. Gating on
+  // the column (not just the timestamp) is what stops a finished card that was
+  // moved to Verify — or a bot assigned as an after-the-fact credit — from
+  // spinning forever (board cards 74699f20 / 61a127fb).
+  const isManuallyWorking = Boolean(
+    columnIsInProgress &&
+      task.working_started_at &&
+      task.assignee?.is_bot &&
+      !task.workflow_step_total
+  );
   // Live clock for the card's working/stale borders. Subscribe only when there
   // is an active workflow step or an actively-working bot — idle cards never
   // re-render. Shared singleton ticker, so all live cards share one interval.
   const liveTimerEnabled =
-    Boolean(task.workflow_step_started_at) ||
-    Boolean(task.working_started_at && task.assignee?.is_bot);
+    Boolean(task.workflow_step_started_at) || isManuallyWorking;
   const now = useNow(60000, liveTimerEnabled);
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
   const { autoOpenTaskId, onAutoOpenConsumed } = useContext(TaskAutoOpenContext);
@@ -478,9 +496,9 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   ? "border-l-2 border-l-red-500 border-border"
                   : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (now - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
                     ? "border-l-2 border-l-amber-500 border-border"
-                    : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (now - new Date(task.working_started_at).getTime()) < STALE_THRESHOLD_MS
+                    : isManuallyWorking && (now - new Date(task.working_started_at!).getTime()) < STALE_THRESHOLD_MS
                       ? "border-blue-500/40 ring-1 ring-blue-500/20 animate-workflow-in-progress"
-                      : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (now - new Date(task.working_started_at).getTime()) >= STALE_THRESHOLD_MS
+                      : isManuallyWorking && (now - new Date(task.working_started_at!).getTime()) >= STALE_THRESHOLD_MS
                         ? "border-l-2 border-l-amber-500 border-border"
                         : "border-border"
         } ${isDragging ? "opacity-50" : ""} ${isArchived ? "border-dashed bg-muted/30" : ""}`}
@@ -575,7 +593,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 {task.workflow_step_total > 0 && (
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}
-                {!task.workflow_step_total && task.working_started_at && task.assignee?.is_bot && (() => {
+                {isManuallyWorking && (() => {
                   const elapsed = now - new Date(task.working_started_at!).getTime();
                   const isStale = elapsed >= STALE_THRESHOLD_MS;
                   const hours = Math.floor(elapsed / (60 * 60 * 1000));

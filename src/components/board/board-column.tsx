@@ -19,6 +19,7 @@ import { BoardTaskCard } from "./board-task-card";
 import { BoardQuickAdd } from "./board-quick-add";
 import { useBoardOps } from "./board-context";
 import { deleteBoardColumn, archiveColumnTasks } from "@/actions/board";
+import { isInProgressColumnTitle } from "@/lib/board-defaults";
 import { undoableAction } from "@/lib/undo-toast";
 import type {
   BoardColumnWithTasks,
@@ -114,6 +115,10 @@ export const BoardColumn = memo(function BoardColumn({
     () => column.tasks.map((t) => ({ id: t.id, position: t.position })),
     [column.tasks]
   );
+
+  // Only cards sitting in the In Progress column may show the live "X working"
+  // chip for a non-workflow task (board cards 74699f20 / 61a127fb).
+  const columnIsInProgress = isInProgressColumnTitle(column.title);
 
   function handleDelete() {
     const rollback = ops.deleteColumn(column.id);
@@ -272,6 +277,7 @@ export const BoardColumn = memo(function BoardColumn({
                 hasByokKey={hasByokKey}
                 starterCredits={starterCredits}
                 isWiring={isWiring}
+                columnIsInProgress={columnIsInProgress}
               />
             ))}
           </SortableContext>

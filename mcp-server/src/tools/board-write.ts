@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { POSITION_GAP } from "../constants";
+import { POSITION_GAP, isInProgressColumnTitle } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
 import { checkAndApplyAutoRules } from "../../../src/lib/workflow-helpers";
@@ -252,31 +252,12 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
       await logActivity(ctx, params.task_id, params.idea_id, "assigned", {
         assignee_id: params.assignee_id,
       });
-      // Auto-set working_started_at for bot assignees on non-workflow tasks
-      const { data: assignee } = await ctx.supabase
-        .from("bot_profiles")
-        .select("id")
-        .eq("id", params.assignee_id)
-        .maybeSingle();
-      if (assignee) {
-        // Only set if task has no active workflow run
-        const { count } = await ctx.supabase
-          .from("workflow_runs")
-          .select("*", { head: true, count: "exact" })
-          .eq("task_id", params.task_id)
-          .not("status", "in", '("completed","failed")');
-        if ((count ?? 0) === 0) {
-          // Guard against a concurrent reassignment/unassignment racing in
-          // between the guarded assignment write above and this secondary
-          // write — only touch working_started_at if the assignee we just
-          // set is still in place.
-          await ctx.supabase
-            .from("board_tasks")
-            .update({ working_started_at: new Date().toISOString() })
-            .eq("id", params.task_id)
-            .eq("assignee_id", params.assignee_id);
-        }
-      }
+      // NOTE: assignment deliberately does NOT stamp `working_started_at`.
+      // Assigning a bot records WHO owns the card, not that work has started —
+      // the old auto-stamp faked a live "working" spinner that Verify never
+      // cleared (board cards 74699f20 / 61a127fb). The "actively working" signal
+      // for a non-workflow task is now driven purely by the card sitting in the
+      // In Progress column (set/cleared on move — see moveTask below).
     } else {
       await logActivity(ctx, params.task_id, params.idea_id, "unassigned", {
         assignee_id: current.assignee_id!,
@@ -505,10 +486,20 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
     .eq("id", params.column_id)
     .single();
 
-  // Clear working_started_at when moved to a done column
+  // A non-workflow task counts as "actively being worked" only while it sits in
+  // the In Progress column, so tie `working_started_at` to that column: stamp it
+  // when a task genuinely enters In Progress, and clear it the moment it leaves
+  // (to Verify, Done, or anywhere else). This is what stops a finished card from
+  // spinning forever (board cards 74699f20 / 61a127fb). Only act on a real
+  // column change — a reorder within the same column must not reset the timer.
   const taskUpdate: Record<string, unknown> = { column_id: params.column_id, position };
-  if (column?.is_done_column) {
-    taskUpdate.working_started_at = null;
+  const isColumnChange = currentTask.column_id !== params.column_id;
+  if (isColumnChange) {
+    if (isInProgressColumnTitle(column?.title)) {
+      taskUpdate.working_started_at = new Date().toISOString();
+    } else {
+      taskUpdate.working_started_at = null;
+    }
   }
 
   const { data: moved, error } = await ctx.supabase

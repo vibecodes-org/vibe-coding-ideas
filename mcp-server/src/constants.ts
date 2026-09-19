@@ -11,6 +11,18 @@ export const DEFAULT_BOARD_COLUMNS = [
   { title: "Done", position: 5000, is_done_column: true },
 ];
 
+/**
+ * Canonical title of the "actively being worked" column. A non-workflow task
+ * only counts as "an agent is working on it" while it sits here — see
+ * `src/lib/board-defaults.ts` for the full rationale. Kept in sync with the
+ * Next.js copy across the package boundary.
+ */
+export const IN_PROGRESS_COLUMN_TITLE = "In Progress";
+
+export function isInProgressColumnTitle(title: string | null | undefined): boolean {
+  return (title ?? "").trim().toLowerCase() === IN_PROGRESS_COLUMN_TITLE.toLowerCase();
+}
+
 export const VALID_LABEL_COLORS = [
   "red", "orange", "amber", "yellow", "lime", "green",
   "blue", "cyan", "violet", "purple", "pink", "rose",
