@@ -21,3 +21,20 @@ export const DEFAULT_BOARD_COLUMNS: readonly BoardColumnDefault[] = [
   { title: "Verify", position: 4000, is_done_column: false },
   { title: "Done", position: 5000, is_done_column: true },
 ] as const;
+
+/**
+ * Canonical title of the "actively being worked" column.
+ *
+ * A non-workflow task only counts as "an agent is actively working on it" while
+ * it sits in this column — assigning a bot elsewhere just records ownership and
+ * must never show a live "working" spinner (see board cards 74699f20 / 61a127fb).
+ * Columns carry no dedicated in-progress flag (only `is_done_column`), so we match
+ * on the canonical title. A board that renames this column simply won't show the
+ * manual working chip — a deliberate fail-safe: no false spinner is far better
+ * than a stuck one.
+ */
+export const IN_PROGRESS_COLUMN_TITLE = "In Progress";
+
+export function isInProgressColumnTitle(title: string | null | undefined): boolean {
+  return (title ?? "").trim().toLowerCase() === IN_PROGRESS_COLUMN_TITLE.toLowerCase();
+}

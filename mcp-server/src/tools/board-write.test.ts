@@ -779,3 +779,168 @@ describe("moveTask — relative placement (top/bottom/before/after)", () => {
     expect(finalPositions.size).toBe(3);
   });
 });
+
+describe("moveTask — working_started_at (In Progress) tracking", () => {
+  // A non-workflow task is "actively being worked" only while it sits in the
+  // In Progress column. Assignment no longer stamps working_started_at; the
+  // move into/out of In Progress is what sets and clears it. This is the fix
+  // for the finished-card-spins-forever bug (board cards 74699f20 / 61a127fb).
+
+  /** Wires the standard moveTask mock: siblings, current-column read, dest column, write. */
+  function makeMoveMocks(fromColumnId: string, destColumn: { title: string; is_done_column: boolean }) {
+    const siblingsChain = createChain([]);
+    const readChain = createChain({ column_id: fromColumnId });
+    const columnChain = createChain(destColumn);
+    const writeChain = createChain({ id: TASK_ID });
+    const activityChain = createChain(null);
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          if (boardTasksCalls === 1) return siblingsChain;
+          if (boardTasksCalls === 2) return readChain;
+          return writeChain;
+        case "board_columns":
+          return columnChain;
+        case "board_task_activity":
+          return activityChain;
+        default:
+          return createChain(null);
+      }
+    });
+    return { fromFn, writeChain };
+  }
+
+  /** The payload passed to the moved task's own board_tasks.update(...). */
+  function movePayload(writeChain: ReturnType<typeof createChain>): Record<string, unknown> {
+    const calls = asMock(writeChain.update).mock.calls;
+    return calls[calls.length - 1][0] as Record<string, unknown>;
+  }
+
+  it("stamps working_started_at when a task genuinely enters In Progress", async () => {
+    const { fromFn, writeChain } = makeMoveMocks(COLUMN_A_ID, {
+      title: "In Progress",
+      is_done_column: false,
+    });
+
+    await moveTask(
+      makeContext(fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+
+    const payload = movePayload(writeChain);
+    expect(payload).toHaveProperty("working_started_at");
+    expect(typeof payload.working_started_at).toBe("string");
+    expect(Number.isNaN(Date.parse(payload.working_started_at as string))).toBe(false);
+  });
+
+  it("clears working_started_at when a task leaves In Progress (e.g. moved to Verify)", async () => {
+    const { fromFn, writeChain } = makeMoveMocks(COLUMN_A_ID, {
+      title: "Verify",
+      is_done_column: false,
+    });
+
+    await moveTask(
+      makeContext(fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+
+    expect(movePayload(writeChain).working_started_at).toBeNull();
+  });
+
+  it("clears working_started_at when a task moves to a done column", async () => {
+    const { fromFn, writeChain } = makeMoveMocks(COLUMN_A_ID, {
+      title: "Done",
+      is_done_column: true,
+    });
+
+    await moveTask(
+      makeContext(fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+
+    expect(movePayload(writeChain).working_started_at).toBeNull();
+  });
+
+  it("does NOT touch working_started_at on a reorder within the same column", async () => {
+    // Same source and destination column → not a column change → timer untouched.
+    const { fromFn, writeChain } = makeMoveMocks(COLUMN_B_ID, {
+      title: "In Progress",
+      is_done_column: false,
+    });
+
+    await moveTask(
+      makeContext(fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+
+    expect(movePayload(writeChain)).not.toHaveProperty("working_started_at");
+  });
+
+  it("matches the In Progress column case-insensitively / trimmed, but not a renamed column", async () => {
+    const entering = makeMoveMocks(COLUMN_A_ID, { title: "  in progress  ", is_done_column: false });
+    await moveTask(
+      makeContext(entering.fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+    expect(typeof movePayload(entering.writeChain).working_started_at).toBe("string");
+
+    // A board that renamed the column is treated as "not In Progress" → clears,
+    // never a false spinner.
+    const renamed = makeMoveMocks(COLUMN_A_ID, { title: "Doing", is_done_column: false });
+    await moveTask(
+      makeContext(renamed.fromFn),
+      moveTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, column_id: COLUMN_B_ID, position: "bottom" })
+    );
+    expect(movePayload(renamed.writeChain).working_started_at).toBeNull();
+  });
+});
+
+describe("updateTask — assignment does not fake a working spinner", () => {
+  // Regression guard for board cards 74699f20 / 61a127fb: assigning a bot must
+  // record ownership only. It must NEVER stamp working_started_at (which used to
+  // fake a live "X working" spinner that Verify never cleared).
+  it("does not write working_started_at when a bot is assigned", async () => {
+    const readChain = createChain({
+      title: "Task",
+      description: null,
+      assignee_id: null,
+      due_date: null,
+      archived: false,
+    });
+    const writeChain = createChain({ id: TASK_ID, title: "Task" });
+    const chains: ReturnType<typeof createChain>[] = [];
+
+    let boardTasksCalls = 0;
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "board_tasks":
+          boardTasksCalls += 1;
+          return boardTasksCalls === 1 ? readChain : writeChain;
+        default: {
+          // Capture every other chain (bot_profiles, collaborators, ...) so we
+          // can prove none of them stamp working_started_at either.
+          const c = createChain(null);
+          chains.push(c);
+          return c;
+        }
+      }
+    });
+
+    await updateTask(
+      makeContext(fromFn),
+      updateTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, assignee_id: OTHER_USER_ID })
+    );
+
+    const anyUpdateHasWorking = [readChain, writeChain, ...chains].some((chain) =>
+      asMock(chain.update).mock.calls.some(
+        (call: unknown[]) =>
+          call[0] != null &&
+          Object.prototype.hasOwnProperty.call(call[0] as object, "working_started_at")
+      )
+    );
+    expect(anyUpdateHasWorking).toBe(false);
+  });
+});

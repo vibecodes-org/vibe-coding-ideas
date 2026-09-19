@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
+import { isInProgressColumnTitle } from "@/lib/board-defaults";
 import { computeTopInsertPosition } from "@/lib/board-position";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "@/lib/workflow-helpers";
@@ -373,9 +374,39 @@ export async function moveBoardTask(
 
   if (!user) throw new Error("Not authenticated");
 
+  // Tie the non-workflow "actively working" signal to the In Progress column:
+  // stamp `working_started_at` when a card genuinely enters In Progress and
+  // clear it the moment it leaves (Verify, Done, anywhere). Only on a real
+  // column change — a reorder within the same column must not reset the timer.
+  // Mirrors the MCP moveTask path; fixes the finished-card-spins-forever bug
+  // (board cards 74699f20 / 61a127fb).
+  const update: {
+    column_id: string;
+    position: number;
+    working_started_at?: string | null;
+  } = { column_id: newColumnId, position: newPosition };
+
+  const { data: currentTask } = await supabase
+    .from("board_tasks")
+    .select("column_id")
+    .eq("id", taskId)
+    .eq("idea_id", ideaId)
+    .maybeSingle();
+
+  if (currentTask && currentTask.column_id !== newColumnId) {
+    const { data: destColumn } = await supabase
+      .from("board_columns")
+      .select("title")
+      .eq("id", newColumnId)
+      .maybeSingle();
+    update.working_started_at = isInProgressColumnTitle(destColumn?.title)
+      ? new Date().toISOString()
+      : null;
+  }
+
   const { error } = await supabase
     .from("board_tasks")
-    .update({ column_id: newColumnId, position: newPosition })
+    .update(update)
     .eq("id", taskId)
     .eq("idea_id", ideaId);
 
