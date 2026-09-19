@@ -467,6 +467,63 @@ describe("claimNextStep", () => {
     expect(r.instruction).toContain('"Unit Tests"');
   });
 
+  it("includes PROTECT PRIOR WORK on a first-step claim (Claude) — no prior work to save-point yet", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("PROTECT PRIOR WORK");
+    expect(r.instruction).toContain("Unexplained uncommitted");
+    expect(r.instruction).not.toContain("SAVE-POINT COMMIT");
+  });
+
+  it("includes both PROTECT PRIOR WORK and SAVE-POINT COMMIT (exact wording) when prior steps exist (Claude)", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [
+      { id: "s1", title: "Implementation", step_order: 1, output: "code written" },
+    ];
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("PROTECT PRIOR WORK");
+    expect(r.instruction).toContain(
+      "SAVE-POINT COMMIT: Before spawning this step's subagent, if this project is a git repository and a previous step's completed work is still uncommitted, commit it locally now on the branch you are already on. Do not create a branch, worktree or folder for this, and never push. Skip this if there is nothing to commit or the project is not a git repository. Never commit secrets or files covered by `.gitignore`."
+    );
+  });
+
+  it("includes both PROTECT PRIOR WORK and SAVE-POINT COMMIT on the Codex path too", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [
+      { id: "s1", title: "Implementation", step_order: 1, output: "code written" },
+    ];
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("PROTECT PRIOR WORK");
+    expect(r.instruction).toContain("SAVE-POINT COMMIT");
+  });
+
+  it("omits SAVE-POINT COMMIT on a first-step claim on the Codex path too", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("PROTECT PRIOR WORK");
+    expect(r.instruction).not.toContain("SAVE-POINT COMMIT");
+  });
+
   it("includes explicit format constraint for parenthetical deliverables", async () => {
     const step = makeStepRow({
       step_order: 1,
@@ -991,14 +1048,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "6c0e1d9ccac5c053aaa402a618554c12773080f7de0e5abd739be8879fe4c3b7",
-        "auto/missing": "3ec8590a73b2a0a6ca188252d0943c8c71f0ece3c7e9e41ff78b205a547a857f",
-        "cheap/embedded": "8f76854012debb83a204bdca30607c954d6b8fc0e3210fff9e79779d4e5269e2",
-        "cheap/missing": "04333fec60b1aefe462e4124ce7274c0a763db2090041ab3f723eb31eb643114",
-        "frontier/embedded": "ff10e31dc0b3bb718391252d05a57433bd11106b01c5562011298472ae763493",
-        "frontier/missing": "0cdbc0a35fd7e55099fd35ce353e44688b65d0ff95eeff54ee04f79d6dc8757d",
-        "standard/embedded": "2b54917712906865a921416b14d89998a38988f63a20201cf4448c4358259699",
-        "standard/missing": "dfe5538ff1eb30bcd2752479538ec124c558f023ce417d3852dacd208fdde648",
+        "auto/embedded": "ecf02c62167995659fe57e5c80b19d684568354cc8513c9ab6fc7fcdf092b012",
+        "auto/missing": "044ddd324969116f7ea62f5986328e8fa7cdb4317d4cd7ffe4788a05ad635b56",
+        "cheap/embedded": "5149e81b1f7c269572d421a5607d893a2c5d516a750d3fa15967487e02346e6f",
+        "cheap/missing": "b50fdf2046f0ec7fbf904f2035bfa49937dbb636e542084589b7f16b8434f175",
+        "frontier/embedded": "1dc7e1bc8003d5028c2b6232703c0f81823b60cca10ebad44156086e9802e809",
+        "frontier/missing": "e240ea9db65894bd49ed7fc855398d4daafb72e9d1768ca847bed7a381eae2cc",
+        "standard/embedded": "308b24500c4340defe7fa6e7e707833e25ec717546600a5f4acf6befd1737625",
+        "standard/missing": "bb8a4899755814b4d9fc94ed32f7c083518d1aad24649e79eec1c5901848d854",
       }
     `);
   });
