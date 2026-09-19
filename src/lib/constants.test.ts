@@ -204,6 +204,45 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(copywriter!.structured.constraints).toBeTruthy();
     expect(copywriter!.structured.approach).toBeTruthy();
   });
+
+  // Task 7d1ca3c1 (real incident, 7 Sep 2026): a spawned engineer subagent
+  // reverted a prior step's approved, uncommitted work. The "don't destroy
+  // work you didn't author" sentence is appended to the 8 code-touching
+  // starter templates only — non-code roles never run git, so it would be
+  // inert noise there.
+  describe("protect-prior-work sentence", () => {
+    const CODE_TOUCHING_ROLES = [
+      "Full Stack Engineer",
+      "Front End Engineer",
+      "Backend Engineer",
+      "QA Engineer",
+      "DevOps Engineer",
+      "Security Engineer",
+      "Code Reviewer",
+      "Data Engineer",
+    ];
+    const MARKER =
+      "unexplained uncommitted changes in the working tree are someone else's intentional prior work";
+
+    it("appends the sentence to structured.constraints for every code-touching role", () => {
+      for (const role of CODE_TOUCHING_ROLES) {
+        const template = BOT_ROLE_TEMPLATES.find((t) => t.role === role);
+        expect(template, `missing template for ${role}`).toBeDefined();
+        expect(template!.structured.constraints).toContain(MARKER);
+        expect(template!.structured.constraints).toContain("fail_step");
+      }
+    });
+
+    it("does not add the sentence to non-code-touching roles", () => {
+      for (const template of BOT_ROLE_TEMPLATES) {
+        if (CODE_TOUCHING_ROLES.includes(template.role)) continue;
+        expect(
+          template.structured.constraints,
+          `unexpected sentence on ${template.role}`
+        ).not.toContain(MARKER);
+      }
+    });
+  });
 });
 
 // ── SUGGESTED_TAGS ───────────────────────────────────────────────────

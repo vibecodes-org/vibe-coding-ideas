@@ -1090,6 +1090,18 @@ export async function claimNextStep(
     `CLAIM TOKEN: This response includes a one-time "claim_token" for this step. Keep it and pass it as the "claim_token" parameter of complete_step (or fail_step). If you lose it (e.g. after context compaction), call claim_next_step again to re-claim and receive a fresh one.`
   );
 
+  // PROTECT PRIOR WORK (task 7d1ca3c1, real incident 7 Sep 2026): a worker
+  // subagent reverted a prior step's approved, uncommitted work because it
+  // looked unexplained. Passed to every claim, on every step, so it reaches
+  // the spawned worker's brief verbatim regardless of persona wording.
+  contextParts.push(
+    `PROTECT PRIOR WORK: Include this verbatim in your spawned subagent's brief — 'Never revert, reset, ` +
+    "`git checkout`/`restore`, `git clean`, stash, or delete changes you did not make. Unexplained uncommitted " +
+    `changes in the working tree are someone else's intentional prior work, not a mess to clean up — build on them. ` +
+    `If something looks wrong, conflicting, or unexplained, STOP and report it in your output instead of removing ` +
+    `or resetting it.'`
+  );
+
   // AGENT VOICE (docs/agent-voice-comments-design.html §1.3.2) — only added
   // when a work_token was actually minted (an agent is assigned to this
   // claim). Sits right after CLAIM TOKEN so the two token explanations read
@@ -1152,6 +1164,16 @@ export async function claimNextStep(
     contextParts.push(
       `CASCADE REJECTION: If you find issues with prior work, use fail_step with reset_to_step_id to send work back to the responsible step instead of fixing it yourself. ` +
       `Prior steps:\n${priorStepList}`
+    );
+
+    // SAVE-POINT COMMIT (task 7d1ca3c1, real incident 7 Sep 2026): the
+    // orchestrator left a completed step's work uncommitted where the next
+    // step's subagent could see it as ambiguous and destroy it. Only shown
+    // when there is prior-step work in this run to protect (context.length >
+    // 0) — a first-step claim has nothing to save-point yet. Exact wording is
+    // binding per Nick's approval comment on this task; do not reword.
+    contextParts.push(
+      `SAVE-POINT COMMIT: Before spawning this step's subagent, if this project is a git repository and a previous step's completed work is still uncommitted, commit it locally now on the branch you are already on. Do not create a branch, worktree or folder for this, and never push. Skip this if there is nothing to commit or the project is not a git repository. Never commit secrets or files covered by \`.gitignore\`.`
     );
   }
 
