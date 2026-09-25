@@ -7,12 +7,17 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePostHog } from "posthog-js/react";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useViewerTerminalAgent, persistViewerTerminalAgent } from "@/hooks/use-viewer-terminal-agent";
+import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
+import { type LaunchAgent } from "@/lib/terminal/agent-launch";
 import {
   type CompactPromptEssentials,
   type LaunchMode,
@@ -82,6 +87,21 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const { ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths } = props;
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
+  // Card c4c27987 (Option A) — the primary Launch button follows the
+  // account's remembered agent. `undefined` while loading: FR-1 says show
+  // the Claude label until the hook resolves rather than a spinner/skeleton
+  // (mock: "there is no unknown state"). Terminal flag OFF collapses back to
+  // Claude unconditionally — today's single-item menu, byte-identical.
+  const rememberedAgentRaw = useViewerTerminalAgent();
+  // The in-browser destination only exists behind the terminal flag. When it's
+  // OFF the menu collapses to today's single terminal-window action.
+  const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
+  // AC-5: terminal flag off → always Claude, regardless of what's remembered
+  // server-side (the menu below also collapses to today's single item).
+  // Loading (`undefined`) also reads as Claude — see the hook's own comment.
+  const rememberedAgent: LaunchAgent = browserLaunchAvailable ? (rememberedAgentRaw ?? "claude") : "claude";
+  const otherAgent: LaunchAgent = rememberedAgent === "codex" ? "claude" : "codex";
+
   // The user's saved localStorage config — CREATE-NEW mode only now (an
   // existing-mode pin is retired as a read source; see resolveDefaultLaunchState).
   // Mirrored into state so a save in the dialog (or an open from another tab)
@@ -142,8 +162,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<LaunchMode | undefined>(undefined);
-  // When true, the dialog continues into a launch after saving.
-  const [pendingLaunch, setPendingLaunch] = useState(false);
+  // The agent the dialog should continue launching after a successful save —
+  // null when the dialog was opened for a reason other than "finish this
+  // launch" (e.g. "Set exact folder (advanced)…"). Card c4c27987 AC-4: a
+  // Codex primary click with no recorded folder opens this SAME dialog
+  // (existing-folder mode) and continues the Codex launch after save.
+  const [pendingLaunchAgent, setPendingLaunchAgent] = useState<LaunchAgent | null>(null);
   // In-flight guard: blocks a second launch during the visibility-race window so
   // rapid double-clicks don't fire two window.location.assign + two fallback timers.
   const launchingRef = useRef(false);
@@ -284,7 +308,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const posthog = usePostHog();
 
   const copyCommand = useCallback(
-    async (state: LaunchPathState) => {
+    async (state: LaunchPathState, agent: LaunchAgent = "claude") => {
       const prompt = buildPrompt(state);
       const cwd = state.mode === "new" ? undefined : state.path;
       const command = buildLaunchCommand({
@@ -293,11 +317,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         mode: state.mode,
         newProject: state.mode === "new" ? { newProjectPath: state.path } : undefined,
         repoUrl: ideaGithubUrl,
+        agent,
       });
       // Copying the command = the user fell back from the one-click deep link to
       // the terminal — a key signal of local-launch friction (desktop/mobile via
       // PostHog's $device_type).
-      posthog?.capture("launch_command_copied", { mode: state.mode, has_repo: !!ideaGithubUrl });
+      posthog?.capture("launch_command_copied", { mode: state.mode, has_repo: !!ideaGithubUrl, agent });
       try {
         await navigator.clipboard.writeText(command);
         toast.success("Launch command copied — paste it in your terminal");
@@ -317,6 +342,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         method: "deep_link",
         mode: state.mode,
         has_repo: !!ideaGithubUrl,
+        agent: "claude",
       });
 
       // cwd resolution — the SHARED rule (resolveLaunchCwd): pinned existing path
@@ -437,19 +463,16 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   }, [resolveFreshLaunch, openInClaudeCode]);
 
   const handleCopy = useCallback(() => {
-    void copyCommand(resolveState());
-  }, [resolveState, copyCommand]);
+    void copyCommand(resolveState(), rememberedAgent);
+  }, [resolveState, copyCommand, rememberedAgent]);
 
-  // The in-browser destination only exists behind the terminal flag. When the flag
-  // is OFF this is false, so the menu collapses to exactly today's single
-  // terminal-window action — the existing behaviour is completely untouched.
   // Picking "In the browser" asks the board's terminal dock (a page-level sibling)
   // to open a NEW tab + auto-launch via the vibecodes:// deep link; it does NOT also
   // run the terminal-window flow for THIS click — each click still starts exactly
   // one session in exactly one destination. That's no longer a claim about the app
   // as a whole, though: multiple sessions (terminal windows and/or browser tabs) can
   // run concurrently — see the terminal dock's "My sessions" / pop-out support.
-  const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
+  //
   // Codex support (docs/codex-terminal-requirements.md FR-1, implementation
   // slice 2) — the ONE browser-launch builder, agent-parameterised. "claude"
   // (the default) produces the byte-identical payload/event this always
@@ -495,8 +518,20 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [posthog, buildCompactEssentials, resolveFreshLaunch, props],
   );
 
-  const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
-    setPendingLaunch(launch);
+  // Menu footer "Switch to …" link (spec §2b) — writes the remembered
+  // preference and NOTHING else: it never launches (precedence rule 3). On
+  // failure, nothing changes and an error toast fires; on success the hook's
+  // cache update re-renders every label/group/chip/footer live. Never shows
+  // the one-time toast — `source: "footer"` is the one value
+  // persistViewerTerminalAgent never toasts for.
+  const handleSwitchDefaultAgent = useCallback(() => {
+    void persistViewerTerminalAgent(otherAgent, { source: "footer" }).catch(() => {
+      toast.error("Couldn't switch your default agent — try again");
+    });
+  }, [otherAgent]);
+
+  const openDialog = useCallback((mode: LaunchMode, launchAgent: LaunchAgent | null) => {
+    setPendingLaunchAgent(launchAgent);
     setDialogMode(mode);
     setDialogOpen(true);
   }, []);
@@ -520,7 +555,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // treatment — UX design §7b/§12d/§12f describe the richer version, which is
   // a follow-up): unknown helper/codex state never blocks the click, matching
   // the design's "unknown must read as enabled, never disabled" rule.
-  const handleLaunchCodexDesktop = useCallback(() => {
+  // `stateOverride`/`cwdOverride` (AC-4, card c4c27987): when the folder
+  // dialog just saved a folder for a Codex primary-button launch, handleSaved
+  // calls back in here with that FRESH state/cwd instead of re-resolving —
+  // continuing the SAME launch rather than requiring a second click.
+  const launchCodexInTerminal = useCallback((stateOverride?: LaunchPathState, cwdOverride?: string) => {
     posthog?.capture("launch_claude_code_clicked", { method: "desktop_window", agent: "codex" });
     if (launchingRef.current) return;
     launchingRef.current = true;
@@ -556,23 +595,22 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           }
         }
 
-        const { state, cwd } = await resolveFreshLaunch();
-        const resolvedCwd = cwd ?? effectiveTarget.cwd;
+        const resolved = stateOverride ? { state: stateOverride, cwd: cwdOverride } : await resolveFreshLaunch();
+        const { state } = resolved;
+        const resolvedCwd = resolved.cwd ?? effectiveTarget.cwd;
         if (!resolvedCwd) {
-          // FR-12: "If the board has no recorded folder, the launch goes
+          // FR-12/AC-4: "If the board has no recorded folder, the launch goes
           // through the existing 'pick a folder' dialog first — same as
           // Claude today." Unlike Claude's own desktop launch (which can
           // proceed folder-less in "new" mode — the agent creates it), the
           // Codex Terminal-window script always needs a REAL, existing
           // folder to `cd` into (FR-11's fixed-binary/existing-directory
           // security posture), so there is no folder-less fallback here.
-          // Opens the dialog rather than auto-continuing after save (that
-          // would need tracking WHICH launch is pending, Claude vs desktop
-          // Codex — a small follow-up); the user re-clicks once it's set.
-          toast("Set a project folder first", {
-            description: "Codex needs a real folder to open — set one, then launch again.",
-          });
-          openDialog("new", false);
+          // Opens the SAME dialog in existing-folder mode and CONTINUES the
+          // Codex launch after save (handleSaved reads pendingLaunchAgent) —
+          // no second click needed. Cancel / Escape / outside-click / ✕
+          // close it and fire nothing (never-trap rule).
+          openDialog("existing", "codex");
           return;
         }
 
@@ -624,6 +662,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     })();
   }, [posthog, resolveFreshLaunch, effectiveTarget.cwd, buildCompactEssentials, openDialog]);
 
+  const handleLaunchCodexDesktop = useCallback(() => {
+    void launchCodexInTerminal();
+  }, [launchCodexInTerminal]);
+
   const handleSaved = useCallback(
     (state: LaunchPathState, recordedPath?: RecordedProjectPath) => {
       // New-mode saves still mirror into the localStorage-backed state (the
@@ -637,12 +679,21 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       } else if (recordedPath) {
         setManualPin(recordedPath);
       }
-      if (pendingLaunch) {
-        setPendingLaunch(false);
+      const launchAgent = pendingLaunchAgent;
+      setPendingLaunchAgent(null);
+      if (launchAgent === "codex") {
+        // AC-4: the Codex primary click continues into the SAME Codex
+        // launch after the folder is saved. The just-saved path is the
+        // freshest cwd we have — pass it straight through rather than
+        // re-resolving (which would race the still-in-flight local state
+        // update above).
+        const cwd = recordedPath?.absolute_path ?? (state.mode === "existing" ? state.path : undefined);
+        void launchCodexInTerminal(state, cwd);
+      } else if (launchAgent === "claude") {
         openInClaudeCode(state);
       }
     },
-    [pendingLaunch, openInClaudeCode]
+    [pendingLaunchAgent, openInClaudeCode, launchCodexInTerminal]
   );
 
   // The dialog's prefill: a create-new draft still comes from localStorage
@@ -666,7 +717,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       ideaGithubUrl={ideaGithubUrl}
       initial={initialForDialog}
       initialMode={dialogMode}
-      launchOnSave={pendingLaunch}
+      launchOnSave={pendingLaunchAgent !== null}
       onSaved={handleSaved}
     />
   );
@@ -674,11 +725,25 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // ── Per-task: card menu item ──────────────────────────────────────────────
   if (props.variant === "task-menu-item") {
     if (!isDesktop) {
+      // Card c4c27987 §4 — replaces the old disabled "Open on desktop…"
+      // item: launching only ever runs on the user's Mac, so a phone gets a
+      // non-interactive explanation (persona rule: no disabled control
+      // without an adjacent reason — the reason here is this replacement)
+      // plus a WORKING copy action for the remembered agent's command. Never
+      // launches anything on a phone.
       return (
-        <DropdownMenuItem disabled className="py-2.5 text-muted-foreground sm:py-1.5">
-          <Terminal className="mr-2 h-4 w-4" />
-          Open on desktop to launch Claude Code or Codex
-        </DropdownMenuItem>
+        <>
+          <div className="px-2.5 pt-2 pb-1 text-[12.5px] text-muted-foreground">
+            Launching runs on your Mac, so it isn&apos;t available here.
+          </div>
+          <DropdownMenuItem onSelect={handleCopy} className="min-h-11 py-2.5">
+            <Copy className="mr-2 h-4 w-4" />
+            <div className="flex flex-col">
+              <span>Copy {AGENT_LABEL[rememberedAgent]} command for this task</span>
+              <span className="text-[11px] text-muted-foreground">Paste it into Terminal on your Mac</span>
+            </div>
+          </DropdownMenuItem>
+        </>
       );
     }
     return (
@@ -761,10 +826,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           variant="ghost"
           size="sm"
           className="h-8 gap-1.5 rounded-r-none border border-emerald-500/25 bg-emerald-500/10 text-xs text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300"
-          onClick={handleLaunch}
+          onClick={rememberedAgent === "codex" ? handleLaunchCodexDesktop : handleLaunch}
+          title="Opens a Terminal window on this Mac"
         >
           <Terminal className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Launch Claude Code</span>
+          <span className="hidden sm:inline">Launch {AGENT_LABEL[rememberedAgent]}</span>
         </Button>
         <DropdownMenu
           onOpenChange={(o) => {
@@ -777,82 +843,79 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               variant="ghost"
               size="sm"
               className="h-8 w-7 rounded-l-none border border-l-0 border-emerald-500/25 bg-emerald-500/10 px-0 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300"
-              aria-label="Launch options"
+              aria-label="More ways to launch"
             >
               <ChevronDown className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             {browserLaunchAvailable ? (
-              // Codex support (design §13) — CORRECTED from a plain pick-one:
-              // the dropdown is now agent × location, two labelled groups.
-              // Claude Code first (the default; ↓ then Enter still does
-              // exactly what it did yesterday), Codex second. Within each
-              // group: terminal window, then browser (today's order).
+              // Card c4c27987 (Option A) — the remembered agent's group
+              // renders FIRST, with a "Your default" chip on its heading;
+              // the other agent's group follows. Every item inside a group
+              // launches exactly that agent, unconditionally, and NEVER
+              // writes the remembered preference (precedence rule 2 — see
+              // PR #281's chooser-default tests). Headings are
+              // DropdownMenuLabel inside a DropdownMenuGroup (role="group").
               <>
-                <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
-                  Claude Code
-                </div>
-                <DropdownMenuItem onSelect={handleLaunch}>
-                  <Terminal className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>
-                      <span className="sr-only">Claude Code, </span>In a terminal window
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      On your computer — how it works today
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => handleLaunchInBrowser("claude")}>
-                  <Globe className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="sr-only">Claude Code, </span>In the browser
-                      <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
-                        Beta
-                      </span>
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      A live terminal docked on this board
-                    </span>
-                  </div>
-                </DropdownMenuItem>
+                {([rememberedAgent, otherAgent] as const).map((agent) => (
+                  <DropdownMenuGroup key={agent}>
+                    <DropdownMenuLabel className="flex items-center gap-2 px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
+                      {AGENT_LABEL[agent]}
+                      {agent === rememberedAgent && (
+                        <span className="rounded bg-emerald-500/15 px-[5px] py-px text-[10.5px] font-semibold normal-case tracking-normal leading-[1.3] text-emerald-300">
+                          Your default
+                        </span>
+                      )}
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={agent === "codex" ? handleLaunchCodexDesktop : handleLaunch}>
+                      <Terminal className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>
+                          <span className="sr-only">{AGENT_LABEL[agent]}, </span>In a terminal window
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {agent === "codex"
+                            ? "Opens Terminal on this Mac — needs the VibeCodes helper"
+                            : "On your computer — how it works today"}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleLaunchInBrowser(agent)}>
+                      <Globe className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="sr-only">{AGENT_LABEL[agent]}, </span>In the browser
+                          <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
+                            Beta
+                          </span>
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          A live terminal docked on this board
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    {agent === rememberedAgent && <DropdownMenuSeparator />}
+                  </DropdownMenuGroup>
+                ))}
                 <DropdownMenuSeparator />
-                <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
-                  Codex
+                {/* Footer: "Default agent: X · Switch to Y" — X/Y from
+                    AGENT_LABEL only. The link is a real, keyboard-reachable
+                    DropdownMenuItem (Radix ↑/↓ + Enter) that ONLY writes the
+                    preference — it never launches (precedence rules 3–4). */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-xs text-muted-foreground">
+                  <span>
+                    Default agent: <b className="font-semibold text-foreground/90">{AGENT_LABEL[rememberedAgent]}</b>
+                    {" · "}
+                  </span>
+                  <DropdownMenuItem
+                    onSelect={handleSwitchDefaultAgent}
+                    className="inline h-auto cursor-pointer rounded-none p-0 text-xs text-sky-300 underline underline-offset-2 hover:text-sky-400 focus:bg-transparent focus:text-sky-400"
+                  >
+                    Switch to {AGENT_LABEL[otherAgent]}
+                  </DropdownMenuItem>
                 </div>
-                {/* Slice 3 TODO: the helper doesn't yet report whether Codex
-                    is installed on this Mac, so this item can't be
-                    disabled-with-reason per design §12d/§13c yet — it fires
-                    handleLaunchCodexDesktop's not-yet-implemented stub
-                    (status-unknown reads as enabled, per the design's own
-                    fallback rule). */}
-                <DropdownMenuItem onSelect={handleLaunchCodexDesktop}>
-                  <Terminal className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>
-                      <span className="sr-only">Codex, </span>In a terminal window
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Opens Terminal on this Mac — needs the VibeCodes helper
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")}>
-                  <Globe className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="sr-only">Codex, </span>In the browser
-                      <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
-                        Beta
-                      </span>
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      A live terminal docked on this board
-                    </span>
-                  </div>
-                </DropdownMenuItem>
+                <DropdownMenuSeparator />
               </>
             ) : (
               <DropdownMenuItem onSelect={handleLaunch}>
@@ -862,7 +925,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
             )}
             {effectiveTarget.source !== "none" && effectiveTarget.displayPath && (
               <>
-                <DropdownMenuSeparator />
+                {/* The browser-available branch above already ends with its
+                    own separator (after the footer); only the flag-off,
+                    single-item branch needs one here. */}
+                {!browserLaunchAvailable && <DropdownMenuSeparator />}
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">
                   <div className="font-medium text-foreground/80">
                     {effectiveTarget.displayLabel}
@@ -873,24 +939,36 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                 </div>
               </>
             )}
-            <DropdownMenuItem onSelect={() => openDialog("new", true)}>
+            <DropdownMenuItem onSelect={() => openDialog("new", "claude")}>
               <FolderPlus className="mr-2 h-4 w-4" />
               Start a new project…
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={handleCopy}>
               <Copy className="mr-2 h-4 w-4" />
-              Copy launch command
+              <div className="flex flex-col">
+                <span>Copy launch command</span>
+                <span className="text-[11px] text-muted-foreground">For {AGENT_LABEL[rememberedAgent]}</span>
+              </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => openDialog("existing", false)}>
+            <DropdownMenuItem onSelect={() => openDialog("existing", null)}>
               <FolderCog className="mr-2 h-4 w-4" />
               Set exact folder (advanced)…
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <a href={INSTALL_GUIDE_URL} target="_blank" rel="noopener noreferrer">
+              <a
+                href={rememberedAgent === "codex" ? CODEX_INSTALL_GUIDE_URL : INSTALL_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <ExternalLink className="mr-2 h-4 w-4" />
-                Install guide
+                <div className="flex flex-col">
+                  <span>Install guide</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {rememberedAgent === "codex" ? "Codex CLI docs" : "Claude Code docs"}
+                  </span>
+                </div>
               </a>
             </DropdownMenuItem>
           </DropdownMenuContent>
