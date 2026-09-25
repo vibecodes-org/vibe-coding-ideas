@@ -19,9 +19,9 @@ import {
 } from "./session-cap";
 
 describe("getTerminalSessionCap", () => {
-  it("defaults to 5 when the env var is unset", () => {
-    expect(getTerminalSessionCap(undefined)).toBe(5);
-    expect(DEFAULT_TERMINAL_SESSION_CAP).toBe(5);
+  it("defaults to 10 when the env var is unset", () => {
+    expect(getTerminalSessionCap(undefined)).toBe(10);
+    expect(DEFAULT_TERMINAL_SESSION_CAP).toBe(10);
   });
 
   it("uses a positive integer override verbatim", () => {
@@ -44,8 +44,8 @@ describe("getTerminalSessionCap", () => {
 
 describe("newSessionTooltip", () => {
   it("templates the configured cap into the honesty copy", () => {
-    expect(newSessionTooltip(5)).toBe(
-      "New terminal — runs on your computer. Each session uses real resources. Up to 5 at once.",
+    expect(newSessionTooltip(10)).toBe(
+      "New terminal — runs on your computer. Each session uses real resources. Up to 10 at once.",
     );
     expect(newSessionTooltip(3)).toContain("Up to 3 at once.");
   });
@@ -168,8 +168,8 @@ describe("isNearSessionCap — Resume confirm's honesty limit line (sign-off cha
   });
 
   it("defaults cap to getTerminalSessionCap()", () => {
-    expect(isNearSessionCap(4)).toBe(true); // default cap is 5
-    expect(isNearSessionCap(2)).toBe(false);
+    expect(isNearSessionCap(9)).toBe(true); // default cap is 10
+    expect(isNearSessionCap(7)).toBe(false);
   });
 });
 
@@ -180,6 +180,6 @@ describe("terminalLimitLine", () => {
   });
 
   it("defaults cap to getTerminalSessionCap()", () => {
-    expect(terminalLimitLine(4)).toBe("You're using 4 of your 5 terminals.");
+    expect(terminalLimitLine(4)).toBe("You're using 4 of your 10 terminals.");
   });
 });
