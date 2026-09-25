@@ -946,6 +946,14 @@ export type Database = {
           persona_used: string | null;
           persona_honored: boolean | null;
           skills_used: string[] | null;
+          /** Migration 00176 (card 5d0665a2). Set once, by the code that observed
+           *  the model failure (fail_step's model_unavailable rescue, or
+           *  complete_step's free signal). Rescue-once guard on this row; the
+           *  newest same-UTC-day row across the board is the live marker. */
+          model_unavailable_at: string | null;
+          /** Migration 00176. The concrete model name resolved server-side at
+           *  write time — paired with model_unavailable_at. */
+          model_unavailable_model: string | null;
           updated_at: string;
         };
         Insert: {
@@ -974,6 +982,8 @@ export type Database = {
           persona_used?: string | null;
           persona_honored?: boolean | null;
           skills_used?: string[] | null;
+          model_unavailable_at?: string | null;
+          model_unavailable_model?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -1006,6 +1016,8 @@ export type Database = {
           persona_used?: string | null;
           persona_honored?: boolean | null;
           skills_used?: string[] | null;
+          model_unavailable_at?: string | null;
+          model_unavailable_model?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
