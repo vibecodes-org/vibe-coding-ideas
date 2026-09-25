@@ -45,18 +45,24 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // `mockSockets` tracks WebSockets. `vi.hoisted` because the mock factory
 // (itself hoisted above this file's other statements) needs a live
 // reference to push into.
-const mockTerminals = vi.hoisted(() => [] as { written: string[]; resetCount: number }[]);
+const mockTerminals = vi.hoisted(
+  () => [] as { written: string[]; resetCount: number; dataCb: ((d: string) => void) | null }[],
+);
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
     written: string[] = [];
     resetCount = 0;
+    // The hook's keystroke handler — lets a test "type" (card 3746b312).
+    dataCb: ((d: string) => void) | null = null;
     buffer = { active: { length: 0 } };
     constructor() {
       mockTerminals.push(this);
     }
-    onData() {}
+    onData(cb: (d: string) => void) {
+      this.dataCb = cb;
+    }
     open() {}
     loadAddon(addon: { activate: (term: unknown) => void }) {
       addon.activate(this);
@@ -185,7 +191,7 @@ function latestSocket(): MockWebSocket {
   return s;
 }
 
-function latestTerminal(): { written: string[]; resetCount: number } {
+function latestTerminal(): (typeof mockTerminals)[number] {
   const t = mockTerminals[mockTerminals.length - 1];
   if (!t) throw new Error("no Terminal was constructed");
   return t;
@@ -817,6 +823,92 @@ describe("useTerminalSession", () => {
       expect(result.current.state.status).toBe("disconnected");
       act(() => latestSocket().simulateBinaryMessage());
       expect(result.current.state.status).toBe("connected");
+    });
+  });
+
+  // Card 3746b312 ("froze — couldn't type"): "Reconnect now" pressed while
+  // the auto-retry socket was still opening left BOTH sockets wired. The
+  // relay then preempted the older one (4001), whose close flipped the tab to
+  // the "taken over" error and nulled the live socket ref — while the newer
+  // socket kept streaming output. Output showed; keystrokes went nowhere.
+  describe("stale sockets can't freeze the tab (card 3746b312)", () => {
+    function typedBytes(ws: MockWebSocket): string[] {
+      // ArrayBuffer.isView, not instanceof: TextEncoder's bytes can come from another realm under jsdom.
+      return ws.sent
+        .filter((d): d is Uint8Array => ArrayBuffer.isView(d))
+        .map((b) => new TextDecoder().decode(b));
+    }
+
+    async function liveThenDroppedWithRetryOpening() {
+      const utils = setup();
+      const { result } = utils;
+      result.current.containerRef.current = document.createElement("div");
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const s1 = latestSocket();
+      act(() => s1.simulateOpen());
+      act(() => s1.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      vi.useFakeTimers();
+      act(() => s1.simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      const s2 = latestSocket(); // the auto-retry's reattach, still opening
+      expect(s2).not.toBe(s1);
+      return { ...utils, s2 };
+    }
+
+    it("Reconnect now retires the still-opening retry socket instead of leaving it wired", async () => {
+      const { result, s2 } = await liveThenDroppedWithRetryOpening();
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      expect(s3).not.toBe(s2);
+      expect(s2.onclose).toBeNull();
+      expect(s2.onmessage).toBeNull();
+      expect(s2.readyState).toBe(MockWebSocket.CLOSED);
+    });
+
+    it("a late close/message from a superseded socket can't flip the tab or swallow typing", async () => {
+      const { result, s2 } = await liveThenDroppedWithRetryOpening();
+      // Keep s2's handlers as the relay would still hold them, to exercise the
+      // per-handler guard independently of the retire step.
+      const staleOnClose = s2.onclose!;
+      const staleOnMessage = s2.onmessage!;
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      act(() => s3.simulateOpen());
+      act(() => s3.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // The relay preempts the older same-owner leg.
+      act(() => staleOnClose({ code: 4001, reason: "preempted" }));
+      act(() => staleOnMessage({ data: new Uint8Array([9]).buffer }));
+      expect(result.current.state.status).toBe("connected");
+      expect(result.current.state.errorKind).toBeNull();
+
+      // Typing still reaches the live socket.
+      act(() => latestTerminal().dataCb?.("ls\r"));
+      expect(typedBytes(s3)).toEqual(["ls\r"]);
+    });
+
+    it("repeated Reconnect presses never end on the 'taken over' error and typing keeps working", async () => {
+      const { result } = await liveThenDroppedWithRetryOpening();
+      for (let i = 0; i < 3; i++) {
+        const prev = latestSocket();
+        act(() => result.current.actions.reconnectNow());
+        const next = latestSocket();
+        expect(next).not.toBe(prev);
+        act(() => next.simulateOpen());
+        act(() => next.simulateBinaryMessage());
+        // The relay preempting the previous leg is a no-op for this tab.
+        act(() => prev.close(4001, "preempted"));
+        expect(result.current.state.status).toBe("connected");
+      }
+      act(() => latestTerminal().dataCb?.("y"));
+      expect(typedBytes(latestSocket())).toEqual(["y"]);
     });
   });
 

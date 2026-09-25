@@ -1882,6 +1882,24 @@ export function useTerminalSession(
     (sessionId: string, browserToken: string, opts?: { reconnect?: boolean }) => {
       const reconnect = opts?.reconnect ?? false;
       const url = buildRelayUrl(relayBaseUrl(), sessionId, browserToken);
+      // Card 3746b312 (frozen typing): retire any socket this tab still holds
+      // BEFORE replacing it. "Reconnect now" pressed while the auto-retry
+      // socket was still opening used to leave BOTH wired: the relay then
+      // preempted the older one (4001), whose onclose flipped the tab to the
+      // "taken over" error and nulled wsRef — while the newer socket kept
+      // streaming output. Output showed, keystrokes (which need wsRef) went
+      // nowhere. Unwire first so its eventual close can't drive this tab.
+      const previous = wsRef.current;
+      if (previous) {
+        wsRef.current = null;
+        previous.onopen = previous.onmessage = previous.onclose = previous.onerror = null;
+        try {
+          previous.close();
+        } catch {
+          /* already closing */
+        }
+        logger.info("Terminal relay socket retired before reopening", { sessionId, reconnect });
+      }
       let ws: WebSocket;
       try {
         ws = new WebSocket(url);
@@ -1921,7 +1939,12 @@ export function useTerminalSession(
         }, CONNECT_TIMEOUT_MS);
       }
 
+      // Every handler below ignores a socket that is no longer this tab's
+      // current one (card 3746b312) — belt-and-braces with the retire step
+      // above and teardownSocket's unwiring, so a stale leg can never flip the
+      // tab's state or null the live socket out from under the keyboard.
       ws.onopen = () => {
+        if (ws !== wsRef.current) return;
         clearConnectTimer();
         dispatch({ type: "relay-open" });
         // No sendResize() retry here (fix/terminal-dock-cold-launch-resize): OPEN
@@ -1959,6 +1982,7 @@ export function useTerminalSession(
         }
       };
       ws.onmessage = (ev) => {
+        if (ws !== wsRef.current) return;
         // ANY inbound frame proves the link carried something just now — feed the
         // silent-link watchdog before any classification.
         lastInboundAtRef.current = Date.now();
@@ -2142,15 +2166,19 @@ export function useTerminalSession(
               // has moved past (the bridge rekeyed after a reconnect; this
               // frame predates it). Nothing to write — and NOT a failure.
               if (plaintext === null) return;
+              // Decryption is async: the socket may have been replaced meanwhile.
+              if (ws !== wsRef.current) return;
               markLinkHealthyAndWrite(plaintext);
             })
             .catch((err) => {
+              // A stale socket's failure must not close the CURRENT one.
+              if (ws !== wsRef.current) return;
               logger.error("Terminal E2EE frame verification failed — closing session", {
                 sessionId,
                 error: err instanceof PtyCryptoError ? err.message : String(err),
               });
               try {
-                wsRef.current?.close(4010, "e2ee-verify-failed");
+                ws.close(4010, "e2ee-verify-failed");
               } catch {
                 /* already closing */
               }
@@ -2160,9 +2188,14 @@ export function useTerminalSession(
         markLinkHealthyAndWrite(new Uint8Array(ev.data as ArrayBuffer));
       };
       ws.onerror = () => {
-        logger.warn("Terminal relay socket error", { sessionId });
+        logger.warn("Terminal relay socket error", { sessionId, current: ws === wsRef.current });
       };
       ws.onclose = (ev) => {
+        const current = ws === wsRef.current;
+        // Card 3746b312: every close, with whether it was this tab's live
+        // socket — the evidence a future "froze / taken over" report needs.
+        logger.info("Terminal relay socket closed", { sessionId, code: ev.code, reason: ev.reason, current });
+        if (!current) return;
         clearConnectTimer();
         wsRef.current = null;
         // Bug fix (regression backfill): how long we've actually been trying to
