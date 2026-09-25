@@ -1,0 +1,13 @@
+# Migrations deliberately NOT applied to production yet.
+#
+# One migration stem per line (the filename without .sql), with the reason
+# after a `#`, e.g.:
+#
+#   00176_drop_mcp_agent_sessions   # waits for the Phase B release to bake (task ec2bde45)
+#
+# `npm run check:migrations` lists held migrations as "Held (intentional)"
+# instead of reporting them as drift, and fails if a held migration turns out
+# to be applied already. The production apply workflow refuses to run while
+# anything is listed here. Remove the line in the same change that makes the
+# migration safe to apply. See docs/release-process.md → "Holding a migration
+# on purpose".
