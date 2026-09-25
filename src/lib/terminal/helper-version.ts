@@ -84,8 +84,13 @@
  *  mechanism); see the rewritten guidance in
  *  mcp-server/src/tools/project-paths.ts instead. 0.3.17's only helper-side
  *  change was that now-removed dispatch, so the recommended helper stays
- *  0.3.16. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.16";
+ *  0.3.16.
+ *  0.3.18 (task 3ae71b07, 25 Sep 2026): the bridge validates the spawn folder —
+ *  it never starts the agent at "/" or in a missing folder (falls back to the
+ *  home folder with a one-line notice), and the helper forks the bridge from
+ *  home. Defence-in-depth behind the app's never-drop-the-folder launch link,
+ *  so a soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.18";
 
 export type HelperVersionParts = readonly [number, number, number];
 
