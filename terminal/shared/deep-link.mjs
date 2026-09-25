@@ -294,7 +294,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * (one char) rather than `%20` (three). `URLSearchParams.get` — what
  * parseLaunchDeepLink below decodes with — already maps `+` back to a space,
  * and a literal `+` in the prompt is still `%2B`, so the round-trip is
- * unambiguous. Saves ~340 chars of the 2048-char launch-URL cap on the real
+ * unambiguous. Saves ~340 chars of the launch-URL cap on the real
  * bootstrap prompt. `/`, `:`, `,` and `;` also ride raw — legal unescaped in a
  * query, and URLSearchParams passes them through untouched (task b563f4da).
  * Mirrors src/lib/terminal/deep-link.ts's encodePromptParam exactly
