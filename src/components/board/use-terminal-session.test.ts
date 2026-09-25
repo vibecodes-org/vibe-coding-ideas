@@ -824,6 +824,67 @@ describe("useTerminalSession", () => {
       act(() => latestSocket().simulateBinaryMessage());
       expect(result.current.state.status).toBe("connected");
     });
+
+    // Verify-step gaps (Sentinel): a server hiccup is not "ended", and a
+    // double-click can't mint or leave two live legs.
+    it("reattach route 5xx → toast, keeps retrying the SAME session, not the ended panel, no mint", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({ ok: false, status: 500, json: async () => ({ error: "Couldn't look up that session" }) } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(toastError).toHaveBeenCalled();
+      expect(result.current.state.status).not.toBe("session-ended");
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(mockSockets).toHaveLength(3);
+      expect(latestSocket().url).toContain("session=sid-abc123");
+      expect(latestSocket().url).toContain("token=browser-token");
+    });
+
+    it("double-clicking Reconnect now never mints and ends on ONE live leg of the same session", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({
+              ok: true,
+              json: async () => ({
+                sessionId: "sid-abc123",
+                browserToken: "fresh-browser-token",
+                bridgeToken: "fresh-bridge-token",
+                helperToken: "fresh-helper-token",
+                cwd: null,
+                claudeSessionId: null,
+              }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        result.current.actions.reconnectNow();
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+      });
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(fetchCallsTo(REATTACH)).toBeLessThanOrEqual(2);
+      const live = latestSocket();
+      expect(live.url).toContain("session=sid-abc123");
+      // Every earlier leg is closed and can't drive the tab.
+      expect(live.url).toContain("token=fresh-browser-token");
+      const earlier = mockSockets.slice(0, -1);
+      for (const s of earlier) expect(s.readyState).toBe(MockWebSocket.CLOSED);
+      act(() => live.simulateOpen());
+      act(() => live.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      // A late preempt close from any earlier leg can't drive the tab.
+      for (const s of earlier) act(() => s.onclose?.({ code: 4001, reason: "preempted" } as CloseEvent));
+      expect(result.current.state.status).toBe("connected");
+    });
   });
 
   // Card 3746b312 ("froze — couldn't type"): "Reconnect now" pressed while
@@ -909,6 +970,22 @@ describe("useTerminalSession", () => {
       }
       act(() => latestTerminal().dataCb?.("y"));
       expect(typedBytes(latestSocket())).toEqual(["y"]);
+    });
+
+    // Verify-step gap (Sentinel): the stale-socket guard must not swallow a
+    // GENUINE takeover — another tab preempting this tab's CURRENT socket
+    // still lands on the existing "taken over" (duplicate) state.
+    it("a genuine takeover of the CURRENT socket still shows the 'taken over' state", async () => {
+      const { result } = await liveThenDroppedWithRetryOpening();
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      act(() => s3.simulateOpen());
+      act(() => s3.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      act(() => s3.close(4001, ""));
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.errorKind).toBe("duplicate");
+      expect(result.current.state.closeCode).toBe(4001);
     });
   });
 
