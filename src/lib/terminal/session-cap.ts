@@ -1,12 +1,12 @@
 // In-app terminal — the per-user in-browser session cap (multi-session stage 2,
 // OQ4: "Cap value display... Q3's env-tunable value must not be hardcoded in
 // copy"). Stage 2 only READ the cap for honest UI copy (the "+" tooltip, the
-// generic mint-failure toast). Stage 3 wires the SAME default (5) into the
+// generic mint-failure toast). Stage 3 wires the SAME default (10) into the
 // mint route's actual server-side refusal (see getServerTerminalSessionCap
 // below) instead of a second hardcoded constant drifting from this one.
 
 /** The cap when neither env var (client or server) is set or usable. */
-export const DEFAULT_TERMINAL_SESSION_CAP = 5;
+export const DEFAULT_TERMINAL_SESSION_CAP = 10;
 
 /** The mint rate limit when TERMINAL_MINT_RATE_LIMIT is unset or unusable (E2). */
 export const DEFAULT_TERMINAL_MINT_RATE_LIMIT = 10;
@@ -42,7 +42,7 @@ export function getTerminalSessionCap(
  * prefix) from the client's copy-only `NEXT_PUBLIC_TERMINAL_SESSION_CAP` — the
  * client var is inlined into the JS bundle at build time (world-readable); the
  * enforcement value is read at request time server-side and never shipped to
- * the browser. Both fall back to the SAME `DEFAULT_TERMINAL_SESSION_CAP` (5,
+ * the browser. Both fall back to the SAME `DEFAULT_TERMINAL_SESSION_CAP` (10,
  * Nick's binding decision) so an unconfigured deployment stays internally
  * consistent between the "+" tooltip's promise and the real limit.
  */
