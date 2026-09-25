@@ -384,6 +384,37 @@ and risky to do ad-hoc — a partial rename makes `db push` think the 125 alread
 are unapplied and try to re-run them. Do it on a throwaway environment first; it's folded into
 the **"Recreate staging database properly (via Supabase Branching off prod)"** task.
 
+### Holding a migration on purpose
+
+Sometimes a migration is merged but must **not** reach production yet — e.g. a
+destructive `DROP` that has to wait until the code release that stops using the
+table has baked. List it in **`supabase/migrations/.held`**, one filename stem per
+line, with the reason after a `#`:
+
+```
+00176_drop_mcp_agent_sessions   # waits for the Phase B release to bake (task ec2bde45)
+```
+
+What that does:
+
+- `npm run check:migrations` reports it under **"Held (intentional)"** instead of as
+  drift, and still exits 0.
+- If a held migration turns out to be **already recorded** in prod, the check exits 1
+  — either the hold was violated or it's stale (remove the line).
+- A malformed line, or a stem with no matching `.sql` file (a typo), exits 2 before
+  the check even contacts Supabase.
+- The `apply-production` job in the migrations workflow **refuses to run** while
+  `.held` lists anything, because `supabase db push` applies every unapplied file,
+  held or not (a dry run only warns). Apply the other migrations by hand, or clear
+  the hold first.
+- The Supabase CLI ignores the file (it prints a harmless
+  `Skipping migration .held...` line).
+
+**Rule: before applying any "Apply migrations to production" card — through the
+workflow, the Supabase MCP, or by hand — read `supabase/migrations/.held` and do not
+apply anything listed there.** Remove a migration's line in the same change that makes
+it safe to apply, then apply it and re-run `npm run check:migrations`.
+
 ### Required secrets
 
 These must be set in **GitHub → Settings → Secrets and variables → Actions**:
