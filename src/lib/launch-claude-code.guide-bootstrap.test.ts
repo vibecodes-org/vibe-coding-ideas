@@ -429,3 +429,37 @@ describe("the guide policy survives the real URL budget", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+// QA (Sentinel): the sweep above steps the cap by 37, so it never lands on
+// the exact edge. Pin the boundary itself — at the smallest cap that fires,
+// one char less refuses, and every cap from there up fires the SAME complete
+// link (never a different, shorter, partial one).
+describe("the exact launch-cap boundary: cap-1 refuses, cap and cap+1 fire whole", () => {
+  for (const agent of AGENTS) {
+    for (const shape of SHAPES) {
+      for (const taskId of [TASK_ID, undefined]) {
+        it(`${agent} · ${shape} · ${taskId ? "task" : "board"}`, () => {
+          const { args, cwd } = shapeArgs(shape, agent, { title: "Personal spending", taskId });
+          const essentials = buildCompactPromptEssentials(args);
+          let minCap = -1;
+          for (let cap = 900; cap <= MAX_LAUNCH_URL_LENGTH; cap++) {
+            if (boundedBrowserLink(essentials, cwd, agent, undefined, cap).ok) {
+              minCap = cap;
+              break;
+            }
+          }
+          expect(minCap).toBeGreaterThan(0);
+          expect(boundedBrowserLink(essentials, cwd, agent, undefined, minCap - 1).ok).toBe(false);
+          for (const cap of [minCap, minCap + 1]) {
+            const result = boundedBrowserLink(essentials, cwd, agent, undefined, cap);
+            expect(result.ok, `cap=${cap}`).toBe(true);
+            if (!result.ok) continue;
+            expect(result.url.length).toBeLessThanOrEqual(cap);
+            expect(parseLaunchDeepLink(result.url)?.cwd).toBe(cwd);
+            expectCompleteBootstrap(result.url, essentials, `${agent}/${shape}/cap=${cap}`);
+          }
+        });
+      }
+    }
+  }
+});
