@@ -95,6 +95,7 @@
 // success.
 
 import { RELAY_CLOSE } from "@/lib/terminal/connection";
+import { logger } from "@/lib/logger";
 import type { TransferredBuffer } from "@/lib/terminal/scrollback-transfer";
 
 /** Channel names are namespaced so nothing else on the origin could collide. */
@@ -242,7 +243,16 @@ export type PopoutChannelMessage =
    * (Flow C, design §4) — BroadcastChannel's per-sender ordering guarantees
    * the reply always lands before that `closed`.
    */
-  | { type: "buffer-reply"; buffer: TransferredBuffer };
+  | { type: "buffer-reply"; buffer: TransferredBuffer }
+  /**
+   * Dock → popped (card 3ddcbc2e): the session's name changed after the
+   * hand-off (a rename from the tab, My Sessions or the chooser) — here is
+   * the label the dock tab now shows. The payload is a one-time snapshot, so
+   * without this the popped window's title stayed on the pop-out-time name
+   * for its whole life. Only the label travels; nothing about the live
+   * session changes.
+   */
+  | { type: "rename"; label: string };
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
@@ -347,7 +357,7 @@ export function parsePopoutChannelMessage(data: unknown): PopoutChannelMessage |
     console.warn("[terminal-popout] ignoring channel message: not an object", data);
     return null;
   }
-  const msg = data as { type?: unknown; payload?: unknown; buffer?: unknown };
+  const msg = data as { type?: unknown; payload?: unknown; buffer?: unknown; label?: unknown };
   if (msg.type === "ready") return { type: "ready" };
   if (msg.type === "closed") return { type: "closed" };
   if (msg.type === "bring-back-request") return { type: "bring-back-request" };
@@ -362,6 +372,11 @@ export function parsePopoutChannelMessage(data: unknown): PopoutChannelMessage |
     // warns with the specific reason).
     const buffer = parseTransferredBuffer(msg.buffer);
     return buffer ? { type: "buffer-reply", buffer } : null;
+  }
+  if (msg.type === "rename") {
+    if (isNonEmptyString(msg.label)) return { type: "rename", label: msg.label };
+    logger.warn("Terminal pop-out ignored a rename message with no label");
+    return null;
   }
   console.warn("[terminal-popout] ignoring channel message: unrecognised type", msg.type);
   return null;
@@ -441,6 +456,38 @@ export interface DockPopoutEntry {
   channel: PopoutChannelLike;
   handshake: DockHandshakeState;
   pendingBuffer?: TransferredBuffer;
+  /**
+   * The label the popped window was last told (card 3ddcbc2e) — set to the
+   * hand-off label at pop-out, then updated by `syncPopoutLabels` each time
+   * a "rename" goes out, so an unchanged label is never re-sent.
+   */
+  label?: string;
+}
+
+/**
+ * Dock side of card 3ddcbc2e: for every popped-out tab whose label (as the
+ * dock tab now shows it — `labelFor`) differs from what its popped window
+ * was last told, post a "rename" and remember it. Called after every change
+ * to the dock's session list. An empty label (tab not found) is skipped —
+ * never rename a window to nothing. Sent regardless of handshake phase: a
+ * popped window still mid hand-off simply ignores it, and the dock's
+ * `getPayload` reads the current label on every (re)send anyway. A dead
+ * channel is swallowed — a title refresh must never disturb the terminal.
+ */
+export function syncPopoutLabels(
+  entries: Map<string, DockPopoutEntry>,
+  labelFor: (key: string) => string,
+): void {
+  for (const [key, entry] of entries) {
+    const label = labelFor(key);
+    if (!label || label === entry.label) continue;
+    entries.set(key, { ...entry, label });
+    try {
+      entry.channel.postMessage({ type: "rename", label });
+    } catch {
+      /* channel already gone — the window is closing anyway */
+    }
+  }
 }
 
 /**
@@ -613,6 +660,40 @@ export function startPopoutClientHandshake(options: PopoutClientHandshakeOptions
   return () => {
     clearIntervalFn(readyTimer);
     clearIntervalFn(pollTimer);
+  };
+}
+
+/**
+ * The popped window's channel handler AFTER the hand-off has landed (it
+ * replaces `startPopoutClientHandshake`'s own handler, which is latched shut
+ * by then). Two jobs:
+ *   - "bring-back-request" (Flow B, design §3): reply with the serialized
+ *     buffer. `serializeNow` returning null (not attached yet) skips the
+ *     reply — the dock's own 500ms timeout covers it (D3's fallback).
+ *   - "rename" (card 3ddcbc2e): hand the new label to `onRename` so the
+ *     window title (and the reload stash) follow a rename made in the dock.
+ * Everything else is ignored. Never throws.
+ */
+export function createPoppedWindowMessageHandler(options: {
+  channel: Pick<PopoutChannelLike, "postMessage">;
+  serializeNow: () => TransferredBuffer | null | undefined;
+  onRename: (label: string) => void;
+}): (ev: MessageEvent) => void {
+  const { channel, serializeNow, onRename } = options;
+  return (ev) => {
+    const message = parsePopoutChannelMessage(ev.data);
+    if (message?.type === "rename") {
+      onRename(message.label);
+      return;
+    }
+    if (message?.type !== "bring-back-request") return;
+    const buffer = serializeNow();
+    if (!buffer) return;
+    try {
+      channel.postMessage({ type: "buffer-reply", buffer });
+    } catch {
+      /* channel already gone — nothing to reply to */
+    }
   };
 }
 

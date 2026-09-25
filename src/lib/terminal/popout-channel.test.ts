@@ -16,6 +16,8 @@ import {
   startBringBackRequest,
   startBroughtBackAutoClose,
   BROUGHT_BACK_AUTO_CLOSE_MS,
+  syncPopoutLabels,
+  createPoppedWindowMessageHandler,
   type PopoutPayload,
   type PopoutChannelLike,
   type DockHandshakeState,
@@ -830,5 +832,167 @@ describe("end-to-end hand-off over a shared channel bus", () => {
     // IS listening, and under the new idempotent reducer it happily resends.
     vi.advanceTimersByTime(POPOUT_READY_RETRY_MS + 10);
     expect(onPayload).toHaveBeenCalledWith(PAYLOAD);
+  });
+});
+
+// ── card 3ddcbc2e — a rename after pop-out reaches the popped window ────────
+
+describe("parsePopoutChannelMessage — rename (card 3ddcbc2e)", () => {
+  it("accepts a rename with a label", () => {
+    expect(parsePopoutChannelMessage({ type: "rename", label: "New name" })).toEqual({
+      type: "rename",
+      label: "New name",
+    });
+  });
+
+  it.each([undefined, "", 42, null])("rejects a rename whose label is %p", (label) => {
+    expect(parsePopoutChannelMessage({ type: "rename", label })).toBeNull();
+  });
+});
+
+describe("syncPopoutLabels (card 3ddcbc2e)", () => {
+  it("posts a rename when the tab's label has changed, and records it", () => {
+    const channel = makeSpyChannel();
+    const entries = new Map<string, DockPopoutEntry>([
+      ["k1", { channel, handshake: "payload-sent", label: "Old name" }],
+    ]);
+    syncPopoutLabels(entries, () => "New name");
+    expect(channel.posted).toEqual([{ type: "rename", label: "New name" }]);
+    expect(entries.get("k1")?.label).toBe("New name");
+    // Unchanged on the next pass → nothing re-sent.
+    syncPopoutLabels(entries, () => "New name");
+    expect(channel.posted).toHaveLength(1);
+  });
+
+  it("never sends when the label is unchanged or unknown (empty)", () => {
+    const channel = makeSpyChannel();
+    const entries = new Map<string, DockPopoutEntry>([["k1", { channel, handshake: "payload-sent", label: "Same" }]]);
+    syncPopoutLabels(entries, () => "Same");
+    syncPopoutLabels(entries, () => "");
+    expect(channel.posted).toEqual([]);
+    expect(entries.get("k1")?.label).toBe("Same");
+  });
+
+  it("only touches the tab whose label changed", () => {
+    const a = makeSpyChannel();
+    const b = makeSpyChannel();
+    const entries = new Map<string, DockPopoutEntry>([
+      ["a", { channel: a, handshake: "payload-sent", label: "A" }],
+      ["b", { channel: b, handshake: "payload-sent", label: "B" }],
+    ]);
+    syncPopoutLabels(entries, (key) => (key === "a" ? "A renamed" : "B"));
+    expect(a.posted).toEqual([{ type: "rename", label: "A renamed" }]);
+    expect(b.posted).toEqual([]);
+  });
+
+  it("swallows a dead channel — a title refresh never throws into the dock", () => {
+    const channel = makeSpyChannel();
+    channel.postMessage = () => {
+      throw new Error("InvalidStateError: channel closed");
+    };
+    const entries = new Map<string, DockPopoutEntry>([["k1", { channel, handshake: "payload-sent", label: "Old" }]]);
+    expect(() => syncPopoutLabels(entries, () => "New")).not.toThrow();
+  });
+
+  it("a rename during the hand-off window rides the (re)sent payload, and handshake updates keep the label", () => {
+    const channel = makeSpyChannel();
+    const entries = new Map<string, DockPopoutEntry>([
+      ["k1", { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE, label: "Old" }],
+    ]);
+    syncPopoutLabels(entries, () => "New");
+    const handler = createDockPopoutMessageHandler({
+      getEntry: () => entries.get("k1"),
+      setEntry: (next) => entries.set("k1", next),
+      getPayload: () => ({ ...PAYLOAD, label: entries.get("k1")?.label ?? PAYLOAD.label }),
+      onReattach: vi.fn(),
+    });
+    handler({ data: { type: "ready" } } as MessageEvent);
+    expect(entries.get("k1")?.label).toBe("New");
+    expect(channel.posted.at(-1)).toEqual({ type: "payload", payload: { ...PAYLOAD, label: "New" } });
+  });
+});
+
+describe("createPoppedWindowMessageHandler (card 3ddcbc2e + Flow B)", () => {
+  it("hands a rename's label to onRename without replying", () => {
+    const channel = makeSpyChannel();
+    const onRename = vi.fn();
+    const handler = createPoppedWindowMessageHandler({ channel, serializeNow: () => BUFFER, onRename });
+    handler({ data: { type: "rename", label: "New name" } } as MessageEvent);
+    expect(onRename).toHaveBeenCalledWith("New name");
+    expect(channel.posted).toEqual([]);
+  });
+
+  it("still answers bring-back-request with the buffer", () => {
+    const channel = makeSpyChannel();
+    const onRename = vi.fn();
+    const handler = createPoppedWindowMessageHandler({ channel, serializeNow: () => BUFFER, onRename });
+    handler({ data: { type: "bring-back-request" } } as MessageEvent);
+    expect(channel.posted).toEqual([{ type: "buffer-reply", buffer: BUFFER }]);
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("skips the bring-back reply when nothing is attached yet", () => {
+    const channel = makeSpyChannel();
+    const handler = createPoppedWindowMessageHandler({ channel, serializeNow: () => null, onRename: vi.fn() });
+    handler({ data: { type: "bring-back-request" } } as MessageEvent);
+    expect(channel.posted).toEqual([]);
+  });
+
+  it("ignores a malformed rename and unrelated messages", () => {
+    const channel = makeSpyChannel();
+    const onRename = vi.fn();
+    const handler = createPoppedWindowMessageHandler({ channel, serializeNow: () => BUFFER, onRename });
+    handler({ data: { type: "rename", label: "" } } as MessageEvent);
+    handler({ data: { type: "payload", payload: PAYLOAD } } as MessageEvent);
+    handler({ data: "junk" } as MessageEvent);
+    expect(onRename).not.toHaveBeenCalled();
+    expect(channel.posted).toEqual([]);
+  });
+});
+
+describe("end-to-end: rename after the hand-off (card 3ddcbc2e)", () => {
+  it("a rename in the dock after pop-out reaches the popped window, and bring-back still works", () => {
+    const bus = createMockBroadcastBus();
+    const dockChannel = bus.createChannel();
+    const entries = new Map<string, DockPopoutEntry>([
+      ["k1", { channel: dockChannel, handshake: INITIAL_DOCK_HANDSHAKE_STATE, label: PAYLOAD.label }],
+    ]);
+    const dockHandler = createDockPopoutMessageHandler({
+      getEntry: () => entries.get("k1"),
+      setEntry: (next) => entries.set("k1", next),
+      getPayload: () => ({ ...PAYLOAD, label: entries.get("k1")?.label ?? PAYLOAD.label }),
+      onReattach: vi.fn(),
+    });
+    const dockReceived: unknown[] = [];
+    dockChannel.onmessage = (ev) => {
+      dockReceived.push(ev.data);
+      dockHandler(ev);
+    };
+
+    // The popped window, wired the way terminal-popout-client.tsx does it.
+    const clientChannel = bus.createChannel();
+    const labels: string[] = [];
+    startPopoutClientHandshake({
+      channel: clientChannel,
+      onPayload: (p) => {
+        labels.push(p.label);
+        clientChannel.onmessage = createPoppedWindowMessageHandler({
+          channel: clientChannel,
+          serializeNow: () => BUFFER,
+          onRename: (label) => labels.push(label),
+        });
+      },
+      onTimeout: vi.fn(),
+      setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+      clearIntervalFn: () => {},
+    });
+    expect(labels).toEqual([PAYLOAD.label]);
+
+    // Before this fix the popped window never heard about a later rename.
+    syncPopoutLabels(entries, () => "Renamed in the dock");
+    expect(labels.at(-1)).toBe("Renamed in the dock");
+
+    dockChannel.postMessage({ type: "bring-back-request" });
+    expect(dockReceived).toContainEqual({ type: "buffer-reply", buffer: BUFFER });
   });
 });

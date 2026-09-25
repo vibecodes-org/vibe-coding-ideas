@@ -66,6 +66,8 @@ import {
   decideResize,
   isConnectSuperseded,
   isValidDim,
+  planRedrawNudge,
+  REDRAW_NUDGE_GAP_MS,
   encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
@@ -812,6 +814,14 @@ export function useTerminalSession(
   const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const launchIframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastDimsRef = useRef<string>("");
+  // Redraw nudge (card e5a062a3): true while the socket being brought up is a
+  // RE-attach to a session that was already running (grace reconnect, reattach
+  // route, pop-out hand-off, bring-back, a bridge that came back). The relay
+  // doesn't replay history, so on the next transition into "connected" we
+  // narrow-then-restore the PTY width to make the agent repaint. A fresh
+  // connect() sets it false: a brand-new agent draws its own first screen.
+  const redrawOnConnectedRef = useRef(false);
+  const redrawTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Single-flight guard: every connect() bumps this and captures its value. If a
   // newer connect() starts while an older one is still awaiting its session mint,
   // the older one aborts before minting a 2nd session / firing a 2nd deep link —
@@ -1141,6 +1151,51 @@ export function useTerminalSession(
     ws?.send(msg);
   }, []);
 
+  // Force the agent to repaint after a reattach (card e5a062a3 — the blank
+  // screen). A same-size resize is a no-op on the machine, so send one column
+  // narrower, then the real size a moment later: two genuine size changes the
+  // agent redraws on. Only when the frame can actually reach the PTY (socket
+  // OPEN + "connected", same rule as sendResize). lastDimsRef tracks the
+  // squeezed size until the restore lands, so if the socket is replaced in
+  // between, the next connected-transition sendResize still sends the real
+  // size rather than deduping it away and leaving the PTY one column short.
+  const nudgeRedraw = useCallback(() => {
+    redrawOnConnectedRef.current = false;
+    if (redrawTimerRef.current) {
+      clearTimeout(redrawTimerRef.current);
+      redrawTimerRef.current = null;
+    }
+    const term = termRef.current;
+    const fit = fitRef.current;
+    const ws = wsRef.current;
+    if (!term || !fit || !ws) return;
+    if (ws.readyState !== WebSocket.OPEN || statusRef.current !== "connected") return;
+    try {
+      fit.fit();
+    } catch {
+      return;
+    }
+    const plan = planRedrawNudge(term.cols, term.rows);
+    const squeeze = plan && encodeResizeMessage(plan.squeeze.cols, plan.squeeze.rows);
+    if (!plan || !squeeze) {
+      sendResize();
+      return;
+    }
+    ws.send(squeeze);
+    lastDimsRef.current = `${plan.squeeze.cols}x${plan.squeeze.rows}`;
+    redrawTimerRef.current = setTimeout(() => {
+      redrawTimerRef.current = null;
+      // Re-fits and sends the REAL size (its key differs from the squeezed one).
+      sendResize();
+    }, REDRAW_NUDGE_GAP_MS);
+  }, [sendResize]);
+  useEffect(
+    () => () => {
+      if (redrawTimerRef.current) clearTimeout(redrawTimerRef.current);
+    },
+    [],
+  );
+
   // Real panel size for the NEXT launch's PTY spawn (Bug B, card cbe60db5 —
   // Nick's field test 2026-08-15): a promptless (Resume) launch's PTY used to
   // spawn at a hardcoded 80x24 because `sendResize()` above can't reach it
@@ -1190,9 +1245,14 @@ export function useTerminalSession(
   // the retry that resolves that deferred key to a real "send" now that it can
   // reach the PTY. Fires on every transition INTO "connected", so it also covers a
   // grace-window reattach; when dims are unchanged that's just a "skip" (harmless).
+  //
+  // A RE-attach (redrawOnConnectedRef) nudges instead, so an idle agent repaints
+  // rather than leaving the reattached tab blank (card e5a062a3).
   useEffect(() => {
-    if (state.status === "connected") sendResize();
-  }, [state.status, sendResize]);
+    if (state.status !== "connected") return;
+    if (redrawOnConnectedRef.current) nudgeRedraw();
+    else sendResize();
+  }, [state.status, sendResize, nudgeRedraw]);
 
   // Split view keyboard-focus ground truth, part 2 (defect fix): xterm
   // unconditionally sets its hidden input's `tabIndex` to 0, so with both
@@ -1822,6 +1882,24 @@ export function useTerminalSession(
     (sessionId: string, browserToken: string, opts?: { reconnect?: boolean }) => {
       const reconnect = opts?.reconnect ?? false;
       const url = buildRelayUrl(relayBaseUrl(), sessionId, browserToken);
+      // Card 3746b312 (frozen typing): retire any socket this tab still holds
+      // BEFORE replacing it. "Reconnect now" pressed while the auto-retry
+      // socket was still opening used to leave BOTH wired: the relay then
+      // preempted the older one (4001), whose onclose flipped the tab to the
+      // "taken over" error and nulled wsRef — while the newer socket kept
+      // streaming output. Output showed, keystrokes (which need wsRef) went
+      // nowhere. Unwire first so its eventual close can't drive this tab.
+      const previous = wsRef.current;
+      if (previous) {
+        wsRef.current = null;
+        previous.onopen = previous.onmessage = previous.onclose = previous.onerror = null;
+        try {
+          previous.close();
+        } catch {
+          /* already closing */
+        }
+        logger.info("Terminal relay socket retired before reopening", { sessionId, reconnect });
+      }
       let ws: WebSocket;
       try {
         ws = new WebSocket(url);
@@ -1834,6 +1912,10 @@ export function useTerminalSession(
       }
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
+      // A same-sid reopen is a RE-attach to a running agent → repaint once it
+      // connects (card e5a062a3). Never cleared here: a non-reconnect open may
+      // itself be a reattach (attachToExisting / fresh-attach-reset set it).
+      if (reconnect) redrawOnConnectedRef.current = true;
       // Terminal P2 (E2EE, FR-4): every fresh attach (a real reconnect, a
       // pop-out reattach, or the very first open) gets its own encryptor/
       // decryptor pair, reset here — a decryptor pinned to the PREVIOUS
@@ -1857,7 +1939,12 @@ export function useTerminalSession(
         }, CONNECT_TIMEOUT_MS);
       }
 
+      // Every handler below ignores a socket that is no longer this tab's
+      // current one (card 3746b312) — belt-and-braces with the retire step
+      // above and teardownSocket's unwiring, so a stale leg can never flip the
+      // tab's state or null the live socket out from under the keyboard.
       ws.onopen = () => {
+        if (ws !== wsRef.current) return;
         clearConnectTimer();
         dispatch({ type: "relay-open" });
         // No sendResize() retry here (fix/terminal-dock-cold-launch-resize): OPEN
@@ -1895,6 +1982,7 @@ export function useTerminalSession(
         }
       };
       ws.onmessage = (ev) => {
+        if (ws !== wsRef.current) return;
         // ANY inbound frame proves the link carried something just now — feed the
         // silent-link watchdog before any classification.
         lastInboundAtRef.current = Date.now();
@@ -2015,6 +2103,11 @@ export function useTerminalSession(
             // the reconnect budget (a scenario-1 already-connected leg no-ops).
             cancelPendingRelaunch("peer-reattached");
             clearDegradeTimer();
+            // The pair is whole again after a gap — repaint (card e5a062a3).
+            // Already "connected" → the connected-transition effect won't
+            // re-fire, so nudge directly (after the dispatch below lands).
+            redrawOnConnectedRef.current = true;
+            if (statusRef.current === "connected") setTimeout(() => nudgeRedraw(), 0);
             setPeerDegraded(false);
             reconnectDeadlineRef.current = 0;
             reconnectAttemptRef.current = 0;
@@ -2073,15 +2166,19 @@ export function useTerminalSession(
               // has moved past (the bridge rekeyed after a reconnect; this
               // frame predates it). Nothing to write — and NOT a failure.
               if (plaintext === null) return;
+              // Decryption is async: the socket may have been replaced meanwhile.
+              if (ws !== wsRef.current) return;
               markLinkHealthyAndWrite(plaintext);
             })
             .catch((err) => {
+              // A stale socket's failure must not close the CURRENT one.
+              if (ws !== wsRef.current) return;
               logger.error("Terminal E2EE frame verification failed — closing session", {
                 sessionId,
                 error: err instanceof PtyCryptoError ? err.message : String(err),
               });
               try {
-                wsRef.current?.close(4010, "e2ee-verify-failed");
+                ws.close(4010, "e2ee-verify-failed");
               } catch {
                 /* already closing */
               }
@@ -2091,9 +2188,14 @@ export function useTerminalSession(
         markLinkHealthyAndWrite(new Uint8Array(ev.data as ArrayBuffer));
       };
       ws.onerror = () => {
-        logger.warn("Terminal relay socket error", { sessionId });
+        logger.warn("Terminal relay socket error", { sessionId, current: ws === wsRef.current });
       };
       ws.onclose = (ev) => {
+        const current = ws === wsRef.current;
+        // Card 3746b312: every close, with whether it was this tab's live
+        // socket — the evidence a future "froze / taken over" report needs.
+        logger.info("Terminal relay socket closed", { sessionId, code: ev.code, reason: ev.reason, current });
+        if (!current) return;
         clearConnectTimer();
         wsRef.current = null;
         // Bug fix (regression backfill): how long we've actually been trying to
@@ -2120,7 +2222,7 @@ export function useTerminalSession(
         }
       };
     },
-    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer],
+    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer, nudgeRedraw],
   );
 
   // Drive the grace-window reconnect loop: reattach to the SAME sid with the retained
@@ -2335,6 +2437,8 @@ export function useTerminalSession(
     setLaunchPhase(autoLaunch ? "opening" : "idle");
     requestExpand();
     lastDimsRef.current = "";
+    // A brand-new session draws its own first screen — no redraw nudge.
+    redrawOnConnectedRef.current = false;
     setHelperVersion(null);
     dispatch({ type: "connect" });
 
@@ -2560,6 +2664,9 @@ export function useTerminalSession(
       // out. See expectsAutoAttachRef's doc above.
       expectsAutoAttachRef.current = true;
       lastDimsRef.current = "";
+      // Attaching to a session that's already running: the relay replays
+      // nothing, so make the agent repaint once connected (card e5a062a3).
+      redrawOnConnectedRef.current = true;
       setHelperVersion(null);
       // Two dispatches back-to-back, no await between them — React folds them
       // through the reducer IN ORDER against the queued (not the stale
@@ -2707,8 +2814,8 @@ export function useTerminalSession(
   }, [enabled, attachExisting, attachToExisting]);
 
   // Manual "Reconnect now" — force an immediate reattach attempt (skip the backoff
-  // wait) using the retained token, or fall back to a clean fresh launch if the
-  // grace window is spent. Fixes the old button, which minted an EMPTY session with
+  // wait) using the retained token. A clean fresh launch happens ONLY when this
+  // tab never had a session at all (no pair) — see the FOURTH case below. Fixes the old button, which minted an EMPTY session with
   // no autoLaunch and timed out after 30s.
   //
   // A THIRD case (fix/terminal-bringback-state-reset): "Bring back to dock" after a
@@ -2723,10 +2830,115 @@ export function useTerminalSession(
   // stayed on the stale duplicate-error screen. The fresh-attach-reset branch is
   // the ONE sanctioned exit from "error" — see connection.ts's decideReconnectNow
   // doc for the full reasoning.
+  //
+  // A FOURTH case (card e5a062a3): the browser's own grace window is spent but
+  // a pair is on hand. That used to fall through to connect({autoLaunch:true}),
+  // minting a brand-new session beside one that was still running. Now it's
+  // "reattach-same-session" → reattachSameSession() below: ask the server about
+  // the SAME sid and either reattach it or show the existing ended panel.
+  //
+  // Reattach the SAME sid through the reattach route (card e5a062a3). The
+  // server — not this tab's own timer — decides whether the session is still
+  // live. Live → attachToExisting with fresh tokens, keeping what's on screen
+  // (the relay replays nothing) and firing the resume-shaped relaunch only if
+  // the bridge stays silent. Ended/expired/unknown → the existing ended panel
+  // (reconnect-exhausted), which offers Resume when the folder is known. A
+  // network/server failure → toast and fall back to the same-token grace
+  // retry loop, so the tab keeps trying the live session instead of stalling.
+  // Never mints.
+  const reattachSameSession = useCallback(
+    async (sessionId: string, browserToken: string) => {
+      const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
+      clearReconnectTimer();
+      reconnectDeadlineRef.current = 0;
+      reconnectAttemptRef.current = 0;
+      const retryWithRetainedToken = () => {
+        reconnectDeadlineRef.current = Date.now() + RECONNECT_GRACE_MS;
+        openBrowserLeg(sessionId, browserToken, { reconnect: true });
+      };
+      let res: Response;
+      try {
+        res = await fetch("/api/terminal/session/reattach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sid: sessionId }),
+        });
+      } catch (err) {
+        if (isConnectSuperseded(gen, connectGenRef.current)) return;
+        logger.warn("Terminal reconnect: reattach request failed", {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        toast.error("Couldn't reach VibeCodes to reconnect — still trying.");
+        retryWithRetainedToken();
+        return;
+      }
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+        if (isConnectSuperseded(gen, connectGenRef.current)) return;
+        logger.warn("Terminal reconnect: reattach refused", {
+          sessionId,
+          status: res.status,
+          code: body?.code,
+          error: body?.error,
+        });
+        // 404 unknown / 409 ended-or-expired: the server says this session is
+        // over — show the honest ended panel (Resume when the folder is known),
+        // never a silent new session. The registry already knows it ended.
+        if (res.status === 404 || res.status === 409) {
+          teardownSocket();
+          dispatch({ type: "reconnect-exhausted" });
+          return;
+        }
+        toast.error(body?.error || "Couldn't reconnect — still trying.");
+        retryWithRetainedToken();
+        return;
+      }
+      const data = (await res.json().catch(() => null)) as {
+        sessionId: string;
+        browserToken: string;
+        bridgeToken?: string;
+        helperToken?: string;
+        cwd?: string | null;
+        claudeSessionId?: string | null;
+        sessionKey?: string;
+      } | null;
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      if (!data?.browserToken || data.sessionId !== sessionId) {
+        logger.warn("Terminal reconnect: malformed reattach response", { sessionId });
+        toast.error("Couldn't reconnect — still trying.");
+        retryWithRetainedToken();
+        return;
+      }
+      logger.info("Terminal reconnect: grace window spent, reattaching the same session", { sessionId });
+      // Keep what's already on screen: attachToExisting would otherwise clear
+      // it (it restores `initialBuffer` in place of a plain clear).
+      const term = termRef.current;
+      const initialBuffer = term ? serializeScrollback(term, SCROLLBACK_TRANSFER_CAP_BYTES) : null;
+      attachToExisting({
+        sessionId: data.sessionId,
+        browserToken: data.browserToken,
+        bridgeToken: data.bridgeToken,
+        helperToken: data.helperToken,
+        initialBuffer,
+        cwd: data.cwd,
+        claudeSessionId: data.claudeSessionId,
+        sessionKey: data.sessionKey,
+      });
+    },
+    [attachToExisting, clearReconnectTimer, openBrowserLeg, teardownSocket],
+  );
+
   const reconnectNow = useCallback(() => {
     const p = pairRef.current;
     const now = Date.now();
     const decision = decideReconnectNow(statusRef.current, !!p, now, reconnectDeadlineRef.current);
+
+    if (decision === "reattach-same-session" && p) {
+      void reattachSameSession(p.sessionId, p.browserToken);
+      return;
+    }
 
     if (decision === "full-connect" || !p) {
       // connect({autoLaunch:true}) arms expectsAutoAttachRef itself — no
@@ -2753,6 +2965,7 @@ export function useTerminalSession(
       // bring-back/pop-out reattach whose peer never comes back hangs on
       // legacy-waiting forever, same as attachToExisting's case.
       expectsAutoAttachRef.current = true;
+      redrawOnConnectedRef.current = true;
       // Two dispatches back-to-back, no await between them — the documented
       // two-dispatch pattern (see attachToExisting): React folds them through
       // the reducer in order against the queued state, so "session-created"'s
@@ -2780,7 +2993,7 @@ export function useTerminalSession(
     clearReconnectTimer();
     if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
     openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
-  }, [openBrowserLeg, clearReconnectTimer, connect, teardownSocket]);
+  }, [openBrowserLeg, clearReconnectTimer, connect, teardownSocket, reattachSameSession]);
 
   // Install-first entry gate. This is the ONE place a browser "open" is turned into
   // either a setup panel, a coming-soon panel, or an auto-connect — the deep link is

@@ -29,6 +29,7 @@ import {
   claimConnectGeneration,
   isConnectSuperseded,
   decideReconnectNow,
+  planRedrawNudge,
   isSameOwnerPreemptedClose,
   PREEMPTED_CLOSE_REASON,
   type TerminalConnectionState,
@@ -831,8 +832,55 @@ describe("decideReconnectNow (fix/terminal-bringback-state-reset)", () => {
     expect(decideReconnectNow("disconnected", true, 1000, 5000)).toBe("grace-reconnect");
   });
 
-  it("status disconnected with a pair, deadline already spent → full-connect (grace window exhausted)", () => {
-    expect(decideReconnectNow("disconnected", true, 5000, 1000)).toBe("full-connect");
+  // Card e5a062a3: a spent browser-side grace window is NOT proof the session
+  // ended — a socket that opened but never closed, a sleeping Mac or a
+  // throttled tab all let it lapse while the session is still live. This used
+  // to be "full-connect", which minted a brand-new session next to the live one.
+  it("status disconnected with a pair, deadline already spent → reattach-same-session, never a mint", () => {
+    expect(decideReconnectNow("disconnected", true, 5000, 1000)).toBe("reattach-same-session");
+    expect(decideReconnectNow("disconnected", true, 5000, 1000)).not.toBe("full-connect");
+  });
+
+  it("any non-error status with a pair and a spent window → reattach-same-session", () => {
+    for (const status of ["connecting", "waiting-to-pair", "connected", "disconnected"] as const) {
+      expect(decideReconnectNow(status, true, 200_000, 100_000)).toBe("reattach-same-session");
+    }
+  });
+
+  it("the only decision that mints (full-connect) requires NO retained pair", () => {
+    const statuses = ["idle", "connecting", "waiting-to-pair", "connected", "disconnected", "error", "session-ended"] as const;
+    for (const status of statuses) {
+      for (const [now, deadline] of [
+        [1000, 0],
+        [1000, 5000],
+        [5000, 1000],
+      ] as const) {
+        expect(decideReconnectNow(status, true, now, deadline)).not.toBe("full-connect");
+      }
+    }
+  });
+});
+
+describe("planRedrawNudge (card e5a062a3 — blank screen after reconnect)", () => {
+  it("narrows by one column, then restores the real size", () => {
+    expect(planRedrawNudge(120, 40)).toEqual({ squeeze: { cols: 119, rows: 40 }, restore: { cols: 120, rows: 40 } });
+  });
+
+  it("both halves encode to real resize frames of different sizes", () => {
+    const plan = planRedrawNudge(80, 24)!;
+    const a = encodeResizeMessage(plan.squeeze.cols, plan.squeeze.rows);
+    const b = encodeResizeMessage(plan.restore.cols, plan.restore.rows);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(a).not.toEqual(b);
+  });
+
+  it("returns null when the width can't be narrowed or the dims aren't sane", () => {
+    expect(planRedrawNudge(1, 24)).toBeNull();
+    expect(planRedrawNudge(0, 24)).toBeNull();
+    expect(planRedrawNudge(80, 0)).toBeNull();
+    expect(planRedrawNudge(Number.NaN, 24)).toBeNull();
+    expect(planRedrawNudge(2000, 24)).toBeNull();
   });
 });
 

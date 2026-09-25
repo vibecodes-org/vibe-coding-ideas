@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   FrameEncryptor,
   FrameDecryptor,
@@ -180,6 +180,62 @@ describe("pty-crypto (browser/WebCrypto)", () => {
     // CryptoKey objects aren't directly comparable, but encrypting the same
     // plaintext with each must not produce a decryptable result under the other.
     expect(a).not.toBe(b);
+  });
+
+  // Card 3746b312: WebCrypto's encrypt is async and nothing guarantees
+  // promises settle in call order. Callers send each frame the moment its
+  // promise resolves, and the peer requires strictly sequential counters — so
+  // an out-of-order resolve would be fatal. Force the FIRST frame's encrypt to
+  // be the slow one and check frames still come back in counter order, and
+  // that a decryptor accepts them in that arrival order.
+  test("concurrent encrypts resolve in call (counter) order even when WebCrypto finishes out of order", async () => {
+    const { enc } = pair(DIRECTION_BROWSER_TO_BRIDGE);
+    await enc.encrypt(new TextEncoder().encode("warm-up")); // derive the subkey up front
+    const realEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle);
+    let call = 0;
+    const spy = vi.spyOn(globalThis.crypto.subtle, "encrypt").mockImplementation(async (...args) => {
+      const mine = call++;
+      if (mine === 0) await new Promise((r) => setTimeout(r, 30));
+      return realEncrypt(...(args as Parameters<SubtleCrypto["encrypt"]>));
+    });
+    try {
+      const arrived: Uint8Array[] = [];
+      const a = enc.encrypt(new TextEncoder().encode("a")).then((f) => arrived.push(f));
+      const b = enc.encrypt(new TextEncoder().encode("b")).then((f) => arrived.push(f));
+      await Promise.all([a, b]);
+      const counterOf = (f: Uint8Array) => Number(new DataView(f.buffer, f.byteOffset + HEADER_LEN - 8, 8).getBigUint64(0));
+      expect(arrived.map(counterOf)).toEqual([1, 2]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("a peer decryptor accepts back-to-back concurrent frames in the order they are sent", async () => {
+    const { enc, dec } = pair(DIRECTION_BROWSER_TO_BRIDGE);
+    const sent: Uint8Array[] = [];
+    await Promise.all(
+      ["h", "e", "l", "l", "o"].map((ch) => enc.encrypt(new TextEncoder().encode(ch)).then((f) => sent.push(f))),
+    );
+    const out: string[] = [];
+    for (const f of sent) {
+      const pt = await dec.decrypt(f);
+      out.push(new TextDecoder().decode(pt!));
+    }
+    expect(out.join("")).toBe("hello");
+  });
+
+  test("a failed encrypt does not wedge later frames", async () => {
+    const { enc } = pair(DIRECTION_BROWSER_TO_BRIDGE);
+    const spy = vi.spyOn(globalThis.crypto.subtle, "encrypt").mockRejectedValueOnce(new Error("boom"));
+    try {
+      await expect(enc.encrypt(new TextEncoder().encode("x"))).rejects.toThrow("boom");
+    } finally {
+      spy.mockRestore();
+    }
+    // Counter 0 was consumed by the failed frame; the next frame still encrypts
+    // and resolves (the chain survived the rejection).
+    const next = await enc.encrypt(new TextEncoder().encode("y"));
+    expect(next.length).toBeGreaterThan(HEADER_LEN);
   });
 
   test("invalid direction is rejected", () => {

@@ -97,6 +97,7 @@ import {
   openPopoutWindow,
   createDockPopoutMessageHandler,
   startBringBackRequest,
+  syncPopoutLabels,
   INITIAL_DOCK_HANDSHAKE_STATE,
   type DockPopoutEntry,
   type PopoutPayload,
@@ -1015,6 +1016,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [ideaId, ideaTitle],
   );
 
+  // Card 3ddcbc2e: a popped-out window's title is a snapshot taken at pop-out,
+  // so a later rename (tab editor, My Sessions, chooser — all of which land in
+  // `sessions` via renameSession) never reached it. After every session-list
+  // change, tell each popped window its tab's CURRENT label if it differs
+  // from what it was last told. Declared after the ref-sync effect above so
+  // `labelFor` reads the just-committed `sessions`.
+  useEffect(() => {
+    syncPopoutLabels(popoutChannelsRef.current, labelFor);
+  }, [sessions, summaries, labelFor]);
+
   // Split-view focus-sync defect fix: the one place `keyboardLive` is set
   // TRUE — every call site below that deliberately grabs the keyboard
   // (entering split, the chord/click move, a drag-drop dock) calls this
@@ -1589,7 +1600,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // createDockPopoutMessageHandler, which now treats every "ready" —
       // not just the first — as a reason to (re)send the payload.
       const channel = new BroadcastChannel(popoutChannelName(nonce));
-      popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE });
+      popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE, label });
       // Everything but the buffer is static for the lifetime of this
       // hand-off — the buffer itself is captured FRESH on every send
       // (including retries) inside getPayload below (design §1/§2's "as
@@ -1621,7 +1632,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setEntry: (next) => popoutChannelsRef.current.set(key, next),
         getPayload: () => {
           const buffer = actionsMapRef.current.get(key)?.serializeNow();
-          return buffer ? { ...basePayload, buffer } : basePayload;
+          // Card 3ddcbc2e: the label as last synced (a rename during the
+          // hand-off window lands here, not in the static basePayload).
+          const current = { ...basePayload, label: popoutChannelsRef.current.get(key)?.label ?? basePayload.label };
+          return buffer ? { ...current, buffer } : current;
         },
         // The popped window told us it's closing (D3, Flow C — possibly with
         // a stashed buffer that arrived just ahead of "closed") — OR its

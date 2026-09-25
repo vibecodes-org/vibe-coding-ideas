@@ -481,6 +481,30 @@ export function decideResize(key: string, lastKey: string, isReachable: boolean)
 }
 
 /**
+ * Redraw nudge after a reattach (card e5a062a3, cause B). The relay never
+ * replays history and the bridge's resize handler only resizes the PTY, so a
+ * same-size resize on reaching "connected" changes nothing: no SIGWINCH, no
+ * repaint, and an idle agent leaves the reattached tab blank until it next
+ * prints. Briefly narrowing by one column and then restoring the real width
+ * is two genuine size changes, so the agent redraws its screen. Web-side only
+ * (the bridge is untouched, no helper release). `null` when the width is too
+ * small to narrow or the dims aren't sane, so the caller falls back to a
+ * plain resize.
+ */
+export interface RedrawNudgePlan {
+  squeeze: { cols: number; rows: number };
+  restore: { cols: number; rows: number };
+}
+
+export function planRedrawNudge(cols: number, rows: number): RedrawNudgePlan | null {
+  if (!isValidDim(cols) || !isValidDim(rows) || cols < 2) return null;
+  return { squeeze: { cols: cols - 1, rows }, restore: { cols, rows } };
+}
+
+/** Gap between the squeeze and restore resizes, so the agent sees two distinct sizes. */
+export const REDRAW_NUDGE_GAP_MS = 80;
+
+/**
  * Single-flight generation guard for `connect()` (fix/terminal-connect-single-flight,
  * PR #88). Each `connect()` attempt claims the next generation via
  * `claimConnectGeneration`; after any `await` (the session mint) it re-checks with
@@ -503,9 +527,9 @@ export function isConnectSuperseded(claimed: number, current: number): boolean {
  * Decide what `reconnectNow()` should do, pure so the call-site policy is
  * unit-tested without a socket/timer (fix/terminal-bringback-state-reset).
  *
- *   - "full-connect" — no retained pair (never minted, or the session already
- *     ended) → mint a fresh session via connect({autoLaunch:true}); no reattach
- *     is possible.
+ *   - "full-connect" — no retained pair at all (nothing was ever minted in this
+ *     tab) → mint a fresh session via connect({autoLaunch:true}); there is no
+ *     session to reattach. The ONLY decision that mints.
  *   - "grace-reconnect" — the AMBIENT case: a transient drop (status
  *     "disconnected", already being handled by the grace-window scheduler) or a
  *     healthy pair that's never dropped (deadline still 0) → reopen the SAME sid
@@ -525,13 +549,26 @@ export function isConnectSuperseded(claimed: number, current: number): boolean {
  *     produces an honest connect-timeout instead of hanging in "connecting"
  *     forever.
  *
+ *   - "reattach-same-session" — a pair is on hand but this browser's own grace
+ *     window is spent (card e5a062a3). That timer is only the browser's view:
+ *     a socket that opened but never closed, a sleeping Mac or a throttled tab
+ *     all let it lapse while the session is still running on the machine. This
+ *     used to return "full-connect" and mint a brand-new session next to the
+ *     live one. The caller now asks the reattach route about the SAME sid: live
+ *     → reattach it with fresh tokens; genuinely ended → the existing ended /
+ *     Resume panel. Never a silent mint.
+ *
  * `status` is checked BEFORE the grace-window deadline math: an error status
  * can coexist with a spent-or-never-set deadline (a pop-out preemption never
  * routes through scheduleReconnect, so reconnectDeadlineRef never gets set at
  * all) — checking the deadline first would misroute this case into
  * "grace-reconnect".
  */
-export type ReconnectNowDecision = "full-connect" | "grace-reconnect" | "fresh-attach-reset";
+export type ReconnectNowDecision =
+  | "full-connect"
+  | "grace-reconnect"
+  | "fresh-attach-reset"
+  | "reattach-same-session";
 
 export function decideReconnectNow(
   status: TerminalStatus,
@@ -542,7 +579,7 @@ export function decideReconnectNow(
   if (!hasPair) return "full-connect";
   if (status === "error") return "fresh-attach-reset";
   const withinGraceWindow = reconnectDeadline === 0 || now < reconnectDeadline;
-  return withinGraceWindow ? "grace-reconnect" : "full-connect";
+  return withinGraceWindow ? "grace-reconnect" : "reattach-same-session";
 }
 
 /** Feature flag — OFF unless NEXT_PUBLIC_TERMINAL_ENABLED is exactly "true". */

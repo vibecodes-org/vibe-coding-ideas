@@ -45,18 +45,24 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // `mockSockets` tracks WebSockets. `vi.hoisted` because the mock factory
 // (itself hoisted above this file's other statements) needs a live
 // reference to push into.
-const mockTerminals = vi.hoisted(() => [] as { written: string[]; resetCount: number }[]);
+const mockTerminals = vi.hoisted(
+  () => [] as { written: string[]; resetCount: number; dataCb: ((d: string) => void) | null }[],
+);
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
     written: string[] = [];
     resetCount = 0;
+    // The hook's keystroke handler — lets a test "type" (card 3746b312).
+    dataCb: ((d: string) => void) | null = null;
     buffer = { active: { length: 0 } };
     constructor() {
       mockTerminals.push(this);
     }
-    onData() {}
+    onData(cb: (d: string) => void) {
+      this.dataCb = cb;
+    }
     open() {}
     loadAddon(addon: { activate: (term: unknown) => void }) {
       addon.activate(this);
@@ -185,7 +191,7 @@ function latestSocket(): MockWebSocket {
   return s;
 }
 
-function latestTerminal(): { written: string[]; resetCount: number } {
+function latestTerminal(): (typeof mockTerminals)[number] {
   const t = mockTerminals[mockTerminals.length - 1];
   if (!t) throw new Error("no Terminal was constructed");
   return t;
@@ -674,6 +680,386 @@ describe("useTerminalSession", () => {
       "/api/terminal/session/end",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ sid: "sid-abc123" }) }),
     );
+  });
+
+  // Card e5a062a3: "Reconnect now" pressed after this tab's own 90 s grace
+  // window has lapsed — while the session is still running on the machine
+  // (the reconnect socket opened but never closed, so the retry loop that
+  // would have ended it never ran; a sleeping Mac or a throttled tab does the
+  // same). It used to call connect({autoLaunch:true}) and mint a brand-new
+  // session beside the live one. It must ask the reattach route about the
+  // SAME session instead, and never mint.
+  describe("Reconnect now after the grace window is spent (card e5a062a3)", () => {
+    const REATTACH = "/api/terminal/session/reattach";
+    const MINT = "/api/terminal/session";
+
+    function fetchCallsTo(url: string): number {
+      return vi.mocked(global.fetch).mock.calls.filter(([u]) => u === url).length;
+    }
+
+    // Live session, dropped, retry socket opened but silent (no output, no
+    // close), then the clock runs well past the grace window with no timer
+    // firing — exactly the window-lapsed-but-still-live case.
+    async function reachSpentWindowWithLiveSession() {
+      vi.useFakeTimers();
+      const utils = setup();
+      const { result } = utils;
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      act(() => latestSocket().simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      expect(mockSockets).toHaveLength(2);
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("disconnected");
+      vi.setSystemTime(Date.now() + RECONNECT_GRACE_MS + 5_000);
+      return utils;
+    }
+
+    it("window spent but session live → reattaches the SAME session with fresh tokens, never mints", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({
+              ok: true,
+              json: async () => ({
+                sessionId: "sid-abc123",
+                browserToken: "fresh-browser-token",
+                bridgeToken: "fresh-bridge-token",
+                helperToken: "fresh-helper-token",
+                cwd: "/Users/nick/project",
+                claudeSessionId: null,
+              }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        REATTACH,
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ sid: "sid-abc123" }) }),
+      );
+      expect(fetchCallsTo(MINT)).toBe(1); // just the original mint — no new session
+      expect(mockSockets).toHaveLength(3);
+      expect(latestSocket().url).toContain("session=sid-abc123");
+      expect(latestSocket().url).toContain("token=fresh-browser-token");
+      expect(result.current.pair?.sessionId).toBe("sid-abc123");
+      expect(result.current.state.sessionId).toBe("sid-abc123");
+
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+    });
+
+    it("session genuinely ended (reattach route 409) → the existing ended panel, never a silent mint", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({
+              ok: false,
+              status: 409,
+              json: async () => ({ error: "This session has ended — start a new one or resume it.", code: "reattach_ended" }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.state.status).toBe("session-ended");
+      expect(result.current.state.endedReason).toBe("reconnect-failed");
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(mockSockets).toHaveLength(2); // no new socket either
+    });
+
+    it("unknown session (reattach route 404) → ended panel, no mint", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({ ok: false, status: 404, json: async () => ({ error: "Session not found" }) } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(result.current.state.status).toBe("session-ended");
+      expect(fetchCallsTo(MINT)).toBe(1);
+    });
+
+    it("reattach request fails (network) → toast, keeps retrying the SAME session with the retained token, no mint", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) => {
+        if (url === REATTACH) throw new TypeError("Failed to fetch");
+        return mintResponse() as unknown as Response;
+      });
+
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(toastError).toHaveBeenCalled();
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(mockSockets).toHaveLength(3);
+      expect(latestSocket().url).toContain("session=sid-abc123");
+      expect(latestSocket().url).toContain("token=browser-token");
+      expect(result.current.state.status).toBe("disconnected");
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+    });
+
+    // Verify-step gaps (Sentinel): a server hiccup is not "ended", and a
+    // double-click can't mint or leave two live legs.
+    it("reattach route 5xx → toast, keeps retrying the SAME session, not the ended panel, no mint", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({ ok: false, status: 500, json: async () => ({ error: "Couldn't look up that session" }) } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(toastError).toHaveBeenCalled();
+      expect(result.current.state.status).not.toBe("session-ended");
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(mockSockets).toHaveLength(3);
+      expect(latestSocket().url).toContain("session=sid-abc123");
+      expect(latestSocket().url).toContain("token=browser-token");
+    });
+
+    it("double-clicking Reconnect now never mints and ends on ONE live leg of the same session", async () => {
+      const { result } = await reachSpentWindowWithLiveSession();
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({
+              ok: true,
+              json: async () => ({
+                sessionId: "sid-abc123",
+                browserToken: "fresh-browser-token",
+                bridgeToken: "fresh-bridge-token",
+                helperToken: "fresh-helper-token",
+                cwd: null,
+                claudeSessionId: null,
+              }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        result.current.actions.reconnectNow();
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+      });
+      expect(fetchCallsTo(MINT)).toBe(1);
+      expect(fetchCallsTo(REATTACH)).toBeLessThanOrEqual(2);
+      const live = latestSocket();
+      expect(live.url).toContain("session=sid-abc123");
+      // Every earlier leg is closed and can't drive the tab.
+      expect(live.url).toContain("token=fresh-browser-token");
+      const earlier = mockSockets.slice(0, -1);
+      for (const s of earlier) expect(s.readyState).toBe(MockWebSocket.CLOSED);
+      act(() => live.simulateOpen());
+      act(() => live.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      // A late preempt close from any earlier leg can't drive the tab.
+      for (const s of earlier) act(() => s.onclose?.({ code: 4001, reason: "preempted" } as CloseEvent));
+      expect(result.current.state.status).toBe("connected");
+    });
+  });
+
+  // Card 3746b312 ("froze — couldn't type"): "Reconnect now" pressed while
+  // the auto-retry socket was still opening left BOTH sockets wired. The
+  // relay then preempted the older one (4001), whose close flipped the tab to
+  // the "taken over" error and nulled the live socket ref — while the newer
+  // socket kept streaming output. Output showed; keystrokes went nowhere.
+  describe("stale sockets can't freeze the tab (card 3746b312)", () => {
+    function typedBytes(ws: MockWebSocket): string[] {
+      // ArrayBuffer.isView, not instanceof: TextEncoder's bytes can come from another realm under jsdom.
+      return ws.sent
+        .filter((d): d is Uint8Array => ArrayBuffer.isView(d))
+        .map((b) => new TextDecoder().decode(b));
+    }
+
+    async function liveThenDroppedWithRetryOpening() {
+      const utils = setup();
+      const { result } = utils;
+      result.current.containerRef.current = document.createElement("div");
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const s1 = latestSocket();
+      act(() => s1.simulateOpen());
+      act(() => s1.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      vi.useFakeTimers();
+      act(() => s1.simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      const s2 = latestSocket(); // the auto-retry's reattach, still opening
+      expect(s2).not.toBe(s1);
+      return { ...utils, s2 };
+    }
+
+    it("Reconnect now retires the still-opening retry socket instead of leaving it wired", async () => {
+      const { result, s2 } = await liveThenDroppedWithRetryOpening();
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      expect(s3).not.toBe(s2);
+      expect(s2.onclose).toBeNull();
+      expect(s2.onmessage).toBeNull();
+      expect(s2.readyState).toBe(MockWebSocket.CLOSED);
+    });
+
+    it("a late close/message from a superseded socket can't flip the tab or swallow typing", async () => {
+      const { result, s2 } = await liveThenDroppedWithRetryOpening();
+      // Keep s2's handlers as the relay would still hold them, to exercise the
+      // per-handler guard independently of the retire step.
+      const staleOnClose = s2.onclose!;
+      const staleOnMessage = s2.onmessage!;
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      act(() => s3.simulateOpen());
+      act(() => s3.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // The relay preempts the older same-owner leg.
+      act(() => staleOnClose({ code: 4001, reason: "preempted" }));
+      act(() => staleOnMessage({ data: new Uint8Array([9]).buffer }));
+      expect(result.current.state.status).toBe("connected");
+      expect(result.current.state.errorKind).toBeNull();
+
+      // Typing still reaches the live socket.
+      act(() => latestTerminal().dataCb?.("ls\r"));
+      expect(typedBytes(s3)).toEqual(["ls\r"]);
+    });
+
+    it("repeated Reconnect presses never end on the 'taken over' error and typing keeps working", async () => {
+      const { result } = await liveThenDroppedWithRetryOpening();
+      for (let i = 0; i < 3; i++) {
+        const prev = latestSocket();
+        act(() => result.current.actions.reconnectNow());
+        const next = latestSocket();
+        expect(next).not.toBe(prev);
+        act(() => next.simulateOpen());
+        act(() => next.simulateBinaryMessage());
+        // The relay preempting the previous leg is a no-op for this tab.
+        act(() => prev.close(4001, "preempted"));
+        expect(result.current.state.status).toBe("connected");
+      }
+      act(() => latestTerminal().dataCb?.("y"));
+      expect(typedBytes(latestSocket())).toEqual(["y"]);
+    });
+
+    // Verify-step gap (Sentinel): the stale-socket guard must not swallow a
+    // GENUINE takeover — another tab preempting this tab's CURRENT socket
+    // still lands on the existing "taken over" (duplicate) state.
+    it("a genuine takeover of the CURRENT socket still shows the 'taken over' state", async () => {
+      const { result } = await liveThenDroppedWithRetryOpening();
+      act(() => result.current.actions.reconnectNow());
+      const s3 = latestSocket();
+      act(() => s3.simulateOpen());
+      act(() => s3.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      act(() => s3.close(4001, ""));
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.errorKind).toBe("duplicate");
+      expect(result.current.state.closeCode).toBe(4001);
+    });
+  });
+
+  // Card e5a062a3 (cause B): the relay replays nothing on reattach, and a
+  // same-size resize changes nothing on the machine, so an idle agent left
+  // the reconnected tab blank. On a RE-attach the hook narrows the width by
+  // one column and then restores it, so the agent repaints.
+  describe("redraw nudge after a reattach (card e5a062a3)", () => {
+    function resizeFrames(ws: MockWebSocket): string[] {
+      return ws.sent.filter((d): d is string => typeof d === "string" && d.includes('"type":"resize"'));
+    }
+
+    it("a fresh launch sends one plain resize — no nudge", async () => {
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      await new Promise((r) => setTimeout(r, 150));
+      expect(resizeFrames(latestSocket())).toEqual(['{"type":"resize","cols":80,"rows":24}']);
+    });
+
+    it("reconnecting to a live session narrows by one column, then restores the real size", async () => {
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      act(() => latestSocket().simulateAbnormalDrop());
+      expect(result.current.state.status).toBe("disconnected");
+
+      // "Reconnect now" inside the window → same-sid reopen.
+      act(() => result.current.actions.reconnectNow());
+      const ws = latestSocket();
+      act(() => ws.simulateOpen());
+      act(() => ws.simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      expect(resizeFrames(ws)[0]).toBe('{"type":"resize","cols":79,"rows":24}');
+      await waitFor(() =>
+        expect(resizeFrames(ws)).toEqual([
+          '{"type":"resize","cols":79,"rows":24}',
+          '{"type":"resize","cols":80,"rows":24}',
+        ]),
+      );
+    });
+
+    it("the bridge coming back while connected (peer-reattached) also nudges", async () => {
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const ws = latestSocket();
+      act(() => ws.simulateOpen());
+      act(() => ws.simulateBinaryMessage());
+      const before = resizeFrames(ws).length;
+      act(() => {
+        ws.onmessage?.({ data: JSON.stringify({ t: "peer-reattached" }) });
+      });
+      await waitFor(() =>
+        expect(resizeFrames(ws).slice(before)).toEqual([
+          '{"type":"resize","cols":79,"rows":24}',
+          '{"type":"resize","cols":80,"rows":24}',
+        ]),
+      );
+    });
   });
 
   // Multi-session stage 2: `autoConnectWhenExpanded` stops a freshly-minted tab
