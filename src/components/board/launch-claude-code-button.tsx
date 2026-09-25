@@ -260,7 +260,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     (
       state: LaunchPathState,
       includeIsolationAdvisory = false,
-      agent: "claude" | "codex" = "claude"
+      agent: "claude" | "codex" = "claude",
+      guideBootstrap = false
     ): CompactPromptEssentials => {
       const { newProject, existingPath } = compactDirArgsFor(state);
       return buildCompactPromptEssentials({
@@ -274,6 +275,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         taskId: props.variant === "board" ? undefined : props.taskId,
         includeIsolationAdvisory,
         agent,
+        guideBootstrap,
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
@@ -466,7 +468,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // it). cwd rides the payload so a pinned/recorded existing folder is
       // honoured in the browser too.
       void resolveFreshLaunch().then(({ state, cwd }) => {
-        const essentials = buildCompactEssentials(state, false, agent);
+        // Task b563f4da: a fresh browser session also bootstraps the agent's
+        // own guide (CLAUDE.md / AGENTS.md) — see buildGuideBootstrapStep.
+        const essentials = buildCompactEssentials(state, false, agent, true);
         requestBrowserLaunch({
           essentials,
           cwd,

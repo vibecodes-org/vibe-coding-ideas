@@ -1016,6 +1016,41 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
    * Codex unable to connect to the board (the bug this fixes).
    */
   agent?: "claude" | "codex";
+  /**
+   * Task b563f4da (docs/browser-agent-guide-bootstrap-ux-design.html): add the
+   * agent-guide bootstrap step — read the launched agent's NATIVE guide
+   * (CLAUDE.md for Claude Code, AGENTS.md for Codex), or create it from the
+   * other agent's guide when only that one exists. FRESH in-browser launches
+   * only (the launch button's "in the browser" payload and the terminal
+   * hook's own dock/chooser launches). The claude-cli:// terminal window and
+   * the Codex Terminal.app launch leave it off (outside the design's scope),
+   * and a resume never builds essentials at all. When on, the essentials
+   * carry `guideStep`, which makes buildBoundedDeepLink all-or-refuse: the
+   * launch rides with every setup step whole or doesn't fire.
+   */
+  guideBootstrap?: boolean;
+}
+
+/**
+ * Toast shown when a fresh browser launch can't carry its required setup —
+ * agent-guide step included — within the launch-URL cap, so nothing is fired.
+ * The design's second refusal copy: the copy-command fallback builds the
+ * verbose prompt, which doesn't carry the guide policy, so it isn't offered.
+ */
+export const GUIDE_LAUNCH_REFUSAL_MESSAGE =
+  "This browser launch is too long to include the required setup instructions. Choose a shorter project folder path and try again.";
+
+/**
+ * The compact agent-guide bootstrap step — the design's "Compact guide block"
+ * copy, verbatim, with {native}/{fallback} substituted for the launched agent
+ * (docs/browser-agent-guide-bootstrap-ux-design.html). Always a WHOLE step:
+ * it is required bootstrap content, never trimmed or fragmented to fit a URL
+ * budget (see buildBoundedDeepLink's `guideStep` rule).
+ */
+export function buildGuideBootstrapStep(agent: "claude" | "codex" = "claude"): string {
+  const native = agent === "codex" ? "AGENTS.md" : "CLAUDE.md";
+  const fallback = agent === "codex" ? "CLAUDE.md" : "AGENTS.md";
+  return `In the safe current checkout root, before work: read/follow ${native} if present; else if ${fallback} exists, read it and create ${native} without clobbering, preserving project guidance and adapting only agent-specific CLI/workflow directions; then read/follow ${native}. Never overwrite/merge/sync existing guides, including races. Neither exists: create neither. Read/create errors: explain and pause.`;
 }
 
 /**
@@ -1093,6 +1128,21 @@ interface CompactStepPieces {
    * this board's folder.
    */
   workCompact: string;
+  /** The agent-guide bootstrap step (buildGuideBootstrapStep) — present only
+   * when the caller asked for it (`guideBootstrap`). Rides in the protected
+   * head, after any create/clone step and before board setup. */
+  guideStep?: string;
+  /** Title-free header — the budget-pressure form of `header` (guide launches only). */
+  headerCompact: string;
+  /** Shorter create-new step (path named twice, not three times) — the
+   * budget-pressure form of a newProject leading step. Undefined otherwise. */
+  newProjectStepCompact?: string;
+  /** The connect step (essentialSteps[0]) packed tighter for a guide launch —
+   * Codex only; identical to the normal step for Claude. */
+  connectStepPacked: string;
+  /** The record_project_path step with its em dash (9 URL chars) swapped
+   * for a semicolon — same words otherwise. Guide launches' packed form only. */
+  recordStepPacked: string;
 }
 
 function buildCompactStepPieces({
@@ -1105,6 +1155,7 @@ function buildCompactStepPieces({
   taskId,
   includeIsolationAdvisory,
   agent = "claude",
+  guideBootstrap,
 }: CompactBootstrapArgs): CompactStepPieces {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
@@ -1112,6 +1163,7 @@ function buildCompactStepPieces({
   let directoryEcho: string | undefined;
   let isolate: boolean | undefined;
   let isolationNote: string | undefined;
+  let newProjectStepCompact: string | undefined;
 
   // Directory step. In create-new mode → mkdir/init the folder. Existing WITH a
   // known folder (recorded/pinned path the deep link's cwd already opens in) →
@@ -1128,6 +1180,9 @@ function buildCompactStepPieces({
     leadingSteps.push(
       `Project folder FIRST, before anything else (even planning/research): if ${p} exists, cd in and reuse it as-is; else \`mkdir -p ${p} && cd ${p}\`. Never work in your home directory (${git}).`
     );
+    // Same rule, path named twice instead of three times: `mkdir -p` is a
+    // no-op on an existing folder, so "reuse it as-is" survives intact.
+    newProjectStepCompact = `Project folder FIRST, even for planning/research: \`mkdir -p ${p} && cd ${p}\` (an existing folder is reused as-is). Never work in your home directory (${git}).`;
   } else if (existingPath) {
     // Repo-backed + known folder: verify it's the right clone, don't re-clone.
     // No-repo + known folder: plain reuse-the-folder wording (unchanged).
@@ -1175,6 +1230,15 @@ function buildCompactStepPieces({
     agent === "codex"
       ? `Connect if board tools are unavailable: run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`, then \`codex mcp login vibecodes\` (ChatGPT/OpenAI sign-in). Do NOT use \`claude mcp add\` or \`/mcp\`. Pass agent: "codex" to claim_next_step/complete_step/fail_step. For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its launch settings.`
       : `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`;
+  // Codex's connect step, packed for a guide launch that doesn't otherwise fit
+  // (see CompactPromptEssentials.packed): every instruction kept — connector
+  // add + login, never Claude's commands, the agent: "codex" attribution and
+  // the fresh-subagent-per-step rule — in fewer words. Claude's step is left
+  // alone: its guide launches fit without it.
+  const connectStepPacked =
+    agent === "codex"
+      ? `If board tools are unavailable: run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`, then \`codex mcp login vibecodes\` (ChatGPT/OpenAI sign-in); never \`claude mcp add\` or \`/mcp\`. Pass agent: "codex" to claim_next_step/complete_step/fail_step. Run each workflow step in a fresh subagent with claim_next_step's model/effort and context; report its launch settings.`
+      : connectStep;
   const essentialSteps = [
     connectStep,
     // Deliberately says nothing about worktrees: this step lives in the
@@ -1200,7 +1264,27 @@ function buildCompactStepPieces({
     ? `Set up VibeCodes and work a board task for "${title}".`
     : `Set up VibeCodes and pick up board work for "${title}".`;
 
-  return { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work, workCompact };
+  const headerCompact = taskId
+    ? "Set up VibeCodes and work a board task."
+    : "Set up VibeCodes and pick up board work.";
+
+  const guideStep = guideBootstrap ? buildGuideBootstrapStep(agent) : undefined;
+
+  return {
+    header,
+    leadingSteps,
+    directoryEcho,
+    isolate,
+    isolationNote,
+    essentialSteps,
+    work,
+    workCompact,
+    guideStep,
+    headerCompact,
+    newProjectStepCompact,
+    connectStepPacked,
+    recordStepPacked: `Re-confirm the folder (never \`/\` or home; cd in first): call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here.`,
+  };
 }
 
 /**
@@ -1220,11 +1304,12 @@ function buildCompactStepPieces({
  * IS folded in here when present, same as `buildCompactPromptEssentials`.
  */
 export function buildCompactBootstrapPromptParts(args: CompactBootstrapArgs): CompactPromptParts {
-  const { header, leadingSteps, directoryEcho, isolationNote, essentialSteps, work } =
+  const { header, leadingSteps, directoryEcho, isolationNote, essentialSteps, work, guideStep } =
     buildCompactStepPieces(args);
   const steps = [...leadingSteps];
   if (directoryEcho) steps.push(directoryEcho);
   if (isolationNote) steps.push(isolationNote);
+  if (guideStep) steps.push(guideStep);
   steps.push(...essentialSteps);
 
   const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
@@ -1334,6 +1419,25 @@ export interface CompactPromptEssentials {
    * enforcePromptLength's own doc comment).
    */
   headSteps?: string[];
+  /**
+   * The agent-guide bootstrap step (task b563f4da) — also one of `headSteps`;
+   * surfaced on its own so callers and tests can check for it. Its presence
+   * marks this launch's setup as REQUIRED bootstrap: under
+   * `cwdPolicy: "keep"`, buildBoundedDeepLink only returns a link when every
+   * head step (this one included) AND a work step (full or compact) ride
+   * whole — otherwise `ok: false` and the caller refuses the launch visibly.
+   * A partial guide rule, or a guide rule with no idea/task to go to, is
+   * never fired.
+   */
+  guideStep?: string;
+  /**
+   * Guide launches only: the SAME essentials packed tighter — title-free
+   * header and, in create-new mode, the shorter folder step — for
+   * buildBoundedDeepLink to try before refusing a launch whose required
+   * setup doesn't fit. Every required instruction is still present; only
+   * the board title echo and repeated folder path go.
+   */
+  packed?: CompactPromptEssentials;
 }
 
 /**
@@ -1345,15 +1449,38 @@ export interface CompactPromptEssentials {
  * nothing for fitCompactEssentials to budget against there any more.
  */
 export function buildCompactPromptEssentials(args: CompactBootstrapArgs): CompactPromptEssentials {
-  const { header, leadingSteps, directoryEcho, isolate, isolationNote, essentialSteps, work, workCompact } =
-    buildCompactStepPieces(args);
+  const pieces = buildCompactStepPieces(args);
+  const essentials = assembleEssentials(pieces);
+  if (!pieces.guideStep) return essentials;
+  const packed = assembleEssentials({
+    ...pieces,
+    header: pieces.headerCompact,
+    leadingSteps: pieces.newProjectStepCompact ? [pieces.newProjectStepCompact] : pieces.leadingSteps,
+    essentialSteps: [pieces.connectStepPacked, pieces.recordStepPacked],
+  });
+  return { ...essentials, packed };
+}
+
+function assembleEssentials({
+  header,
+  leadingSteps,
+  directoryEcho,
+  isolate,
+  isolationNote,
+  essentialSteps,
+  work,
+  workCompact,
+  guideStep,
+}: CompactStepPieces): CompactPromptEssentials {
 
   // Priority order for the BUG B atomic degrade: leadingSteps (mkdir/clone —
-  // must happen before anything else, when present) first, THEN essentialSteps
-  // (MCP-connect, then record_project_path). For the existing-mode/no-repo
-  // scenario the pathological-cwd bugs actually target, leadingSteps is
-  // always empty, so this reduces to exactly [MCP-connect, record_project_path].
-  const headSteps = [...leadingSteps, ...essentialSteps];
+  // must happen before anything else, when present) first, THEN the guide
+  // step when asked for (design order: safe checkout → guide → board setup →
+  // work), THEN essentialSteps (MCP-connect, then record_project_path). For
+  // the existing-mode/no-repo scenario the pathological-cwd bugs actually
+  // target, leadingSteps is always empty, so without a guide step this
+  // reduces to exactly [MCP-connect, record_project_path].
+  const headSteps = [...leadingSteps, ...(guideStep ? [guideStep] : []), ...essentialSteps];
   const numbered = headSteps.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
   const tailSteps: string[] = [];
@@ -1374,6 +1501,7 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
     workCompact,
     directoryEcho,
     isolationNote,
+    guideStep,
   };
 }
 
@@ -1712,14 +1840,31 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
   if (budgetWithCwd > 0) {
     const prompt = fitCompactEssentials(essentials, budgetWithCwd, measure);
     const url = buildLink({ prompt, cwd });
-    if (url.length <= cap && (keepCwd || essentialsSurviveWhole(essentials, prompt))) {
+    const accepted = keepCwd
+      ? requiredBootstrapSurvives(essentials, prompt)
+      : essentialsSurviveWhole(essentials, prompt);
+    if (url.length <= cap && accepted) {
       return { ok: true, url, droppedCwd: false };
+    }
+    // Guide launch whose required setup didn't all fit: one retry with the
+    // packed form (title-free header, shorter create-new step) before the
+    // refusal below. Same instructions, fewer repeated words.
+    if (keepCwd && essentials.packed) {
+      const packedPrompt = fitCompactEssentials(essentials.packed, budgetWithCwd, measure);
+      const packedUrl = buildLink({ prompt: packedPrompt, cwd });
+      if (packedUrl.length <= cap && requiredBootstrapSurvives(essentials.packed, packedPrompt)) {
+        return { ok: true, url: packedUrl, droppedCwd: false };
+      }
     }
   }
   // "keep": the folder can't fit alongside the link's fixed overhead at all
-  // (a >1,100-char path, at today's overhead). Refuse — the caller toasts —
-  // rather than fire a folder-less launch that starts the agent at `/`.
-  if (keepCwd) return { ok: false };
+  // (a >1,100-char path, at today's overhead), or — for a launch carrying the
+  // agent-guide step — the required setup can't ride whole alongside it.
+  // Refuse — the caller toasts — rather than fire a folder-less launch that
+  // starts the agent at `/`, or one with partial setup instructions. (The
+  // guide check also covers a caller that forgot "keep": tiers 2/3 below
+  // trade setup steps away, which a guide launch must never do.)
+  if (keepCwd || essentials.guideStep) return { ok: false };
 
   // Tiers 2/3 — drop the cwd param. budgetNoCwd is CONSTANT regardless of
   // path length (unlike budgetWithCwd, which shrinks linearly with it), so
@@ -1777,6 +1922,29 @@ function essentialsSurviveWhole(essentials: CompactPromptEssentials, prompt: str
   const headStepsOk =
     !essentials.headSteps || essentials.headSteps.every((step) => prompt.includes(step));
   const workOk = essentials.work === undefined || prompt.includes(essentials.work);
+  return headStepsOk && workOk;
+}
+
+/**
+ * The `cwdPolicy: "keep"` acceptance rule. Without a guide step it accepts
+ * whatever fitCompactEssentials' ladder produced (unchanged behaviour: the
+ * folder is what "keep" protects). WITH one (task b563f4da — the in-browser
+ * agent-guide bootstrap) the whole setup is required, per the design's
+ * "the policy must survive the URL budget": every head step — folder
+ * create/clone, guide, MCP connect + attribution, record_project_path — must
+ * ride whole, plus a work step (full or compact) carrying the idea/task id.
+ * Anything less is `ok: false`, which the caller turns into a visible refusal
+ * instead of a launch with partial instructions.
+ */
+function requiredBootstrapSurvives(essentials: CompactPromptEssentials, prompt: string): boolean {
+  if (!essentials.guideStep) return true;
+  const headStepsOk = (essentials.headSteps ?? [essentials.guideStep]).every((step) =>
+    prompt.includes(step)
+  );
+  const workOk =
+    essentials.work === undefined ||
+    prompt.includes(essentials.work) ||
+    (essentials.workCompact !== undefined && prompt.includes(essentials.workCompact));
   return headStepsOk && workOk;
 }
 
