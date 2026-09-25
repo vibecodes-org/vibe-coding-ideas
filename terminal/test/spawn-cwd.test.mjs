@@ -21,7 +21,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -44,17 +44,30 @@ function tmpDir(prefix) {
 /** A PATH dir holding a fake agent that prints the folder it was started in. */
 function makeFakeAgentBin(name) {
   const dir = tmpDir("vc-fake-cwd-");
-  fs.writeFileSync(path.join(dir, name), `#!/bin/sh\necho "PWD_BEGIN$(pwd -P)PWD_END"\nsleep 3\n`, { mode: 0o755 });
+  fs.writeFileSync(
+    path.join(dir, name),
+    `#!/bin/sh\necho "ARGS_BEGIN $* ARGS_END"\necho "PWD_BEGIN$(pwd -P)PWD_END"\nsleep 3\n`,
+    { mode: 0o755 },
+  );
   return dir;
 }
 
-async function launch(t, { cwd, prompt, agent }) {
+/** Worst case for the isolation guard: a home folder that is itself a git repo with a commit. */
+function makeHomeRepo(home) {
+  execFileSync("git", ["-C", home, "init", "-q"]);
+  fs.writeFileSync(path.join(home, "README"), "hi\n");
+  execFileSync("git", ["-C", home, "add", "README"]);
+  execFileSync("git", ["-C", home, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]);
+}
+
+async function launch(t, { cwd, prompt, agent, worktree, homeIsRepo }) {
   const session = `cwd-${Math.random().toString(36).slice(2, 8)}`;
   const bin = makeFakeAgentBin(agent === "codex" ? "codex" : "claude");
   const home = tmpDir("vc-home-");
+  if (homeIsRepo) makeHomeRepo(home);
   const tokens = await mintSessionTokens({ sub: "u-" + session, idea: "idea-cwd", sid: session, secret: SECRET });
   const relay = await startStandinRelay({ port: 0, secret: SECRET });
-  const url = buildLaunchDeepLink({ relay: relay.url, session, token: tokens.bridge, cwd, prompt, agent });
+  const url = buildLaunchDeepLink({ relay: relay.url, session, token: tokens.bridge, cwd, prompt, agent, worktree });
 
   let stream = "";
   const ws = new WebSocket(
@@ -103,7 +116,8 @@ async function launch(t, { cwd, prompt, agent }) {
     await new Promise((r) => setTimeout(r, 50));
   }
   const m = stream.match(/PWD_BEGIN(.*?)PWD_END/s);
-  return { pwd: m ? m[1].trim() : null, home, stream, stderr };
+  const a = stream.match(/ARGS_BEGIN(.*?)ARGS_END/s);
+  return { pwd: m ? m[1].trim() : null, args: a ? a[1].trim() : null, home, stream, stderr };
 }
 
 const NOTE = /so this session started in your home folder/;
@@ -153,5 +167,26 @@ test("a real project folder is honoured exactly, with no note", { timeout: 30000
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));
   const r = await launch(t, { cwd: d, prompt: "hello" });
   assert.equal(r.pwd, d, r.stderr);
+  assert.doesNotMatch(r.stream, NOTE);
+});
+
+test("isolation requested + missing folder → home, no worktree, no worktree banner (even when home is a git repo)", { timeout: 30000 }, async (t) => {
+  const gone = path.join(os.tmpdir(), "vc-isolate-missing-3ae71b07");
+  fs.rmSync(gone, { recursive: true, force: true });
+  const r = await launch(t, { cwd: gone, prompt: "hello", worktree: true, homeIsRepo: true });
+  assert.equal(r.pwd, r.home, r.stderr);
+  assert.match(r.stream, /couldn't find the folder/);
+  assert.notEqual(r.args, null, "agent argv was captured");
+  assert.doesNotMatch(r.args, /--worktree/);
+  assert.doesNotMatch(r.stream, /separate working copy|shared with your other live session/);
+});
+
+test("control: isolation requested + a real committed repo still gets --worktree", { timeout: 30000 }, async (t) => {
+  const d = tmpDir("vc-isolate-repo-");
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  makeHomeRepo(d);
+  const r = await launch(t, { cwd: d, prompt: "hello", worktree: true });
+  assert.equal(r.pwd, d, r.stderr);
+  assert.match(r.args ?? "", /--worktree/);
   assert.doesNotMatch(r.stream, NOTE);
 });

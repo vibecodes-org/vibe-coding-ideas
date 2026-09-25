@@ -231,12 +231,18 @@ if (SPAWN_CWD.reason !== "ok") {
 // folder can't host a worktree the launch proceeds in the main folder and
 // `WORKTREE_FALLBACK_BANNER` is written into the terminal ahead of Claude's
 // own output so the user knows the two sessions now share the folder.
+//
+// Card 3ae71b07: isolation only applies to the folder the launch asked for.
+// When that folder was unusable and we fell back to home, there is no project
+// folder to isolate from (and home must never get a worktree), so the probe,
+// the flag and the "sharing the project folder" banner are all skipped.
+const WORKTREE_APPLICABLE = WORKTREE_REQUESTED && SPAWN_CWD.reason === "ok";
 const WORKTREE_ELIGIBILITY =
-  WORKTREE_REQUESTED && !explicitCmd && !RESUME_ID && !RESUME
+  WORKTREE_APPLICABLE && !explicitCmd && !RESUME_ID && !RESUME
     ? checkWorktreeEligibility(CWD, { run: runGitSync })
     : { eligible: true, reason: /** @type {const} */ ("ok") };
-const WORKTREE = WORKTREE_REQUESTED && WORKTREE_ELIGIBILITY.eligible;
-const WORKTREE_FALLBACK_BANNER = WORKTREE_REQUESTED ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
+const WORKTREE = WORKTREE_APPLICABLE && WORKTREE_ELIGIBILITY.eligible;
+const WORKTREE_FALLBACK_BANNER = WORKTREE_APPLICABLE ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
 if (WORKTREE_FALLBACK_BANNER) {
   log("warn", "worktree isolation requested but the folder can't host one — launching in the main folder", {
     cwd: CWD,
