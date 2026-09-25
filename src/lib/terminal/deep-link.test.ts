@@ -8,6 +8,7 @@ import {
   LAUNCH_HOST,
   OPEN_TERMINAL_HOST,
   MAX_LAUNCH_URL_LENGTH,
+  MAX_OPEN_TERMINAL_URL_LENGTH,
 } from "./deep-link";
 // The bridge/helper PARSES with the shared .mjs. Importing it here pins the two
 // implementations together: a link this (TS) module builds MUST parse back to the
@@ -25,6 +26,15 @@ const SAMPLE = {
   token: "eyJzdWIiOiJ1c2VyIn0.aBcD-_eFgH+/=signaturebytes",
   cwd: "/Users/nick/projects/my idea",
 };
+
+// Task b563f4da: only the browser launch's cap was raised (Mac-only helper,
+// sized for macOS); the Codex Terminal.app link keeps the original 2048.
+describe("launch-link caps", () => {
+  it("the browser launch cap is 2700; the Codex open-terminal cap stays 2048", () => {
+    expect(MAX_LAUNCH_URL_LENGTH).toBe(2700);
+    expect(MAX_OPEN_TERMINAL_URL_LENGTH).toBe(2048);
+  });
+});
 
 describe("buildLaunchDeepLink", () => {
   it("builds a vibecodes://launch URL with encoded params", () => {
@@ -459,7 +469,7 @@ describe("vibecodes:// URL budget (AC6)", () => {
     return { url: buildLaunchDeepLink({ relay: RELAY, session: SESSION, token: TOKEN, prompt }), prompt };
   }
 
-  it("realistic fixtures fit untruncated — full parity — and the URL stays ≤ 2048", () => {
+  it("realistic fixtures fit untruncated — full parity — and the URL stays within the cap", () => {
     const fixtures = [
       { name: "board-level", args: { appUrl: APP_URL, ideaId: IDEA_ID, ideaTitle: "My First App", mode: "existing" as const, repoUrl: null } },
       { name: "task-selected", args: { appUrl: APP_URL, ideaId: IDEA_ID, ideaTitle: "My First App", mode: "new" as const, repoUrl: null, newProject: { newProjectPath: "~/projects/my-first-app" }, taskId: "7c1c1c1c-2222-3333-4444-555555555555" } },
@@ -475,7 +485,7 @@ describe("vibecodes:// URL budget (AC6)", () => {
     }
   });
 
-  it("overflow truncates deterministically: MCP head survives, marker appended, URL ≤ 2048", () => {
+  it("overflow truncates deterministically: MCP head survives, marker appended, URL within the cap", () => {
     const { head, tail } = buildCompactBootstrapPromptParts({
       appUrl: APP_URL,
       ideaId: IDEA_ID,

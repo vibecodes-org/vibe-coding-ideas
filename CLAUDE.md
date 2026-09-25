@@ -111,8 +111,9 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   (self-heals poisoned rows). Only isolate when the mint route says another
   session is already live on the board (`isolate: true`) — the first/only
   session works in the main folder. Never tell a session to `cd` between the
-  two. Don't add words to the compact prompt's protected head: the realistic
-  repo-backed launch link is within ~5 chars of its cap (deep-link.test.ts).
+  two. Don't add words to the compact prompt's protected head: with the agent-guide
+  step, the tightest realistic browser launch keeps the optional helper token
+  with ~15 chars to spare under its 2700 cap (launch-claude-code.guide-bootstrap.test.ts).
 - **The browser launch link never drops the folder to make the prompt fit.**
   `buildBoundedDeepLink` is called with `cwdPolicy: "keep"` from
   `use-terminal-session.ts`: the prompt degrades around `cwd=` (directory echo

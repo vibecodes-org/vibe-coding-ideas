@@ -355,6 +355,31 @@ describe("the guide policy survives the real URL budget", () => {
     }
   }
 
+  // QA (Sentinel) defect 1: with the guide step, the optional helperToken was
+  // dropped in 28 of these 32 shapes at the old 2048 cap (14 before the guide
+  // step) — the helper then never got a fresh control-link credential. The
+  // raised browser cap keeps it, AND the full work step, in every one.
+  it("keeps the helper token AND the full work step in every realistic shape (no token-drop fallback needed)", () => {
+    for (const agent of AGENTS) {
+      for (const shape of SHAPES) {
+        for (const taskId of [TASK_ID, undefined]) {
+          for (const title of ["Personal spending", "A".repeat(80) + " past the header cap"]) {
+            const { args, cwd } = shapeArgs(shape, agent, { title, taskId });
+            const essentials = buildCompactPromptEssentials(args);
+            const label = `${agent}/${shape}/${taskId ? "task" : "board"}/title=${title.length}`;
+            const withToken = boundedBrowserLink(essentials, cwd, agent, REAL_TOKEN);
+            expect(withToken.ok, label).toBe(true);
+            if (!withToken.ok) continue;
+            expect(parseLaunchDeepLink(withToken.url)?.helperToken, label).toBe(REAL_TOKEN);
+            const prompt = expectCompleteBootstrap(withToken.url, essentials, label);
+            const fullWork = [essentials.work, essentials.packed?.work].filter(Boolean) as string[];
+            expect(fullWork.some((w) => prompt.includes(w)), `${label}: the FULL work step`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
   it("the design's long-folder example — spaces and non-ASCII in the path — still launches whole", () => {
     const folder = "/Users/Alex/Projects/Customer portal – shared checkout";
     for (const agent of AGENTS) {

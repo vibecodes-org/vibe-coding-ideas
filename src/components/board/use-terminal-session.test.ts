@@ -19,6 +19,7 @@ import {
   buildGuideBootstrapStep,
   GUIDE_LAUNCH_REFUSAL_MESSAGE,
 } from "@/lib/launch-claude-code";
+import { MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 import { FrameEncryptor, generateSessionKey, DIRECTION_BRIDGE_TO_BROWSER } from "@/lib/terminal/pty-crypto";
 
@@ -1811,9 +1812,9 @@ describe("useTerminalSession", () => {
   // shrinks around the folder, and a folder that can't fit at all refuses to
   // launch (toast) rather than launching folder-less.
   describe("the folder is never dropped from the launch link", () => {
-    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH=2048) that no prompt
+    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH) that no prompt
     // trimming could ever make room for it.
-    const veryLongPath = `/Users/nick/projects/${"x".repeat(2200)}`;
+    const veryLongPath = `/Users/nick/projects/${"x".repeat(MAX_LAUNCH_URL_LENGTH + 150)}`;
 
     it("refuses to launch (toast, no link fired) when the recorded folder can't fit the link at all — never a folder-less launch", async () => {
       const { result } = renderHook(() =>
@@ -1870,7 +1871,7 @@ describe("useTerminalSession", () => {
       const iframes = document.querySelectorAll("iframe");
       expect(iframes).toHaveLength(1);
       const src = iframes[0].getAttribute("src") ?? "";
-      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src.length).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
       expect(src).toContain(`cwd=${encodeURIComponent(realPath)}`);
       // Decode exactly as the helper/bridge do (URLSearchParams: `+` → space).
       const prompt = new URL(src).searchParams.get("prompt") ?? "";
@@ -1891,9 +1892,11 @@ describe("useTerminalSession", () => {
     // step doesn't survive alongside it, the link is rebuilt without it.
     it("drops the helperToken rather than the work step when both can't fit (new-project mode, long title, real-length tokens)", async () => {
       // 283 is a real token's length; the test relay URL / param set here is
-      // ~80 chars shorter than production's, so pad the tokens by that much
-      // to land the link at the same real-world squeeze.
-      const realToken = "x".repeat(283 + 40);
+      // ~80 chars shorter than production's, so pad the tokens by that much.
+      // Task b563f4da raised the cap by 652 chars (2048 → 2700), which lets
+      // this real-world shape keep the helper token — so pad both tokens by
+      // that much again to force the squeeze the fallback exists for.
+      const realToken = "x".repeat(283 + 40 + (MAX_LAUNCH_URL_LENGTH - 2048));
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => mintResponse({ bridgeToken: realToken, helperToken: realToken })),
@@ -1918,7 +1921,7 @@ describe("useTerminalSession", () => {
       const iframes = document.querySelectorAll("iframe");
       expect(iframes).toHaveLength(1);
       const src = iframes[0].getAttribute("src") ?? "";
-      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src.length).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
       expect(src).toContain(`token=${encodeURIComponent(realToken)}`); // the bridge token always rides
       expect(src).not.toContain("helperToken=");
       const prompt = new URL(src).searchParams.get("prompt") ?? "";

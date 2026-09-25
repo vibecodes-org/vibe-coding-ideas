@@ -38,7 +38,7 @@ import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
-import { buildOpenTerminalDeepLink, MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
+import { buildOpenTerminalDeepLink, MAX_OPEN_TERMINAL_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { fetchHelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 
@@ -588,7 +588,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         const result = buildBoundedDeepLink({
           essentials,
           cwd: resolvedCwd,
-          cap: MAX_LAUNCH_URL_LENGTH,
+          cap: MAX_OPEN_TERMINAL_URL_LENGTH,
           promptKeyOverhead: "&prompt=".length,
           // FR-12: the folder is never traded away to make the prompt fit —
           // same rule the in-browser vibecodes:// launch already follows.

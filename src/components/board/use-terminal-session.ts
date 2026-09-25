@@ -1727,8 +1727,9 @@ export function useTerminalSession(
         // skip above, which made the same click succeed or fail depending
         // on how recently the dock had polled the helper.
         // Task b563f4da: also rebuild when the launch was REFUSED with the
-        // token — the agent-guide step makes the required setup larger, and
-        // the token's ~290 chars are usually what lets it all ride.
+        // token — the agent-guide step makes the required setup larger. The
+        // cap was raised so realistic launches keep the token; this is the
+        // fallback for longer-than-realistic folders/titles.
         if (
           effectiveHelperToken &&
           (!result.ok || !promptCarriesWorkStep(result.url, essentials.work))
