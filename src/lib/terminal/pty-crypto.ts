@@ -156,8 +156,31 @@ export class FrameEncryptor {
     return this.subkey;
   }
 
-  /** @returns the full wire frame */
-  async encrypt(plaintext: Uint8Array): Promise<Uint8Array> {
+  /**
+   * @returns the full wire frame
+   *
+   * Calls are serialised, mirroring FrameDecryptor.decrypt (card 3746b312).
+   * The counter is claimed synchronously, but WebCrypto's encrypt (and the
+   * first call's key derivation) is asynchronous and nothing guarantees the
+   * promises settle in call order. Callers send each frame when its promise
+   * resolves, so two fast keystrokes could reach the wire as counter 1 then
+   * counter 0 — and the peer's decryptor requires strictly sequential
+   * counters, so that is fatal to the attach. Chaining makes each frame
+   * resolve only after the one before it, so sends go out in counter order.
+   */
+  encrypt(plaintext: Uint8Array): Promise<Uint8Array> {
+    const run = this.chain.then(() => this.encryptOne(plaintext));
+    // Keep the chain alive past a rejection (one failed frame must not wedge the stream).
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private chain: Promise<void> = Promise.resolve();
+
+  private async encryptOne(plaintext: Uint8Array): Promise<Uint8Array> {
     if (this.counter > MAX_COUNTER) {
       throw new PtyCryptoError("frame counter exhausted — attach must be rekeyed");
     }
