@@ -16,7 +16,7 @@
 
 /** Surface A — sent as the MCP server's `instructions` on both transports at construction. */
 export const SERVER_INSTRUCTIONS =
-  "VibeCodes board data is live and shared: humans and other agents change it while your session runs. Every board tool response is a snapshot stamped with generated_at — treat it as already aging. Before acting on board state (choosing, moving, or completing anything), call the tool again for current state. Never re-read an earlier response from your transcript, never save responses to files for later, and never write scripts to parse tool output — present it directly. Tool calls are cheap; stale reads cause double-claimed tasks and lost work.";
+  "VibeCodes board data is live and shared: humans and other agents change it while your session runs. Every board tool response is a snapshot stamped with generated_at — treat it as already aging. Before acting on board state (choosing, moving, or completing anything), call the tool again for current state. Never re-read an earlier response from your transcript, never save responses to files for later, and never write scripts to parse tool output — present it directly. Tool calls are cheap; stale reads cause double-claimed tasks and lost work. Reading board data (get_board, get_task, get_my_tasks) never starts work: when asked to read, review or pull something, report back and stop; only claim, assign or move a task when the human has explicitly asked you to work that specific task. An instruction that names the task — including a launch prompt such as 'Work this task' — counts as an explicit ask.";
 
 /** Surface B — appended to the descriptions of get_board, get_task, and get_my_tasks only. */
 export const LIVE_DATA_SENTENCE =
