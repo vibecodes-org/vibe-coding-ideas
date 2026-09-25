@@ -38,7 +38,7 @@ import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
-import { buildOpenTerminalDeepLink, MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
+import { buildOpenTerminalDeepLink, MAX_OPEN_TERMINAL_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { fetchHelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 
@@ -260,7 +260,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     (
       state: LaunchPathState,
       includeIsolationAdvisory = false,
-      agent: "claude" | "codex" = "claude"
+      agent: "claude" | "codex" = "claude",
+      guideBootstrap = false
     ): CompactPromptEssentials => {
       const { newProject, existingPath } = compactDirArgsFor(state);
       return buildCompactPromptEssentials({
@@ -274,6 +275,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         taskId: props.variant === "board" ? undefined : props.taskId,
         includeIsolationAdvisory,
         agent,
+        guideBootstrap,
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
@@ -466,7 +468,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // it). cwd rides the payload so a pinned/recorded existing folder is
       // honoured in the browser too.
       void resolveFreshLaunch().then(({ state, cwd }) => {
-        const essentials = buildCompactEssentials(state, false, agent);
+        // Task b563f4da: a fresh browser session also bootstraps the agent's
+        // own guide (CLAUDE.md / AGENTS.md) — see buildGuideBootstrapStep.
+        const essentials = buildCompactEssentials(state, false, agent, true);
         requestBrowserLaunch({
           essentials,
           cwd,
@@ -584,7 +588,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         const result = buildBoundedDeepLink({
           essentials,
           cwd: resolvedCwd,
-          cap: MAX_LAUNCH_URL_LENGTH,
+          cap: MAX_OPEN_TERMINAL_URL_LENGTH,
           promptKeyOverhead: "&prompt=".length,
           // FR-12: the folder is never traded away to make the prompt fit —
           // same rule the in-browser vibecodes:// launch already follows.

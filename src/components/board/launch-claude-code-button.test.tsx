@@ -54,6 +54,7 @@ vi.mock("@/actions/launch-path", () => ({
 }));
 
 import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
+import { buildGuideBootstrapStep, type CompactPromptEssentials } from "@/lib/launch-claude-code";
 
 /**
  * jsdom's `window.location.assign` isn't spy-able directly (its property
@@ -246,6 +247,37 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
 
     location.restore();
   });
+
+  // Task b563f4da: fresh browser launches carry the agent-guide step, matched
+  // to the chosen agent; the terminal-window launch (claude-cli://) doesn't.
+  it.each([
+    { name: /Launch in browser terminal/i, agent: "claude" as const },
+    { name: /Launch Codex in browser terminal/i, agent: "codex" as const },
+  ])("the $agent browser payload carries that agent's guide step, with the task id", async ({ name, agent }) => {
+    renderMenuItem({ taskId: "task-abc-789" });
+    fireEvent.click(screen.getByRole("menuitem", { name }));
+
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { essentials: CompactPromptEssentials };
+    expect(payload.essentials.guideStep).toBe(buildGuideBootstrapStep(agent));
+    expect(payload.essentials.headSteps).toContain(buildGuideBootstrapStep(agent));
+    expect(payload.essentials.packed?.guideStep).toBe(buildGuideBootstrapStep(agent));
+    expect(payload.essentials.work).toContain("task-abc-789");
+  });
+
+  it("the terminal-window (claude-cli://) launch does not carry the guide step", async () => {
+    const location = stubLocationAssign();
+
+    renderMenuItem();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Launch in Claude Code" }));
+
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    const url = location.assign.mock.calls[0][0] as string;
+    expect(decodeURIComponent(url)).not.toContain("checkout root");
+    expect(decodeURIComponent(url)).not.toContain("AGENTS.md");
+
+    location.restore();
+  });
 });
 
 /** Renders the "board" variant, which owns its own split-button + dropdown
@@ -391,6 +423,9 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
     expect(url).toContain("helperToken=");
     expect(url).not.toContain("session=");
     expect(global.fetch).toHaveBeenCalledWith("/api/terminal/helper/token", { method: "POST" });
+    // Task b563f4da is scoped to browser launches: the Terminal-window Codex
+    // launch keeps its existing prompt, with no guide step.
+    expect(new URL(url).searchParams.get("prompt") ?? "").not.toContain("checkout root");
 
     location.restore();
   });

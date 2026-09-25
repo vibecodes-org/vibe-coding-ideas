@@ -28,15 +28,35 @@ export const LAUNCH_HOST = "launch";
 export const OPEN_TERMINAL_HOST = "open-terminal";
 
 /**
- * Hard ceiling on the FULL `vibecodes://launch` URL. Custom-scheme URLs past an
- * OS limit can silently fail to launch (Windows ShellExecute ≈ 2083; macOS is
- * higher but finite — same failure mode as MAX_DEEP_LINK_URL_LENGTH in
- * launch-claude-code.ts). The dock budgets the optional `prompt` param against
- * this: budget = ceiling − (base link) − "&prompt=", enforced with the shared
+ * Hard ceiling on the FULL `vibecodes://launch` URL (the in-browser terminal
+ * launch). The dock budgets the optional `prompt` param against this: budget =
+ * ceiling − (base link) − "&prompt=", enforced with the shared
  * enforcePromptLength (MCP head always survives; tail gets the …(truncated)
  * marker).
+ *
+ * Sized for macOS, because the helper that receives this link is Mac-only.
+ * Nothing on that path caps lower: Launch Services hands the whole URL to the
+ * helper's `open-url` handler, which forks the bridge with it as one argv
+ * element (`--launch-url`), and parseLaunchDeepLink has no length limit. It
+ * was 2048 (a Windows ShellExecute ≈ 2083 margin) until task b563f4da's
+ * agent-guide step made the required setup ~410 chars bigger: at 2048 the
+ * optional ~300-char helperToken was dropped in 28 of 32 realistic launch
+ * shapes (14 before the guide step). 2700 keeps it in all 32 (none drop from
+ * 2686 up). Windows helper support (card 51d424f7) must re-check this value
+ * against ShellExecute's limit before shipping.
  */
-export const MAX_LAUNCH_URL_LENGTH = 2048;
+export const MAX_LAUNCH_URL_LENGTH = 2700;
+
+/**
+ * Hard ceiling on the FULL `vibecodes://open-terminal` URL (the Codex
+ * Terminal.app launch). Kept at the original 2048 when MAX_LAUNCH_URL_LENGTH
+ * was raised for the browser launch: this path carries no agent-guide step,
+ * so it never needed the extra room. Custom-scheme URLs past an OS limit can
+ * silently fail to launch (Windows ShellExecute ≈ 2083; macOS is higher but
+ * finite — same failure mode as MAX_DEEP_LINK_URL_LENGTH in
+ * launch-claude-code.ts).
+ */
+export const MAX_OPEN_TERMINAL_URL_LENGTH = 2048;
 
 export interface LaunchDeepLinkParams {
   /** Relay base ws URL the helper should dial out to. */
@@ -256,9 +276,22 @@ export function buildLaunchDeepLink({
  * lost its "work this task" step entirely (see launch-claude-code.ts's
  * assembleAtomicTail ladder). Mirrored byte-for-byte in the shared .mjs
  * builder (drift-tested in deep-link.test.ts).
+ *
+ * `/`, `:`, `,` and `;` also ride raw (task b563f4da, 25 Sep 2026): all four
+ * are legal unescaped in a URL query (RFC 3986 pchar), and the WHATWG URL parser
+ * + URLSearchParams every helper decodes with pass them through untouched —
+ * so no helper release is needed. The bootstrap prompt carries ~50 of them
+ * (the MCP URL, `read/follow`, tool lists, commas), worth ~110 chars: part of
+ * the room the agent-guide step needs. `&`, `+`, `#`, `%`, `=` and every
+ * other reserved or unsafe character stay percent-encoded.
  */
 export function encodePromptParam(prompt: string): string {
-  return encodeURIComponent(prompt).replace(/%20/g, "+");
+  return encodeURIComponent(prompt)
+    .replace(/%20/g, "+")
+    .replace(/%2F/g, "/")
+    .replace(/%3A/g, ":")
+    .replace(/%2C/g, ",")
+    .replace(/%3B/g, ";");
 }
 
 /** A terminal dimension must be a positive, finite, sane integer — mirrors

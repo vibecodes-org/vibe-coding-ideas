@@ -31,6 +31,10 @@ const ideaId = "a4105af9-e1e0-4d5b-94ab-1c3e20ea4522";
 const taskId = "ab7a7231-0b7c-47f6-921d-004551b6e51f";
 const APP_URL = "https://vibecodes.co.uk";
 type Essentials = ReturnType<typeof buildCompactPromptEssentials>;
+// The launch-link cap when the 3 Sep incident happened. The knife-edge tests
+// below pin THIS cap on purpose — they document why the levers exist; task
+// b563f4da later raised MAX_LAUNCH_URL_LENGTH itself for the agent-guide step.
+const INCIDENT_CAP = 2048;
 
 /** Exactly what use-terminal-session.ts's fresh-launch buildLink closure fires. */
 function realBrowserLink(helperToken: string | undefined) {
@@ -49,11 +53,16 @@ function realBrowserLink(helperToken: string | undefined) {
     });
 }
 
-function build(essentials: Essentials, cwd: string, helperToken: string | undefined) {
+function build(
+  essentials: Essentials,
+  cwd: string,
+  helperToken: string | undefined,
+  cap = MAX_LAUNCH_URL_LENGTH
+) {
   return buildBoundedDeepLink({
     essentials,
     cwd,
-    cap: MAX_LAUNCH_URL_LENGTH,
+    cap,
     promptKeyOverhead: "&prompt=".length,
     cwdPolicy: "keep",
     promptMeasure: formEncodedLength,
@@ -71,13 +80,14 @@ function expectWholePrompt(
   result: ReturnType<typeof buildBoundedDeepLink>,
   essentials: Essentials,
   cwd: string,
-  minHeadroom: number
+  minHeadroom: number,
+  cap = MAX_LAUNCH_URL_LENGTH
 ) {
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.droppedCwd).toBe(false);
-  expect(result.url.length).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
-  expect(MAX_LAUNCH_URL_LENGTH - result.url.length).toBeGreaterThanOrEqual(minHeadroom);
+  expect(result.url.length).toBeLessThanOrEqual(cap);
+  expect(cap - result.url.length).toBeGreaterThanOrEqual(minHeadroom);
   const parsed = parseLaunchDeepLink(result.url);
   expect(parsed?.cwd).toBe(cwd);
   const prompt = parsed?.prompt ?? "";
@@ -121,12 +131,12 @@ describe("in-browser launch prompt budget — the 3 Sep 2026 task-launch shape",
     const legacy = buildBoundedDeepLink({
       essentials,
       cwd,
-      cap: MAX_LAUNCH_URL_LENGTH,
+      cap: INCIDENT_CAP,
       promptKeyOverhead: "&prompt=".length,
       cwdPolicy: "keep",
       buildLink: legacyLink,
     });
-    const fixed = build(essentials, cwd, realToken);
+    const fixed = build(essentials, cwd, realToken, INCIDENT_CAP);
     expect(legacy.ok && fixed.ok).toBe(true);
     if (!legacy.ok || !fixed.ok) return;
     const everything = [...(essentials.headSteps ?? []), essentials.work as string];
@@ -137,25 +147,36 @@ describe("in-browser launch prompt budget — the 3 Sep 2026 task-launch shape",
     expect(everything.every((s) => legacyPrompt.includes(s))).toBe(false);
     const fixedPrompt = promptOf(fixed);
     expect(everything.every((s) => fixedPrompt.includes(s))).toBe(true);
-    // And the same content costs ~2 chars less per space on the wire.
+    // And the same content costs 2 chars less per space on the wire — plus 2
+    // per raw `/ : , ;` since task b563f4da.
     const spaces = fixedPrompt.split(" ").length - 1;
+    const querySafe = (fixedPrompt.match(/[/:,;]/g) ?? []).length;
     expect(spaces).toBeGreaterThan(100);
-    expect(encodeURIComponent(fixedPrompt).length - formEncodedLength(fixedPrompt)).toBe(2 * spaces);
+    expect(encodeURIComponent(fixedPrompt).length - formEncodedLength(fixedPrompt)).toBe(
+      2 * (spaces + querySafe)
+    );
   });
 
-  it("WORST shape (80-char title, new-project, task) loses the work step WITH the helper token — and keeps it WITHOUT (why fireLaunchDeepLink drops the token)", () => {
+  it("WORST shape (80-char title, new-project, task) at the incident's 2048 cap loses the work step WITH the helper token — and keeps it WITHOUT (why fireLaunchDeepLink drops the token)", () => {
     const { essentials, cwd } = newProjectShape(
       "A".repeat(80) + " extra words past the eighty char header cap"
     );
-    const withHelper = build(essentials, cwd, realToken);
+    const withHelper = build(essentials, cwd, realToken, INCIDENT_CAP);
     expect(withHelper.ok).toBe(true);
     // Documented, not desired: at this shape the work step can't ride
     // alongside two 283-char tokens even with `+` encoding …
     expect(promptOf(withHelper)).not.toContain(essentials.work as string);
     // … which is exactly the condition fireLaunchDeepLink rebuilds on. The
     // helper-token-less link carries everything, with real headroom.
-    const withoutHelper = build(essentials, cwd, undefined);
-    expectWholePrompt(withoutHelper, essentials, cwd, 150);
+    const withoutHelper = build(essentials, cwd, undefined, INCIDENT_CAP);
+    expectWholePrompt(withoutHelper, essentials, cwd, 150, INCIDENT_CAP);
+  });
+
+  it("WORST shape at today's cap: the work step rides WITH the helper token, so it is no longer dropped", () => {
+    const { essentials, cwd } = newProjectShape(
+      "A".repeat(80) + " extra words past the eighty char header cap"
+    );
+    expectWholePrompt(build(essentials, cwd, realToken), essentials, cwd, 0);
   });
 
   it("existing-folder mode with a task: the full work step rides; the directory echo rides once the helper token is gone", () => {

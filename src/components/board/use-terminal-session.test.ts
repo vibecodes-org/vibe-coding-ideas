@@ -14,7 +14,12 @@ import {
   type AttachExistingPair,
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
-import { buildCompactPromptEssentials } from "@/lib/launch-claude-code";
+import {
+  buildCompactPromptEssentials,
+  buildGuideBootstrapStep,
+  GUIDE_LAUNCH_REFUSAL_MESSAGE,
+} from "@/lib/launch-claude-code";
+import { MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 import { FrameEncryptor, generateSessionKey, DIRECTION_BRIDGE_TO_BROWSER } from "@/lib/terminal/pty-crypto";
 
@@ -1807,9 +1812,9 @@ describe("useTerminalSession", () => {
   // shrinks around the folder, and a folder that can't fit at all refuses to
   // launch (toast) rather than launching folder-less.
   describe("the folder is never dropped from the launch link", () => {
-    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH=2048) that no prompt
+    // Long enough alone (well past MAX_LAUNCH_URL_LENGTH) that no prompt
     // trimming could ever make room for it.
-    const veryLongPath = `/Users/nick/projects/${"x".repeat(2200)}`;
+    const veryLongPath = `/Users/nick/projects/${"x".repeat(MAX_LAUNCH_URL_LENGTH + 150)}`;
 
     it("refuses to launch (toast, no link fired) when the recorded folder can't fit the link at all — never a folder-less launch", async () => {
       const { result } = renderHook(() =>
@@ -1834,9 +1839,9 @@ describe("useTerminalSession", () => {
 
       // No link fired: a folder-less launch would start the agent at `/`.
       expect(document.querySelectorAll("iframe")).toHaveLength(0);
-      expect(toastError).toHaveBeenCalledWith(
-        "Project path too long to launch — open the folder manually and run Claude Code there",
-      );
+      // Task b563f4da: a fresh browser launch carries required setup (the
+      // agent-guide step), so the refusal uses the design's copy.
+      expect(toastError).toHaveBeenCalledWith(GUIDE_LAUNCH_REFUSAL_MESSAGE);
     });
 
     it("keeps the folder and fits the prompt when the full prompt + folder used to overflow the cap (the personal-finance-board repro)", async () => {
@@ -1866,7 +1871,7 @@ describe("useTerminalSession", () => {
       const iframes = document.querySelectorAll("iframe");
       expect(iframes).toHaveLength(1);
       const src = iframes[0].getAttribute("src") ?? "";
-      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src.length).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
       expect(src).toContain(`cwd=${encodeURIComponent(realPath)}`);
       // Decode exactly as the helper/bridge do (URLSearchParams: `+` → space).
       const prompt = new URL(src).searchParams.get("prompt") ?? "";
@@ -1887,9 +1892,11 @@ describe("useTerminalSession", () => {
     // step doesn't survive alongside it, the link is rebuilt without it.
     it("drops the helperToken rather than the work step when both can't fit (new-project mode, long title, real-length tokens)", async () => {
       // 283 is a real token's length; the test relay URL / param set here is
-      // ~80 chars shorter than production's, so pad the tokens by that much
-      // to land the link at the same real-world squeeze.
-      const realToken = "x".repeat(283 + 40);
+      // ~80 chars shorter than production's, so pad the tokens by that much.
+      // Task b563f4da raised the cap by 652 chars (2048 → 2700), which lets
+      // this real-world shape keep the helper token — so pad both tokens by
+      // that much again to force the squeeze the fallback exists for.
+      const realToken = "x".repeat(283 + 40 + (MAX_LAUNCH_URL_LENGTH - 2048));
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => mintResponse({ bridgeToken: realToken, helperToken: realToken })),
@@ -1914,13 +1921,18 @@ describe("useTerminalSession", () => {
       const iframes = document.querySelectorAll("iframe");
       expect(iframes).toHaveLength(1);
       const src = iframes[0].getAttribute("src") ?? "";
-      expect(src.length).toBeLessThanOrEqual(2048);
+      expect(src.length).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
       expect(src).toContain(`token=${encodeURIComponent(realToken)}`); // the bridge token always rides
       expect(src).not.toContain("helperToken=");
       const prompt = new URL(src).searchParams.get("prompt") ?? "";
       expect(prompt).toContain("mkdir -p");
       expect(prompt).toContain("record_project_path");
-      expect(prompt).toContain("NOT get_my_tasks"); // the FULL work step
+      // Task b563f4da: the agent-guide step now rides too, so at this worst
+      // shape the work step rides in its COMPACT form — whole, with the
+      // idea id and the ask-first rule.
+      expect(prompt).toContain(buildGuideBootstrapStep("claude"));
+      expect(prompt).toContain("Find work, but ASK first: get_board (idea_id idea-1)");
+      expect(prompt.trimEnd().endsWith("before starting it.")).toBe(true);
     });
 
     // Nick, 3 Sep 2026 (dock counterpart of the launch button's fresh read):
@@ -1982,7 +1994,12 @@ describe("useTerminalSession", () => {
     });
 
     it("keeps the helperToken when the work step already fits alongside it (short title, existing folder)", async () => {
-      const realToken = "x".repeat(283 + 40);
+      // Task b563f4da: with the agent-guide step on every fresh browser
+      // launch, two real-length tokens no longer leave room for the full
+      // work step (the helper token is dropped — see the test above). Short
+      // tokens keep this test on its point: when everything fits, the
+      // helper token rides.
+      const realToken = "x".repeat(120);
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => mintResponse({ bridgeToken: realToken, helperToken: realToken })),
@@ -2138,6 +2155,101 @@ describe("useTerminalSession", () => {
       const prompt = promptFromLastIframe();
       expect(prompt).toContain("claude mcp add -s local");
       expect(prompt).not.toContain("codex mcp add");
+    });
+  });
+
+  // Task b563f4da (docs/browser-agent-guide-bootstrap-ux-design.html): every
+  // FRESH browser launch — button payload, dock/chooser hook launch, either
+  // agent — carries the agent-guide step; a resume never does.
+  describe("agent-guide bootstrap on fresh browser launches (task b563f4da)", () => {
+    const folder = "/Users/nick/projects/recipes";
+    const promptOfLaunch = (): string => {
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      return new URL(src).searchParams.get("prompt") ?? "";
+    };
+
+    async function hookLaunch(agent?: "claude" | "codex"): Promise<string> {
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          { ...descriptor, recordedProjectPaths: [{ absolute_path: folder, hostname: "nicks-mac" }] },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true, agent });
+      });
+      return promptOfLaunch();
+    }
+
+    it("a dock/chooser Claude launch reads CLAUDE.md natively (AGENTS.md as the fallback source)", async () => {
+      const prompt = await hookLaunch();
+      expect(prompt).toContain(buildGuideBootstrapStep("claude"));
+      expect(prompt).not.toContain(buildGuideBootstrapStep("codex"));
+      expect(prompt).toContain("claude mcp add -s local");
+    });
+
+    it("a dock/chooser Codex launch reads AGENTS.md natively (CLAUDE.md as the fallback source)", async () => {
+      const prompt = await hookLaunch("codex");
+      expect(prompt).toContain(buildGuideBootstrapStep("codex"));
+      expect(prompt).not.toContain(buildGuideBootstrapStep("claude"));
+      expect(prompt).toContain('agent: "codex"');
+    });
+
+    it.each(["claude", "codex"] as const)(
+      "%s: a button-built payload and a hook-built launch for the same folder fire the same prompt",
+      async (agent) => {
+        const hookPrompt = await hookLaunch(agent);
+        document.querySelectorAll("iframe").forEach((frame) => frame.remove());
+
+        const { result } = renderHook(() =>
+          useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand: vi.fn() }),
+        );
+        result.current.containerRef.current = document.createElement("div");
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        act(() => {
+          // Exactly what launch-claude-code-button.tsx's handleLaunchInBrowser
+          // puts on the bus for this state.
+          result.current.actions.launchFromBus({
+            essentials: buildCompactPromptEssentials({
+              appUrl: "https://vibecodes.co.uk",
+              ideaId: descriptor.ideaId,
+              ideaTitle: descriptor.ideaTitle,
+              mode: "existing",
+              repoUrl: null,
+              existingPath: folder,
+              agent,
+              guideBootstrap: true,
+            }),
+            cwd: folder,
+            agent,
+          });
+        });
+        await act(async () => {
+          await result.current.actions.connect({ autoLaunch: true });
+        });
+        expect(promptOfLaunch()).toBe(hookPrompt);
+        expect(hookPrompt).toContain(buildGuideBootstrapStep(agent));
+      },
+    );
+
+    it("a resume carries no bootstrap prompt at all — so no new guide step", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      act(() => {
+        result.current.actions.launchFromBus({ resumeId: "claude-conv-carried", cwd: folder });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+      const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+      expect(src).toContain("resume_id=claude-conv-carried");
+      expect(src).not.toContain("prompt=");
     });
   });
 

@@ -106,6 +106,7 @@ import {
   buildBoundedDeepLink,
   buildCompactPromptEssentials,
   formEncodedLength,
+  GUIDE_LAUNCH_REFUSAL_MESSAGE,
   resolveAppUrl,
   resolveDefaultLaunchState,
   resolveEffectiveLaunchTarget,
@@ -1378,6 +1379,9 @@ export function useTerminalSession(
       // path already threads agent (buildCompactEssentials); this closes the
       // hook path's gap.
       agent: carried?.agent,
+      // Task b563f4da: same agent-guide bootstrap as the launch button's
+      // browser payload, so a dock/chooser fresh session gets it too.
+      guideBootstrap: true,
     });
     return { essentials, cwd: resolveLaunchCwd(s, effectiveTarget.cwd), agent: carried?.agent };
   }, [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths]);
@@ -1722,7 +1726,14 @@ export function useTerminalSession(
         // degradation — deterministic, unlike the <30s status-freshness
         // skip above, which made the same click succeed or fail depending
         // on how recently the dock had polled the helper.
-        if (result.ok && effectiveHelperToken && !promptCarriesWorkStep(result.url, essentials.work)) {
+        // Task b563f4da: also rebuild when the launch was REFUSED with the
+        // token — the agent-guide step makes the required setup larger. The
+        // cap was raised so realistic launches keep the token; this is the
+        // fallback for longer-than-realistic folders/titles.
+        if (
+          effectiveHelperToken &&
+          (!result.ok || !promptCarriesWorkStep(result.url, essentials.work))
+        ) {
           const withoutHelperToken = buildWithHelperToken(undefined);
           if (withoutHelperToken.ok) {
             result = withoutHelperToken;
@@ -1731,9 +1742,16 @@ export function useTerminalSession(
         }
         if (!result.ok) {
           logger.error("Terminal deep-link build failed", {
-            reason: "path_too_long",
+            reason: essentials.guideStep ? "required_setup_too_long" : "path_too_long",
           });
-          toast.error("Project path too long to launch — open the folder manually and run Claude Code there");
+          // A guide launch refuses rather than fire partial setup (design:
+          // "Launch refusal copy"). The copy-command fallback doesn't carry
+          // the guide policy, so the design's shorter-folder-only copy applies.
+          toast.error(
+            essentials.guideStep
+              ? GUIDE_LAUNCH_REFUSAL_MESSAGE
+              : "Project path too long to launch — open the folder manually and run Claude Code there",
+          );
           setLaunchPhase("helper-timeout");
           return;
         }

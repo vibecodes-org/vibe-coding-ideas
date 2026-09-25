@@ -8,6 +8,7 @@ import {
   LAUNCH_HOST,
   OPEN_TERMINAL_HOST,
   MAX_LAUNCH_URL_LENGTH,
+  MAX_OPEN_TERMINAL_URL_LENGTH,
 } from "./deep-link";
 // The bridge/helper PARSES with the shared .mjs. Importing it here pins the two
 // implementations together: a link this (TS) module builds MUST parse back to the
@@ -25,6 +26,15 @@ const SAMPLE = {
   token: "eyJzdWIiOiJ1c2VyIn0.aBcD-_eFgH+/=signaturebytes",
   cwd: "/Users/nick/projects/my idea",
 };
+
+// Task b563f4da: only the browser launch's cap was raised (Mac-only helper,
+// sized for macOS); the Codex Terminal.app link keeps the original 2048.
+describe("launch-link caps", () => {
+  it("the browser launch cap is 2700; the Codex open-terminal cap stays 2048", () => {
+    expect(MAX_LAUNCH_URL_LENGTH).toBe(2700);
+    expect(MAX_OPEN_TERMINAL_URL_LENGTH).toBe(2048);
+  });
+});
 
 describe("buildLaunchDeepLink", () => {
   it("builds a vibecodes://launch URL with encoded params", () => {
@@ -374,19 +384,42 @@ describe("buildLaunchDeepLink with a prompt", () => {
     expect(encodePromptParam(prompt)).toBe("a+b%2Bc++d");
     const url = buildLaunchDeepLink({ ...SAMPLE, prompt });
     expect(parseLaunchDeepLink(url)?.prompt).toBe(prompt);
-    // Everything except the space is encoded exactly as encodeURIComponent
-    // would — `+`-for-space is the ONLY difference.
+    // Everything except the space and the query-safe `/ : , ;` is encoded
+    // exactly as encodeURIComponent would.
     expect(encodePromptParam(HOSTILE_PROMPT)).toBe(
-      encodeURIComponent(HOSTILE_PROMPT).replace(/%20/g, "+")
+      encodeURIComponent(HOSTILE_PROMPT).replace(/%20/g, "+").replace(/%3B/g, ";")
     );
   });
 
   it("the `+` encoding is measurably shorter than %20 on a real-shaped prompt", () => {
     const prompt = "1. Connect the board tools (if they're already available, skip this step): run it";
     expect(encodePromptParam(prompt).length).toBeLessThan(encodeURIComponent(prompt).length);
+    // 2 chars per space, plus 2 per raw `,`/`:` (see the next test).
     expect(encodeURIComponent(prompt).length - encodePromptParam(prompt).length).toBe(
-      2 * (prompt.split(" ").length - 1)
+      2 * (prompt.split(" ").length - 1) + 2 * 2
     );
+  });
+
+  // Task b563f4da: `/ : , ;` are legal unescaped in a URL query and pass
+  // through URLSearchParams untouched, so they ride raw — ~110 chars back on
+  // the real bootstrap prompt, part of the room the agent-guide step needs.
+  it("leaves `/ : , ;` raw, keeps every other reserved character encoded, and the shared parser restores all of them", () => {
+    const prompt = "run `claude mcp add https://vibecodes.co.uk/api/mcp`, read/follow; a&b=c#d?e+f%g";
+    expect(encodePromptParam(prompt)).toBe(
+      "run+%60claude+mcp+add+https://vibecodes.co.uk/api/mcp%60,+read/follow;+a%26b%3Dc%23d%3Fe%2Bf%25g"
+    );
+    const url = buildLaunchDeepLink({ ...SAMPLE, prompt });
+    expect(parseLaunchDeepLink(url)?.prompt).toBe(prompt);
+    // Browsers parse it back identically (WHATWG URL + URLSearchParams).
+    expect(new URL(url).searchParams.get("prompt")).toBe(prompt);
+  });
+
+  it("the raw `/ : , ;` never let a prompt forge another param — a prompt full of them still parses as one value", () => {
+    const prompt = "x/&cwd=/etc,;:token=forged";
+    const parsed = parseLaunchDeepLink(buildLaunchDeepLink({ ...SAMPLE, prompt }));
+    expect(parsed?.prompt).toBe(prompt);
+    expect(parsed?.cwd).toBe(SAMPLE.cwd);
+    expect(parsed?.token).toBe(SAMPLE.token);
   });
 
   it("omits prompt entirely when absent — promptless links keep today's exact shape (AC8)", () => {
@@ -436,7 +469,7 @@ describe("vibecodes:// URL budget (AC6)", () => {
     return { url: buildLaunchDeepLink({ relay: RELAY, session: SESSION, token: TOKEN, prompt }), prompt };
   }
 
-  it("realistic fixtures fit untruncated — full parity — and the URL stays ≤ 2048", () => {
+  it("realistic fixtures fit untruncated — full parity — and the URL stays within the cap", () => {
     const fixtures = [
       { name: "board-level", args: { appUrl: APP_URL, ideaId: IDEA_ID, ideaTitle: "My First App", mode: "existing" as const, repoUrl: null } },
       { name: "task-selected", args: { appUrl: APP_URL, ideaId: IDEA_ID, ideaTitle: "My First App", mode: "new" as const, repoUrl: null, newProject: { newProjectPath: "~/projects/my-first-app" }, taskId: "7c1c1c1c-2222-3333-4444-555555555555" } },
@@ -452,7 +485,7 @@ describe("vibecodes:// URL budget (AC6)", () => {
     }
   });
 
-  it("overflow truncates deterministically: MCP head survives, marker appended, URL ≤ 2048", () => {
+  it("overflow truncates deterministically: MCP head survives, marker appended, URL within the cap", () => {
     const { head, tail } = buildCompactBootstrapPromptParts({
       appUrl: APP_URL,
       ideaId: IDEA_ID,
