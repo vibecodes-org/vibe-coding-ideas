@@ -451,6 +451,11 @@ async function handleLaunchUrl(rawUrl) {
   // through verbatim so test seams (e.g. BRIDGE_CMD) keep working; in production
   // the bridge defaults the spawned command to `claude`.
   const child = fork(BRIDGE_ENTRY, ["--launch-url", rawUrl], {
+    // Card 3ae71b07: never let the bridge inherit OUR cwd — a LaunchServices-
+    // started app runs at `/`, and that's where a folder-less launch used to
+    // start the agent. The bridge now checks the folder itself; this is the
+    // second guard.
+    cwd: os.homedir(),
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
