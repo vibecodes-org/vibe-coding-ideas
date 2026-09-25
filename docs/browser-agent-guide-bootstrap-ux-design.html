@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser launch · Native agent guide bootstrap</title>
+  <style>
+    :root { color-scheme: light; --paper:#f5f7fb; --surface:#ffffff; --ink:#172b4d; --muted:#46566e; --blue:#2448a6; --line:#8b98ae; --wash:#e7edf9; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:17px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1080px; margin:auto; padding:48px 32px 80px; }
+    header { border-top:8px solid var(--blue); padding-top:24px; }
+    h1,h2 { font-family:"Avenir Next","Trebuchet MS",sans-serif; line-height:1.15; letter-spacing:-.025em; }
+    h1 { font-size:clamp(34px,5vw,60px); max-width:850px; margin:14px 0 24px; }
+    h2 { font-size:30px; margin:0 0 20px; }
+    h3 { font-size:19px; margin:0 0 10px; }
+    p { margin:0 0 16px; }
+    .eyebrow, .meta { color:var(--muted); font-size:14px; }
+    .eyebrow { font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .lead { max-width:800px; font-size:21px; }
+    section { margin-top:44px; padding-top:32px; border-top:1px solid var(--line); }
+    a { color:var(--blue); text-underline-offset:3px; }
+    a:focus-visible, summary:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
+    nav { display:flex; gap:8px 20px; flex-wrap:wrap; margin-top:24px; }
+    nav a { display:inline-flex; min-height:44px; align-items:center; }
+    code,pre,.file { font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; }
+    code { font-size:.9em; overflow-wrap:anywhere; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.7; background:var(--wash); border-left:4px solid var(--blue); padding:20px; margin:16px 0; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .card { padding:22px; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+    .file { display:block; font-size:22px; color:var(--blue); margin:8px 0; }
+    .stamp { font-size:13px; font-weight:700; color:var(--blue); }
+    .journey { padding-left:30px; }
+    li { padding-left:5px; margin-bottom:12px; }
+    table { border-collapse:collapse; width:100%; font-size:15px; }
+    th,td { text-align:left; vertical-align:top; padding:14px; border-bottom:1px solid var(--line); }
+    th { background:var(--wash); }
+    .table-scroll { overflow:auto; }
+    .table-scroll table { min-width:620px; }
+    caption { text-align:left; color:var(--muted); padding:0 0 14px; }
+    blockquote { margin:12px 0; padding:16px 20px; border-left:4px solid var(--blue); background:var(--surface); }
+    .terminal { background:#172b4d; color:#f5f7fb; border-radius:10px; padding:24px; }
+    .terminal p { font-family:"SFMono-Regular",Consolas,monospace; font-size:14px; overflow-wrap:anywhere; }
+    .terminal .label { color:#c3d2ef; font:14px system-ui,sans-serif; border-bottom:1px solid #8b98ae; padding-bottom:12px; }
+    .note { padding:18px 22px; background:var(--wash); border-radius:8px; }
+    details { border:1px solid var(--line); border-radius:8px; padding:0 20px 14px; margin-top:16px; }
+    summary { cursor:pointer; min-height:52px; padding:12px 0; font-weight:650; }
+    footer { margin-top:48px; color:var(--muted); font-size:14px; }
+    @media(max-width:620px) { main { padding:24px 20px 48px; } .grid { grid-template-columns:1fr; } section { margin-top:30px; padding-top:24px; } h2 { font-size:25px; } .card,.terminal { padding:18px; } }
+    @media print { body { background:white; font-size:12pt; } main { max-width:none; padding:0; } nav { display:none; } pre,.card,.terminal,tr { break-inside:avoid; } .terminal { color:var(--ink); background:var(--wash); } .terminal .label { color:var(--muted); } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">VibeCodes / Launch behavior / UX design</p>
+    <h1>The project’s guidance follows the agent.</h1>
+    <p class="lead">A fresh browser session reads its native guide. When only the other agent’s guide exists, it creates the missing native guide from that source, preserving the project’s instructions.</p>
+    <p class="meta">Task b563f4da-b6e2-4cb2-9c36-37462682b232 · Compass · 10 September 2026</p>
+    <p class="meta">Design basis: completed <strong>Requirements</strong> step bdd21ccb-61b5-4f06-92b3-d5f533da1306. This document makes its eight acceptance criteria concrete; it does not change their scope.</p>
+    <nav aria-label="Document sections">
+      <a href="#journey">Launch journey</a><a href="#matrix">Guide decisions</a><a href="#copy">Bootstrap copy</a><a href="#states">Recovery</a><a href="#budget">Prompt budget</a><a href="#review">Review checklist</a>
+    </nav>
+  </header>
+
+  <section aria-labelledby="decision-title">
+    <h2 id="decision-title">One automatic step in the existing terminal</h2>
+    <p>Keep the existing agent choice, folder choice, launch action, dock, and terminal input. Add guide inspection to the initial agent prompt, after the working folder is safe and before task work. The browser cannot know which files exist on the user’s machine; the launched local agent performs the inspection and any permitted creation.</p>
+    <div class="grid">
+      <article class="card"><span class="stamp">CLAUDE CODE</span><span class="file">CLAUDE.md</span><p>Native guide. Use <code>AGENTS.md</code> as the source only when this file is absent.</p></article>
+      <article class="card"><span class="stamp">CODEX</span><span class="file">AGENTS.md</span><p>Native guide. Use <code>CLAUDE.md</code> as the source only when this file is absent.</p></article>
+    </div>
+    <p style="margin-top:18px">No new confirmation, toast on successful guide loading, file picker, or setup modal. Guide outcomes belong in ordinary terminal narration. Keep authentication and folder recovery in the existing flows.</p>
+  </section>
+
+  <section id="journey" aria-labelledby="journey-title">
+    <h2 id="journey-title">From launch to work</h2>
+    <ol class="journey">
+      <li><strong>Choose the agent and start a fresh session.</strong> Task controls preserve the selected task ID. Board controls and the dock’s fresh-session choice preserve board context. A chooser resume or reconnect continues the previous conversation and receives no new guide bootstrap.</li>
+      <li><strong>Resolve the project folder.</strong> Preserve the selected absolute folder in the browser launch link. Where an existing project is unknown or a new project must be created/cloned, complete the existing safe-directory flow first. Never inspect or write a guide in <code>/</code> or a home directory while searching for the project.</li>
+      <li><strong>Confirm the current checkout.</strong> Run <code>pwd</code>; verify it identifies the intended working checkout. Complete any required clone before inspecting guides. When isolation has already placed the session in a worktree, inspect that worktree’s root. Do not change into the main checkout to find a guide absent from this checkout.</li>
+      <li><strong>Inspect and load the guide.</strong> Apply the matrix below to the two exact root filenames. Read the applicable guide completely before normal work; create only the missing native guide, using the fallback as its source. Follow valid project guidance within the active instruction hierarchy.</li>
+      <li><strong>Finish MCP setup and record the project path.</strong> Retain each agent’s existing MCP connection/authentication and workflow-attribution directions. Once connected, record the verified main-checkout path and real hostname before task pickup. Guide inspection needs no MCP; it may precede connection. A worktree’s guide path and the recorded main-project path serve different purposes.</li>
+      <li><strong>Continue the existing work instruction.</strong> Task launch retrieves its specific task; board launch reads the current board and follows eligibility/approval safeguards. Respect the native guide’s applicable workflow requirements. Never fabricate a board assignment from the bootstrap.</li>
+    </ol>
+    <div class="note">Ordering constraint: safe current checkout → guide inspection/read/conditional creation → task work. MCP connection may occur before inspection, but path recording requires connection and a verified main checkout. Preserve existing setup ordering wherever it already satisfies these constraints.</div>
+  </section>
+
+  <section id="matrix" aria-labelledby="matrix-title">
+    <h2 id="matrix-title">All four filesystem states</h2>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Guide existence comparison; scroll horizontally on small screens">
+      <table>
+        <caption>Decisions use the current working checkout, independently for every fresh launch.</caption>
+        <thead><tr><th scope="col">Root files present</th><th scope="col">Claude Code</th><th scope="col">Codex</th><th scope="col">Files changed</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Both files</th><td>Read/follow CLAUDE.md.</td><td>Read/follow AGENTS.md.</td><td>None. No automatic merge or sync. Follow references in the native guide where applicable.</td></tr>
+          <tr><th scope="row">CLAUDE.md only</th><td>Read/follow CLAUDE.md.</td><td>Read CLAUDE.md; derive, create, then read/follow AGENTS.md.</td><td>Codex creates AGENTS.md only.</td></tr>
+          <tr><th scope="row">AGENTS.md only</th><td>Read AGENTS.md; derive, create, then read/follow CLAUDE.md.</td><td>Read/follow AGENTS.md.</td><td>Claude creates CLAUDE.md only.</td></tr>
+          <tr><th scope="row">Neither file</th><td>Continue without a guide.</td><td>Continue without a guide.</td><td>None. No generic template or invented conventions.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:18px">An unreadable file, directory at the expected filename, or other inspection failure is an error, not an absent guide. Never use a failed read as permission to replace an existing path. An existing empty native guide is still an existing file: preserve it.</p>
+  </section>
+
+  <section id="copy" aria-labelledby="copy-title">
+    <h2 id="copy-title">Exact agent-facing guidance</h2>
+    <p>Substitute <code>{native}</code> and <code>{fallback}</code> using the mapping above. The full version defines the intended behavior. The compact version carries the same required policy in the browser prompt. Neither replaces the safe-folder, MCP, path-recording, identity, or work-context instructions.</p>
+    <h3>Full semantic specification</h3>
+    <pre>After confirming the safe current project checkout, and before task work, inspect its root for {native} (your native guide) and {fallback}. If {native} exists, read and follow it; change neither guide. If only {fallback} exists, read it fully and create {native} from it, preserving substantive project guidance and adapting only agent-specific CLI/workflow directions. Create only if the destination is still absent: use a no-clobber creation operation so a concurrently created file cannot be overwritten. Then read and follow {native}; if another session created it first, use that file unchanged. Do not merge or synchronise existing guides. If neither exists, create neither and continue. If inspection, reading, or creation fails, explain the problem in the terminal and pause before task work. In a worktree, inspect and write guides only in the current checkout; keep main-checkout path recording unchanged.</pre>
+    <h3>Compact guide block · Claude Code</h3>
+    <pre>In the safe current checkout root, before work: read/follow CLAUDE.md if present; else if AGENTS.md exists, read it and create CLAUDE.md without clobbering, preserving project guidance and adapting only agent-specific CLI/workflow directions; then read/follow CLAUDE.md. Never overwrite/merge/sync existing guides, including races. Neither exists: create neither. Read/create errors: explain and pause.</pre>
+    <h3>Compact guide block · Codex</h3>
+    <pre>In the safe current checkout root, before work: read/follow AGENTS.md if present; else if CLAUDE.md exists, read it and create AGENTS.md without clobbering, preserving project guidance and adapting only agent-specific CLI/workflow directions; then read/follow AGENTS.md. Never overwrite/merge/sync existing guides, including races. Neither exists: create neither. Read/create errors: explain and pause.</pre>
+    <p>“Without clobbering” requires exclusive/no-overwrite creation, not a check followed by an ordinary write. A destination-created race means read the winner’s guide unchanged, not an error requiring replacement. The compact block’s read/create error clause applies to actual failures, including inspection errors; it must not classify a concurrent successful creation as permission to overwrite.</p>
+    <details open>
+      <summary>What “adapt agent-specific directions” permits</summary>
+      <p>Preserve repository architecture, commands for the project, testing, branch/release policy, database rules, security requirements, workflow gates, and substantive explanations. Adapt only directions addressed to the launched coding agent: its CLI name, MCP connection flow, tool conventions, and workflow attribution.</p>
+      <p>Example: a Codex guide uses the existing Codex MCP setup and <code>agent: "codex"</code> workflow attribution from the launch bootstrap, rather than instructing Codex to execute Claude’s <code>/mcp</code> flow. Claude receives its corresponding existing connector flow. Do not apply a global name replacement to documentation that legitimately describes both products. Preserve links, code examples, and non-agent project behavior.</p>
+      <p>If an agent-specific instruction has no clear equivalent, preserve the underlying project requirement, identify the unresolved mapping in terminal narration, and pause if it blocks safe work. Do not invent CLI syntax, erase an approval gate, or rewrite the source guide.</p>
+    </details>
+  </section>
+
+  <section id="states" aria-labelledby="states-title">
+    <h2 id="states-title">Visible feedback and recovery</h2>
+    <p>These transcripts describe intended agent narration, not new browser status components or a promise that arbitrary model output has exact wording. The structured bootstrap above is the implementation contract.</p>
+    <div class="grid">
+      <article class="terminal"><p class="label">Fresh Codex session · fallback available</p><p>Checking the project guidance in this checkout…</p><p>Created AGENTS.md from CLAUDE.md, adapting the agent-specific directions. I’ll read it before starting the task.</p><p>Project guidance loaded. Fetching the task…</p></article>
+      <article class="terminal"><p class="label">Fresh Claude Code session · no guides</p><p>No CLAUDE.md or AGENTS.md was found in this checkout. Continuing without creating a guide.</p><p>Fetching the board…</p></article>
+    </div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Launch state and recovery table; scroll horizontally on small screens" style="margin-top:24px">
+      <table>
+        <thead><tr><th scope="col">State</th><th scope="col">Feedback and next action</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Reading / slow filesystem</th><td>“Checking the project guidance in this checkout…” Keep terminal input and interruption available; retain the existing connection/loading treatment. Do not add a fake file-list skeleton or success state before a local read completes.</td></tr>
+          <tr><th scope="row">Native guide loaded</th><td>“Loaded AGENTS.md. Fetching the task…” (or CLAUDE.md / board as appropriate). No confirmation required.</td></tr>
+          <tr><th scope="row">Concurrent creation</th><td>“AGENTS.md was created by another session. I’ll use the existing file.” Read that file; leave both existing guides untouched.</td></tr>
+          <tr><th scope="row">Read failure</th><td>“I couldn’t read AGENTS.md in this checkout: [specific error]. Fix the file access, then tell me to retry.” Pause before task work. Do not treat the fallback as authority to replace the unreadable native file.</td></tr>
+          <tr><th scope="row">Create failure / partial progress</th><td>“I read CLAUDE.md, but couldn’t create AGENTS.md: [specific error]. Fix the destination access, then tell me to retry.” Keep source unchanged. Retry first re-inspects both paths; any existing partial destination is not overwritten automatically.</td></tr>
+          <tr><th scope="row">Unknown or unsafe folder</th><td>Use existing folder resolution. Do not inspect/write guides or record the unsafe location. In a worktree, remain in that working checkout.</td></tr>
+          <tr><th scope="row">MCP authentication needed</th><td>Use the selected agent’s existing authentication directions. Re-check connection after authentication; keep task work paused until board access and path recording are ready.</td></tr>
+          <tr><th scope="row">User cancels or navigates back</th><td>Existing launch chooser remains dismissible by close, Escape, or outside click before launch. Once launched, retain ordinary terminal interruption and dock navigation; do not automatically delete a successfully created guide.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="budget" aria-labelledby="budget-title">
+    <h2 id="budget-title">The policy must survive the URL budget</h2>
+    <p>The existing prompt is already close to its limit. Adding the guide clause to a trimmable tail would make behavior depend on path length, board title, and agent choice. Protect the complete guide rule as required bootstrap content on all fresh browser paths.</p>
+    <ol class="journey">
+      <li><strong>Retain the required launch information.</strong> Preserve the folder parameter, selected agent, safe-directory/worktree policy, MCP connection and attribution, main-path recording, guide policy, and a minimal task/board work instruction carrying the relevant IDs.</li>
+      <li><strong>Reduce optional copy atomically.</strong> Shorten titles/descriptions and optional duplicate directory narration using the existing degradation approach. Compact equivalent wording is allowed; deleting required semantics or cutting a clause mid-sentence is not.</li>
+      <li><strong>Measure the final encoded link.</strong> Account for actual session/token overhead, folder, selected agent/model/effort, isolation flags, and query encoding. Keep existing limits. A realistic launch must still succeed; newly rejecting normal cases is a regression to resolve during implementation.</li>
+      <li><strong>Refuse an impossible launch visibly.</strong> If the complete required policy plus retained folder cannot fit, do not fire a link or start a session with partial instructions. If the existing flow has already minted a pending session, use its existing failure cleanup. Preserve the user’s chosen agent and folder for recovery.</li>
+    </ol>
+    <blockquote><strong>Launch refusal copy:</strong> “This browser launch is too long to include the required setup instructions. Use Copy command from the launch menu, or choose a shorter project folder path.”</blockquote>
+    <p>This copy is appropriate only if the offered copy-command path includes the same complete guide policy for the selected agent. Otherwise use: “This browser launch is too long to include the required setup instructions. Choose a shorter project folder path and try again.” Reuse the existing launch error/toast surface; keep the full error readable in the launch panel if that surface is persistent. Never silently drop the folder or suggest changing the board/task identity.</p>
+    <p>Implementation may improve packing of the protected content to fit realistic URLs, with semantic equivalence tests. Do not raise the URL cap or introduce a server/helper filesystem protocol as a shortcut. Desktop launch redesign, resume bootstrapping, and helper releases are outside this design.</p>
+  </section>
+
+  <section id="review" aria-labelledby="review-title">
+    <h2 id="review-title">Review and verification contract</h2>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Requirements traceability; scroll horizontally on small screens">
+      <table>
+        <thead><tr><th scope="col">Requirements criterion</th><th scope="col">Design / verification</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1 · Both agents, all guide states</th><td>Exercise both agents × both filenames’ presence. Verify native-first choice, conditional creation, and no creation when neither exists.</td></tr>
+          <tr><th scope="row">2–3 · Context and entry parity</th><td>Task button, board button, dock/chooser fresh-session hook produce equivalent protected guidance and appropriate task/board IDs. Resume/reconnect receive no new guide prompt.</td></tr>
+          <tr><th scope="row">4 · Preserve existing files</th><td>Review no-overwrite wording, no merge/sync, native-empty-file behavior, source preservation, and concurrent-create behavior. Prompt assertions prove the instruction, not filesystem execution by a model; validate representative launched-agent runs separately.</td></tr>
+          <tr><th scope="row">5 · Folder safety</th><td>Existing project, new empty folder, new clone, known absolute folder, unresolved folder, and isolated worktree. Verify guide target stays in current checkout and path recording retains the main checkout.</td></tr>
+          <tr><th scope="row">6 · MCP and attribution</th><td>Verify Claude/Codex connection directions remain agent-correct, and Codex workflow attribution survives fitting. Preserve authentication and human approval gates.</td></tr>
+          <tr><th scope="row">7–8 · Budget and regressions</th><td>Normal realistic URLs still launch. Long Unicode titles, spaces/non-ASCII in folders, maximum realistic token overhead, and constrained caps yield a complete safe prompt or explicit refusal; never a partial guide rule or missing folder. Run existing launch/prompt-budget suites and appropriate unit coverage.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 style="margin-top:24px">Accessibility and realistic content</h3>
+    <p>Keep existing launch controls keyboard accessible, visibly labelled, and at least 44 × 44 px for touch. Primary actions remain visible without hover. Errors include text and recovery, never color alone. Preserve focus when showing an error; support terminal interruption. No new disabled action without an adjacent explanation.</p>
+    <p>Review launch and error copy at 375 px with a long project name and a path such as <code>/Users/Alex/Projects/Customer portal – shared checkout</code>. Long paths wrap in explanatory text without concealing the selected folder. This document uses responsive cards, accessible text contrast, visible focus, and explicitly labelled horizontal table regions; product UI continues to use the existing Zinc/shadcn components.</p>
+  </section>
+
+  <footer>
+    <p>Skill used: frontend-design, loaded from the Compass workflow agent. Document direction: a blue technical folio, with paired guide-file cards as the signature mapping; Avenir/Trebuchet display, system body, and monospace for filenames. The original dashboard-style concept was removed because this is a behavior specification with no new product dashboard.</p>
+    <p>Tokens: Paper #f5f7fb · Surface #ffffff · Ink #172b4d · Muted #46566e · Action #2448a6 · Boundary #8b98ae. Static document; no scripts, external fonts, network requests, or animated elements. Product implementation remains a subsequent workflow step.</p>
+  </footer>
+</main>
+</body>
+</html>
