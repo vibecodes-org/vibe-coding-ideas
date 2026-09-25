@@ -299,6 +299,14 @@ describe("getTask — workflow_instruction", () => {
     expect(result.workflow_instruction).toContain("claim_next_step");
     expect(result.workflow_instruction).toContain("3 steps");
     expect(result.workflow_instruction).toContain("2 pending");
+    expect(result.workflow_instruction).toContain("Reading this task does not start it");
+    expect(result.workflow_instruction).toContain("explicitly asked you to work THIS task");
+    expect(result.workflow_instruction).toContain("do not claim");
+    // PIN (Backlog card 23f65c41): even once work is authorized, claim_next_step
+    // remains the only sanctioned path — never implement directly.
+    expect(result.workflow_instruction).toContain(
+      "do NOT begin implementation directly — use claim_next_step(task_id) to claim and execute steps sequentially"
+    );
   });
 
   it("omits workflow_instruction when all steps are completed", async () => {
@@ -349,6 +357,8 @@ describe("getTask — workflow_instruction", () => {
     expect(result.workflow_instruction).not.toBeNull();
     expect(result.workflow_instruction).toContain("update_task");
     expect(result.workflow_instruction).toContain("assignee_id");
+    expect(result.workflow_instruction).toContain("Reading it does not start it");
+    expect(result.workflow_instruction).toContain("explicitly asked you to work this task");
   });
 });
 

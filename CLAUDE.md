@@ -16,6 +16,7 @@ Next.js 16.1.6 (App Router), React 19.2, TypeScript, Tailwind CSS v4, shadcn/ui 
 ## Workflow Rules (MANDATORY)
 
 ### Board Task Workflow — BEFORE ANY IMPLEMENTATION
+**Reading is not starting.** `get_task` / `get_board` never claim, assign or move anything — only work a card the human has explicitly asked you to work; if unsure, ask first.
 1. **Check the VibeCodes board** for a matching task (`get_my_tasks` or `get_board`)
 2. **If task exists:** Reassign to yourself, move to "In Progress", read all comments (`get_task`), add a comment
 3. **If no task exists:** Proceed normally, consider creating one
