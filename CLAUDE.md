@@ -277,6 +277,9 @@ fix more than an hour waiting for a batch-mate — when in doubt, ship it.
   auto-apply path in `migrations.yml` no longer fires, since nothing lands on
   `develop`)
 - Migrations cannot be rolled back — only corrective forward migrations
+- Migrations deliberately kept off prod are listed in `supabase/migrations/.held` —
+  check it before applying any "Apply migrations" card and never apply a held one
+  (docs/release-process.md → "Holding a migration on purpose")
 - Monitoring: Sentry (source maps), Vercel Analytics + Speed Insights, PostHog (reverse-proxied via `/ingest`)
 
 ## Procedures

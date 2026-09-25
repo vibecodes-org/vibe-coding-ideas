@@ -14,6 +14,13 @@
 //   what happened to 00126). Run this after any prod apply to confirm every repo
 //   migration is recorded. See docs/release-process.md → "Migration tracking drift".
 //
+// Hold list:
+//   `supabase/migrations/.held` names migrations deliberately NOT applied yet
+//   (one stem per line, `#` comments). Held + unrecorded is fine and is listed
+//   as "Held (intentional)"; held + already recorded is an error (the hold is
+//   stale, or it was violated). An absent file means nothing is held.
+//   See docs/release-process.md → "Holding a migration on purpose".
+//
 // Usage:
 //   SUPABASE_ACCESS_TOKEN=<token> SUPABASE_PROJECT_REF=<prod-ref> \
 //     node scripts/check-migration-drift.mjs
@@ -21,11 +28,39 @@
 //   (SUPABASE_ACCESS_TOKEN: supabase.com/dashboard/account/tokens — same secret CI uses.
 //    SUPABASE_PROJECT_REF: the production project ref; falls back to PROD_PROJECT_REF.)
 //
-// Exit codes: 0 = no drift, 1 = drift found, 2 = misconfiguration / API error.
+// Exit codes:
+//   0 = no drift (held migrations are listed but allowed)
+//   1 = drift: a migration is missing, or a held migration is already applied
+//   2 = misconfiguration / API error / bad `.held` file (malformed line or a stem
+//       with no matching .sql file) — the `.held` checks run before any network call.
 
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { parseHeldList, classify, heldListProblems } from "./lib/migration-drift.mjs";
+
+const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
+const stems = readdirSync(migrationsDir)
+  .filter((f) => f.endsWith(".sql"))
+  .map((f) => f.replace(/\.sql$/, ""))
+  .sort();
+
+let heldText = "";
+try {
+  heldText = readFileSync(join(migrationsDir, ".held"), "utf8");
+} catch (err) {
+  if (err.code !== "ENOENT") {
+    console.error(`Could not read supabase/migrations/.held: ${err.message}`);
+    process.exit(2);
+  }
+}
+const held = parseHeldList(heldText);
+const problems = heldListProblems(held, stems);
+if (problems.length) {
+  console.error("supabase/migrations/.held has problems — fix it before checking drift:");
+  for (const p of problems) console.error(`  - ${p}`);
+  process.exit(2);
+}
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 const ref = process.env.SUPABASE_PROJECT_REF || process.env.PROD_PROJECT_REF;
@@ -36,12 +71,6 @@ if (!token || !ref) {
   );
   process.exit(2);
 }
-
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "supabase", "migrations");
-const stems = readdirSync(migrationsDir)
-  .filter((f) => f.endsWith(".sql"))
-  .map((f) => f.replace(/\.sql$/, ""))
-  .sort();
 
 const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
   method: "POST",
@@ -58,35 +87,44 @@ if (!res.ok) {
 }
 
 const rows = await res.json();
-const versions = new Set(rows.map((r) => r.version).filter(Boolean));
-const names = new Set(rows.map((r) => r.name).filter(Boolean));
-
-// A repo migration `NNNNN_description` counts as recorded if the remote history
-// has it under ANY of the historical formats this project has used over time:
-//   - name    === full stem        ("00126_refresh_ai_app_agent_labels")  ← current convention
-//   - name    === description only ("add_product_owner_to_kits")          ← some timestamp-era rows
-//   - version === full stem        ("00001_create_users")                 ← oldest rows
-//   - version === numeric prefix   ("00096")                              ← mid-era rows
-// Validated against the live history: 0 false positives across all repo migrations.
-const isRecorded = (stem) => {
-  const prefix = stem.slice(0, 5);
-  const desc = stem.slice(6);
-  return names.has(stem) || names.has(desc) || versions.has(stem) || versions.has(prefix);
-};
-
-const missing = stems.filter((s) => !isRecorded(s));
+const result = classify({ stems, heldStems: held.stems, rows });
 
 console.log(`Repo migrations:      ${stems.length}`);
 console.log(`Remote records:       ${rows.length}`);
-console.log(`Missing from remote:  ${missing.length}`);
+console.log(`Missing from remote:  ${result.missing.length}`);
+console.log(`Held (intentional):   ${result.held.length}`);
 
-if (missing.length) {
-  console.error("\n⚠️  These repo migrations are NOT recorded in the remote history:");
-  for (const m of missing) console.error(`  - ${m}.sql`);
-  console.error(
-    "\nApply them and record them — see docs/release-process.md → 'Migration tracking drift'."
-  );
-  process.exit(1);
+if (result.held.length) {
+  console.log("\nHeld (intentional) — listed in supabase/migrations/.held, not applied:");
+  for (const m of result.held) console.log(`  - ${m}.sql`);
 }
 
-console.log("\n✅ No drift — every repo migration is recorded in the remote history.");
+let failed = false;
+
+if (result.missing.length) {
+  failed = true;
+  console.error("\n⚠️  These repo migrations are NOT recorded in the remote history:");
+  for (const m of result.missing) console.error(`  - ${m}.sql`);
+  console.error(
+    "\nApply them and record them — see docs/release-process.md → 'Migration tracking drift'." +
+      "\nIf one is deliberately not applied yet, add it to supabase/migrations/.held instead."
+  );
+}
+
+if (result.heldButApplied.length) {
+  failed = true;
+  console.error("\n⚠️  These migrations are on the hold list but ARE already recorded remotely:");
+  for (const m of result.heldButApplied) console.error(`  - ${m}.sql`);
+  console.error(
+    "\nEither the hold was violated, or it's stale — if the apply was intended, remove the" +
+      "\nline from supabase/migrations/.held. See docs/release-process.md → 'Holding a migration on purpose'."
+  );
+}
+
+if (failed) process.exit(1);
+
+console.log(
+  result.held.length
+    ? "\n✅ No drift — every repo migration is recorded, apart from the held ones above."
+    : "\n✅ No drift — every repo migration is recorded in the remote history."
+);

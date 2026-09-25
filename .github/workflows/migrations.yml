@@ -422,6 +422,35 @@ jobs:
         with:
           node-version: 20
 
+      # Pre-apply guard: `supabase db push` applies EVERY unapplied file, so it
+      # would apply a migration that's deliberately on hold. Refuse to run while
+      # supabase/migrations/.held lists anything (dry runs only warn).
+      # See docs/release-process.md → "Holding a migration on purpose".
+      - name: Refuse to apply while migrations are on hold
+        run: |
+          node --input-type=module -e '
+            import { readFileSync, existsSync } from "node:fs";
+            import { parseHeldList } from "./scripts/lib/migration-drift.mjs";
+            const path = "supabase/migrations/.held";
+            const { stems, errors } = parseHeldList(existsSync(path) ? readFileSync(path, "utf8") : "");
+            if (errors.length) {
+              console.log(`::error::${path} has malformed lines: ${errors.map((e) => e.line).join(", ")}`);
+              process.exit(1);
+            }
+            if (stems.length) {
+              const dry = process.env.DRY_RUN === "true";
+              console.log(`${dry ? "::warning::" : "::error::"}Migrations on hold (${path}): ${stems.join(", ")}`);
+              if (!dry) {
+                console.log("db push would apply them. Apply the other migrations by hand, or clear the hold first.");
+                process.exit(1);
+              }
+            } else {
+              console.log("No migrations on hold.");
+            }
+          '
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+
       - name: Link to production project
         run: supabase link --project-ref ${{ secrets.PROD_PROJECT_REF }}
         env:
