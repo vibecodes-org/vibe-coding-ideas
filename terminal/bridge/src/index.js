@@ -22,7 +22,9 @@
 //   --token   <jwt>      app-minted bridge-role token    [BRIDGE_TOKEN] (required by the relay)
 //   --cmd     <command>  command to run in the PTY       [BRIDGE_CMD]  default "claude"
 //                        (everything after --cmd, or the env string, is shell-split)
-//   --cwd     <dir>      working directory               [BRIDGE_CWD]  default process.cwd()
+//   --cwd     <dir>      working directory               [BRIDGE_CWD]  default: your home folder
+//                        (a missing folder, a file, or `/` also falls back to home —
+//                        see spawn-cwd.js)
 //   --launch-url <url>   a `vibecodes://launch?…` deep link [BRIDGE_LAUNCH_URL]
 //                        Parsed for relay/session/token/cwd — exactly what a packaged
 //                        helper's URL-scheme handler hands us (slice 7). It takes
@@ -46,6 +48,7 @@ import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
+import { resolveSpawnCwd, spawnCwdFallbackNotice } from "./spawn-cwd.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
 import { isBinaryInstalled } from "../../shared/binary-check.mjs";
 import {
@@ -196,7 +199,27 @@ const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSIO
 // above. `BRIDGE_WORKTREE` env mirrors their own dev/test convenience
 // fallback.
 const WORKTREE_REQUESTED = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE === "1"));
-const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
+// Card 3ae71b07: the requested folder is CHECKED before anything spawns in it.
+// A launch with no folder used to inherit the bridge's own cwd — `/` when the
+// helper forks us — and one naming a missing folder (or a file) killed the
+// agent before it printed a byte. Now anything unusable starts in the home
+// folder instead, with a one-line note when a folder was asked for.
+const SPAWN_CWD = resolveSpawnCwd({
+  requested: launched?.cwd || args.cwd || process.env.BRIDGE_CWD || null,
+  home: os.homedir(),
+  base: process.cwd(),
+  stat: (p) => fs.statSync(p),
+  realpath: (p) => fs.realpathSync(p),
+});
+const CWD = SPAWN_CWD.cwd;
+const SPAWN_CWD_NOTICE = spawnCwdFallbackNotice(SPAWN_CWD);
+if (SPAWN_CWD.reason !== "ok") {
+  log(SPAWN_CWD_NOTICE ? "warn" : "info", "no usable folder on the launch — starting in the home folder", {
+    reason: SPAWN_CWD.reason,
+    requested: SPAWN_CWD.requested,
+    cwd: CWD,
+  });
+}
 // Task 5b8a3865 (Nick, 5 Sep 2026): a requested worktree is only APPENDED when
 // the folder can actually take one. `claude --worktree` branches off HEAD, so
 // a git repo with no commits yet (or a folder that isn't a repo at all) made
@@ -208,12 +231,18 @@ const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd()
 // folder can't host a worktree the launch proceeds in the main folder and
 // `WORKTREE_FALLBACK_BANNER` is written into the terminal ahead of Claude's
 // own output so the user knows the two sessions now share the folder.
+//
+// Card 3ae71b07: isolation only applies to the folder the launch asked for.
+// When that folder was unusable and we fell back to home, there is no project
+// folder to isolate from (and home must never get a worktree), so the probe,
+// the flag and the "sharing the project folder" banner are all skipped.
+const WORKTREE_APPLICABLE = WORKTREE_REQUESTED && SPAWN_CWD.reason === "ok";
 const WORKTREE_ELIGIBILITY =
-  WORKTREE_REQUESTED && !explicitCmd && !RESUME_ID && !RESUME
+  WORKTREE_APPLICABLE && !explicitCmd && !RESUME_ID && !RESUME
     ? checkWorktreeEligibility(CWD, { run: runGitSync })
     : { eligible: true, reason: /** @type {const} */ ("ok") };
-const WORKTREE = WORKTREE_REQUESTED && WORKTREE_ELIGIBILITY.eligible;
-const WORKTREE_FALLBACK_BANNER = WORKTREE_REQUESTED ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
+const WORKTREE = WORKTREE_APPLICABLE && WORKTREE_ELIGIBILITY.eligible;
+const WORKTREE_FALLBACK_BANNER = WORKTREE_APPLICABLE ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
 if (WORKTREE_FALLBACK_BANNER) {
   log("warn", "worktree isolation requested but the folder can't host one — launching in the main folder", {
     cwd: CWD,
@@ -712,6 +741,14 @@ async function main() {
     // through the same batcher (so it's coalesced/encrypted like any other
     // output and buffered pre-open like a startup banner), ahead of whatever
     // Claude Code prints. Written once, only on a fallback launch.
+    // Card 3ae71b07: same pattern for "the folder you asked for couldn't be
+    // used, so this session started in your home folder" — first, since it
+    // says where the session is before the worktree note says how.
+    if (SPAWN_CWD_NOTICE) {
+      const notice = Buffer.from(SPAWN_CWD_NOTICE, "utf8");
+      bytesOut += notice.length;
+      outputBatcher.queueBinary(notice);
+    }
     if (WORKTREE_FALLBACK_BANNER) {
       const banner = Buffer.from(WORKTREE_FALLBACK_BANNER, "utf8");
       bytesOut += banner.length;
