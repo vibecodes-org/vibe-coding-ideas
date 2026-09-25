@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!--
+  UX Design — Auto-switch to the backup model: final directive wording
+  Card 5d0665a2 · Step 2 of 6 (Feature Development). Builds on the Requirements step (§8).
+  This feature has no screens. Its UX is the text an orchestrator reads. Everything in the
+  "final" boxes below is verbatim; <angle> placeholders are model names filled at runtime.
+  Self-contained, light + dark, works at 375px.
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Backup model wording</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --panel-2: #f4f4f5; --border: #e4e4e7; --border-2: #d4d4d8;
+    --fg: #18181b; --muted: #52525b; --faint: #71717a;
+    --accent: #0284c7; --ok: #059669; --warn: #b45309; --bad: #be123c; --violet: #6d28d9;
+    --accent-bg: rgba(2,132,199,.08); --warn-bg: rgba(180,83,9,.08); --ok-bg: rgba(5,150,105,.08);
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #09090b; --panel: #18181b; --panel-2: #212124; --border: #27272a; --border-2: #3f3f46;
+      --fg: #fafafa; --muted: #a1a1aa; --faint: #71717a;
+      --accent: #38bdf8; --ok: #34d399; --warn: #fbbf24; --bad: #fb7185; --violet: #a78bfa;
+      --accent-bg: rgba(56,189,248,.08); --warn-bg: rgba(251,191,36,.08); --ok-bg: rgba(52,211,153,.08);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #09090b; --panel: #18181b; --panel-2: #212124; --border: #27272a; --border-2: #3f3f46;
+    --fg: #fafafa; --muted: #a1a1aa; --faint: #71717a;
+    --accent: #38bdf8; --ok: #34d399; --warn: #fbbf24; --bad: #fb7185; --violet: #a78bfa;
+    --accent-bg: rgba(56,189,248,.08); --warn-bg: rgba(251,191,36,.08); --ok-bg: rgba(52,211,153,.08);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 80px; }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  h1 { font-size: 26px; line-height: 1.25; margin: 8px 0 10px; letter-spacing: -.01em; }
+  h2 { font-size: 19px; margin: 40px 0 10px; letter-spacing: -.01em; }
+  h3 { font-size: 15px; margin: 22px 0 6px; }
+  p { color: var(--fg); }
+  .lede, .muted { color: var(--muted); }
+  .faint { color: var(--faint); font-size: 13px; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--panel-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 5px; }
+  .callout { background: var(--accent-bg); border: 1px solid var(--border-2); border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; margin: 16px 0; font-size: 14px; }
+  .callout.warn { background: var(--warn-bg); border-left-color: var(--warn); }
+  .callout.ok { background: var(--ok-bg); border-left-color: var(--ok); }
+
+  /* Final-string boxes */
+  .final { background: var(--panel); border: 1px solid var(--border-2); border-radius: var(--radius); margin: 12px 0 6px; overflow: hidden; }
+  .final .cap { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 14px; background: var(--panel-2); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .final .cap b { color: var(--fg); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+  .final pre { margin: 0; padding: 14px; font-family: var(--mono); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+  .final pre .ph { color: var(--violet); font-weight: 600; }
+  .final pre .dim { color: var(--faint); }
+  .final pre .new { background: var(--ok-bg); outline: 1px solid var(--ok); border-radius: 3px; }
+  .why { font-size: 13.5px; color: var(--muted); margin: 6px 0 0; }
+  .why li { margin: 2px 0; }
+
+  /* Step thread mock */
+  .thread { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; }
+  .cmt { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .cmt:first-child { border-top: 0; }
+  .av { width: 30px; height: 30px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--border-2); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .cmt .who { font-size: 12px; color: var(--faint); margin-bottom: 2px; }
+  .cmt .who b { color: var(--fg); }
+  .cmt .body { font-size: 14px; }
+  .tag { display: inline-block; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+
+  /* Flow diagram */
+  .flow { display: grid; gap: 8px; margin: 14px 0; }
+  .node { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+  .node .n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border-2); }
+  .node.bad .n { background: var(--bad); color: #fff; border-color: transparent; }
+  .node.warn .n { background: var(--warn); color: #111; border-color: transparent; }
+  .node.ok .n { background: var(--ok); color: #111; border-color: transparent; }
+  .node .t { font-weight: 600; }
+  .node .d { font-size: 13.5px; color: var(--muted); }
+  .arrow { text-align: center; color: var(--faint); font-size: 16px; line-height: 1; margin: -2px 0; }
+  .branch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 560px) { .branch { grid-template-columns: 1fr; } }
+  ul, ol { padding-left: 20px; }
+  li { margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0; }
+  th, td { text-align: left; border-bottom: 1px solid var(--border); padding: 7px 8px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="kicker">UX Design · Card 5d0665a2 · Step 2 of 6</div>
+  <h1>Auto-switch to the backup model — final wording</h1>
+  <p class="lede">This feature has no screens. Its user experience is four pieces of text: the notice at the top of a switched claim, the sentence that teaches the orchestrator how to report "the model itself was down", the note left in the step thread when a step is rescued, and the note when it is not. Everything in a <b>Final</b> box is verbatim; <span style="color:var(--violet);font-weight:600">&lt;angle&gt;</span> placeholders are model names filled in at run time.</p>
+</header>
+
+<div class="callout ok"><b>Golden rule (AC-6):</b> when there is no unavailability marker for this board today, none of the text below appears anywhere. The claim directive is byte-for-byte what ships today. The only place that always carries the new text is the <code>fail_step</code> tool description (item 2), which is not part of the directive.</div>
+
+<!-- ============================================================ -->
+<section id="notice">
+<h2>1 · The switch notice (top of a switched claim)</h2>
+<p>Prepended immediately before <code>MANDATORY MODEL:</code>, joined by a single space, only when a switch is active. Every word here is read on every switched claim, so it is kept to three sentences: what died, what to use, when it ends.</p>
+
+<div class="final">
+  <div class="cap"><b>Final · switch notice</b><span>≈ 330 chars · Claude and Codex share it</span></div>
+<pre>MODEL SWITCH: "<span class="ph">&lt;dead&gt;</span>" was reported unavailable on this board earlier today (credits, overload, rate limit, or not on this plan), so this step is directed at the configured backup "<span class="ph">&lt;backup&gt;</span>" instead. This is deliberate and current; follow it. The switch lapses at midnight UTC, when "<span class="ph">&lt;dead&gt;</span>" is tried again automatically. <span class="dim">MANDATORY MODEL: …</span></pre>
+</div>
+<ul class="why">
+  <li>Requirements §8: "on this account" → <b>"on this board"</b> (the marker is per board).</li>
+  <li>Contains the literal word <b>unavailable</b> (AC-3 test), names both models, states the lapse and that the primary is retried.</li>
+  <li>"midnight UTC" replaces PR #255's "end of the day" — an orchestrator can act on a clock time; "end of the day" is ambiguous across timezones.</li>
+  <li>"deliberate and current; follow it" pre-empts the orchestrator "correcting" the model back to the tier's usual choice from CLAUDE.md or its own memory.</li>
+  <li>Prefix is <code>MODEL SWITCH:</code>, not <code>AUTOMATIC MODEL SWITCH:</code> — shorter, and it sits next to <code>MANDATORY MODEL:</code> so the two capitalised labels read as a pair.</li>
+</ul>
+
+<h3>How it reads in front of each directive</h3>
+<div class="final">
+  <div class="cap"><b>Claude · switched (Fable down, Opus backup)</b></div>
+<pre><span class="new">MODEL SWITCH: "fable" was reported unavailable on this board earlier today (credits, overload, rate limit, or not on this plan), so this step is directed at the configured backup "opus" instead. This is deliberate and current; follow it. The switch lapses at midnight UTC, when "fable" is tried again automatically.</span> MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "opus" and reasoning effort "high". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and state the substitution in your step output. Do not run this step inline <span class="dim">… (rest unchanged)</span></pre>
+</div>
+<div class="final">
+  <div class="cap"><b>Codex · switched</b></div>
+<pre><span class="new">MODEL SWITCH: "gpt-5-codex" was reported unavailable on this board earlier today (credits, overload, rate limit, or not on this plan), so this step is directed at the configured backup "gpt-5" instead. This is deliberate and current; follow it. The switch lapses at midnight UTC, when "gpt-5-codex" is tried again automatically.</span> MANDATORY MODEL: launch this step's fresh Codex subagent with model: "gpt-5" and reasoning_effort: "high" as actual spawn parameters, not just words in its prompt. <span class="dim">… (rest unchanged)</span></pre>
+</div>
+<p class="faint">Confirmed against <code>modelTierClause()</code> in <code>mcp-server/src/tools/workflows.ts</code>: both variants open with "MANDATORY MODEL:" and take the resolved/fallback pair by value, so the notice reads correctly in front of either with no other change. Codex's <code>execution</code> object carries the swapped values separately (Requirements §4).</p>
+
+<div class="callout warn"><b>One wrinkle for Implementation, not for the wording.</b> Because the swap makes the old primary the new fallback, the unchanged directive sentence now says "If "opus" is unavailable … use model: "fable"" — i.e. fall back onto the model the notice just called dead. This is what Requirements §4 specifies (a last-resort second try is better than nothing) and the notice's "deliberate and current" makes the ordering clear, so no extra sentence is added. Implementation should be aware and not "fix" it by adding words to the directive.</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="signal">
+<h2>2 · Teaching the signal (<code>fail_step</code> only)</h2>
+<p>Requirements §8.2 asked where the "pass <code>model_unavailable: true</code>" instruction lives. <b>Confirmed: only in the <code>fail_step</code> tool description and its parameter description</b> — never in the directive. Reason: the directive must be byte-identical with no marker (AC-6), and the moment an orchestrator needs this sentence is the moment it is deciding how to fail, which is when it reads the <code>fail_step</code> schema. Schema lives in <code>mcp-server/src/register-tools.ts</code> (tool description) and <code>failStepSchema</code> in <code>mcp-server/src/tools/workflows.ts</code> (parameter).</p>
+
+<div class="final">
+  <div class="cap"><b>Final · sentence appended to the fail_step tool description</b><span>after the existing "Pass `model_used` = …" sentence</span></div>
+<pre><span class="dim">…(self-reported — VibeCodes records it but does not verify it).</span> If the step failed because the MODEL ITSELF could not be reached (out of credits, overloaded, rate-limited, not on this plan) — not an ordinary failure like a bug or a failing test — pass `model_unavailable: true`: the step returns to pending and is re-run on the tier's configured backup model, and later steps on this board are steered away from the unavailable model until midnight UTC. A step is rescued this way at most once; a second such failure leaves it failed.</pre>
+</div>
+
+<div class="final">
+  <div class="cap"><b>Final · `model_unavailable` parameter description</b><span>z.boolean().optional().describe(…)</span></div>
+<pre>Set true ONLY when the step failed because the directed model could not be reached — out of credits, overloaded, rate-limited, or not on this plan. Never for ordinary failures (a bug, a bad prompt, a failing test). When true, the step returns to pending and is automatically re-run on the tier's configured backup model, and later steps on this board are steered away from the unavailable model until midnight UTC. At most once per step: a second model-unavailable failure leaves the step failed. Ignored for steps with no model tier and for awaiting_approval rejections.</pre>
+</div>
+<ul class="why">
+  <li>Both texts lead with the <b>exclusion</b> ("not an ordinary failure") because the real risk is over-use: an orchestrator tagging a test failure as "model unavailable" would silently re-run it on a different model.</li>
+  <li>Tightened from PR #255's drafts: "steered away" replaces "directed away" (matches the notice's "directed at"), "midnight UTC" replaces "end of the day", and the at-most-once rule is stated in both places.</li>
+  <li>The final sentence of the parameter text tells the caller the two cases where the flag does nothing (Requirements §4), so it is never a surprise.</li>
+</ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="comments">
+<h2>3 · The step-thread comments (read by people)</h2>
+<p>These are the only text a human sees. Nick opens the step thread after losing a step; the comment must tell him what happened, what will happen next, and whether he needs to do anything — without knowing what a marker, a tier or a claim is. Posted as a plain step comment (same mechanism as the cascade-reset note). Markdown bold for the two model names so they can be picked out at a glance.</p>
+
+<div class="final">
+  <div class="cap"><b>Final · rescue comment (first model-unavailable failure)</b></div>
+<pre>**Switched to the backup model.** This step couldn't run because **<span class="ph">&lt;dead&gt;</span>** was unavailable (for example out of credits or overloaded). It has been put back in the queue and will be re-run on the backup, **<span class="ph">&lt;backup&gt;</span>**. Other steps on this board will use **<span class="ph">&lt;backup&gt;</span>** too until midnight UTC, when **<span class="ph">&lt;dead&gt;</span>** is tried again. This automatic retry happens once per step — if it fails on **<span class="ph">&lt;backup&gt;</span>** as well it stays failed and needs a person to look.</pre>
+</div>
+
+<div class="final">
+  <div class="cap"><b>Final · second failure comment (rescue refused)</b><span>posted alongside the normal failure comment</span></div>
+<pre>**No automatic retry this time.** This step was already re-run once on a backup model and has now failed again because **<span class="ph">&lt;model&gt;</span>** was unavailable. It has been left failed. Check your model credits or plan, then reset or re-run the step.</pre>
+</div>
+<p class="faint"><code>&lt;model&gt;</code> here is the model that failed on the second attempt (normally the backup). The free signal (a completed step that self-reports running on the backup) posts <b>no</b> comment — the step's own output already states the substitution, and a second note would be noise.</p>
+
+<h3>As it appears in the step thread</h3>
+<div class="thread">
+  <div class="cmt">
+    <div class="av">FS</div>
+    <div>
+      <div class="who"><b>Full Stack Engineer</b> · 06:04 <span class="tag">failure</span></div>
+      <div class="body">Could not start the subagent: the model returned "insufficient credits" before producing any output.</div>
+    </div>
+  </div>
+  <div class="cmt">
+    <div class="av">VC</div>
+    <div>
+      <div class="who"><b>VibeCodes</b> · 06:04 <span class="tag">system</span></div>
+      <div class="body"><b>Switched to the backup model.</b> This step couldn't run because <b>fable</b> was unavailable (for example out of credits or overloaded). It has been put back in the queue and will be re-run on the backup, <b>opus</b>. Other steps on this board will use <b>opus</b> too until midnight UTC, when <b>fable</b> is tried again. This automatic retry happens once per step — if it fails on <b>opus</b> as well it stays failed and needs a person to look.</div>
+    </div>
+  </div>
+</div>
+<p class="faint">Realistic-data check: model names are short aliases ("fable", "opus") for Claude and longer ids ("gpt-5-codex") for Codex — both fit on one line at 375px thanks to the wrapping above. No avatars needed; if the system author has none, the initials fallback is what already renders in the thread.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="flow">
+<h2>4 · Flow</h2>
+<div class="flow">
+  <div class="node bad"><div class="n">1</div><div><div class="t">Step dies — the model itself could not be reached</div><div class="d">Credits out, overloaded, rate-limited, or not on the plan. Not a bug, not a failing test.</div></div></div>
+  <div class="arrow">↓</div>
+  <div class="node warn"><div class="n">2</div><div><div class="t">Orchestrator calls <code>fail_step</code> with <code>model_unavailable: true</code></div><div class="d">It learned to do this from the tool description (item 2). Server writes the marker: which model died + when, for this board.</div></div></div>
+  <div class="arrow">↓</div>
+  <div class="branch">
+    <div class="node ok"><div class="n">3a</div><div><div class="t">First time for this step → back to pending</div><div class="d">Rescue comment posted (item 3). Run stays running.</div></div></div>
+    <div class="node bad"><div class="n">3b</div><div><div class="t">Already rescued once → stays failed</div><div class="d">"No automatic retry" comment posted. Marker still refreshed.</div></div></div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="node ok"><div class="n">4</div><div><div class="t">Next claim of that step is directed at the backup</div><div class="d">Switch notice (item 1) prepended before MANDATORY MODEL; the backup is the directed model, the old primary becomes the fallback.</div></div></div>
+  <div class="arrow">↓</div>
+  <div class="node ok"><div class="n">5</div><div><div class="t">Every later claim on this board today is redirected the same way</div><div class="d">Only tiers that resolve to the dead model. Other tiers, other boards, and Auto steps see today's directive unchanged.</div></div></div>
+  <div class="arrow">↓</div>
+  <div class="node"><div class="n">6</div><div><div class="t">Midnight UTC — marker lapses, primary tried again</div><div class="d">No notice, no comment. If it is still down, the next failure repeats from step 1 (once per step).</div></div></div>
+</div>
+
+<div class="callout ok"><b>No marker = byte-for-byte unchanged (AC-6).</b> A board with no same-day marker never sees the notice, never sees the comments, and gets exactly today's MANDATORY MODEL text. A marker for a different model, a lookup error (AC-7), or a reciprocal chain that would switch onto the dead model all resolve to today's directive too.</div>
+
+<h3>Free signal (no wording)</h3>
+<p class="muted">When a step <i>completes</i> and reports <code>model_used</code> = the tier's backup, the server writes the same marker silently. Nothing new is said to anyone; later claims simply start carrying the switch notice.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="handoff">
+<h2>Hand-off summary for Implementation</h2>
+<table>
+  <tr><th>Where</th><th>Text</th></tr>
+  <tr><td><code>modelSwitchNotice()</code> (new pure module)</td><td>Item 1, joined to the clause with one space; empty string when not switched.</td></tr>
+  <tr><td><code>register-tools.ts</code> → <code>fail_step</code> description</td><td>Item 2, appended sentence.</td></tr>
+  <tr><td><code>failStepSchema.model_unavailable</code></td><td>Item 2, parameter description.</td></tr>
+  <tr><td><code>rescueSentence()</code> → step comment</td><td>Item 3, first box.</td></tr>
+  <tr><td>Second-failure step comment</td><td>Item 3, second box.</td></tr>
+</table>
+<p class="faint">Strings are final. Any later edit to them should update this doc so the golden-string tests and the doc stay in step.</p>
+</section>
+
+</div>
+</body>
+</html>
