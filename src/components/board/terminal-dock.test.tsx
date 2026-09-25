@@ -1913,6 +1913,99 @@ describe("TerminalDock — resize handle hidden while the active tab is popped o
   });
 });
 
+// Card 3ddcbc2e (QA verify, closing the implementer's stated gap): the pure
+// helpers (syncPopoutLabels / createPoppedWindowMessageHandler) are covered in
+// popout-channel.test.ts, but nothing proved the DOCK actually runs the sync
+// when a rename lands. These drive the real tab-rename editor through the real
+// renameSession and assert what goes out on the pop-out channel.
+describe("TerminalDock — a rename after pop-out reaches the popped window (card 3ddcbc2e)", () => {
+  type Posted = { type: string; label?: string };
+  const channels: { posted: Posted[] }[] = [];
+
+  class FakeBroadcastChannel {
+    posted: Posted[] = [];
+    onmessage: ((ev: MessageEvent) => void) | null = null;
+    constructor(public name: string) {
+      channels.push(this);
+    }
+    postMessage(m: Posted) {
+      this.posted.push(m);
+    }
+    close() {}
+  }
+
+  function stubFetchWithRename(renameOk: boolean) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: { method?: string; body?: string }) => {
+        if (url === "/api/terminal/session/list") return Promise.resolve({ ok: true, json: async () => ({ sessions: [] }) });
+        if (init?.method === "PATCH") {
+          if (!renameOk) return Promise.resolve({ ok: false, json: async () => ({}) });
+          const { displayName } = JSON.parse(init.body ?? "{}") as { displayName: string };
+          return Promise.resolve({ ok: true, json: async () => ({ displayName }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+  }
+
+  async function popOutLoneTab(): Promise<{ key: string; posted: Posted[] }> {
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key as string;
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(screen.getByTestId(`pop-out-${key}`));
+    expect(channels).toHaveLength(1);
+    return { key, posted: channels[0].posted };
+  }
+
+  function renameActiveTab(name: string) {
+    const activeTab = screen.getByRole("tab", { selected: true });
+    fireEvent.click(within(activeTab).getByRole("button", { name: /^Rename session/ }));
+    const input = within(activeTab).getByLabelText("Session name");
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  beforeEach(() => {
+    channels.length = 0;
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("posts exactly one 'rename' with the new name, and the hand-off payload carries it too", async () => {
+    stubFetchWithRename(true);
+    const { posted } = await popOutLoneTab();
+    // Popping out alone must not post a rename (label unchanged since hand-off).
+    expect(posted.filter((m) => m.type === "rename")).toHaveLength(0);
+
+    renameActiveTab("Fixing the login bug");
+
+    await waitFor(() => expect(posted).toContainEqual({ type: "rename", label: "Fixing the login bug" }));
+    // No spam: the optimistic apply and the server confirmation resolve to the
+    // same label, so only one message goes out.
+    expect(posted.filter((m) => m.type === "rename")).toHaveLength(1);
+    // A (re)sent hand-off payload — e.g. a late "ready" — carries the new name.
+    expect((capturedPopout.getPayload?.() as { label: string }).label).toBe("Fixing the login bug");
+  });
+
+  it("a failed rename puts the popped window back on the old name too", async () => {
+    stubFetchWithRename(false);
+    const { posted } = await popOutLoneTab();
+    const original = (capturedPopout.getPayload?.() as { label: string }).label;
+
+    renameActiveTab("Will not stick");
+
+    await waitFor(() => expect(posted.filter((m) => m.type === "rename")).toHaveLength(2));
+    const renames = posted.filter((m) => m.type === "rename");
+    expect(renames[0]).toEqual({ type: "rename", label: "Will not stick" });
+    expect(renames[1]).toEqual({ type: "rename", label: original });
+  });
+});
+
 // Split-view focus-sync defect fix (task df7a0134, QA rework — category-1,
 // blocks-release). QA's finding: real DOM keyboard focus could diverge from
 // the "Typing here"/"Watching" indicator — nothing in the previous

@@ -43,8 +43,8 @@ import { AlertTriangle, Loader2, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { relayBaseUrl } from "@/lib/terminal/connection";
 import {
+  createPoppedWindowMessageHandler,
   popoutChannelName,
-  parsePopoutChannelMessage,
   startPopoutClientHandshake,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
@@ -146,16 +146,23 @@ export function TerminalPopoutClient() {
 
   const attachPayload = useCallback((p: PopoutPayload) => {
     setPayload(p);
-    savePopoutStash({
-      sid: p.sid,
-      label: p.label,
-      identity: p.identity,
-      readOnly: p.readOnly,
-      autoAccept: p.autoAccept,
-      ideaId: p.ideaId,
-      ideaTitle: p.ideaTitle,
-    });
   }, []);
+
+  // The reload stash mirrors whatever this window currently holds — the
+  // hand-off payload, and any later rename the dock pushes (card 3ddcbc2e),
+  // so a reload after a rename comes back under the NEW name.
+  useEffect(() => {
+    if (!payload) return;
+    savePopoutStash({
+      sid: payload.sid,
+      label: payload.label,
+      identity: payload.identity,
+      readOnly: payload.readOnly,
+      autoAccept: payload.autoAccept,
+      ideaId: payload.ideaId,
+      ideaTitle: payload.ideaTitle,
+    });
+  }, [payload]);
 
   const handleManualReconnect = useCallback(() => {
     if (!reloadStash) return;
@@ -205,20 +212,14 @@ export function TerminalPopoutClient() {
         // `settled = true` (it's the very thing that just called this
         // callback) and permanently no-ops from now on; nothing double-
         // handles a later message.
-        channel.onmessage = (ev) => {
-          const message = parsePopoutChannelMessage(ev.data);
-          if (message?.type !== "bring-back-request") return;
-          const buffer = sessionActionsRef.current?.serializeNow();
-          // null = session not attached yet (shouldn't happen once payload
-          // has landed, but never worth a throw) — skip the reply; the
-          // dock's own 500ms timeout covers it (D3's deliberate fallback).
-          if (!buffer) return;
-          try {
-            channel.postMessage({ type: "buffer-reply", buffer });
-          } catch {
-            /* channel already gone — nothing to reply to */
-          }
-        };
+        // Card 3ddcbc2e: it also takes "rename" — a rename made in the dock
+        // after the hand-off updates this window's title (label only; the
+        // live session is untouched).
+        channel.onmessage = createPoppedWindowMessageHandler({
+          channel,
+          serializeNow: () => sessionActionsRef.current?.serializeNow(),
+          onRename: (label) => setPayload((prev) => (prev && prev.label !== label ? { ...prev, label } : prev)),
+        });
       },
       // On timeout this ALSO posts "closed" on the channel (same module), so
       // a dock that's still listening auto-reattaches instead of being stuck
