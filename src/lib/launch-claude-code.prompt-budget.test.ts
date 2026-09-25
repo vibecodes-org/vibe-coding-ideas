@@ -137,10 +137,14 @@ describe("in-browser launch prompt budget — the 3 Sep 2026 task-launch shape",
     expect(everything.every((s) => legacyPrompt.includes(s))).toBe(false);
     const fixedPrompt = promptOf(fixed);
     expect(everything.every((s) => fixedPrompt.includes(s))).toBe(true);
-    // And the same content costs ~2 chars less per space on the wire.
+    // And the same content costs 2 chars less per space on the wire — plus 2
+    // per raw `/ : , ;` since task b563f4da.
     const spaces = fixedPrompt.split(" ").length - 1;
+    const querySafe = (fixedPrompt.match(/[/:,;]/g) ?? []).length;
     expect(spaces).toBeGreaterThan(100);
-    expect(encodeURIComponent(fixedPrompt).length - formEncodedLength(fixedPrompt)).toBe(2 * spaces);
+    expect(encodeURIComponent(fixedPrompt).length - formEncodedLength(fixedPrompt)).toBe(
+      2 * (spaces + querySafe)
+    );
   });
 
   it("WORST shape (80-char title, new-project, task) loses the work step WITH the helper token — and keeps it WITHOUT (why fireLaunchDeepLink drops the token)", () => {

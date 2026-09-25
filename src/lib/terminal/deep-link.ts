@@ -256,9 +256,22 @@ export function buildLaunchDeepLink({
  * lost its "work this task" step entirely (see launch-claude-code.ts's
  * assembleAtomicTail ladder). Mirrored byte-for-byte in the shared .mjs
  * builder (drift-tested in deep-link.test.ts).
+ *
+ * `/`, `:`, `,` and `;` also ride raw (task b563f4da, 25 Sep 2026): all four
+ * are legal unescaped in a URL query (RFC 3986 pchar), and the WHATWG URL parser
+ * + URLSearchParams every helper decodes with pass them through untouched —
+ * so no helper release is needed. The bootstrap prompt carries ~50 of them
+ * (the MCP URL, `read/follow`, tool lists, commas), worth ~110 chars: part of
+ * the room the agent-guide step needs. `&`, `+`, `#`, `%`, `=` and every
+ * other reserved or unsafe character stay percent-encoded.
  */
 export function encodePromptParam(prompt: string): string {
-  return encodeURIComponent(prompt).replace(/%20/g, "+");
+  return encodeURIComponent(prompt)
+    .replace(/%20/g, "+")
+    .replace(/%2F/g, "/")
+    .replace(/%3A/g, ":")
+    .replace(/%2C/g, ",")
+    .replace(/%3B/g, ";");
 }
 
 /** A terminal dimension must be a positive, finite, sane integer — mirrors
