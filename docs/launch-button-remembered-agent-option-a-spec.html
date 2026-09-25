@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Option A build spec: launch button follows your remembered agent</title>
+<style>
+  /* Tokens copied verbatim from docs/launch-button-agent-choice-proposals.html so the
+     rendered states below are pixel-identical to the approved mock. */
+  :root {
+    --bg: #0c0c0e; --panel: #141417; --panel-2: #111114; --pop: #09090b; --line: #27272a; --line-2: #3f3f46;
+    --z100: #f4f4f5; --z200: #e4e4e7; --z300: #d4d4d8; --z400: #a1a1aa; --z500: #71717a; --z600: #52525b;
+    --emerald: #10b981; --emerald-300: #6ee7b7; --emerald-400: #34d399;
+    --sky: #0ea5e9; --sky-300: #7dd3fc; --sky-400: #38bdf8;
+    --amber-300: #fcd34d; --amber-500: #f59e0b; --rose-400: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { overflow-x: hidden; }
+  body { margin: 0; background: var(--bg); color: var(--z300); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 90px; }
+  h1 { color: var(--z100); font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { color: var(--z100); font-size: 19px; margin: 48px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+  h3 { color: var(--z200); font-size: 15px; margin: 22px 0 8px; }
+  p, li { max-width: 80ch; }
+  a { color: var(--sky-300); }
+  code { font-family: var(--mono); font-size: 12.5px; color: var(--z200); background: #1c1c21; padding: 1px 5px; border-radius: 4px; }
+  pre { font-family: var(--mono); font-size: 12px; background: #1c1c21; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; color: var(--z200); max-width: 100%; }
+  .meta { color: var(--z500); font-size: 13px; margin-bottom: 20px; }
+  .callout { border-left: 3px solid var(--sky); background: rgba(14,165,233,.06); padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.amber { border-color: var(--amber-500); background: rgba(245,158,11,.06); }
+  .callout.rule { border-color: var(--rose-400); background: rgba(251,113,133,.05); }
+  .callout.green { border-color: var(--emerald); background: rgba(16,185,129,.06); }
+  .callout p:last-child { margin-bottom: 0; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; min-width: 640px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--z400); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td code { white-space: nowrap; }
+  td.good { color: var(--emerald-300); } td.bad { color: var(--rose-400); } td.meh { color: var(--amber-300); }
+  .eyebrow { color: var(--z500); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .copy { color: var(--z100); font-weight: 600; }
+  .mock { margin: 14px 0 6px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: var(--panel); font-size: 12.5px; }
+  .mock-title { background: #1c1c21; color: var(--z500); font-size: 11px; padding: 5px 12px; border-bottom: 1px solid var(--line); letter-spacing: .03em; }
+  .mock-title b { color: var(--z300); font-weight: 600; }
+  .mock-body { padding: 16px; }
+  .caption { color: var(--z500); font-size: 12.5px; margin: 6px 0 18px; max-width: none; }
+  .states { display: flex; flex-wrap: wrap; gap: 22px 32px; align-items: flex-start; }
+  .state { display: flex; flex-direction: column; gap: 8px; }
+  .state .lbl { color: var(--z500); font-size: 11px; }
+  .toolbar { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .toolbar .ghost { width: 28px; height: 32px; border-radius: 6px; border: 1px solid var(--line); background: transparent; }
+  .split { display: inline-flex; align-items: center; }
+  .split .primary, .split .chev { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; font-weight: 500; line-height: 1; color: var(--emerald-400); background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.25); border-radius: 6px; white-space: nowrap; cursor: default; }
+  .split .primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .split .chev { width: 28px; padding: 0; justify-content: center; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .split.open .chev { background: rgba(16,185,129,.20); }
+  .ico { width: 14px; height: 14px; flex: none; }
+  .ico16 { width: 16px; height: 16px; flex: none; color: var(--z400); margin-right: 2px; }
+  .pill { display: inline-block; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; line-height: 1.3; }
+  .pill.beta { background: rgba(14,165,233,.15); color: var(--sky-400); }
+  .pill.def { background: rgba(16,185,129,.15); color: var(--emerald-300); text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+  .menu { width: 288px; max-width: 100%; background: var(--pop); border: 1px solid var(--line); border-radius: 6px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 14px; color: var(--z200); }
+  .menu .hd { padding: 6px 8px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: rgba(161,161,170,.7); display: flex; align-items: center; gap: 8px; }
+  .menu .it { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: default; }
+  .menu .it:hover { background: #18181b; }
+  .menu .it .t { display: flex; flex-direction: column; min-width: 0; }
+  .menu .it .t .l { display: inline-flex; align-items: center; gap: 6px; }
+  .menu .it .t .s { font-size: 11px; color: var(--z400); }
+  .menu .sep { height: 1px; background: var(--line); margin: 4px -4px; }
+  .menu .folder { padding: 6px 8px; font-size: 12px; color: var(--z400); }
+  .menu .folder .n { color: rgba(244,244,245,.8); font-weight: 500; }
+  .menu .folder code { display: block; margin-top: 2px; font-size: 11px; background: none; padding: 0; color: var(--z400); word-break: break-all; }
+  .menu .footer { padding: 6px 8px; font-size: 12px; color: var(--z400); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .menu .footer .link { color: var(--sky-300); text-decoration: underline; text-underline-offset: 2px; cursor: default; }
+  .menu .footer .link:hover { color: var(--sky-400); }
+  .anchor { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .toast { display: inline-flex; gap: 10px; align-items: flex-start; max-width: 360px; background: #18181b; border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--z200); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  .toast .a { color: var(--sky-300); white-space: nowrap; font-weight: 600; }
+  .phone { width: 300px; max-width: 100%; background: var(--pop); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; font-size: 14px; }
+  .phone .it { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 8px 10px; border-radius: 6px; color: var(--z200); }
+  .phone .it .s { font-size: 12px; color: var(--z400); }
+  .phone .sep { height: 1px; background: var(--line); margin: 4px 0; }
+  .num { display: inline-block; min-width: 20px; height: 20px; border-radius: 10px; background: rgba(14,165,233,.15); color: var(--sky-300); font-size: 11px; font-weight: 700; text-align: center; line-height: 20px; margin-right: 4px; }
+  @media (max-width: 480px) { .menu { width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">UX design · build spec · card c4c27987</div>
+  <h1>Option A build spec: the green Launch button follows your remembered agent</h1>
+  <p class="meta">Companion to the approved design. Compass, 25 Sep 2026. Implementation and QA use this page for <em>what to build and check</em>; the approved mock stays the <em>visual</em> source of truth.</p>
+
+  <div class="callout green">
+    <p><b>Visual source of truth (approved by Nick, 8 Sep 2026, parent card a78c86f0):</b> <code>docs/launch-button-agent-choice-proposals.html</code> — the <b>Option A</b> section (<code>#a</code>), plus <b>"Shared piece — the mobile dead end"</b> (<code>#mobile</code>) and the <b>5-point precedence rule</b> under "If A is approved" (<code>#rec</code>). Nothing visible in Option A is changed by this spec. Where this spec and that mock disagree, the mock wins — this page only extracts it into exact strings, element order and code mappings.</p>
+    <p>To see the <b>Codex state</b> in the mock, use its sticky "Preview as someone whose remembered agent is" control (the page re-renders labels, chip, group order, footer and sub-lines live). QA screenshots should capture <b>both</b> states at 1280px, and the phone card menu at 375px.</p>
+  </div>
+
+  <div class="callout amber">
+    <p><b>Out of scope (Nick's open decision — do not build, do not assume):</b> the task-detail header terminal icon (<code>variant="task-icon"</code>) following the remembered agent. It stays Claude-only ("Launch in Claude Code" label + tooltip) in this card. The builder asks at the Design Review gate if still undecided. Also out: Option B, Option C (Settings page), remembering the destination, identifier renames, flag removal.</p>
+  </div>
+
+  <!-- ─────────────────────────── 1. PRIMARY BUTTON ─────────────────────────── -->
+  <h2 id="primary">1. Board toolbar — the primary button (desktop only)</h2>
+  <p>Mock: <code>#a</code> → "Board toolbar · primary button states · desktop". Code: <code>src/components/board/launch-claude-code-button.tsx</code>, the board variant (the <code>&lt;Button&gt;</code> with <code>rounded-r-none</code> and the <code>&lt;DropdownMenuTrigger&gt;</code> chevron beside it).</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · closed · both states (markup copied from the mock)</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Remembered agent = Claude Code (every new account)</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="split">
+              <span class="primary" title="Opens a Terminal window on this Mac"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Launch Claude Code</span></span>
+              <span class="chev" aria-label="More ways to launch"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+            </span>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Remembered agent = Codex</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="split">
+              <span class="primary" title="Opens a Terminal window on this Mac"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Launch Codex</span></span>
+              <span class="chev" aria-label="More ways to launch"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:24%">Element</th><th>Exact value</th><th style="width:34%">Code mapping / notes</th></tr></thead>
+    <tbody>
+      <tr><td>Primary label</td><td><span class="copy">"Launch " + AGENT_LABEL[agent]</span> → <span class="copy">Launch Claude Code</span> / <span class="copy">Launch Codex</span></td><td>Replace the hard-coded <code>&lt;span className="hidden sm:inline"&gt;Launch Claude Code&lt;/span&gt;</code>. Labels only from <code>AGENT_LABEL</code> in <code>src/lib/terminal/agent-copy.ts</code>. Nothing else on the button changes: keep the class string <code>h-8 gap-1.5 rounded-r-none border border-emerald-500/25 bg-emerald-500/10 text-xs text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300</code> and the <code>Terminal h-3.5 w-3.5</code> icon exactly.</td></tr>
+      <tr><td>Primary <code>title</code> (tooltip)</td><td><span class="copy">Opens a Terminal window on this Mac</span></td><td>New attribute on the primary <code>&lt;Button&gt;</code>. Adds no width. See conflict C1 below (Requirements wrote it slightly differently; the mock's string is used because it also matches the existing Codex item sub-line in the task menu).</td></tr>
+      <tr><td>Primary click</td><td>Launches the agent named on the label, in a terminal window</td><td>Claude → existing <code>handleLaunch</code>, byte-for-byte unchanged. Codex → existing <code>handleLaunchCodexDesktop</code> pre-flight (terminal flag + helper ≥ 0.3.14 + installed/signed in; unknown reads as enabled; same too-old / missing toasts incl. the "How to install Codex" action that opens <code>CODEX_INSTALL_GUIDE_URL</code>). Precedence rule 1: the label is the contract.</td></tr>
+      <tr><td>Codex click with no recorded folder</td><td>Opens the folder dialog in <b>existing-folder</b> mode; after save the launch <b>continues</b>; Cancel / Escape / outside-click / ✕ close it and fire nothing</td><td>Behaviour only (no new visual — reuses <code>LaunchPathDialog</code> as-is). Today <code>openDialog("new", false)</code> stops dead and needs a re-click. Requirements FR-3: <code>pendingLaunch</code> becomes <code>null | "claude" | "codex"</code> so <code>handleSaved</code> knows which agent is waiting. Codex must still be given a real existing folder, never auto-isolated; existing warnings unchanged. Never-trap rule applies.</td></tr>
+      <tr><td>Hover / focus</td><td>Unchanged from today</td><td>Mock state "Hover on the primary — same as today". No new classes.</td></tr>
+      <tr><td>Chevron <code>aria-label</code></td><td><span class="copy">More ways to launch</span></td><td>Was <code>"Launch options"</code> on the <code>DropdownMenuTrigger</code> button. Visual unchanged (<code>h-8 w-7 rounded-l-none …</code>).</td></tr>
+      <tr><td>Loading state</td><td>Shows <span class="copy">Launch Claude Code</span> until the preference is known; no spinner, no skeleton</td><td>Mock says "there is no unknown state". Requirements FR-1: the hook returns <code>undefined</code> while loading, so render the Claude label and SHOULD seed from the server so there is no visible flip on page load. A click during that instant launches Claude (the label is the contract — never a mystery click).</td></tr>
+      <tr><td>Terminal flag off</td><td>Always <span class="copy">Launch Claude Code</span>; menu has the single <span class="copy">Open in Claude Code</span> item; no chip, no footer, no sub-lines</td><td>Today's <code>browserLaunchAvailable === false</code> branch, untouched.</td></tr>
+      <tr><td>Analytics</td><td>—</td><td>PostHog <code>launch_claude_code_clicked</code> gains an <code>agent</code> property (not visible; Requirements FR-1).</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── 2. MENU ─────────────────────────── -->
+  <h2 id="menu">2. The dropdown menu (terminal flag on)</h2>
+  <p>Mock: <code>#a</code> → "Board toolbar · menu open · desktop". Code: the <code>&lt;DropdownMenuContent align="end" className="w-72"&gt;</code> block in the board variant. Both rendered states below are static copies of the mock (Claude default, then Codex default) so QA can compare without the toggle.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · menu open · remembered agent = Claude Code</div>
+    <div class="mock-body">
+      <div class="anchor">
+        <span class="split open">
+          <span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Launch Claude Code</span></span>
+          <span class="chev"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </span>
+        <div class="menu" role="menu">
+          <div role="group" aria-labelledby="hd-c1">
+            <div class="hd" id="hd-c1"><span class="num">1</span>Claude Code <span class="pill def">Your default</span></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">On your computer — how it works today</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep"></div>
+          <div role="group" aria-labelledby="hd-x1">
+            <div class="hd" id="hd-x1"><span class="num">2</span>Codex</div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">Opens Terminal on this Mac — needs the VibeCodes helper</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep"></div>
+          <div class="footer" role="presentation"><span class="num">3</span>Default agent: <b style="color:var(--z200)">Claude Code</b> · <span class="link" role="menuitem">Switch to Codex</span></div>
+          <div class="sep"></div>
+          <div class="folder"><div class="n"><span class="num">4</span>Recorded folder for this board</div><code>~/projects/vibe-coding-ideas</code></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M12 10v6M9 13h6"/></svg><span class="num">5</span>Start a new project…</div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><div class="t"><span class="l"><span class="num">6</span>Copy launch command</span><span class="s">For Claude Code</span></div></div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span class="num">7</span>Set exact folder (advanced)…</div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg><div class="t"><span class="l"><span class="num">8</span>Install guide</span><span class="s">Claude Code docs</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">The numbered badges are annotations for this spec only — they are not part of the design. In the mock the whole menu is 288px wide (<code>w-72</code>), dark popover, 4px padding, 14px text.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · menu open · remembered agent = Codex (group order flips, chip and footer follow)</div>
+    <div class="mock-body">
+      <div class="anchor">
+        <span class="split open">
+          <span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Launch Codex</span></span>
+          <span class="chev"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </span>
+        <div class="menu" role="menu">
+          <div role="group" aria-labelledby="hd-x2">
+            <div class="hd" id="hd-x2">Codex <span class="pill def">Your default</span></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">Opens Terminal on this Mac — needs the VibeCodes helper</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep"></div>
+          <div role="group" aria-labelledby="hd-c2">
+            <div class="hd" id="hd-c2">Claude Code</div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">On your computer — how it works today</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep"></div>
+          <div class="footer" role="presentation">Default agent: <b style="color:var(--z200)">Codex</b> · <span class="link" role="menuitem">Switch to Claude Code</span></div>
+          <div class="sep"></div>
+          <div class="folder"><div class="n">Recorded folder for this board</div><code>~/projects/vibe-coding-ideas</code></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M12 10v6M9 13h6"/></svg>Start a new project…</div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><div class="t"><span class="l">Copy launch command</span><span class="s">For Codex</span></div></div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>Set exact folder (advanced)…</div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg><div class="t"><span class="l">Install guide</span><span class="s">Codex CLI docs</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>2a. Element order, top to bottom (numbers match the badges above)</h3>
+  <ol>
+    <li><b>Remembered agent's group</b> — heading with the <b>"Your default"</b> chip, then its two items (terminal window, browser).</li>
+    <li><b>Separator</b>, then the <b>other agent's group</b> — heading without chip, its two items. (Within each group the order is unchanged: terminal window first, browser second.)</li>
+    <li><b>Separator</b>, then the <b>footer line</b> "Default agent: X · Switch to Y", then a <b>separator</b>.</li>
+    <li><b>Recorded folder block</b> — only when a folder is recorded (today's <code>effectiveTarget.source !== "none"</code> condition). It no longer brings its own leading separator: the separator after the footer is always present, so the folder block sits directly under it. When there is no folder, "Start a new project…" follows the footer separator directly.</li>
+    <li><b>Start a new project…</b> — unchanged.</li>
+    <li><b>Copy launch command</b> — now with the agent sub-line.</li>
+    <li><b>Separator</b>, <b>Set exact folder (advanced)…</b> — unchanged.</li>
+    <li><b>Separator</b>, <b>Install guide</b> — now with the agent sub-line.</li>
+  </ol>
+
+  <h3>2b. Exact strings and styling per element</h3>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:22%">Element</th><th>Exact copy</th><th style="width:40%">Styling as the mock shows it → Tailwind / component</th></tr></thead>
+    <tbody>
+      <tr><td>Group headings</td><td><span class="copy">Claude Code</span> / <span class="copy">Codex</span> (both groups, all states)</td><td>Become <code>&lt;DropdownMenuLabel&gt;</code> inside <code>&lt;DropdownMenuGroup&gt;</code> (renders <code>role="group"</code>). Keep today's look by passing today's class string over the label's default <code>text-sm font-medium</code>: <code>className="flex items-center gap-2 px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70"</code>. Mock: 10.5px, bold, uppercase, letter-spacing .05em, 70% muted, flex with 8px gap (for the chip). Keep the existing <code>&lt;span className="sr-only"&gt;Claude Code, &lt;/span&gt;</code> prefixes on the items.</td></tr>
+      <tr><td>"Your default" chip</td><td><span class="copy">Your default</span> — text, sentence case, on the remembered agent's heading only</td><td>Mock <code>.pill.def</code>: radius 4px, padding 1px 5px, 10.5px, weight 600, line-height 1.3, <b>no</b> uppercase, no letter-spacing, bg <code>rgba(16,185,129,.15)</code>, text emerald-300. Tailwind (mirrors the existing Beta chip recipe with emerald + normal case): <code>rounded bg-emerald-500/15 px-[5px] py-px text-[10.5px] font-semibold normal-case tracking-normal leading-[1.3] text-emerald-300</code>. Inline after the heading text with the label's <code>gap-2</code>. Readable by screen readers as part of the group label ("Claude Code Your default, group").</td></tr>
+      <tr><td>Agent items (4)</td><td>Unchanged: <span class="copy">In a terminal window</span> · sub <span class="copy">On your computer — how it works today</span> (Claude) / <span class="copy">Opens Terminal on this Mac — needs the VibeCodes helper</span> (Codex); <span class="copy">In the browser</span> + Beta chip · sub <span class="copy">A live terminal docked on this board</span></td><td>Today's markup and handlers as-is (<code>handleLaunch</code>, <code>handleLaunchInBrowser("claude"|"codex")</code>, <code>handleLaunchCodexDesktop</code>). Precedence rule 2: these launch exactly what they say and <b>never</b> write the remembered preference (unit test, PR #281 tests stay green).</td></tr>
+      <tr><td>Footer line</td><td><span class="copy">Default agent: </span><b>X</b><span class="copy"> · Switch to Y</span> where X = AGENT_LABEL[remembered], Y = AGENT_LABEL[other]. The "·" is U+00B7 with a space each side.</td><td>Mock <code>.footer</code>: padding 6px 8px, 12px text, muted (zinc-400), flex-wrap with 4px/8px gap; the agent name X is zinc-200 bold; the link is sky-300, underlined, underline-offset 2px, sky-400 on hover. Container: <code>&lt;div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-xs text-muted-foreground"&gt;</code>, name <code>&lt;b className="font-semibold text-foreground/90"&gt;</code>. The link is a real <code>&lt;DropdownMenuItem&gt;</code> rendered inline so it keeps Radix keyboard navigation: <code>className="inline h-auto cursor-pointer rounded-none p-0 text-xs text-sky-300 underline underline-offset-2 hover:text-sky-400 focus:bg-transparent focus:text-sky-400"</code>. Keyboard-reachable with ↑/↓ like every other item; Enter activates.</td></tr>
+      <tr><td>Footer "Switch to Y" behaviour</td><td>Writes the remembered preference to Y. Never launches anything. Never shows the one-time toast (precedence rules 3–4).</td><td>Awaits the existing single save path (<code>persistViewerTerminalAgent(Y, { source: "footer" })</code> → <code>updateTerminalAgent</code>). On success: primary relabels, groups reorder, chip and footer move, sub-lines follow. On failure: <b>nothing changes</b> and <code>toast.error("Couldn't switch your default agent — try again")</code> (sonner, existing error-toast style; wording follows the file's existing "Couldn't …" pattern). Not in the mock — behaviour only, no new visual. The menu closes on select as usual.</td></tr>
+      <tr><td>Recorded folder block</td><td>Unchanged: <span class="copy">Recorded folder for this board</span> (today's <code>effectiveTarget.displayLabel</code>) + path in mono</td><td>Today's markup. Only its separator rule changes (2a §4).</td></tr>
+      <tr><td>Copy launch command</td><td><span class="copy">Copy launch command</span> · sub-line <span class="copy">For Claude Code</span> / <span class="copy">For Codex</span></td><td>Two-line item using the same recipe as the agent items: <code>&lt;div className="flex flex-col"&gt;&lt;span&gt;Copy launch command&lt;/span&gt;&lt;span className="text-[11px] text-muted-foreground"&gt;For {AGENT_LABEL[agent]}&lt;/span&gt;&lt;/div&gt;</code>. <code>handleCopy</code> builds the remembered agent's command (<code>buildLaunchCommand</code> gains a Codex form; Claude output byte-for-byte unchanged). Success/failure toasts unchanged: "Launch command copied — paste it in your terminal" / "Couldn't copy the launch command".</td></tr>
+      <tr><td>Install guide</td><td><span class="copy">Install guide</span> · sub-line <span class="copy">Claude Code docs</span> / <span class="copy">Codex CLI docs</span></td><td>Same two-line recipe. <code>href</code> = <code>INSTALL_GUIDE_URL</code> for Claude, <code>CODEX_INSTALL_GUIDE_URL</code> for Codex; keep <code>target="_blank" rel="noopener noreferrer"</code>. See conflict C2 for the Codex sub-line wording.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── 3. TOAST ─────────────────────────── -->
+  <h2 id="toast">3. The one-time Undo toast</h2>
+  <p>Mock: <code>#a</code> → third state, "One-time toast the first time the label flips because of a picker toggle".</p>
+  <div class="mock">
+    <div class="mock-title"><b>Toast</b> · shown once per account · both wordings</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state"><span class="lbl">Picker toggled to Codex</span><div class="toast" role="status"><span>Your launch button now starts <b>Codex</b>. Change it any time from the button's menu.</span><span class="a">Undo</span></div></div>
+        <div class="state"><span class="lbl">Picker toggled back to Claude Code (only if never seen before)</span><div class="toast" role="status"><span>Your launch button now starts <b>Claude Code</b>. Change it any time from the button's menu.</span><span class="a">Undo</span></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:22%">Aspect</th><th>Spec</th></tr></thead>
+    <tbody>
+      <tr><td>Copy</td><td><span class="copy">Your launch button now starts {AGENT_LABEL[agent]}. Change it any time from the button's menu.</span> — the agent name is bold in the mock (pass a ReactNode message to sonner, or plain text if the toast component can't render markup; bold is a nicety, the words are the contract).</td></tr>
+      <tr><td>Action</td><td>One action, label <span class="copy">Undo</span>. Clicking it reverts the remembered agent to the previous value via the same save path (<code>source: "undo"</code>) and shows <b>no</b> further toast. Sonner's standard action button styling — no custom look.</td></tr>
+      <tr><td>Trigger</td><td>Only a <b>picker</b> write (browser chooser "Run it with", or per-task "Start fresh with") that <b>changes</b> the stored value, while the account's seen-flag is unset. Footer "Switch to …" never triggers it. Same-value writes never trigger it. Picker writes never block or delay a launch.</td></tr>
+      <tr><td>Once per account</td><td>The seen-flag is stored against the account (Requirements: new column <code>users.terminal_agent_toast_seen_at</code>, migration 00176), so a new browser or Mac does not show it again. It is set as soon as the toast is shown, regardless of whether Undo is clicked.</td></tr>
+      <tr><td>Where / when</td><td>Standard sonner position (as every other toast in the app). Use the regular <code>toast()</code> (not error/success). Suggest a slightly longer duration than the default (e.g. 8 s) because it carries an action — a behaviour tweak, not a visual one.</td></tr>
+      <tr><td>Accessibility</td><td><code>role="status"</code> as the mock shows; sonner supplies this. Undo is a real button, keyboard-focusable.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── 4. MOBILE ─────────────────────────── -->
+  <h2 id="mobile">4. Task card ⋯ menu on a phone (375px)</h2>
+  <p>Mock: <code>#mobile</code> → "Task card ⋯ menu · phone · today vs proposed" (right-hand state). Code: <code>variant="task-menu-item"</code> → the <code>!isDesktop</code> branch that today returns one disabled item "Open on desktop to launch Claude Code or Codex".</p>
+  <div class="mock">
+    <div class="mock-title"><b>Task card ⋯ menu</b> · phone · proposed (markup copied from the mock) · both states</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Remembered agent = Claude Code</span>
+          <div class="phone">
+            <div class="it" style="align-items:flex-start;color:var(--z400);font-size:12.5px;min-height:auto;padding-bottom:4px">Launching runs on your Mac, so it isn't available here.</div>
+            <div class="it"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><span class="t" style="display:flex;flex-direction:column"><span>Copy Claude Code command for this task</span><span class="s">Paste it into Terminal on your Mac</span></span></div>
+            <div class="sep"></div>
+            <div class="it">Edit task</div>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Remembered agent = Codex</span>
+          <div class="phone">
+            <div class="it" style="align-items:flex-start;color:var(--z400);font-size:12.5px;min-height:auto;padding-bottom:4px">Launching runs on your Mac, so it isn't available here.</div>
+            <div class="it"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><span class="t" style="display:flex;flex-direction:column"><span>Copy Codex command for this task</span><span class="s">Paste it into Terminal on your Mac</span></span></div>
+            <div class="sep"></div>
+            <div class="it">Edit task</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:22%">Element</th><th>Exact copy</th><th style="width:40%">Styling / code</th></tr></thead>
+    <tbody>
+      <tr><td>Explanation line</td><td><span class="copy">Launching runs on your Mac, so it isn't available here.</span></td><td>Non-interactive text, not a disabled item (persona rule: no disabled control without an adjacent reason — here the reason <em>is</em> the control's replacement). Mock: muted zinc-400, 12.5px, top-aligned, no minimum height, 4px bottom padding. Render as a plain <code>&lt;div className="px-2.5 pt-2 pb-1 text-[12.5px] text-muted-foreground"&gt;</code> (not a <code>DropdownMenuItem</code>, so it is never focusable). See conflict C3 for the wording.</td></tr>
+      <tr><td>Copy action</td><td><span class="copy">Copy {AGENT_LABEL[agent]} command for this task</span> · sub-line <span class="copy">Paste it into Terminal on your Mac</span></td><td>A working <code>&lt;DropdownMenuItem&gt;</code> with the <code>Copy</code> icon (<code>mr-2 h-4 w-4</code>), two-line body (<code>flex flex-col</code>, sub-line <code>text-[11px] text-muted-foreground</code> at desktop; mock draws 12px on the phone). <b>Minimum 44px tall</b> on the phone: today's <code>py-2.5</code> gives ~40px, so add <code>min-h-11</code> (and keep <code>sm:py-1.5</code> for the desktop breakpoint, where this branch does not render anyway). Copies the remembered agent's command <em>for this task</em> (task-scoped prompt, same builder as desktop's "Copy launch command"). Success/failure toasts reuse the existing pair. See conflict C4.</td></tr>
+      <tr><td>Everything else</td><td>—</td><td>The disabled item is removed. Separator and the rest of the card menu ("Edit task", …) unchanged. No launch of any kind on a phone.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── 5. PRECEDENCE ─────────────────────────── -->
+  <h2 id="rule">5. The 5-point precedence rule (binding, verbatim from the approved mock)</h2>
+  <div class="callout rule">
+    <ol style="margin:0">
+      <li>The green button launches the agent named in its label, in a terminal window. Its label is always the account's remembered agent. Nothing else influences it.</li>
+      <li>Every dropdown item launches exactly what it says, regardless of the remembered agent, and never changes the remembered agent.</li>
+      <li>Only two things write the remembered agent: any "Run it with / Start fresh with" picker (as today), and the menu footer "Switch to …" link (new). Both are explicit user acts.</li>
+      <li>The first time the label changes because of a picker toggle (not the footer link), show the toast once, with Undo, then never again.</li>
+      <li>A primary Codex click runs the same pre-flight as the dropdown's "Codex › In a terminal window" today, and when a folder is missing it opens the folder dialog and continues the launch after save.</li>
+    </ol>
+  </div>
+
+  <!-- ─────────────────────────── 6. CONFLICTS ─────────────────────────── -->
+  <h2 id="conflicts">6. Where the Requirements step and the approved mock disagree</h2>
+  <p>Four wording differences. In each case the mock is the approved visual, so this spec uses the mock's string; the Design Review step can overrule any of them in one line, but nobody should silently pick.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:6%">#</th><th style="width:20%">Element</th><th>Approved mock says</th><th>Requirements / card says</th><th style="width:26%">This spec uses</th></tr></thead>
+    <tbody>
+      <tr><td>C1</td><td>Primary tooltip (<code>title</code>)</td><td><span class="copy">Opens a Terminal window on this Mac</span> (the mock's <code>title</code> attribute)</td><td>"Opens in a terminal window on this Mac"</td><td class="good">Mock. It also matches the sub-line already shipped on the task-menu Codex item, so the two surfaces agree.</td></tr>
+      <tr><td>C2</td><td>Install guide sub-line, Codex</td><td><span class="copy">Codex CLI docs</span> (what the mock renders when you toggle to Codex; its static HTML shows "Claude Code docs" before the script runs)</td><td>"Codex docs"</td><td class="good">Mock: "Codex CLI docs". The link target is the Codex CLI page, so the extra word is accurate.</td></tr>
+      <tr><td>C3</td><td>Mobile explanation line</td><td><span class="copy">Launching runs on your Mac, so it isn't available here.</span></td><td>"Launching runs on your Mac, so it isn't available on a phone."</td><td class="good">Mock: "…available here." (The card description also says "on a phone" — same source as Requirements. Either reads fine; the mock is the approved one.)</td></tr>
+      <tr><td>C4</td><td>Mobile copy item</td><td><span class="copy">Copy {Agent} command for this task</span> · sub-line <span class="copy">Paste it into Terminal on your Mac</span></td><td>"Copy command for this task" · sub-line "For {Agent} — paste it into Terminal on your Mac"</td><td class="good">Mock: the agent name on the main line. Same information, and the main line is what a phone user scans.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Not conflicts, just things the mock does not draw (Requirements added them; this spec describes the behaviour and reuses existing patterns, no new visuals): the footer save-failure error toast (§2b), the loading state (§1), Codex continuing after the folder dialog (§1), the per-account seen-flag (§3), the PostHog <code>agent</code> property, and the copy fixes to the guide page and the My-sessions empty state (§8).</p>
+
+  <!-- ─────────────────────────── 7. AC MAP ─────────────────────────── -->
+  <h2 id="ac">7. Acceptance criteria → what to look at</h2>
+  <p>Numbers are the Requirements step's 24 acceptance criteria. "Mock" names the section of <code>docs/launch-button-agent-choice-proposals.html</code>; "Spec" names the section on this page.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:8%">AC</th><th>Check</th><th style="width:30%">Mock element</th><th style="width:14%">Spec</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>codex → primary reads "Launch Codex", tooltip set</td><td>#a primary states, lab toggled to Codex</td><td>§1</td></tr>
+      <tr><td>2</td><td>claude / new account → "Launch Claude Code", launch URL byte-identical to today</td><td>#a primary states, default</td><td>§1</td></tr>
+      <tr><td>3</td><td>Codex primary with a folder → Codex terminal-window launch ≤ 2048 chars, folder kept, same toasts</td><td>#a "What a click does"; rule 5</td><td>§1, §5</td></tr>
+      <tr><td>4</td><td>No folder → dialog (closable 3 ways), launch continues after save, cancel fires nothing</td><td>#a "What a click does"; rule 5</td><td>§1</td></tr>
+      <tr><td>5</td><td>Flag off → Claude always, single item, no chip / footer</td><td>(not drawn — today's menu)</td><td>§1</td></tr>
+      <tr><td>6</td><td>Default group first with text chip "Your default"</td><td>#a menu open, badge 1</td><td>§2a, §2b</td></tr>
+      <tr><td>7</td><td>Headings are labels inside role=group</td><td>#a "Accessibility"</td><td>§2b</td></tr>
+      <tr><td>8</td><td>Each agent item launches that agent; preference never written (unit test)</td><td>rule 2</td><td>§2b, §5</td></tr>
+      <tr><td>9</td><td>Footer text correct and keyboard reachable</td><td>#a menu open, badge 3</td><td>§2b</td></tr>
+      <tr><td>10</td><td>Switch updates the preference, relabels, reorders, no launch</td><td>#a menu open (toggle the lab to see the flipped state)</td><td>§2b</td></tr>
+      <tr><td>11</td><td>Switch save failure → error toast, nothing changes</td><td>(behaviour only)</td><td>§2b</td></tr>
+      <tr><td>12</td><td>Copy command agent-aware; Claude output unchanged</td><td>#a menu open, badge 6</td><td>§2b</td></tr>
+      <tr><td>13</td><td>Install guide agent-aware with sub-lines, new tab</td><td>#a menu open, badge 8</td><td>§2b, C2</td></tr>
+      <tr><td>14</td><td>Chevron aria-label "More ways to launch"</td><td>#a primary states (chevron)</td><td>§1</td></tr>
+      <tr><td>15</td><td>Picker toggle with flag unset → toast once + Undo, label flips, flag set</td><td>#a toast state; rule 4</td><td>§3</td></tr>
+      <tr><td>16</td><td>Undo reverts, no second toast</td><td>#a toast state</td><td>§3</td></tr>
+      <tr><td>17</td><td>Flag set / same value / footer → no toast; both pickers covered</td><td>rule 3–4</td><td>§3</td></tr>
+      <tr><td>18</td><td>Mobile 375px: explanation + ≥44px copy item, no launch</td><td>#mobile, right-hand state</td><td>§4</td></tr>
+      <tr><td>19</td><td>Migration 00176 + types + drift check clean + applied to prod before go-live</td><td>(behaviour only)</td><td>§3</td></tr>
+      <tr><td>20</td><td>Guide page + My-sessions empty state updated; comment on cacc6f1e</td><td>(copy only)</td><td>§8</td></tr>
+      <tr><td>21</td><td>Deep-link / prompt-budget tests unchanged; no new URL params</td><td>"Rules every option obeys"</td><td>§9</td></tr>
+      <tr><td>22</td><td>PR #281 chooser-default tests pass</td><td>rule 2</td><td>§5</td></tr>
+      <tr><td>23</td><td>Full test + typecheck green</td><td>—</td><td>—</td></tr>
+      <tr><td>24</td><td>QA fidelity vs Option A at 1280 (toolbar closed + menu open, both states) and 375 (card menu), screenshots attached</td><td>#a and #mobile, both lab states</td><td>§1, §2, §4</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── 8. COPY FIXES ─────────────────────────── -->
+  <h2 id="copy">8. Copy fixes carried in this card (no design)</h2>
+  <ul>
+    <li><b>My-sessions panel empty state</b> (<code>src/components/board/terminal-my-sessions-panel.tsx</code>, currently "Launch one from an idea board — Launch Claude Code → In the browser."): make it agent-neutral and match the new menu, e.g. <span class="copy">Launch one from an idea board — open the Launch button's menu and pick "In the browser".</span></li>
+    <li><b>Guide page</b> <code>src/app/guide/launching-claude-code/page.tsx</code>: the button is now "Launch &lt;your agent&gt;"; describe the "Your default" chip, the footer "Switch to …" link, the Codex path and its requirements (helper, real folder, no worktree), and the phone "Copy … command for this task" item. Leave a comment on card cacc6f1e when it ships so it is not done twice.</li>
+  </ul>
+
+  <!-- ─────────────────────────── 9. GUARD-RAILS ─────────────────────────── -->
+  <h2 id="guards">9. Guard-rails the builder must not cross</h2>
+  <ul>
+    <li>Nothing is added to any launch link; no new URL parameter; the compact prompt's protected head gains no words. <code>deep-link.test.ts</code> and the guide-bootstrap budget test stay exactly as they are; the folder is never dropped to fit (<code>cwdPolicy: "keep"</code> on the browser launch).</li>
+    <li>Agent names only via <code>AGENT_LABEL</code> — never colour alone, never a hand-typed "Claude Code".</li>
+    <li>The remembered agent lives in <code>users.terminal_agent</code>, read through the existing hook — no second store, no browser-only copy.</li>
+    <li>Never trap the user: the folder dialog opened by a Codex primary click closes via its button, Escape and outside-click.</li>
+    <li>Terminal-window vs browser stays a distinct choice in the menu — do not collapse the four agent items into two.</li>
+    <li>The split button stays desktop-only (<code>hidden md:inline-flex</code>); phones get the copy improvement in §4, never a launch.</li>
+    <li>Nothing visible in the approved mock is changed without going back to Nick — the four wording conflicts in §6 are flagged for the Design Review gate, not decided unilaterally here.</li>
+  </ul>
+</main>
+</body>
+</html>
