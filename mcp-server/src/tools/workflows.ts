@@ -1533,14 +1533,6 @@ export async function completeStep(
   };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
-  // Only ever SET the marker, never null an existing one over it — a
-  // completion that reports the normal model, or omits model_used entirely,
-  // is not evidence the primary came back (that's the marker's own midnight
-  // UTC expiry to decide, not this step).
-  if (substitutedUnavailable && substitutionResolution) {
-    updateFields.model_unavailable_at = new Date().toISOString();
-    updateFields.model_unavailable_model = substitutionResolution.resolved;
-  }
 
   const { data: updated, error: updateError } = await ctx.supabase
     .from("task_workflow_steps")
@@ -1552,6 +1544,37 @@ export async function completeStep(
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
+
+  // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
+  // write after the main completion update. On a DB where migration 00176
+  // hasn't landed yet, this must never take down completion itself — a
+  // deploy can reach production a little before or after its migration.
+  // Only ever SET the marker, never null an existing one over it — a
+  // completion that reports the normal model, or omits model_used entirely,
+  // is not evidence the primary came back (that's the marker's own midnight
+  // UTC expiry to decide, not this step).
+  if (substitutedUnavailable && substitutionResolution) {
+    try {
+      const { error: markerError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: substitutionResolution.resolved,
+        })
+        .eq("id", params.step_id);
+      if (markerError) {
+        logger.warn("model-availability marker write failed on complete_step — completion unaffected", {
+          stepId: params.step_id,
+          error: markerError.message,
+        });
+      }
+    } catch (err) {
+      logger.warn("model-availability marker write threw on complete_step — completion unaffected", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
@@ -1686,7 +1709,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, model_unavailable_at")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
     .eq("id", params.step_id)
     .single();
 
@@ -1771,12 +1794,44 @@ export async function failStep(
 
   // Auto-switch, rescue half (card 5d0665a2, AC-1). Never for awaiting_approval
   // rejections (human gate — UX Design §2b) or Auto steps (no tier to resolve
-  // a backup for). step.model_unavailable_at is read from the row as it stood
+  // a backup for). model_unavailable_at is read from the row as it stood
   // BEFORE this write: already set means this step has had its one rescue,
   // EVER — a second failure is a real failure, not a second bounce.
   const rescueEligible = modelUnavailableFlagged && step.status === "in_progress" && !!step.model_tier;
-  const rescueDecision = rescueEligible
-    ? shouldRescueStep(params.model_unavailable, step.model_unavailable_at !== null)
+
+  // AC-7: the guard read is separate from the initial step fetch and never
+  // throws — on a DB without migration 00176 this must degrade to "can't
+  // rescue" (ordinary fail, exactly as on master), not break fail_step for
+  // everyone.
+  let stepUnavailableAt: string | null = null;
+  let markerReadOk = true;
+  if (rescueEligible) {
+    try {
+      const { data: markerRow, error: markerReadError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .select("model_unavailable_at")
+        .eq("id", params.step_id)
+        .maybeSingle();
+      if (markerReadError) {
+        markerReadOk = false;
+        logger.warn("model-availability rescue-guard read failed in fail_step — falling back to ordinary failure", {
+          stepId: params.step_id,
+          error: markerReadError.message,
+        });
+      } else {
+        stepUnavailableAt = markerRow?.model_unavailable_at ?? null;
+      }
+    } catch (err) {
+      markerReadOk = false;
+      logger.warn("model-availability rescue-guard read threw in fail_step — falling back to ordinary failure", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const canRescue = rescueEligible && markerReadOk;
+  const rescueDecision = canRescue
+    ? shouldRescueStep(params.model_unavailable, stepUnavailableAt !== null)
     : { rescue: false, reason: "not-a-model-failure" as const };
 
   // Applied against the LIVE marker (same lookup claim_next_step used to
@@ -1786,7 +1841,7 @@ export async function failStep(
   // (Design Review note 2: the second-failure comment must name the backup,
   // not the unswitched primary).
   let rescueResolution: { unavailableModel: string; backupModel: string } | null = null;
-  if (rescueEligible) {
+  if (canRescue) {
     const baseResolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults);
     if (baseResolution) {
       const liveUnavailable = await readLiveUnavailableModel(ctx, step.idea_id);
@@ -1795,9 +1850,41 @@ export async function failStep(
     }
   }
 
+  // AC-7: for an intended rescue, write the marker FIRST as a guarded,
+  // best-effort update — only flip the step to pending if that write
+  // actually succeeded. Otherwise the rescue-once guard could be bypassed
+  // (a step rescued but never marked could be rescued again) on a DB
+  // without migration 00176, so an intended rescue falls back to an
+  // ordinary failure instead.
+  let actuallyRescue = false;
+  if (rescueDecision.rescue && rescueResolution) {
+    try {
+      const { error: markerWriteError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: rescueResolution.unavailableModel,
+        })
+        .eq("id", params.step_id);
+      if (markerWriteError) {
+        logger.warn("model-availability marker write failed before rescue in fail_step — falling back to ordinary failure", {
+          stepId: params.step_id,
+          error: markerWriteError.message,
+        });
+      } else {
+        actuallyRescue = true;
+      }
+    } catch (err) {
+      logger.warn("model-availability marker write threw before rescue in fail_step — falling back to ordinary failure", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   const updateFields: Record<string, unknown> = {
-    status: rescueDecision.rescue ? "pending" : "failed",
-    completed_at: rescueDecision.rescue ? null : new Date().toISOString(),
+    status: actuallyRescue ? "pending" : "failed",
+    completed_at: actuallyRescue ? null : new Date().toISOString(),
     claim_token_hash: null,
     work_token_hash: null,
     executed_model: executedModel,
@@ -1807,7 +1894,7 @@ export async function failStep(
     persona_honored: personaHonored,
     skills_used: params.skills_used ?? null,
   };
-  if (rescueDecision.rescue) {
+  if (actuallyRescue) {
     // Mirror the cascade reset's shape so a rescued step is indistinguishable
     // from any other re-claimable pending step. The failure text is not
     // lost — it survives as the 'failure' comment posted below, which is
@@ -1816,14 +1903,6 @@ export async function failStep(
     updateFields.claimed_by = null;
   } else if (params.output !== undefined) {
     updateFields.output = params.output;
-  }
-  // Marker write: only ever SET/refresh it when this failure was reported as
-  // a model-unavailability one (first rescue, or a second failure that
-  // refreshes which model is now known dead) — never null an existing marker
-  // on an ordinary failure.
-  if (rescueEligible && rescueResolution) {
-    updateFields.model_unavailable_at = new Date().toISOString();
-    updateFields.model_unavailable_model = rescueResolution.unavailableModel;
   }
 
   const { data: updated, error: updateError } = await ctx.supabase
@@ -1842,7 +1921,7 @@ export async function failStep(
 
   // Make the auto-switch visible in-product rather than leaving a step that
   // silently un-failed itself, or silently stayed failed a second time.
-  if (rescueDecision.rescue && rescueResolution) {
+  if (actuallyRescue && rescueResolution) {
     logger.warn("workflow step auto-rescued onto backup model", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -1857,7 +1936,30 @@ export async function failStep(
       type: "comment",
       content: rescueSentence(rescueResolution.unavailableModel, rescueResolution.backupModel),
     });
-  } else if (rescueEligible && rescueDecision.reason === "already-rescued" && rescueResolution) {
+  } else if (canRescue && rescueDecision.reason === "already-rescued" && rescueResolution) {
+    // Ordinary failure regardless of whether this best-effort marker refresh
+    // succeeds — AC-7: never let a marker write affect the outcome here.
+    try {
+      const { error: markerRefreshError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: rescueResolution.unavailableModel,
+        })
+        .eq("id", params.step_id);
+      if (markerRefreshError) {
+        logger.warn("model-availability marker refresh failed on second failure — failure unaffected", {
+          stepId: params.step_id,
+          error: markerRefreshError.message,
+        });
+      }
+    } catch (err) {
+      logger.warn("model-availability marker refresh threw on second failure — failure unaffected", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     logger.warn("workflow step failed again after a model-unavailability rescue — leaving it failed", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -1995,7 +2097,7 @@ export async function failStep(
   if (step.run_id) {
     await ctx.supabase
       .from("workflow_runs")
-      .update({ status: params.reset_to_step_id || rescueDecision.rescue ? "running" : "failed" })
+      .update({ status: params.reset_to_step_id || actuallyRescue ? "running" : "failed" })
       .eq("id", step.run_id);
   }
 
@@ -2405,16 +2507,38 @@ export async function resetWorkflow(
       // this site was missing from the original claim-token lifecycle and
       // would have left a stale work_token_hash usable after a full reset.
       work_token_hash: null,
-      // Auto-switch (card 5d0665a2, AC-9): a full workflow reset is a fresh
-      // run, so both the rescue-once guard and the board-wide marker clear
-      // here. Cascade rejection (fail_step's reset_to_step_id) and skip_step
-      // deliberately do NOT clear these — see model-availability.ts.
-      model_unavailable_at: null,
-      model_unavailable_model: null,
     })
     .eq("run_id", run.id);
 
   if (stepsError) throw new Error(`Failed to reset steps: ${stepsError.message}`);
+
+  // Auto-switch (card 5d0665a2, AC-9): a full workflow reset is a fresh run,
+  // so both the rescue-once guard and the board-wide marker clear here.
+  // Cascade rejection (fail_step's reset_to_step_id) and skip_step
+  // deliberately do NOT clear these — see model-availability.ts.
+  //
+  // Separate, best-effort update (AC-7): on a DB where migration 00176
+  // hasn't landed yet, naming these columns in the main reset update above
+  // would make PostgREST reject the WHOLE statement, breaking reset_workflow
+  // for every user. A code deploy can reach production a little before or
+  // after its migration, so this must degrade quietly instead.
+  try {
+    const { error: markerError } = await ctx.supabase
+      .from("task_workflow_steps")
+      .update({ model_unavailable_at: null, model_unavailable_model: null })
+      .eq("run_id", run.id);
+    if (markerError) {
+      logger.warn("model-availability marker clear failed on reset_workflow — reset unaffected", {
+        runId: run.id,
+        error: markerError.message,
+      });
+    }
+  } catch (err) {
+    logger.warn("model-availability marker clear threw on reset_workflow — reset unaffected", {
+      runId: run.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Reset run
   const { error: resetError } = await ctx.supabase
