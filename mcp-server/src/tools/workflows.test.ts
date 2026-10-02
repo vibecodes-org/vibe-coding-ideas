@@ -23,6 +23,7 @@ import {
   failStepSchema,
   updateStep,
   updateStepSchema,
+  skipStep,
   applyWorkflowTemplate,
   modelTierClause,
   resolveModelTier,
@@ -31,6 +32,7 @@ import {
   addStepComment,
   addStepCommentSchema,
   resetWorkflow,
+  readLiveUnavailableModel,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
 
@@ -275,6 +277,8 @@ function makeClaimContext(opts: {
   ownerUserId?: string;
   /** Test-owned array; pushed the `id` filter value on every from("users").eq("id", …) call. */
   usersQueryIds?: string[];
+  /** Auto-switch (card 5d0665a2): the model_unavailable_model the marker lookup (5th task_workflow_steps call) should return. Undefined/omitted -> no marker (default: today's behaviour). */
+  unavailableModel?: string | null;
 }) {
   const tableCounts: Record<string, number> = {};
 
@@ -301,6 +305,17 @@ function makeClaimContext(opts: {
         // 4th: context query — prior completed/skipped steps (thenable)
         chain.chain.then = (resolve: (val: unknown) => void) =>
           Promise.resolve({ data: opts.priorSteps, error: null }).then(resolve);
+      } else if (callNum === 5) {
+        // 5th: readLiveUnavailableModel's marker lookup (maybeSingle) — only
+        // reached on the tiered path. Default (opts.unavailableModel
+        // undefined) -> createChain(null)'s default {data:null,error:null},
+        // i.e. no marker, today's behaviour.
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: opts.unavailableModel !== undefined ? { model_unavailable_model: opts.unavailableModel } : null,
+            error: null,
+          })
+        );
       }
       return chain.chain;
     }
@@ -1415,14 +1430,21 @@ describe("completeStep — tier adherence (P2c)", () => {
   }) {
     let commentInserted: unknown = null;
     let usersQueried = 0;
-    let lastStepChain: ReturnType<typeof createChain> | null = null;
+    // QA rework (card 5d0665a2, AC-7): completeStep can now make a SECOND,
+    // separate best-effort update to task_workflow_steps (the auto-switch
+    // marker, written after the real completion update) — track every chain
+    // created for this table and pick out the real completion's by its
+    // `status` field, which a marker-only write never carries.
+    const stepChains: ReturnType<typeof createChain>[] = [];
 
     const ctx = makeContext(((table: string) => {
       if (table === "task_workflow_steps") {
         const chain = createChain(null);
         chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
         chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
-        lastStepChain = chain;
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ error: null }).then(resolve);
+        stepChains.push(chain);
         return chain.chain;
       }
       if (table === "users") {
@@ -1447,7 +1469,9 @@ describe("completeStep — tier adherence (P2c)", () => {
 
     return {
       ctx,
-      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getUpdate: () =>
+        stepChains.find((c) => c.captured.updated && "status" in (c.captured.updated as Record<string, unknown>))
+          ?.captured.updated as Record<string, unknown>,
       getComment: () => commentInserted,
       getUsersQueried: () => usersQueried,
     };
@@ -3140,6 +3164,619 @@ describe("failStep", () => {
 });
 
 // ---------------------------------------------------------------------------
+// failStep — auto-switch to the backup model (card 5d0665a2)
+// ---------------------------------------------------------------------------
+
+describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
+  /**
+   * QA rework (AC-7): the marker write is no longer folded into the same
+   * update as status/claim fields — it is now a SEPARATE call (written
+   * before the rescue for a first failure, or best-effort after the main
+   * update for a second one), so a DB missing migration 00176 can reject
+   * only the marker write and never the step's real status change. This mock
+   * distinguishes every task_workflow_steps call after the initial fetch by
+   * its SHAPE rather than its position: a `.select("model_unavailable_at")`
+   * is the rescue guard read, a `.select("model_unavailable_model")` (with
+   * no `.update()`) is readLiveUnavailableModel, an `.update()` immediately
+   * awaited with no further `.select()` is a marker write/refresh, and an
+   * `.update()` followed by `.select().maybeSingle()` is the real step
+   * update.
+   */
+  function ctxFor(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    liveMarkerModel?: string | null;
+    stepUnavailableAt?: string | null;
+    guardReadError?: { message: string };
+    guardReadThrows?: boolean;
+    markerWriteError?: { message: string };
+    markerWriteThrows?: boolean;
+  }) {
+    const commentsInserted: Record<string, unknown>[] = [];
+    const runUpdates: Record<string, unknown>[] = [];
+    const stepUpdates: Record<string, unknown>[] = [];
+    let tableCalls = 0;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        tableCalls++;
+        if (tableCalls === 1) {
+          return createChain(opts.stepData).chain;
+        }
+
+        let selectedFields: string | undefined;
+        let updatedPayload: Record<string, unknown> | undefined;
+        const local: Record<string, unknown> = {};
+        local.select = vi.fn((f?: string) => {
+          selectedFields = f;
+          return local;
+        });
+        for (const m of ["eq", "not", "gte", "order", "limit", "in"]) {
+          local[m] = vi.fn(() => local);
+        }
+        local.update = vi.fn((data: unknown) => {
+          updatedPayload = data as Record<string, unknown>;
+          stepUpdates.push(updatedPayload);
+          return local;
+        });
+        local.maybeSingle = vi.fn(() => {
+          if (updatedPayload && selectedFields) {
+            // The real step update's own maybeSingle (update -> select -> maybeSingle).
+            return Promise.resolve({ data: opts.updatedStep, error: null });
+          }
+          if (selectedFields === "model_unavailable_at") {
+            // Rescue-guard read.
+            if (opts.guardReadThrows) throw new Error("relation \"task_workflow_steps\" — unknown column");
+            if (opts.guardReadError) return Promise.resolve({ data: null, error: opts.guardReadError });
+            return Promise.resolve({ data: { model_unavailable_at: opts.stepUnavailableAt ?? null }, error: null });
+          }
+          // readLiveUnavailableModel's marker lookup.
+          return Promise.resolve({
+            data: opts.liveMarkerModel !== undefined ? { model_unavailable_model: opts.liveMarkerModel } : null,
+            error: null,
+          });
+        });
+        // A marker write/refresh is awaited directly off the chain returned
+        // by .eq() — no .select() precedes it — so it must be thenable.
+        local.then = (resolve: (val: unknown) => void) => {
+          if (opts.markerWriteThrows) throw new Error("relation \"task_workflow_steps\" — unknown column");
+          return Promise.resolve({ error: opts.markerWriteError ?? null }).then(resolve);
+        };
+        return local;
+      }
+      if (table === "users") return createChain({ model_tier_map: null }).chain;
+      if (table === "platform_settings") return createChain(null).chain;
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.update = vi.fn((data: unknown) => {
+          runUpdates.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentsInserted.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      // The real step update always carries `status`; a marker write/refresh
+      // never does — this holds regardless of call order.
+      getUpdate: () => stepUpdates.find((u) => "status" in u) as Record<string, unknown>,
+      getMarkerWrite: () => stepUpdates.find((u) => "model_unavailable_at" in u) as Record<string, unknown> | undefined,
+      getComments: () => commentsInserted,
+      getRunUpdates: () => runUpdates,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: RUN_ID,
+    step_order: 3,
+    idea_id: IDEA_ID,
+    bot_id: null,
+    agent_role: "developer",
+    status: "in_progress",
+    model_tier: "frontier",
+  };
+
+  it("returns the step to pending instead of leaving it failed, and writes the marker as a separate call BEFORE the rescue (AC-1, AC-7)", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "API error: credit balance too low",
+      model_unavailable: true,
+    });
+
+    const update = getUpdate();
+    expect(update.status).toBe("pending");
+    expect(update.completed_at).toBeNull();
+    expect(update.started_at).toBeNull();
+    expect(update.claimed_by).toBeNull();
+    expect("model_unavailable_at" in update).toBe(false);
+    expect("model_unavailable_model" in update).toBe(false);
+
+    // Seed frontier (claude) resolves to opus — written by its own call.
+    const markerWrite = getMarkerWrite();
+    expect(markerWrite).toBeDefined();
+    expect(markerWrite!.model_unavailable_model).toBe("opus");
+    expect(markerWrite!.model_unavailable_at).not.toBeNull();
+  });
+
+  it("leaves the run running so the workflow carries on rather than stopping dead", async () => {
+    const { ctx, getRunUpdates } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    expect(getRunUpdates()).toContainEqual({ status: "running" });
+  });
+
+  it("posts the binding-wording rescue comment naming the dead model and the backup (AC-3, Design Review edit)", async () => {
+    const { ctx, getComments } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const notice = getComments().find((c) => c.type === "comment");
+    expect(notice).toBeDefined();
+    // Seed frontier -> opus, backup fable.
+    expect(notice!.content).toBe(
+      "**Switched to the backup model.** This step couldn't run because **opus** was unavailable (for example out of credits or overloaded). It has been put back in the queue and will be re-run on the backup, **fable**. Other steps on this board that would have used **opus** will use **fable** too until midnight UTC, when **opus** is tried again. This automatic retry happens once per step — if it fails on **fable** as well it stays failed and needs a person to look."
+    );
+  });
+
+  it("falls back to an ordinary failure when the marker write before the rescue fails — never rescues without recording it (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate, getRunUpdates } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+      markerWriteError: { message: "column \"model_unavailable_at\" does not exist" },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    // Never flipped to pending on a marker write it couldn't confirm — a
+    // step "rescued" without a recorded marker could be rescued forever.
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("falls back to an ordinary failure when the marker write before the rescue throws (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate, getRunUpdates } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+      markerWriteThrows: true,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("degrades to an ordinary failure when the rescue-guard read errors, exactly as on master (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate, getRunUpdates, getMarkerWrite } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+      guardReadError: { message: "column task_workflow_steps.model_unavailable_at does not exist" },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect("model_unavailable_at" in update).toBe(false);
+    // Never even attempts a marker write once the guard read is unreadable.
+    expect(getMarkerWrite()).toBeUndefined();
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("degrades to an ordinary failure when the rescue-guard read throws (PGRST204-style), exactly as on master (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+      guardReadThrows: true,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(getMarkerWrite()).toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("does not rescue the same step twice — a second failure stays failed, and the marker is refreshed (as a separate best-effort write) to whichever model it was actually directed at (AC-1)", async () => {
+    const { ctx, getUpdate, getMarkerWrite, getRunUpdates, getComments } = ctxFor({
+      stepData: baseStep,
+      stepUnavailableAt: "2026-09-20T00:00:00.000Z",
+      // The live marker still names "opus" (set by the first rescue) — this
+      // claim was therefore directed at the backup, "fable".
+      liveMarkerModel: "opus",
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+    });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "Still failing",
+      model_unavailable: true,
+    });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect(update.completed_at).not.toBeNull();
+    expect("model_unavailable_at" in update).toBe(false);
+    // The marker is refreshed (in its own call) to name the model THIS claim
+    // was actually directed at (the backup, fable) — not the original primary.
+    const markerWrite = getMarkerWrite();
+    expect(markerWrite!.model_unavailable_model).toBe("fable");
+    expect(markerWrite!.model_unavailable_at).not.toBeNull();
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+
+    const secondFailureComment = getComments().find((c) => c.type === "comment");
+    expect(secondFailureComment!.content).toBe(
+      "**No automatic retry this time.** This step was already re-run once on a backup model and has now failed again because **fable** was unavailable. It has been left failed. Check your model credits or plan, then reset or re-run the step."
+    );
+  });
+
+  it("a failed marker refresh on a second failure never changes the outcome — the step stays failed and the comment still posts (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: baseStep,
+      stepUnavailableAt: "2026-09-20T00:00:00.000Z",
+      liveMarkerModel: "opus",
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+      markerWriteError: { message: "column \"model_unavailable_model\" does not exist" },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    expect(getUpdate().status).toBe("failed");
+    const secondFailureComment = getComments().find((c) => c.type === "comment");
+    expect(secondFailureComment).toBeDefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("leaves an ordinary failure's marker columns completely untouched, and never attempts a marker write (AC-6)", async () => {
+    const { ctx, getUpdate, getMarkerWrite, getRunUpdates } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: "tests failed" },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "tests failed" });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect("model_unavailable_at" in update).toBe(false);
+    expect("model_unavailable_model" in update).toBe(false);
+    expect(update.output).toBe("tests failed");
+    expect(getMarkerWrite()).toBeUndefined();
+    expect(getRunUpdates()).toContainEqual({ status: "failed" });
+  });
+
+  it("keeps the failure text as a comment even though the rescued step's own output is cleared", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "API error: credit balance too low",
+      model_unavailable: true,
+    });
+
+    // A pending step showing a failure in its output column reads as broken;
+    // the text survives as the failure comment, which is also what
+    // claim_next_step hands back as rework_instructions.
+    expect(getUpdate().output).toBeUndefined();
+    const failure = getComments().find((c) => c.type === "failure");
+    expect(failure!.content).toBe("API error: credit balance too low");
+  });
+
+  it("never rescues an awaiting_approval rejection — human gate", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({
+      stepData: { ...baseStep, status: "awaiting_approval" },
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+    });
+
+    await failStep(ctx, { step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect("model_unavailable_at" in update).toBe(false);
+    expect(getMarkerWrite()).toBeUndefined();
+  });
+
+  it("never rescues an Auto step (no model_tier to resolve a backup for)", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({
+      stepData: { ...baseStep, model_tier: null },
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null },
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const update = getUpdate();
+    expect(update.status).toBe("failed");
+    expect("model_unavailable_at" in update).toBe(false);
+    expect(getMarkerWrite()).toBeUndefined();
+  });
+
+  it("a cascade reset (reset_to_step_id) never clears or names the marker columns on the steps it resets (AC-9)", async () => {
+    // Cascade rejection is a separate update entirely (over a step_order
+    // range) from both the failed step's own update and any marker write —
+    // it must stay exactly as it was on master.
+    const commentsInserted: Record<string, unknown>[] = [];
+    const cascadeUpdates: Record<string, unknown>[] = [];
+    let tableCalls = 0;
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        tableCalls++;
+        if (tableCalls === 1) return createChain(baseStep).chain;
+        if (tableCalls === 2) {
+          // Final update for the failed step itself.
+          const chain = createChain({ id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: null });
+          return chain.chain;
+        }
+        if (tableCalls === 3) {
+          // Cascade target step lookup (.single()).
+          return createChain({ step_order: 1, position: 1000 }).chain;
+        }
+        if (tableCalls === 4) {
+          // Snapshot of steps-with-output being wiped.
+          const chain = createChain([]);
+          return chain.chain;
+        }
+        // Cascade reset update itself.
+        const chain = createChain([{ id: "some-other-step" }]);
+        chain.chain.update = vi.fn((data: unknown) => {
+          cascadeUpdates.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      if (table === "users") return createChain({ model_tier_map: null }).chain;
+      if (table === "platform_settings") return createChain(null).chain;
+      if (table === "workflow_runs") return createChain(null).chain;
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentsInserted.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "bad output, rework needed",
+      reset_to_step_id: TASK_ID, // any UUID — the mock doesn't validate it
+    });
+
+    expect(cascadeUpdates).toHaveLength(1);
+    expect("model_unavailable_at" in cascadeUpdates[0]).toBe(false);
+    expect("model_unavailable_model" in cascadeUpdates[0]).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// completeStep — auto-switch to the backup model, free signal (card 5d0665a2, AC-4)
+// ---------------------------------------------------------------------------
+
+describe("completeStep — auto-switch to the backup model, free signal (AC-4)", () => {
+  /**
+   * run_id: null throughout so checkAndCompleteRun never fires.
+   *
+   * QA rework (AC-7): the marker write is now a SEPARATE, best-effort call
+   * made AFTER the real completion update, so a DB missing migration 00176
+   * can reject only the marker write without breaking completion itself.
+   * Distinguish the two by whether `.select()` (and so `.maybeSingle()` with
+   * real data) follows the `.update()` — the marker write is awaited
+   * directly off `.eq()`, with no `.select()`.
+   */
+  function ctxFor(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    markerWriteError?: { message: string };
+    markerWriteThrows?: boolean;
+  }) {
+    let tableCalls = 0;
+    const stepUpdates: Record<string, unknown>[] = [];
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        tableCalls++;
+        if (tableCalls === 1) {
+          return createChain(opts.stepData).chain;
+        }
+
+        let selectCalled = false;
+        let updatedPayload: Record<string, unknown> | undefined;
+        const local: Record<string, unknown> = {};
+        for (const m of ["eq", "in"]) {
+          local[m] = vi.fn(() => local);
+        }
+        local.select = vi.fn(() => {
+          selectCalled = true;
+          return local;
+        });
+        local.update = vi.fn((data: unknown) => {
+          updatedPayload = data as Record<string, unknown>;
+          stepUpdates.push(updatedPayload);
+          return local;
+        });
+        local.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        local.then = (resolve: (val: unknown) => void) => {
+          if (selectCalled) {
+            // Shouldn't happen (the real update always calls .maybeSingle()
+            // itself, not via .then()) but keep this safe regardless.
+            return Promise.resolve({ data: opts.updatedStep, error: null }).then(resolve);
+          }
+          if (opts.markerWriteThrows) throw new Error("relation \"task_workflow_steps\" — unknown column");
+          return Promise.resolve({ error: opts.markerWriteError ?? null }).then(resolve);
+        };
+        return local;
+      }
+      if (table === "users") return createChain({ model_tier_map: null }).chain;
+      if (table === "platform_settings") return createChain(null).chain;
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+    return {
+      ctx,
+      getUpdate: () => stepUpdates.find((u) => "status" in u) as Record<string, unknown>,
+      getMarkerWrite: () => stepUpdates.find((u) => "model_unavailable_at" in u) as Record<string, unknown> | undefined,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    idea_id: IDEA_ID,
+    human_check_required: false,
+    status: "in_progress",
+    bot_id: null,
+    model_tier: "frontier",
+  };
+  const baseUpdatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "completed",
+    output: null,
+    completed_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("marks the primary unavailable when the agent self-reports running the backup — no new parameter needed, and never names the columns on the main completion update (AC-4, AC-7)", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+
+    // Seed frontier (claude) resolves to opus, fallback fable.
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+
+    expect("model_unavailable_at" in getUpdate()).toBe(false);
+    expect("model_unavailable_model" in getUpdate()).toBe(false);
+
+    const markerWrite = getMarkerWrite();
+    expect(markerWrite).toBeDefined();
+    expect(markerWrite!.model_unavailable_model).toBe("opus");
+    expect(markerWrite!.model_unavailable_at).not.toBeNull();
+  });
+
+  it("marks nothing when the agent ran the model it was told to", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "opus" });
+
+    const update = getUpdate();
+    expect("model_unavailable_at" in update).toBe(false);
+    expect("model_unavailable_model" in update).toBe(false);
+    expect(getMarkerWrite()).toBeUndefined();
+  });
+
+  it("marks nothing on an Auto step — it promised no model", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({
+      stepData: { ...baseStep, model_tier: null },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+
+    expect("model_unavailable_at" in getUpdate()).toBe(false);
+    expect(getMarkerWrite()).toBeUndefined();
+  });
+
+  it("marks nothing when model_used is omitted", async () => {
+    const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token });
+
+    expect("model_unavailable_at" in getUpdate()).toBe(false);
+    expect(getMarkerWrite()).toBeUndefined();
+  });
+
+  it("a completion succeeds even when the best-effort marker write fails — completion is unaffected (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate } = ctxFor({
+      stepData: baseStep,
+      updatedStep: baseUpdatedStep,
+      markerWriteError: { message: "column \"model_unavailable_at\" does not exist" },
+    });
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+
+    expect(getUpdate().status).toBe("completed");
+    expect((result as { step: { status: string } }).step.status).toBe("completed");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("a completion succeeds even when the best-effort marker write throws (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx, getUpdate } = ctxFor({
+      stepData: baseStep,
+      updatedStep: baseUpdatedStep,
+      markerWriteThrows: true,
+    });
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+
+    expect(getUpdate().status).toBe("completed");
+    expect((result as { step: { status: string } }).step.status).toBe("completed");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // failStep — tier adherence (P2c FR-6/7/8/12)
 // ---------------------------------------------------------------------------
 
@@ -4183,9 +4820,15 @@ describe("claim-token protocol", () => {
 // ---------------------------------------------------------------------------
 
 describe("resetWorkflow", () => {
-  it("clears both claim_token_hash and work_token_hash on every step in the run", async () => {
-    let captured: Record<string, unknown> | null = null;
-
+  /**
+   * QA rework (AC-7): the marker clear is now a SEPARATE, best-effort update
+   * made AFTER the main reset update — naming the new columns in the main
+   * update would make PostgREST reject the WHOLE statement on a DB missing
+   * migration 00176, breaking reset for every user. Captures every
+   * task_workflow_steps `.update()` call in order.
+   */
+  function ctxFor(opts: { markerClearError?: { message: string }; markerClearThrows?: boolean } = {}) {
+    const stepUpdates: Record<string, unknown>[] = [];
     const ctx = makeContext(((table: string) => {
       if (table === "workflow_runs") {
         const chain = createChain({ id: RUN_ID });
@@ -4196,20 +4839,31 @@ describe("resetWorkflow", () => {
       if (table === "task_workflow_steps") {
         const chain = createChain(null);
         chain.chain.update = vi.fn((data: unknown) => {
-          captured = data as Record<string, unknown>;
+          stepUpdates.push(data as Record<string, unknown>);
           return chain.chain;
         });
-        chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ error: null }).then(resolve);
+        chain.chain.then = (resolve: (val: unknown) => void) => {
+          if (stepUpdates.length > 1 && opts.markerClearThrows) {
+            throw new Error("column \"model_unavailable_at\" does not exist");
+          }
+          const isMarkerClear = stepUpdates.length > 1;
+          return Promise.resolve({ error: isMarkerClear ? (opts.markerClearError ?? null) : null }).then(resolve);
+        };
         return chain.chain;
       }
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
+    return { ctx, getStepUpdates: () => stepUpdates };
+  }
+
+  it("clears both claim_token_hash and work_token_hash on every step in the run, matching today's shape exactly — no marker columns named (AC-7)", async () => {
+    const { ctx, getStepUpdates } = ctxFor();
 
     const result = await resetWorkflow(ctx, { task_id: TASK_ID });
 
     expect(result.success).toBe(true);
-    expect(captured).toEqual({
+    const [mainUpdate] = getStepUpdates();
+    expect(mainUpdate).toEqual({
       status: "pending",
       output: null,
       started_at: null,
@@ -4218,6 +4872,66 @@ describe("resetWorkflow", () => {
       claim_token_hash: null,
       work_token_hash: null,
     });
+  });
+
+  it("clears the auto-switch marker on every step in the run, as a separate call (AC-9)", async () => {
+    const { ctx, getStepUpdates } = ctxFor();
+
+    await resetWorkflow(ctx, { task_id: TASK_ID });
+
+    const updates = getStepUpdates();
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toEqual({ model_unavailable_at: null, model_unavailable_model: null });
+  });
+
+  it("still succeeds when the marker clear errors — a reset must never fail because of it (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = ctxFor({ markerClearError: { message: "column \"model_unavailable_at\" does not exist" } });
+
+    const result = await resetWorkflow(ctx, { task_id: TASK_ID });
+
+    expect(result.success).toBe(true);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("still succeeds when the marker clear throws (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = ctxFor({ markerClearThrows: true });
+
+    const result = await resetWorkflow(ctx, { task_id: TASK_ID });
+
+    expect(result.success).toBe(true);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("skipStep — never clears or names the auto-switch marker (AC-9)", () => {
+  it("skips a pending step without touching model_unavailable_* columns", async () => {
+    let captured: Record<string, unknown> | null = null;
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: { id: STEP_ID, run_id: RUN_ID, status: "pending" }, error: null }));
+        chain.chain.update = vi.fn((data: unknown) => {
+          captured = data as Record<string, unknown>;
+          return chain.chain;
+        });
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", agent_role: "developer", status: "skipped", output: "n/a", completed_at: "2026-01-01T00:00:00Z" }, error: null })
+        );
+        return chain.chain;
+      }
+      if (table === "workflow_runs") return createChain(null).chain;
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await skipStep(ctx, { step_id: STEP_ID });
+
+    expect(captured).not.toBeNull();
+    expect("model_unavailable_at" in captured!).toBe(false);
+    expect("model_unavailable_model" in captured!).toBe(false);
   });
 });
 
@@ -4581,6 +5295,61 @@ describe("modelTierClause", () => {
 });
 
 // ---------------------------------------------------------------------------
+// modelTierClause — auto-switch to the backup model (card 5d0665a2)
+// ---------------------------------------------------------------------------
+
+describe("modelTierClause — auto-switch to the backup model", () => {
+  it("is byte-for-byte unchanged when no model is marked unavailable, for both agents (AC-6)", () => {
+    expect(modelTierClause("frontier", "claude", undefined, undefined, null)).toBe(modelTierClause("frontier"));
+    expect(modelTierClause("frontier", "claude", undefined, undefined, undefined)).toBe(modelTierClause("frontier"));
+    expect(modelTierClause("frontier", "codex", undefined, undefined, null)).toBe(modelTierClause("frontier", "codex"));
+  });
+
+  it("directs the step at the backup when the tier's model is marked unavailable (AC-2)", () => {
+    // Seed frontier (claude) resolves to opus, whose configured backup is fable.
+    const clause = modelTierClause("frontier", "claude", undefined, undefined, "opus");
+    expect(clause).toContain('model: "fable"');
+    expect(clause).toMatch(/^MODEL SWITCH:/);
+  });
+
+  it("says which model is down and why, not just what to run, and scopes it to this board (AC-3)", () => {
+    const clause = modelTierClause("frontier", "claude", undefined, undefined, "opus");
+    expect(clause).toMatch(/"opus" was reported unavailable on this board/);
+    expect(clause).toMatch(/midnight UTC/);
+  });
+
+  it("leaves a tier alone when the unavailable model isn't the one it directs at", () => {
+    // cheap resolves to haiku; a dead opus is no reason to move it.
+    expect(modelTierClause("cheap", "claude", undefined, undefined, "opus")).toBe(modelTierClause("cheap"));
+  });
+
+  it("respects a user override when deciding what is affected", () => {
+    const pinned = { frontier: { claude: { model: "fable" } } };
+    // The user pinned frontier to fable, so a dead OPUS must not move it...
+    expect(modelTierClause("frontier", "claude", pinned, undefined, "opus")).toBe(modelTierClause("frontier", "claude", pinned));
+    // ...but a dead FABLE must.
+    expect(modelTierClause("frontier", "claude", pinned, undefined, "fable")).toMatch(/^MODEL SWITCH:/);
+  });
+
+  it("adds nothing on an Auto step, switch or no switch", () => {
+    expect(modelTierClause(null, "claude", undefined, undefined, "opus")).toBe("");
+  });
+
+  it("still names a next resort after switching, so a second failure has somewhere to go", () => {
+    const clause = modelTierClause("frontier", "claude", undefined, undefined, "opus");
+    // Directed at fable, with opus named as the resort if fable is down too.
+    expect(clause).toContain('use model: "opus"');
+  });
+
+  it("switches the Codex directive too, never mentioning the Task tool", () => {
+    const clause = modelTierClause("frontier", "codex", undefined, undefined, "gpt-6-astra");
+    expect(clause).toMatch(/^MODEL SWITCH:/);
+    expect(clause).toContain('model: "gpt-5.6-sol"');
+    expect(clause).not.toContain("Task tool");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveTierAdherence — P2c FR-6/7/8 (exact cases, NULL ≠ false), extended
 // agent-aware + effort-aware (Codex model-tier task), QA Bug-1 hardened:
 // a model match with UNREPORTED effort is NULL, never false.
@@ -4916,6 +5685,173 @@ describe("claimNextStep — model_tier directive", () => {
     const absentResult = (await claimNextStep(absentCtx, { task_id: TASK_ID })) as { instruction: string };
 
     expect(nullResult.instruction).toBe(absentResult.instruction);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-switch to the configured backup model (card 5d0665a2)
+// ---------------------------------------------------------------------------
+
+describe("readLiveUnavailableModel", () => {
+  /** Minimal stand-in for the single maybeSingle() marker query. */
+  function markerCtx(result: { data: unknown; error: { message: string } | null }) {
+    const filters: [string, unknown][] = [];
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn((col: string, val: unknown) => {
+      filters.push([col, val]);
+      return chain;
+    });
+    chain.not = vi.fn((col: string, op: string) => {
+      filters.push([`not:${col}`, op]);
+      return chain;
+    });
+    chain.gte = vi.fn((col: string, val: unknown) => {
+      filters.push([`gte:${col}`, val]);
+      return chain;
+    });
+    chain.order = vi.fn(() => chain);
+    chain.limit = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(() => Promise.resolve(result));
+    const ctx = makeContext((() => chain) as unknown as McpContext["supabase"]["from"]);
+    return { ctx, filters };
+  }
+
+  it("returns the stored model directly — no tier resolution at read time", async () => {
+    const { ctx } = markerCtx({ data: { model_unavailable_model: "fable" }, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID)).resolves.toBe("fable");
+  });
+
+  it("scopes to this board and to markers set today only, keyed on the marker's own timestamp", async () => {
+    const { ctx, filters } = markerCtx({ data: { model_unavailable_model: "fable" }, error: null });
+    await readLiveUnavailableModel(ctx, IDEA_ID);
+    expect(filters).toContainEqual(["idea_id", IDEA_ID]);
+    expect(filters).toContainEqual(["not:model_unavailable_at", "is"]);
+    const dayBound = filters.find(([col]) => col === "gte:model_unavailable_at");
+    expect(dayBound?.[1]).toBe(
+      new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
+      ).toISOString()
+    );
+    // Never keyed off updated_at — a step re-claimed days later must not
+    // present as a fresh marker.
+    expect(filters.every(([col]) => !String(col).endsWith("updated_at"))).toBe(true);
+  });
+
+  it("returns null when there is no marker", async () => {
+    const { ctx } = markerCtx({ data: null, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID)).resolves.toBeNull();
+  });
+
+  it("returns null when a marker row exists but names no model", async () => {
+    const { ctx } = markerCtx({ data: { model_unavailable_model: null }, error: null });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID)).resolves.toBeNull();
+  });
+
+  it("degrades to no switch on a query error rather than blocking the claim (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = markerCtx({ data: null, error: { message: "boom" } });
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("degrades to no switch when the query throws (AC-7)", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const ctx = makeContext((() => {
+      throw new Error("connection reset");
+    }) as unknown as McpContext["supabase"]["from"]);
+    await expect(readLiveUnavailableModel(ctx, IDEA_ID)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("claimNextStep — auto-switch to the backup model (card 5d0665a2)", () => {
+  it("with no marker, the instruction is byte-for-byte identical to today's (AC-6)", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "frontier" },
+      priorSteps: [],
+      unavailableModel: null,
+    });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(result.instruction).toContain(modelTierClause("frontier"));
+    expect(result.instruction).not.toContain("MODEL SWITCH");
+  });
+
+  it("the Auto path (no model_tier) issues no marker query at all (AC-6)", async () => {
+    const step = makeStepRow({ step_order: 1, model_tier: null });
+    let taskWorkflowStepsCalls = 0;
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        taskWorkflowStepsCalls++;
+        const chain = createChain(null);
+        if (taskWorkflowStepsCalls === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (taskWorkflowStepsCalls === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: { ...step, status: "in_progress", claimed_by: USER_ID }, error: null })
+          );
+        }
+        return chain.chain;
+      }
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) => Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+      return createChain([]).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await claimNextStep(ctx, { task_id: TASK_ID });
+    // fetch, claim update, Tier-2 run-scoped id query, context query — and
+    // crucially no 5th call, since the marker lookup is gated on model_tier.
+    expect(taskWorkflowStepsCalls).toBe(4);
+  });
+
+  it("directs the tiered step at the backup and prepends the switch notice when a live marker names its model (AC-2/AC-3)", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "frontier" },
+      priorSteps: [],
+      // Seed frontier (claude) resolves to opus; mark it dead.
+      unavailableModel: "opus",
+    });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(result.instruction).toContain("MODEL SWITCH");
+    expect(result.instruction).toContain('model: "fable"');
+    expect(result.instruction).toMatch(/"opus" was reported unavailable on this board/);
+  });
+
+  it("carries the switched model/fallback on the Codex execution object too", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "frontier" },
+      priorSteps: [],
+      // Seed frontier (codex) resolves to gpt-6-astra; mark it dead.
+      unavailableModel: "gpt-6-astra",
+    });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" });
+    if (!("execution" in result)) throw new Error("Expected a Codex claim");
+    expect(result.execution).toMatchObject({ model: "gpt-5.6-sol", fallback_model: "gpt-6-astra" });
+  });
+
+  it("a marker for a model this tier does not resolve to changes nothing", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "cheap" },
+      priorSteps: [],
+      unavailableModel: "opus", // cheap resolves to haiku — irrelevant
+    });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(result.instruction).not.toContain("MODEL SWITCH");
+    expect(result.instruction).toContain(modelTierClause("cheap"));
   });
 });
 
