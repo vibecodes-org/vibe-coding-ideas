@@ -297,7 +297,8 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   if (pendingCount > 0) {
     workflow_instruction =
       `This task has a workflow with ${steps.length} steps (${pendingCount} pending). ` +
-      `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +
+      `Reading this task does not start it. Report back and stop unless the human has explicitly asked you to work THIS task; if unsure, ask — do not claim. ` +
+      `Once asked to work it: do NOT begin implementation directly — use claim_next_step(task_id) to claim and execute steps sequentially; ` +
       `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
       (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
   } else if (steps.length === 0) {
@@ -310,7 +311,8 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     } else {
       // No workflow — instruct the agent to assign itself so the board shows in-progress
       workflow_instruction =
-        `This task has no workflow. Before starting work, pick the team agent that best fits it ` +
+        `This task has no workflow. Reading it does not start it — report back and stop unless the human has explicitly asked you to work this task; if unsure, ask. ` +
+        `Once asked to work it, pick the team agent that best fits it ` +
         `(your .vibecodes config botId, or choose from list_idea_agents) and call update_task with ` +
         `assignee_id set to that agent's ID so the board shows who is working on it. ` +
         `When finished, move the task to the appropriate done/verify column using move_task.`;
