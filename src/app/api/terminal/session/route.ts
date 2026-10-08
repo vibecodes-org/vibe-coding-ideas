@@ -567,7 +567,7 @@ export async function POST(req: Request) {
       // as an explicit undefined.
       model: effectiveModel,
       // FR-4: the Codex reasoning effort paired with `model` for a fresh Codex
-      // launch (low/medium/high), resolved above. Undefined (and dropped by
+      // launch (minimal…xhigh), resolved above. Undefined (and dropped by
       // JSON.stringify) for Claude launches — byte-identical response shape.
       effort: effectiveEffort,
       // Task d3de150c ("Terminal mode") — set ONLY when this user's own

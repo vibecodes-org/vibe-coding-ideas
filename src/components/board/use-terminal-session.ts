@@ -1554,7 +1554,7 @@ export function useTerminalSession(
         model?: string;
         /**
          * FR-4 (agent-aware model tiers) — the Codex reasoning effort paired
-         * with `model` for a fresh Codex launch (low/medium/high), from the
+         * with `model` for a fresh Codex launch (minimal…xhigh), from the
          * mint response. Same fresh-launch-only threading rule as `model`.
          */
         effort?: string;

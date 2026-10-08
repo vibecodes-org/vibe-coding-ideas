@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { logger } from "@/lib/logger";
-import { isReasoningEffort, type ReasoningEffort } from "@/lib/platform-model-defaults";
+import { isEffortForAgent, type ReasoningEffort } from "@/lib/platform-model-defaults";
 import type { TerminalCodexModelPair } from "@/lib/terminal/model-resolution";
 
 export const TERMINAL_CODEX_MODEL_DEFAULT_KEY = "terminal_codex_model_default";
@@ -20,7 +20,7 @@ export function isValidPlatformTerminalCodexModelDefault(
     !Array.isArray(value) &&
     typeof (value as Record<string, unknown>).model === "string" &&
     ((value as Record<string, unknown>).model as string).trim().length > 0 &&
-    isReasoningEffort((value as Record<string, unknown>).effort)
+    isEffortForAgent("codex", (value as Record<string, unknown>).effort)
   );
 }
 

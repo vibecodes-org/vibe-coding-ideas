@@ -254,7 +254,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
 
     fireEvent.click(screen.getByRole("combobox", { name: "Claude model — frontier" }));
     fireEvent.click(screen.getByRole("option", { name: /Sonnet/ }));
-    fireEvent.click(within(screen.getAllByRole("group", { name: "Claude reasoning effort" })[0]).getByRole("button", { name: "high" }));
+    fireEvent.click(within(screen.getAllByRole("group", { name: "Claude reasoning effort" })[0]).getByRole("button", { name: "High" }));
     fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
 
     await waitFor(() => expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({

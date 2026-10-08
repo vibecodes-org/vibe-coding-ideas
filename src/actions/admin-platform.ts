@@ -11,7 +11,8 @@ import {
   getAgentAwarePlatformModelDefaults,
   normalizeToAgentAwarePlatformModelDefaults,
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
-  REASONING_EFFORT_LEVELS,
+  CLAUDE_EFFORT_LEVELS,
+  CODEX_EFFORT_LEVELS,
   type PlatformModelDefaults,
   type AgentAwarePlatformModelDefaults,
 } from "@/lib/platform-model-defaults";
@@ -145,18 +146,21 @@ export async function updatePlatformModelDefaults(
 // kept only for any lingering flat-shape caller and its own tests — it is no
 // longer called by the UI.
 
-const reasoningEffortInputSchema = z.enum(REASONING_EFFORT_LEVELS);
-
-const agentTierEntryInputSchema = z.object({
+const claudeTierEntryInputSchema = z.object({
   model: z.string().trim().min(1).max(100),
-  effort: reasoningEffortInputSchema,
+  effort: z.enum(CLAUDE_EFFORT_LEVELS),
+});
+
+const codexTierEntryInputSchema = z.object({
+  model: z.string().trim().min(1).max(100),
+  effort: z.enum(CODEX_EFFORT_LEVELS),
 });
 
 const agentAwarePlatformModelDefaultsInputSchema = z.object({
   defaults: z.object({
-    frontier: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
-    standard: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
-    cheap: z.object({ claude: agentTierEntryInputSchema, codex: agentTierEntryInputSchema }),
+    frontier: z.object({ claude: claudeTierEntryInputSchema, codex: codexTierEntryInputSchema }),
+    standard: z.object({ claude: claudeTierEntryInputSchema, codex: codexTierEntryInputSchema }),
+    cheap: z.object({ claude: claudeTierEntryInputSchema, codex: codexTierEntryInputSchema }),
   }),
   fallback: z.object({
     claude: z.record(z.string(), z.string().trim().min(1).max(100)),
@@ -164,7 +168,9 @@ const agentAwarePlatformModelDefaultsInputSchema = z.object({
   }),
 });
 
-export type AgentAwarePlatformModelDefaultsInput = z.infer<typeof agentAwarePlatformModelDefaultsInputSchema>;
+// Callers pass the shared shape (effort typed as either agent's level); the
+// schema above is what rejects a level the agent doesn't accept, server-side.
+export type AgentAwarePlatformModelDefaultsInput = AgentAwarePlatformModelDefaults;
 
 export type AgentAwarePlatformModelDefaultsAudit = {
   value: AgentAwarePlatformModelDefaults;
@@ -377,7 +383,7 @@ export async function updatePlatformTerminalCodexModelDefault(
   const model = value.model.trim();
   const validation = validateCodexModelValue(model);
   if (!validation.ok) throw new Error(validation.reason);
-  if (!REASONING_EFFORT_LEVELS.includes(value.effort)) throw new Error("Choose a valid Codex reasoning effort");
+  if (!(CODEX_EFFORT_LEVELS as readonly string[]).includes(value.effort)) throw new Error("Choose a valid Codex reasoning effort");
 
   const saved = { model, effort: value.effort };
   const { error } = await supabase.from("platform_settings").upsert({

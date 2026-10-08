@@ -1,15 +1,25 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { REASONING_EFFORT_LEVELS, type ReasoningEffort } from "@/lib/codex-models";
-import type { AgentKind } from "@/lib/platform-model-defaults";
+import { EFFORT_LEVELS_BY_AGENT, type AgentKind, type ReasoningEffort } from "@/lib/platform-model-defaults";
 
 const AGENT_LABELS: Record<AgentKind, string> = { claude: "Claude", codex: "Codex" };
 
+const EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "X-High",
+  max: "Max",
+};
+
 /**
  * Reasoning-effort segmented control (Codex model-tier task FR-7 design,
- * docs/codex-model-tiers-ux-design.html §1: "three fixed values, all
- * visible, one tap each — no menu to open"). Shared by the Profile "Model
+ * docs/codex-model-tiers-ux-design.html §1: "fixed values, all visible,
+ * one tap each — no menu to open"). Shows the given agent's own ladder —
+ * Claude low…max, Codex minimal…xhigh (Nick, 8 Oct 2026: all levels, not
+ * the original 3-level placeholder). Shared by the Profile "Model
  * tier mapping" dialog and the admin "Platform" tab's agent-aware grid, so
  * the control and its accessibility contract never drift between the two
  * surfaces (both name the agent in the group label per the state matrix's
@@ -49,7 +59,7 @@ export function EffortSegmentedControl({
         invalid && "border-rose-500 ring-2 ring-rose-500/30"
       )}
     >
-      {REASONING_EFFORT_LEVELS.map((level) => {
+      {EFFORT_LEVELS_BY_AGENT[agent].map((level) => {
         const pressed = disabled ? level === showDefaultPressed : level === value;
         return (
           <button
@@ -59,11 +69,11 @@ export function EffortSegmentedControl({
             aria-pressed={pressed}
             onClick={() => onChange(level)}
             className={cn(
-              "min-h-9 flex-1 border-r border-input px-2 text-xs font-medium capitalize transition-colors last:border-r-0 disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11",
+              "min-h-9 min-w-0 flex-1 basis-0 whitespace-nowrap border-r border-input px-1 text-[11px] font-medium transition-colors last:border-r-0 disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11",
               pressed ? "bg-foreground text-background" : "bg-transparent text-foreground hover:bg-accent"
             )}
           >
-            {level}
+            {EFFORT_LABELS[level]}
           </button>
         );
       })}

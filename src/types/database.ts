@@ -939,7 +939,7 @@ export type Database = {
           model_tier: string | null;
           executed_model: string | null;
           /** Migration 00171 (Codex model-tier task, FR-8). Self-reported
-           *  reasoning-effort level ('low' | 'medium' | 'high' | 'unknown')
+           *  reasoning-effort level ('minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'unknown')
            *  the step actually ran with, paired with executed_model. */
           reasoning_effort_used: string | null;
           tier_honored: boolean | null;

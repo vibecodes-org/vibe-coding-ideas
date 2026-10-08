@@ -10,7 +10,7 @@ import { MACHINE_DEFAULT_TERMINAL_MODEL, validateTerminalModelValue } from "@/li
 import { normalizeAgent, type LaunchAgent } from "@/lib/terminal/agent-launch";
 import {
   normalizeUserModelTierMap,
-  isReasoningEffort,
+  isEffortForAgent,
   type AgentAwareUserModelTierMap,
   type AgentKind,
   type AgentTierEntry,
@@ -296,7 +296,7 @@ export async function updateAgentAwareModelTierMap(
         }
       }
 
-      if (effort === undefined || !isReasoningEffort(effort)) {
+      if (effort === undefined || !isEffortForAgent(agent, effort)) {
         const modelDisplay = agent === "claude" ? capitalizeModelName(model) : model;
         throw new Error(
           `Choose a reasoning effort for ${modelDisplay} — ${modelTierLabel(tier)} (${agentLabel}).`
@@ -389,7 +389,7 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
         const validation = validateCodexModelValue(model);
         if (!validation.ok) throw new Error(`Invalid model tier map — ${modelTierLabel(tier)} (Codex): ${validation.reason}`);
       }
-      if (effort === undefined || !isReasoningEffort(effort)) {
+      if (effort === undefined || !isEffortForAgent(agent, effort)) {
         const modelDisplay = agent === "claude" ? capitalizeModelName(model) : model;
         throw new Error(`Choose a reasoning effort for ${modelDisplay} — ${modelTierLabel(tier)} (${agentLabel}).`);
       }
@@ -416,7 +416,7 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
       if (input.terminalCodexEffort !== null) throw new Error("Machine default cannot include a reasoning effort");
       terminalCodexModel = model;
     } else {
-      if (input.terminalCodexEffort === null || !validateCodexModelValue(model).ok || !isReasoningEffort(input.terminalCodexEffort)) {
+      if (input.terminalCodexEffort === null || !validateCodexModelValue(model).ok || !isEffortForAgent("codex", input.terminalCodexEffort)) {
         throw new Error("Choose a valid Codex model and reasoning effort");
       }
       terminalCodexModel = model;
@@ -518,7 +518,7 @@ export async function updateTerminalCodexModel(
       if (effort !== null) throw new Error("Machine default cannot include a reasoning effort");
       modelToStore = trimmed;
     } else {
-      if (effort === null || !validateCodexModelValue(trimmed).ok || !isReasoningEffort(effort)) {
+      if (effort === null || !validateCodexModelValue(trimmed).ok || !isEffortForAgent("codex", effort)) {
         throw new Error("Choose a valid Codex model and reasoning effort");
       }
       modelToStore = trimmed;

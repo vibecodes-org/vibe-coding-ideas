@@ -131,7 +131,7 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
 // lock-step by the drift test against agent-launch.ts. FR-4: a fresh Codex
 // launch may open on a chosen model + effort, but only after BOTH pass here.
 const CODEX_SHELL_METACHARS = /[\]`$(){}<>\\'"*?~#!;&|[]/;
-const CODEX_EFFORT_LEVELS = new Set(["low", "medium", "high"]);
+const CODEX_EFFORT_LEVELS = new Set(["minimal", "low", "medium", "high", "xhigh"]);
 function isCodexModelSafe(value) {
   return (
     typeof value === "string" &&
