@@ -83,9 +83,14 @@
  *  request (he wanted better worktree *instructions*, not a UI merge
  *  mechanism); see the rewritten guidance in
  *  mcp-server/src/tools/project-paths.ts instead. 0.3.17's only helper-side
- *  change was that now-removed dispatch, so the recommended helper stays
- *  0.3.16. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.16";
+ *  change was that now-removed dispatch, so the recommended helper stayed
+ *  0.3.16.
+ *  0.3.18 (task 5511d877, 8 Oct 2026): a fresh in-browser Codex launch
+ *  accepts Codex's full effort ladder (minimal/low/medium/high/xhigh, not just
+ *  low/medium/high). An older helper drops a level it doesn't recognise and
+ *  opens Codex on its own default model — soft nudge. Also ships the removal
+ *  of the withdrawn merge-worktree code (#293). */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.18";
 
 export type HelperVersionParts = readonly [number, number, number];
 

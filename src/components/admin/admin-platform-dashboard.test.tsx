@@ -386,7 +386,7 @@ describe("AdminTerminalCodexModelCard", () => {
     render(<AdminTerminalCodexModelCard isSuperAdmin />);
 
     await screen.findByText("Codex terminal starting model");
-    fireEvent.click(screen.getByRole("button", { name: "high" }));
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdateCodexTerminal).toHaveBeenCalledWith({ model: "gpt-5.6-sol", effort: "high" }));

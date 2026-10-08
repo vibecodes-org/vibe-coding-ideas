@@ -13,9 +13,13 @@
 // Known model ids drive UI advisories ONLY (isKnownCodexModel) — free text is
 // always structurally valid (a new Codex model needs no code change here).
 
-import { REASONING_EFFORT_LEVELS, type ReasoningEffort } from "@/lib/platform-model-defaults";
+import {
+  CODEX_EFFORT_LEVELS,
+  REASONING_EFFORT_LEVELS,
+  type ReasoningEffort,
+} from "@/lib/platform-model-defaults";
 
-export { REASONING_EFFORT_LEVELS, type ReasoningEffort };
+export { CODEX_EFFORT_LEVELS, REASONING_EFFORT_LEVELS, type ReasoningEffort };
 
 /**
  * Codex model catalogue — the advisory "known" list (drives the model picker's
@@ -78,15 +82,15 @@ export function validateCodexModelValue(value: string): CodexModelValidation {
 }
 
 /**
- * Enum-of-string validity check for a self-reported/configured effort value
- * (FR-6: effort is first-class and always an enum, unlike the free-text
- * model). Not Codex-specific — the same ladder applies to Claude (Nick's
- * approval-gate note 2).
+ * Enum-of-string validity check for a configured Codex effort value (FR-6:
+ * effort is first-class and always an enum, unlike the free-text model).
+ * Codex's own ladder (minimal…xhigh) — every caller feeds the result into a
+ * `codex -c model_reasoning_effort=` launch, which has no "max".
  */
 export function validateReasoningEffort(value: string): CodexModelValidation {
-  if ((REASONING_EFFORT_LEVELS as readonly string[]).includes(value)) return { ok: true };
+  if ((CODEX_EFFORT_LEVELS as readonly string[]).includes(value)) return { ok: true };
   return {
     ok: false,
-    reason: `Effort must be one of: ${REASONING_EFFORT_LEVELS.join(", ")}.`,
+    reason: `Effort must be one of: ${CODEX_EFFORT_LEVELS.join(", ")}.`,
   };
 }

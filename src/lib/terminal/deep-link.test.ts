@@ -205,7 +205,20 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
   });
 
   // FR-4: the Codex reasoning effort rides alongside `model`.
-  it("includes a valid effort (low/medium/high), before prompt, and round-trips", () => {
+  it("carries every Codex effort level (minimal…xhigh) and the shared parser keeps it", () => {
+    for (const effort of ["minimal", "low", "medium", "high", "xhigh"]) {
+      const url = buildLaunchDeepLink({ ...SAMPLE, model: "gpt-6-astra", effort });
+      expect(url).toContain(`effort=${effort}`);
+      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, model: "gpt-6-astra", effort });
+    }
+  });
+
+  it("never fires Claude-only \"max\" as a Codex launch effort", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, model: "gpt-6-astra", effort: "max" });
+    expect(url).not.toContain("effort=");
+  });
+
+  it("includes a valid effort, before prompt, and round-trips", () => {
     const withEffort = { ...SAMPLE, model: "gpt-6-astra", effort: "high", prompt: "hi" };
     const url = buildLaunchDeepLink(withEffort);
     expect(url).toContain("effort=high");

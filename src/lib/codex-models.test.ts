@@ -4,7 +4,7 @@ import {
   isKnownCodexModel,
   validateCodexModelValue,
   validateReasoningEffort,
-  REASONING_EFFORT_LEVELS,
+  CODEX_EFFORT_LEVELS,
 } from "./codex-models";
 
 describe("isKnownCodexModel", () => {
@@ -53,14 +53,15 @@ describe("validateCodexModelValue", () => {
 });
 
 describe("validateReasoningEffort", () => {
-  it("accepts every level in the ladder", () => {
-    for (const level of REASONING_EFFORT_LEVELS) {
+  it("accepts every level in Codex's ladder, minimal through xhigh", () => {
+    for (const level of CODEX_EFFORT_LEVELS) {
       expect(validateReasoningEffort(level)).toEqual({ ok: true });
     }
+    expect(CODEX_EFFORT_LEVELS).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
   });
 
-  it("rejects a value outside the ladder", () => {
-    expect(validateReasoningEffort("minimal").ok).toBe(false);
+  it("rejects a value outside Codex's ladder — including Claude-only \"max\"", () => {
+    expect(validateReasoningEffort("max").ok).toBe(false);
     expect(validateReasoningEffort("extreme").ok).toBe(false);
     expect(validateReasoningEffort("").ok).toBe(false);
   });

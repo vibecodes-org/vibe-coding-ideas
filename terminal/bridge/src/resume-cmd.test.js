@@ -241,8 +241,18 @@ test("FR-4: emits NEITHER flag when only one of codexModel/codexEffort is presen
   assert.equal(resolveAgentLaunch({ agent: "codex", codexEffort: "high", mintId: () => MINTED }).cmd, "codex");
 });
 
-test("FR-4: drops an invalid effort (not low/medium/high) -> bare codex", () => {
+test("FR-4: accepts every Codex effort level, minimal through xhigh", () => {
+  for (const effort of ["minimal", "low", "medium", "high", "xhigh"]) {
+    assert.equal(
+      resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: effort, mintId: () => MINTED }).cmd,
+      `codex -m gpt-6-astra -c model_reasoning_effort=${effort}`
+    );
+  }
+});
+
+test("FR-4: drops an invalid effort (incl. Claude-only \"max\") -> bare codex", () => {
   assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "turbo", mintId: () => MINTED }).cmd, "codex");
+  assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "max", mintId: () => MINTED }).cmd, "codex");
 });
 
 test("FR-4: drops a model with whitespace/shell metacharacters -> bare codex (never interpolated)", () => {

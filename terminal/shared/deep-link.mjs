@@ -219,13 +219,13 @@ function isAgentSafe(v) {
 
 /** FR-4 (agent-aware model tiers) — the Codex reasoning-effort a fresh Codex
  *  launch opens on (`-c model_reasoning_effort=<effort>`). Hard whitelist of
- *  the shared ladder (REASONING_EFFORT_LEVELS in src/lib/platform-model-defaults.ts).
+ *  Codex's ladder (CODEX_EFFORT_LEVELS in src/lib/platform-model-defaults.ts).
  *  Only meaningful alongside `model` on a Codex launch; a Claude launch ignores
  *  it. Rechecked on both build and parse.
  *  @param {unknown} v
  *  @returns {boolean} */
 function isEffortSafe(v) {
-  return v === "low" || v === "medium" || v === "high";
+  return v === "minimal" || v === "low" || v === "medium" || v === "high" || v === "xhigh";
 }
 
 /**
@@ -390,7 +390,7 @@ export function parseLaunchDeepLink(url) {
   const rawAgent = parsed.searchParams.get("agent");
   const agent = rawAgent && isAgentSafe(rawAgent) ? rawAgent : undefined;
   // FR-4: re-validated here exactly like permissionMode above — a hard
-  // whitelist (low/medium/high); anything else is dropped silently. An old
+  // whitelist (Codex's ladder, minimal…xhigh); anything else is dropped silently. An old
   // helper's bundled copy of this parser simply never reads "effort" — no
   // version-skew risk.
   const rawEffort = parsed.searchParams.get("effort");

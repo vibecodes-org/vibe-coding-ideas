@@ -1308,9 +1308,9 @@ export const completeStepSchema = z.object({
   // model_used, not folded into it — stored in its own column
   // (reasoning_effort_used, migration 00171), never widening model_used's
   // 40-char cap. Unlike model_used, effort is a fixed enum (Nick's
-  // approval-gate note 2 / FR-6) — both agents share the same ladder.
+  // approval-gate note 2 / FR-6) — the union of both agents' ladders.
   reasoning_effort_used: z.enum([...REASONING_EFFORT_LEVELS, "unknown"]).optional()
-    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with ('low'/'medium'/'high', or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
+    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with (Claude: 'low'/'medium'/'high'/'xhigh'/'max'; Codex: 'minimal'/'low'/'medium'/'high'/'xhigh'; or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
   // Which CLI executed this step — mirrors claim_next_step's `agent`.
   // Defaults to "claude" when omitted, matching whichever agent claimed the
   // step by default. Used only to pick the right side of the tier's
@@ -1538,9 +1538,9 @@ export const failStepSchema = z.object({
   // model_used, not folded into it — stored in its own column
   // (reasoning_effort_used, migration 00171), never widening model_used's
   // 40-char cap. Unlike model_used, effort is a fixed enum (Nick's
-  // approval-gate note 2 / FR-6) — both agents share the same ladder.
+  // approval-gate note 2 / FR-6) — the union of both agents' ladders.
   reasoning_effort_used: z.enum([...REASONING_EFFORT_LEVELS, "unknown"]).optional()
-    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with ('low'/'medium'/'high', or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
+    .describe("Self-reported: the reasoning-effort level this step's subagent/session actually ran with (Claude: 'low'/'medium'/'high'/'xhigh'/'max'; Codex: 'minimal'/'low'/'medium'/'high'/'xhigh'; or \"unknown\"). Omit if you don't know or the step had no model_tier. VibeCodes records this to report tier adherence — it is not verified."),
   // Which CLI executed this step — mirrors claim_next_step's `agent`.
   // Defaults to "claude" when omitted, matching whichever agent claimed the
   // step by default. Used only to pick the right side of the tier's

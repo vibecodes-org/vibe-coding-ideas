@@ -13,6 +13,11 @@
 // redactDeepLinkToken() first.
 
 import { isValidPermissionModeValue } from "./auto-accept-mode";
+import { CODEX_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
+
+function isValidCodexEffortValue(value: string): boolean {
+  return (CODEX_EFFORT_LEVELS as readonly string[]).includes(value);
+}
 
 /** Custom URL scheme the packaged helper registers (slice 7 OS bit). */
 export const LAUNCH_SCHEME = "vibecodes";
@@ -135,7 +140,7 @@ export interface LaunchDeepLinkParams {
    * FR-4 (agent-aware model tiers) — the Codex reasoning effort a FRESH Codex
    * launch opens on (`codex -c model_reasoning_effort=<effort>`). Resolved
    * server-side at mint time alongside `model` (which, for a Codex launch, is
-   * the Codex model id). Hard whitelist low/medium/high; a Claude launch never
+   * the Codex model id). Hard whitelist of Codex's ladder (minimal…xhigh); a Claude launch never
    * sets it. Fresh-launch only, same constraint as `model`. Mirrors
    * terminal/shared/deep-link.mjs (drift-tested).
    */
@@ -241,8 +246,8 @@ export function buildLaunchDeepLink({
   // class doc comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
   // FR-4: the Codex reasoning effort, alongside `model` — same insertion point.
-  // Hard whitelist (low/medium/high); anything else is never fired.
-  if (effort === "low" || effort === "medium" || effort === "high") {
+  // Hard whitelist (Codex's ladder, minimal…xhigh); anything else is never fired.
+  if (effort && isValidCodexEffortValue(effort)) {
     parts.push(`effort=${encodeURIComponent(effort)}`);
   }
   // Task d3de150c: same insertion point as `model` — before `prompt`,
