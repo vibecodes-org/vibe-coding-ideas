@@ -89,8 +89,13 @@
  *  accepts Codex's full effort ladder (minimal/low/medium/high/xhigh, not just
  *  low/medium/high). An older helper drops a level it doesn't recognise and
  *  opens Codex on its own default model — soft nudge. Also ships the removal
- *  of the withdrawn merge-worktree code (#293). */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.18";
+ *  of the withdrawn merge-worktree code (#293).
+ *  0.3.19 (task 59889027, 10 Oct 2026): a fresh in-browser Claude launch
+ *  fetches the board's agents and passes them as `claude --agents`, so each
+ *  workflow step's persona runs as a real subagent at its tier's model and
+ *  effort. An older helper simply launches without them (steps fall back to
+ *  the pasted-persona path) — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.19";
 
 export type HelperVersionParts = readonly [number, number, number];
 
