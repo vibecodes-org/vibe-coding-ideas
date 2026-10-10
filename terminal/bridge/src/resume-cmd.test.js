@@ -306,3 +306,80 @@ test("an explicit --cmd override wins for codex too, and mintId is never called"
   assert.deepEqual(result, { cmd: "bash", conv: null });
   assert.equal(minted, false);
 });
+
+// ── Remote Control (task 5c8969cc) ──────────────────────────────────────────
+// `--remote-control [name]` takes an OPTIONAL name, so the flag must sit
+// IMMEDIATELY after `claude` (index.js appends the bootstrap prompt as the next
+// bare argv element; anywhere later it would become the session name).
+
+test("fresh + remoteControl -> `claude --remote-control --session-id <id>`", () => {
+  const result = resolveClaudeLaunch({ remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --remote-control --session-id ${MINTED}`, conv: MINTED });
+});
+
+test("every flag together, in order: --remote-control first, then session-id/model/permission-mode/worktree", () => {
+  const result = resolveClaudeLaunch({
+    remoteControl: true,
+    model: "opus",
+    permissionMode: "auto",
+    worktree: true,
+    mintId: () => MINTED,
+  });
+  assert.equal(
+    result.cmd,
+    `claude --remote-control --session-id ${MINTED} --model opus --permission-mode auto --worktree ${MINTED}`
+  );
+});
+
+test("resumeId + remoteControl -> `claude --remote-control --resume <id>`", () => {
+  const result = resolveClaudeLaunch({ resumeId: RESUME_ID, remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --remote-control --resume ${RESUME_ID}`, conv: RESUME_ID });
+});
+
+test("legacy resume + remoteControl -> `claude --remote-control --continue`", () => {
+  const result = resolveClaudeLaunch({ resume: true, remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "claude --remote-control --continue", conv: null });
+});
+
+test("--remote-control is token[1], immediately after `claude`, in all three Claude branches", () => {
+  for (const extra of [{}, { resumeId: RESUME_ID }, { resume: true }]) {
+    const tokens = resolveClaudeLaunch({ ...extra, remoteControl: true, model: "opus", mintId: () => MINTED }).cmd.split(" ");
+    assert.equal(tokens[0], "claude");
+    assert.equal(tokens[1], "--remote-control");
+    assert.equal(tokens.filter((t) => t === "--remote-control").length, 1);
+  }
+});
+
+test("remoteControl false/undefined/'1'/'true'/1 -> byte-identical to today's commands (strict true only)", () => {
+  for (const remoteControl of [false, undefined, "1", "true", 1]) {
+    assert.equal(resolveClaudeLaunch({ remoteControl, mintId: () => MINTED }).cmd, `claude --session-id ${MINTED}`);
+    assert.equal(resolveClaudeLaunch({ remoteControl, resumeId: RESUME_ID, mintId: () => MINTED }).cmd, `claude --resume ${RESUME_ID}`);
+    assert.equal(resolveClaudeLaunch({ remoteControl, resume: true, mintId: () => MINTED }).cmd, "claude --continue");
+  }
+});
+
+test("an explicit --cmd override is never touched by remoteControl", () => {
+  assert.deepEqual(resolveClaudeLaunch({ explicitCmd: "bash", remoteControl: true, mintId: () => MINTED }), {
+    cmd: "bash",
+    conv: null,
+  });
+  assert.deepEqual(
+    resolveAgentLaunch({ agent: "codex", explicitCmd: "bash", remoteControl: true, mintId: () => MINTED }),
+    { cmd: "bash", conv: null }
+  );
+});
+
+test("codex fresh/resume/resumeId with remoteControl:true never contains --remote-control", () => {
+  for (const extra of [{}, { resume: true }, { resumeId: RESUME_ID }]) {
+    const { cmd } = resolveAgentLaunch({ agent: "codex", ...extra, remoteControl: true, mintId: () => MINTED });
+    assert.ok(!cmd.includes("--remote-control"), cmd);
+    assert.ok(cmd.startsWith("codex"), cmd);
+  }
+});
+
+test("resolveAgentLaunch passes remoteControl through to the Claude branch", () => {
+  assert.equal(
+    resolveAgentLaunch({ remoteControl: true, mintId: () => MINTED }).cmd,
+    `claude --remote-control --session-id ${MINTED}`
+  );
+});
