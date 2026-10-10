@@ -676,12 +676,18 @@ export async function enhanceDiscussionBody(
   try {
     ({ text, usage } = await generateText({
       model: anthropic(AI_MODEL),
-      system: "You are a concise technical writer. Improve this discussion post's clarity, structure, and persuasiveness. STRICT RULES: Keep the output roughly the same length as the input (never more than 2x). Do NOT add boilerplate sections, templates, checklists, or context the user didn't provide. Just sharpen what's already there. Return ONLY the improved text — no preamble.",
-      prompt: `**Discussion Title:** ${discussionTitle}
-**Current Body:**
-${discussionBody}
+      // The result replaces the body field verbatim, so it must be the body
+      // alone: on Sonnet 5.5 the old "improve this post" wording came back
+      // with the title and "Title:"/"Body:" labels pasted into the body.
+      system:
+        "You are a concise technical writer. Improve the body of a discussion post: make it clearer, better structured and more persuasive. " +
+        "Keep it roughly the same length as the original, never more than twice as long, and don't add boilerplate sections, templates, checklists or context the author didn't give; just sharpen what's there. " +
+        "Your reply replaces the body field as-is, so return only the improved body text: no title, no labels such as \"Title:\" or \"Body:\", and no preamble.",
+      prompt: `Discussion title (context only, not part of your reply): ${discussionTitle}
+Project (context only): "${idea.title}"
 
-**Context (for reference only, do NOT repeat in output):** Project "${idea.title}"`,
+Body to improve:
+${discussionBody}`,
       providerOptions: ANTHROPIC_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 2000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),

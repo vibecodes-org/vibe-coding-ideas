@@ -373,4 +373,18 @@ describe("AI failure paths — structured { error } returns", () => {
 
     expect(result).toEqual({ error: "Overloaded" });
   });
+
+  it("enhanceDiscussionBody asks for the body alone, without the title or labels", async () => {
+    mockGenerateText.mockResolvedValue({ text: "Sharper body", usage: { inputTokens: 1, outputTokens: 1 } });
+
+    const { enhanceDiscussionBody } = await import("./ai");
+    const result = await enhanceDiscussionBody("idea-1", "Dark mode emails", "emails look bad in dark mode");
+
+    expect(result).toEqual({ enhanced: "Sharper body" });
+    const call = mockGenerateText.mock.calls.at(-1)?.[0] as { system: string; prompt: string };
+    expect(call.system).toContain("return only the improved body text: no title");
+    expect(call.system).not.toMatch(/STRICT|Do NOT|ONLY/);
+    expect(call.prompt).toContain("Discussion title (context only, not part of your reply): Dark mode emails");
+    expect(call.prompt).toMatch(/Body to improve:\nemails look bad in dark mode$/);
+  });
 });
