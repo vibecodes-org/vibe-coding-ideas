@@ -43,6 +43,12 @@ vi.mock("@/lib/ai-helpers", () => ({
   ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS: {
     anthropic: { structuredOutputMode: "outputFormat" },
   },
+  ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS: {
+    anthropic: { structuredOutputMode: "outputFormat", effort: "low" },
+  },
+  ANTHROPIC_LOW_EFFORT_OPTIONS: {
+    anthropic: { effort: "low" },
+  },
   resolveAiProvider: vi.fn().mockResolvedValue({
     ok: true,
     anthropic: (m: string) => m,
@@ -118,6 +124,23 @@ describe("generateClarifyingQuestions — kit context injection (AC-10)", () => 
 
     const call = mockGenerateObject.mock.calls[0][0] as { system: string };
     expect(call.system).not.toMatch(/This is a \*\*.*\*\* project/);
+  });
+
+  it("asks for low effort so thinking can't use up the small 1000-token cap", async () => {
+    mockSingle.mockResolvedValue({
+      data: { id: "idea-1", title: "My idea", description: "desc", author_id: "user-1", project_kit: null },
+      error: null,
+    });
+
+    const generateClarifyingQuestions = await getAction();
+    await generateClarifyingQuestions("idea-1", "Make it better");
+
+    const call = mockGenerateObject.mock.calls[0][0] as {
+      maxOutputTokens: number;
+      providerOptions: { anthropic: Record<string, unknown> };
+    };
+    expect(call.maxOutputTokens).toBe(1000);
+    expect(call.providerOptions.anthropic).toEqual({ structuredOutputMode: "outputFormat", effort: "low" });
   });
 
   it("rejects when the caller is not the idea author (authorization preserved)", async () => {

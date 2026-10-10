@@ -7,6 +7,7 @@ import {
   chargeAiUsage,
   chargeAiUpfront,
   resolveAiProvider,
+  ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
 } from "@/lib/ai-helpers";
 import { buildPromptContextParts, buildAutoRuleMappings } from "@/lib/ai-prompt-helpers";
 
@@ -182,6 +183,7 @@ export async function POST(req: Request) {
       system: systemPrompt,
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 8000,
       // A stall that emits no tokens (and no error) is bounded here rather than by
       // the 300s function timeout — the abort surfaces through onError below.
