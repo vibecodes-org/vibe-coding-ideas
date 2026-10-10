@@ -18,6 +18,7 @@ import {
   tierResolutionLine,
   capitalizeModelName,
 } from "./constants";
+import { generatePromptFromFields } from "./prompt-builder";
 import type { IdeaStatus, CommentType } from "@/types";
 
 // ── STATUS_CONFIG completeness ────────────────────────────────────────
@@ -240,6 +241,42 @@ describe("BOT_ROLE_TEMPLATES", () => {
           template.structured.constraints,
           `unexpected sentence on ${template.role}`
         ).not.toContain(MARKER);
+      }
+    });
+  });
+
+  // Task fedbfc19: these were ~3,000-char "textbook" prompts (SOLID, Core Web
+  // Vitals, RICE…) long after the platform personas were slimmed (00149), so
+  // every new agent reintroduced the bloat. The ceiling stops them regrowing:
+  // the longest slim template is ~1,650 chars; the old ones averaged ~3,000.
+  describe("slim, stack-agnostic starter prompts", () => {
+    const PROMPT_CEILING = 1800;
+
+    it(`every generated starter prompt is at most ${PROMPT_CEILING} characters`, () => {
+      for (const template of BOT_ROLE_TEMPLATES) {
+        const prompt = generatePromptFromFields(template.role, template.structured);
+        expect(prompt.length, `${template.role} is ${prompt.length} chars`).toBeLessThanOrEqual(
+          PROMPT_CEILING
+        );
+      }
+    });
+
+    it("keeps each expertise list to a handful of points", () => {
+      for (const template of BOT_ROLE_TEMPLATES) {
+        const bullets = template.structured.expertise.split("\n").filter((l) => l.startsWith("- "));
+        expect(bullets.length, template.role).toBeGreaterThan(0);
+        expect(bullets.length, template.role).toBeLessThanOrEqual(4);
+      }
+    });
+
+    // These seed agents on any user's project, whatever its stack — the
+    // VibeCodes house stack and people don't belong in them.
+    it("names no particular stack, product or person", () => {
+      const STACK_SPECIFIC =
+        /Next\.js|React|Supabase|shadcn|Tailwind|maybeSingle|\bRLS\b|Vercel|VibeCodes|\bNick\b/;
+      for (const template of BOT_ROLE_TEMPLATES) {
+        const prompt = generatePromptFromFields(template.role, template.structured);
+        expect(prompt, template.role).not.toMatch(STACK_SPECIFIC);
       }
     });
   });
