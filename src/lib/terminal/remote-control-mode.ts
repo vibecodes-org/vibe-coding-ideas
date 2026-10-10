@@ -11,8 +11,11 @@
 
 /** V1 switch — set false if `claude --remote-control --resume/--continue` fails live. */
 export const REMOTE_CONTROL_APPLIES_TO_RESUME = true;
-/** V2 switch — set true if Remote Control needs a claude.ai sign-in (API-key users). */
-export const REMOTE_CONTROL_NEEDS_CLAUDE_AI_SIGN_IN = false;
+/** V2 switch — set true if Remote Control needs a claude.ai sign-in (API-key users).
+ *  Live check V2 (10 Oct 2026, Claude Code 2.1.296): signed in with an API key,
+ *  `claude --remote-control` starts normally but Remote Control never comes on
+ *  and Claude prints nothing about it — so the help text has to say so. */
+export const REMOTE_CONTROL_NEEDS_CLAUDE_AI_SIGN_IN = true;
 
 // Copy lifted verbatim from the approved mock's COPY object
 // (docs/terminal-remote-control-ux.html).
