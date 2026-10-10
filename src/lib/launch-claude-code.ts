@@ -785,26 +785,26 @@ interface CommonPromptArgs {
  */
 function mcpSetupHead(appUrl: string, agent: "claude" | "codex" = "claude"): string {
   if (agent === "codex") {
-    return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
+    return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are already available, skip this section.
 
-If they are NOT available, add the hosted connector, then sign in:
+If they aren't, add the hosted connector, then sign in:
 1. run \`codex mcp add vibecodes --url ${mcpEndpoint(appUrl)}\`
 2. Then run \`codex mcp login vibecodes\` and sign in with your ChatGPT/OpenAI account.
 3. Once signed in, re-check the board tools and continue.
 
-Do NOT use \`claude mcp add\` or \`/mcp\` — those are Claude Code commands and do nothing for Codex. Do NOT debug or reconfigure other MCP servers. If the board tools still aren't available after signing in, stop and tell me rather than guessing.
+\`claude mcp add\` and \`/mcp\` are Claude Code commands and do nothing for Codex, so don't use them. Leave other MCP servers alone. If the board tools still aren't available after signing in, stop and tell me rather than guessing.
 
 You are Codex: whenever you call claim_next_step, complete_step or fail_step, pass agent: "codex". For each workflow step, spawn a fresh subagent with the model/effort and context returned by claim_next_step; report its accepted launch settings on completion.`;
   }
-  return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
+  return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are already available, skip this section.
 
-If they are NOT available, add the hosted connector, then hand sign-in back to me. IMPORTANT: do NOT build an OAuth URL or run the authorization yourself — Claude Code's built-in \`/mcp\` flow manages the browser sign-in (and its localhost callback) reliably; a hand-driven flow fails with "localhost refused to connect".
+If they aren't, add the hosted connector, then hand sign-in back to me. Don't build an OAuth URL or run the authorization yourself: Claude Code's built-in \`/mcp\` flow handles the browser sign-in and its localhost callback reliably, and a hand-driven flow fails with "localhost refused to connect".
 1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes", e.g. a local stdio server, so there is no conflict):
      claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}
-2. Then STOP and tell me to finish sign-in with the built-in flow: run \`/mcp\`, select "vibecodes", choose Authenticate, and approve in the browser. (If the browser ever shows "localhost refused to connect", copy the full URL from the address bar and paste it back into Claude Code — that's the supported fallback.)
+2. Then stop and ask me to finish sign-in with the built-in flow: run \`/mcp\`, select "vibecodes", choose Authenticate, and approve in the browser. (If the browser ever shows "localhost refused to connect", copy the full URL from the address bar and paste it back into Claude Code — that's the supported fallback.)
 3. Once I confirm it's connected, re-check the board tools and continue.
 
-Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth flow. If the board tools still aren't available after I authenticate, stop and tell me rather than guessing.`;
+Leave other MCP servers alone. If the board tools still aren't available after I authenticate, stop and tell me rather than guessing.`;
 }
 
 /**
@@ -824,25 +824,25 @@ function newProjectSteps(
 ): string {
   const repo = parseRepoFromGithubUrl(repoUrl);
   const setupStep = repo
-    ? `Then set up its contents based on what you find — do NOT overwrite existing work:
+    ? `Then set up its contents based on what you find, without overwriting existing work:
      • Empty / just-created → clone the repo: git clone https://github.com/${repo}.git .
      • Already a git checkout → leave it; optionally fast-forward: git pull --ff-only || true
-     • Has files but no git → use them as-is; do NOT clone over them.`
-    : `Then set up git based on what you find — do NOT overwrite existing work:
+     • Has files but no git → use them as-is; don't clone over them.`
+    : `Then set up git based on what you find, without overwriting existing work:
      • Empty / just-created → initialise: git init
      • Already a git repo, or already has files → leave it as-is.`;
 
-  return `STEP 0 — get into this idea's project directory. This is MANDATORY and comes before everything else, including reading the board. This session has started in your home directory, which is the WRONG place to work.
-  • If ${newProjectPath} ALREADY EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
-  • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
-  • ⚠️ This applies EVEN IF the first task is planning, research, design, or "board-only" work with no files yet. Do NOT stay in your home directory on the reasoning that "no files are needed yet" or "the repo will be created later" — that mis-files this idea's history and config under home. EVERY session for this idea runs from its project folder. No exceptions.
-Then confirm and record exactly where you are (this lets future launches open straight in this folder):
-  • Run \`pwd\` and capture the absolute path it prints — this is the authoritative location on this machine, not a guess.
-  • ⚠️ If \`pwd\` shows \`/\` (the filesystem root) or your home directory, STOP — you are not in the project folder; cd into it before doing anything else, and NEVER record that path.
+  return `First, get into this idea's project folder, before anything else (including reading the board). This session started in your home directory, and work done from there gets filed under home instead of under this idea.
+  • If ${newProjectPath} already exists, cd into it and reuse it as it is — don't re-clone, re-init or overwrite existing files.
+  • If it doesn't exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
+  • This holds even if the first task is planning, research, design or board-only work with no files yet. Staying in home because "no files are needed yet" or "the repo will be created later" still mis-files this idea's history and config under home, so every session for this idea runs from its project folder.
+Then confirm and record where you are, so future launches open straight in this folder:
+  • Run \`pwd\` and keep the absolute path it prints — that's the real location on this machine, not a guess.
+  • If \`pwd\` shows \`/\` (the filesystem root) or your home directory, stop: you're not in the project folder. cd into it first, and never record that path.
   • Get the machine name: run \`hostname\` (or \`uname -n\`).
-  • As SOON as the vibecodes board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) — but only ever from inside the project folder; recording \`/\` or home would send every future launch to the wrong place.
+  • As soon as the vibecodes board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname and the \`pwd\` output, before picking up any task. Do this on every launch so a moved folder heals itself — but only from inside the project folder, because recording \`/\` or home would send every future launch to the wrong place.
 ${setupStep}
-Only AFTER you are confirmed inside the project folder (pwd is NOT home) should you write any files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project, never in your home directory.`;
+Only after you are confirmed inside the project folder (pwd isn't home), write files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project rather than your home directory.`;
 }
 
 /** Default parent for a brand-new project — home-relative so it needs no absolute path. */
@@ -924,11 +924,11 @@ export function buildBoardBootstrapPrompt({
 }: BoardBootstrapArgs): string {
   const dir = directoryBlock({ ideaId, mode, repoUrl, newProject });
   const mcp = mcpSetupHead(appUrl);
-  const work = `Then, pick up my work on the VibeCodes board for this idea — but ASK me first, don't just start:
+  const work = `Then, pick up my work on the VibeCodes board for this idea, but ask me first rather than just starting:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
-  • Call get_board with idea_id ${ideaId} to see the columns and tasks. Do NOT use get_my_tasks here — it only returns tasks already ASSIGNED to you, and a freshly created board has none, so it would look (wrongly) like there's no work.
-  • Identify the top unstarted task (e.g. the first item in To Do, then Backlog). Only ever pick a task from To Do or Backlog — NEVER touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
-  • Then STOP and ask me: tell me which task is next up and ask whether you should pick it up, or whether I want something else (report a new bug, continue work in flight, a question, …). Wait for my reply. Do NOT call get_task, assign, move or start anything before I answer.
+  • Call get_board with idea_id ${ideaId} to see the columns and tasks. Use it rather than get_my_tasks here: get_my_tasks only returns tasks already assigned to you, and a fresh board has none, so it would wrongly look like there's no work.
+  • Identify the top unstarted task (e.g. the first item in To Do, then Backlog). Only ever pick a task from To Do or Backlog — never touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
+  • Then stop and ask me: tell me which task is next up and ask whether you should pick it up, or whether I want something else (report a new bug, continue work in flight, a question, …). Wait for my reply. Don't call get_task, assign, move or start anything before I answer.
   • If I say yes: read it with get_task, assign it to yourself, and move it to In Progress. If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
 Use the MCP tools (get_board / get_task / claim_next_step / move_task / add_task_comment / …) to do the work. Move the task to In Progress and comment as you go.`;
