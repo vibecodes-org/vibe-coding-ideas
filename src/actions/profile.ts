@@ -631,3 +631,48 @@ export async function updateTerminalAgent(agent: LaunchAgent): Promise<LaunchAge
   revalidatePath(`/profile/${user.id}`);
   return toStore;
 }
+
+// ── Terminal agent switch — one-time toast "seen" flag (card c4c27987,
+// docs/launch-button-remembered-agent-option-a-spec.html §3) ───────────────
+// Per-account, write-once (never cleared, including by Undo). See migration
+// 00177 for why this is its own column rather than reusing
+// notification_preferences/feed_preferences.
+
+export async function getTerminalAgentToastSeen(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_agent_toast_seen_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_agent_toast_seen_at != null;
+}
+
+export async function markTerminalAgentToastSeen(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // `.is(..., null)` guard: never overwrite an existing timestamp — a second
+  // concurrent call (e.g. two picker writes racing) must not disturb the
+  // FIRST time it was shown.
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_agent_toast_seen_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .is("terminal_agent_toast_seen_at", null);
+
+  if (error) throw new Error(error.message);
+}

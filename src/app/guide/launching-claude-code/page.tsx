@@ -31,21 +31,26 @@ export default function LaunchingClaudeCodePage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Overview</h2>
           <p className="mb-4 text-muted-foreground">
-            <strong className="text-foreground">Launch Claude Code</strong> is a
-            one-click way to start Claude Code already wired to a board. The
-            primary button — labelled{" "}
+            <strong className="text-foreground">Launch</strong> is a
+            one-click way to start your coding agent already wired to a
+            board. The primary button in the board toolbar always follows
+            your <strong className="text-foreground">remembered agent</strong>{" "}
+            — it reads{" "}
             <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
-            in the board toolbar — fires a{" "}
+            or <strong className="text-foreground">&quot;Launch Codex&quot;</strong>,
+            whichever you last picked (new accounts default to Claude Code). It
+            fires either a{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claude-cli://
             </code>{" "}
-            deep link that opens Claude Code, connects the VibeCodes MCP server,
-            and offers you the next task on the board.
+            deep link or, for Codex, a helper-opened Terminal window — either
+            way it connects the VibeCodes MCP server and offers you the next
+            task on the board.
           </p>
           <p className="text-muted-foreground">
             Instead of copying commands and explaining context by hand, one
-            click hands Claude Code everything it needs: which project to open,
-            how to connect, and what&apos;s waiting on your board.
+            click hands your agent everything it needs: which project to
+            open, how to connect, and what&apos;s waiting on your board.
           </p>
         </section>
 
@@ -58,11 +63,10 @@ export default function LaunchingClaudeCodePage() {
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">Board toolbar</strong> — a
-              split button:{" "}
-              <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
-              plus a chevron that opens the{" "}
-              <strong className="text-foreground">&quot;Launch options&quot;</strong>{" "}
-              dropdown
+              split button: &quot;Launch &lt;your agent&gt;&quot; plus a
+              chevron (labelled{" "}
+              <strong className="text-foreground">&quot;More ways to launch&quot;</strong>
+              ) that opens the launch menu
             </li>
             <li>
               <strong className="text-foreground">Task card menu</strong> —{" "}
@@ -88,22 +92,34 @@ export default function LaunchingClaudeCodePage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">The Launch Options Dropdown</h2>
           <p className="mb-4 text-muted-foreground">
-            The chevron next to the launch button opens a menu of options:
+            The chevron next to the launch button opens a menu with two
+            agent groups — your remembered agent&apos;s group listed first
+            with a <strong className="text-foreground">&quot;Your default&quot;</strong>{" "}
+            tag on its heading, then the other agent&apos;s group. Each item
+            launches exactly the agent and destination it names — a
+            &quot;terminal window&quot; item and an &quot;in the browser&quot;
+            item per agent — and never changes your default:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">&quot;Open in Claude Code&quot;</strong>{" "}
-              — the standard launch
+              <strong className="text-foreground">
+                &quot;Default agent: X · Switch to Y&quot;
+              </strong>{" "}
+              — a footer line under the two groups. &quot;Switch to Y&quot;
+              only updates which agent the button remembers; it never starts
+              a session.
             </li>
             <li>
-              <strong className="text-foreground">&quot;This machine&quot;</strong>{" "}
+              <strong className="text-foreground">&quot;Recorded folder for this board&quot;</strong>{" "}
               — a line showing the saved folder path when one is set
             </li>
             <li>
               <strong className="text-foreground">&quot;Start a new project…&quot;</strong>
             </li>
             <li>
-              <strong className="text-foreground">&quot;Copy launch command&quot;</strong>
+              <strong className="text-foreground">&quot;Copy launch command&quot;</strong>{" "}
+              — copies the command for your remembered agent (shown on the
+              item&apos;s sub-line)
             </li>
             <li>
               <strong className="text-foreground">&quot;Set exact folder (advanced)…&quot;</strong>
@@ -118,9 +134,42 @@ export default function LaunchingClaudeCodePage() {
                 className="text-primary hover:underline"
               >
                 docs.claude.com/en/docs/claude-code
-              </a>
+              </a>{" "}
+              for Claude Code, or{" "}
+              <a
+                href="https://developers.openai.com/codex/cli/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                developers.openai.com/codex/cli
+              </a>{" "}
+              for Codex — whichever is your remembered agent
             </li>
           </ul>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Launching Codex</h2>
+          <p className="mb-4 text-muted-foreground">
+            Codex opens in a Terminal window on your Mac through the
+            VibeCodes helper — the same helper the in-browser terminal uses.
+            It needs:
+          </p>
+          <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+            <li>The VibeCodes helper installed and reasonably up to date</li>
+            <li>The Codex CLI installed and signed in with your own ChatGPT account</li>
+            <li>
+              A real, existing project folder — unlike Claude Code, Codex
+              can&apos;t create one for you on the fly. If none is recorded
+              yet, launching Codex opens the folder dialog first and
+              continues the launch as soon as you save one.
+            </li>
+          </ul>
+          <p className="mt-4 text-muted-foreground">
+            Codex sessions never run in an isolated git worktree — they
+            always work directly in the recorded project folder.
+          </p>
         </section>
 
         <section>
@@ -398,21 +447,26 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Desktop Only</h2>
           <div className="mb-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              The{" "}
+              Launching only works on <strong className="text-foreground">desktop</strong>,
+              since it opens a program on your own Mac (Claude Code via the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 claude-cli://
               </code>{" "}
-              scheme only works on{" "}
-              <strong className="text-foreground">desktop</strong> where Claude
-              Code is installed. On mobile the option is disabled and shows{" "}
+              scheme, or Codex through the VibeCodes helper). On a phone, the
+              task card menu instead shows{" "}
               <strong className="text-foreground">
-                &quot;Open on desktop to launch Claude Code&quot;
-              </strong>
-              .
+                &quot;Launching runs on your Mac, so it isn&apos;t available here.&quot;
+              </strong>{" "}
+              plus a working{" "}
+              <strong className="text-foreground">
+                &quot;Copy &lt;your agent&gt; command for this task&quot;
+              </strong>{" "}
+              item — it copies the command to paste into Terminal on your
+              Mac, without launching anything from the phone itself.
             </p>
           </div>
           <p className="text-muted-foreground">
-            You need Claude Code installed first. See the{" "}
+            You need Claude Code (or Codex) installed first. See the{" "}
             <Link
               href="/guide/mcp-integration"
               className="text-primary hover:underline"

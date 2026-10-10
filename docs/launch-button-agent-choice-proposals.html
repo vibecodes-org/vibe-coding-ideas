@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design proposals: the launch button and your choice of agent</title>
+<style>
+  :root {
+    --bg: #0c0c0e; --panel: #141417; --panel-2: #111114; --pop: #09090b; --line: #27272a; --line-2: #3f3f46;
+    --z100: #f4f4f5; --z200: #e4e4e7; --z300: #d4d4d8; --z400: #a1a1aa; --z500: #71717a; --z600: #52525b;
+    --emerald: #10b981; --emerald-300: #6ee7b7; --emerald-400: #34d399;
+    --sky: #0ea5e9; --sky-300: #7dd3fc; --sky-400: #38bdf8;
+    --amber-300: #fcd34d; --amber-500: #f59e0b; --rose-400: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { overflow-x: hidden; }
+  body { margin: 0; background: var(--bg); color: var(--z300); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 90px; }
+  h1 { color: var(--z100); font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { color: var(--z100); font-size: 19px; margin: 48px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+  h3 { color: var(--z200); font-size: 15px; margin: 22px 0 8px; }
+  h4 { color: var(--z300); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; margin: 0 0 6px; }
+  p, li { max-width: 78ch; }
+  a { color: var(--sky-300); }
+  code { font-family: var(--mono); font-size: 12.5px; color: var(--z200); background: #1c1c21; padding: 1px 5px; border-radius: 4px; }
+  .meta { color: var(--z500); font-size: 13px; margin-bottom: 20px; }
+  .callout { border-left: 3px solid var(--sky); background: rgba(14,165,233,.06); padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.amber { border-color: var(--amber-500); background: rgba(245,158,11,.06); }
+  .callout.rule { border-color: var(--rose-400); background: rgba(251,113,133,.05); }
+  .callout.green { border-color: var(--emerald); background: rgba(16,185,129,.06); }
+  .callout p:last-child { margin-bottom: 0; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; min-width: 640px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--z400); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.good { color: var(--emerald-300); } td.bad { color: var(--rose-400); } td.meh { color: var(--amber-300); }
+  .eyebrow { color: var(--z500); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 28px; margin: 14px 0; }
+  .grid2 p { margin: 0 0 6px; font-size: 13.5px; }
+  .grid2 ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+
+  /* ── the "button lab" control ── */
+  .lab { position: sticky; top: 0; z-index: 5; background: rgba(12,12,14,.92); backdrop-filter: blur(6px); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 14px; margin: 18px 0 8px; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; }
+  .lab .k { color: var(--z400); }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; background: var(--panel-2); }
+  .seg button { min-width: 104px; min-height: 36px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 500; color: var(--z400); background: transparent; border: 0; border-left: 1px solid var(--line-2); cursor: pointer; }
+  .seg button:first-child { border-left: 0; }
+  .seg button[aria-checked="true"] { background: rgba(14,165,233,.15); color: var(--z100); font-weight: 600; box-shadow: inset 0 -2px 0 0 var(--sky); }
+  .seg button:focus-visible { outline: 2px solid var(--sky-300); outline-offset: -2px; }
+
+  /* ── mockup frames ── */
+  .mock { margin: 14px 0 6px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: var(--panel); font-size: 12.5px; }
+  .mock-title { background: #1c1c21; color: var(--z500); font-size: 11px; padding: 5px 12px; border-bottom: 1px solid var(--line); letter-spacing: .03em; }
+  .mock-title b { color: var(--z300); font-weight: 600; }
+  .mock-body { padding: 16px; }
+  .caption { color: var(--z500); font-size: 12.5px; margin: 6px 0 18px; max-width: none; }
+  .states { display: flex; flex-wrap: wrap; gap: 22px 32px; align-items: flex-start; }
+  .state { display: flex; flex-direction: column; gap: 8px; }
+  .state .lbl { color: var(--z500); font-size: 11px; }
+  .toolbar { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .toolbar .ghost { width: 28px; height: 32px; border-radius: 6px; border: 1px solid var(--line); background: transparent; }
+
+  /* the shipped split button, values copied from the Tailwind classes */
+  .split { display: inline-flex; align-items: center; }
+  .split .primary, .split .chev, .solo { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; font-weight: 500; line-height: 1; color: var(--emerald-400); background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.25); border-radius: 6px; white-space: nowrap; cursor: default; }
+  .split .primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .split .chev { width: 28px; padding: 0; justify-content: center; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .split .primary:hover, .split .chev:hover, .solo:hover { background: rgba(16,185,129,.20); color: var(--emerald-300); }
+  .split.open .chev { background: rgba(16,185,129,.20); }
+  .ico { width: 14px; height: 14px; flex: none; }
+  .ico16 { width: 16px; height: 16px; flex: none; color: var(--z400); margin-right: 2px; }
+  .pill { display: inline-block; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; line-height: 1.3; }
+  .pill.beta { background: rgba(14,165,233,.15); color: var(--sky-400); }
+  .pill.def { background: rgba(16,185,129,.15); color: var(--emerald-300); text-transform: none; letter-spacing: 0; font-size: 10.5px; }
+
+  /* dropdown (shadcn DropdownMenuContent w-72) */
+  .menu { width: 288px; max-width: 100%; background: var(--pop); border: 1px solid var(--line); border-radius: 6px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 14px; color: var(--z200); }
+  .menu .hd { padding: 6px 8px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: rgba(161,161,170,.7); display: flex; align-items: center; gap: 8px; }
+  .menu .it { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: default; }
+  .menu .it:hover, .menu .it.focus { background: #18181b; }
+  .menu .it .t { display: flex; flex-direction: column; min-width: 0; }
+  .menu .it .t .l { display: inline-flex; align-items: center; gap: 6px; }
+  .menu .it .t .s { font-size: 11px; color: var(--z400); }
+  .menu .sep { height: 1px; background: var(--line); margin: 4px -4px; }
+  .menu .folder { padding: 6px 8px; font-size: 12px; color: var(--z400); }
+  .menu .folder .n { color: rgba(244,244,245,.8); font-weight: 500; }
+  .menu .folder code { display: block; margin-top: 2px; font-size: 11px; background: none; padding: 0; color: var(--z400); word-break: break-all; }
+  .menu .footer { padding: 6px 8px; font-size: 12px; color: var(--z400); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .menu .footer .link { color: var(--sky-300); text-decoration: underline; text-underline-offset: 2px; cursor: default; }
+  .menu .footer .link:hover { color: var(--sky-400); }
+  .anchor { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+  /* option B popover */
+  .pop { width: 300px; max-width: 100%; background: var(--pop); border: 1px solid var(--line); border-radius: 8px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 13px; color: var(--z200); }
+  .pop .lbl { font-size: 11px; color: var(--z500); margin-bottom: 4px; }
+  .pop .line { font-size: 11px; color: var(--z500); margin: 8px 0 10px; }
+  .dest { display: flex; flex-direction: column; gap: 6px; }
+  .dest button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; text-align: left; padding: 8px 10px; font: inherit; color: var(--z200); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 6px; cursor: default; }
+  .dest button:hover { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.06); }
+  .dest .t { display: flex; flex-direction: column; }
+  .dest .s { font-size: 11px; color: var(--z400); }
+  .pop .more { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--z400); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .pop .more span { color: var(--sky-300); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* toast */
+  .toast { display: inline-flex; gap: 10px; align-items: flex-start; max-width: 360px; background: #18181b; border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--z200); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  .toast .a { color: var(--sky-300); white-space: nowrap; font-weight: 600; }
+
+  /* settings card (Option C) */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; max-width: 560px; }
+  .card h5 { margin: 0 0 2px; color: var(--z100); font-size: 15px; }
+  .card .d { color: var(--z400); font-size: 12.5px; margin-bottom: 12px; }
+  .radios { display: flex; flex-direction: column; gap: 8px; }
+  .radios label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 6px; cursor: default; min-height: 44px; }
+  .radios label.on { border-color: rgba(14,165,233,.5); background: rgba(14,165,233,.06); }
+  .radios .dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--z500); flex: none; margin-top: 2px; position: relative; }
+  .radios label.on .dot { border-color: var(--sky-400); }
+  .radios label.on .dot::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--sky-400); }
+  .radios .n { color: var(--z100); font-weight: 600; font-size: 13px; }
+  .radios .s { color: var(--z400); font-size: 12px; }
+
+  /* mobile card menu */
+  .phone { width: 300px; max-width: 100%; background: var(--pop); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px; font-size: 14px; }
+  .phone .it { display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 8px 10px; border-radius: 6px; color: var(--z200); }
+  .phone .it.muted { color: var(--z500); }
+  .phone .it .s { font-size: 12px; color: var(--z400); }
+  .phone .sep { height: 1px; background: var(--line); margin: 4px 0; }
+
+  .verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0; }
+  .verdict .v { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; font-size: 13px; }
+  .verdict .v.rec { border-color: rgba(16,185,129,.45); box-shadow: 0 0 0 1px rgba(16,185,129,.15) inset; }
+  .verdict .v b { color: var(--z100); display: block; margin-bottom: 4px; }
+  .verdict .v .tag { display: inline-block; margin-bottom: 8px; }
+  @media (max-width: 480px) { .menu, .pop { width: 100%; } .lab { position: static; } }
+  @media (prefers-reduced-motion: no-preference) { .fade { transition: opacity .15s ease; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">UX design · step 2 of 4 · Design proposals</div>
+  <h1>The launch button and your choice of agent: three ways to let people pick — and prefer — Claude Code or Codex</h1>
+  <p class="meta">Card "Launch button assumes Claude Code — let people choose their agent". Builds on the step-1 audit (<code>docs/launch-button-agent-choice-ux-audit.md</code>). Mockups only — nothing here is built. Compass, 8 Sep 2026.</p>
+
+  <div class="callout">
+    <p><b>What this is actually about.</b> Building on the audit's framing correction (§0, §2): Codex launching already shipped. It sits in the green button's dropdown (both agents, both places to run) and in the task card's ⋯ menu. The two real gaps are:</p>
+    <ol style="margin:6px 0 0">
+      <li>The green <b>primary</b> button can only ever do one thing — start <b>Claude Code in a terminal window</b>.</li>
+      <li>The app already <b>remembers which agent you prefer</b> (per account, set when you toggle the picker in the browser terminal) — but no one-click button ever reads it. A Codex user pays an extra click on every launch, forever, and the closed button never hints that another agent exists (audit gaps 1–3).</li>
+    </ol>
+    <p style="margin-top:8px">So the question for these proposals is: <b>how should the primary button let you pick and prefer your agent, without ever switching agents silently, and without re-introducing the "remembered default beat my explicit click" bug</b> (audit gap 11, card <code>72830a60</code>)?</p>
+  </div>
+
+  <h3>Rules every option below obeys (from the audit §5 — not re-opened here)</h3>
+  <ul>
+    <li><b>The label is the contract.</b> Whatever the green button says is exactly what a click does (FR-15: "no silent agent-switching"). If it starts Codex it says "Launch Codex".</li>
+    <li><b>Explicit beats remembered.</b> Any item you click by name launches exactly that, and does <em>not</em> rewrite your remembered preference (FR-4a; the precedence PR #272/#281 established).</li>
+    <li><b>Nothing is added to the launch link.</b> All three options reuse the existing Claude-terminal, Codex-terminal and browser launch paths as-is; no new URL parameter, so the link budgets (1900 / 2048 chars) are untouched.</li>
+    <li><b>The signed-off dropdown layout stays</b> (agent × where-it-runs, two labelled groups). Where an option touches it, that is called out explicitly as a change for Nick to approve.</li>
+    <li><b>Nobody gets trapped.</b> Every menu and popover closes on Escape, outside click and a close control.</li>
+    <li><b>Unknown reads as enabled.</b> The button can't know if Codex is installed until the helper is live; a Codex primary click runs the same pre-flight the dropdown item does today (too-old helper / Codex missing → toast with "How to install Codex").</li>
+  </ul>
+
+  <h2 id="lab">How to read the mockups</h2>
+  <p>The buttons below are drawn with the shipped styles (emerald ghost pill, 32px tall, terminal icon, chevron; 288px menu). Use this control to see how each option looks for a person whose remembered agent is Claude Code (every new account — and today's only real-world state) versus someone who has toggled to Codex.</p>
+  <div class="lab" role="group" aria-label="Preview settings">
+    <span class="k">Preview as someone whose remembered agent is</span>
+    <div class="seg" role="radiogroup" aria-label="Remembered agent for the preview">
+      <button type="button" role="radio" aria-checked="true" data-agent="claude">Claude Code</button>
+      <button type="button" role="radio" aria-checked="false" data-agent="codex">Codex</button>
+    </div>
+    <span class="k" id="lab-note">(A brand-new user is always "Claude Code" — the preference defaults to Claude.)</span>
+  </div>
+
+  <!-- ─────────────────────────── OPTION A ─────────────────────────── -->
+  <h2 id="a">Option A — The button follows your remembered agent</h2>
+  <p><b>In one sentence:</b> the green button launches whichever agent you last chose, says so in its label, and the menu gains a one-line footer that tells you what your default is and lets you switch it.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · primary button states · desktop</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Closed — label matches the remembered agent</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="split">
+              <span class="primary" title="Opens a Terminal window on this Mac"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-label-a>Launch Claude Code</span></span>
+              <span class="chev" aria-label="More ways to launch"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+            </span>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Hover on the primary — same as today</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="split">
+              <span class="primary" style="background:rgba(16,185,129,.20);color:var(--emerald-300)"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-label-a>Launch Claude Code</span></span>
+              <span class="chev"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+            </span>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">One-time toast the first time the label flips because of a picker toggle</span>
+          <div class="toast" role="status"><span>Your launch button now starts <b data-agent-name>Claude Code</b>. Change it any time from the button's menu.</span><span class="a">Undo</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">The primary's height, colours and icon are unchanged. Only the word after "Launch" changes. The <code>title</code> tooltip names where it opens (audit gap 4: the destination is invisible today) without adding width.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · menu open · desktop</div>
+    <div class="mock-body">
+      <div class="anchor">
+        <span class="split open">
+          <span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-label-a>Launch Claude Code</span></span>
+          <span class="chev"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </span>
+        <div class="menu" role="menu" id="menu-a">
+          <div data-group="claude">
+            <div class="hd" role="presentation">Claude Code <span class="pill def" data-def-chip="claude" hidden>Your default</span></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">On your computer — how it works today</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep" data-sep></div>
+          <div data-group="codex">
+            <div class="hd" role="presentation">Codex <span class="pill def" data-def-chip="codex" hidden>Your default</span></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">Opens Terminal on this Mac — needs the VibeCodes helper</span></div></div>
+            <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><div class="t"><span class="l">In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+          </div>
+          <div class="sep"></div>
+          <div class="footer" role="presentation">Default agent: <b style="color:var(--z200)" data-agent-name>Claude Code</b> · <span class="link" role="menuitem" data-switch-link>Switch to Codex</span></div>
+          <div class="sep"></div>
+          <div class="folder"><div class="n">Recorded folder for this board</div><code>~/projects/vibe-coding-ideas</code></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/><path d="M12 10v6M9 13h6"/></svg>Start a new project…</div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><div class="t"><span class="l">Copy launch command</span><span class="s" data-copy-sub>For Claude Code</span></div></div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>Set exact folder (advanced)…</div>
+          <div class="sep"></div>
+          <div class="it" role="menuitem"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg><div class="t"><span class="l">Install guide</span><span class="s" data-guide-sub>Claude Code docs</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">Two things change in the menu, both flagged for approval because the layout was signed off on 6 Sep: (1) the remembered agent's group moves to the top and carries a small "Your default" chip — this is the FR-4a "remembered-agent ordering" clause the audit found was specified but never built (gap 2); (2) a new one-line footer names the default and offers the <em>other</em> agent as a plain text link. "Copy launch command" and "Install guide" gain a sub-line naming the agent they serve and follow the default (fixes audit gap 8: Codex users being handed Claude's command and Claude's docs).</p>
+
+  <div class="grid2">
+    <div><h4>Button states</h4><p>Closed: "Launch Claude Code" or "Launch Codex". No other visual difference — deliberately, so the toolbar doesn't shout. Hover/focus unchanged. There is no "unknown" state: the label follows the account preference which is always known.</p></div>
+    <div><h4>What a click does</h4><p>Starts the named agent in a terminal window — today's destination. For Codex it runs the existing pre-flight (helper too old / Codex missing → toast with "How to install Codex"; no folder → the folder dialog, then <em>continues</em> the launch instead of stopping — fixing gap 8's "re-click" dead end).</p></div>
+    <div><h4>First-timer vs repeat user</h4><p>A first-timer sees exactly today's button. Nothing new to learn; ↓ Enter in the menu still does yesterday's thing. A Codex user sees "Launch Codex" the moment they've toggled the picker once — and the one-time toast (with Undo) tells them why, so the change is never a surprise even though it happened away from this button.</p></div>
+    <div><h4>Click cost</h4><ul><li>Your default agent, terminal window: <b>1</b> (both agents — the fix)</li><li>Other agent, or browser: 2 (unchanged)</li><li>Change default: 2 (chevron → "Switch to …")</li></ul></div>
+    <div><h4>Discoverability</h4><p>Better, but honest about the limit: a brand-new user still won't know Codex exists until they open the chevron. The footer line and the renamed chevron label ("More ways to launch") add scent inside the menu, not on the closed control. The picker in the browser terminal remains the other place people find Codex.</p></div>
+    <div><h4>Mobile</h4><p>No launch on phones (both agents need the Mac) — see the shared mobile fix below. Nothing about the preference is phone-specific.</p></div>
+    <div><h4>Accessibility</h4><ul><li>Label change is announced naturally by the button's own text.</li><li>Group headings become real menu labels (shadcn <code>DropdownMenuLabel</code> inside <code>role="group"</code>) so screen readers get "Claude Code, group" — fixes audit gap 7 in the right layer.</li><li>"Your default" is text, not colour-only. Footer "Switch to Codex" is a menu item, keyboard-reachable.</li><li>Chevron <code>aria-label</code>: "More ways to launch" (was the vague "Launch options").</li></ul></div>
+    <div><h4>Audit constraints</h4><p><b>Satisfies</b> FR-15 (label changes to match), FR-4a (explicit clicks never rewrite the preference; the footer link is the only explicit write from this menu), the precedence rule, link budgets (nothing added). <b>Strains</b>: the "remembered pick written by any picker" rule means the green button can change because of something you did in the browser terminal — mitigated by the toast + Undo, but it is the one behaviour in A that Nick should consciously accept.</p></div>
+  </div>
+
+  <!-- ─────────────────────────── OPTION B ─────────────────────────── -->
+  <h2 id="b">Option B — A neutral button that always asks</h2>
+  <p><b>In one sentence:</b> replace the split button with one plain "Launch…" button that opens a compact picker — agent on top, where-it-runs below — so nobody gets a baked-in default and everybody pays one extra click.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · closed and open · desktop</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Closed — agent-neutral, no split</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="solo" aria-haspopup="dialog"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch coding agent<svg class="ico" style="width:12px;height:12px;opacity:.8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Open — picker pre-set to the remembered agent, destination is the click</span>
+          <div class="pop" role="dialog" aria-label="Launch a coding agent">
+            <div class="lbl">Run it with</div>
+            <div class="seg" role="radiogroup" aria-label="Which agent runs this session" data-picker-b>
+              <button type="button" role="radio" aria-checked="true" data-agent="claude"><span aria-hidden="true">✓ </span>Claude Code</button>
+              <button type="button" role="radio" aria-checked="false" data-agent="codex">Codex</button>
+            </div>
+            <div class="line" data-settings-line>Starting model and auto-accept follow your terminal settings.</div>
+            <div class="lbl">Where</div>
+            <div class="dest">
+              <button type="button"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span class="t"><span>In a terminal window</span><span class="s" data-term-sub>On your computer — how it works today</span></span></button>
+              <button type="button"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><span class="t"><span>In the browser <span class="pill beta">Beta</span></span><span class="s">A live terminal docked on this board</span></span></button>
+            </div>
+            <div class="more"><span>Start a new project…</span><span>Copy launch command</span><span>Set exact folder…</span><span>Install guide</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">The popover reuses the shipped agent picker component (the same "Run it with" radio group the browser-terminal chooser uses), so the answer to "where do I change agent?" becomes the same control everywhere (audit gap 5). Toggling it here writes the remembered preference, exactly as the chooser does today. Escape, outside-click and the ✕ (not drawn) all close it. The four folder/help items move into a footer row.</p>
+
+  <div class="grid2">
+    <div><h4>Button states</h4><p>One state: "Launch coding agent" with a small chevron. Never changes label, never surprises. (Alternatives considered: "Start coding" — too vague about what happens; "Launch agent" — collides with the "Agents" section of the product, which means something else.)</p></div>
+    <div><h4>What a click does</h4><p>Opens the picker. Nothing launches until you pick a destination — so backing out is always free (never-trap rule). The destination buttons are 44px tall and the whole thing works on a phone-width screen, though it still wouldn't be shown on phones.</p></div>
+    <div><h4>First-timer vs repeat user</h4><p>Best first-timer read of the three: the two agents are visible the instant you click, side by side as equals. Repeat users pay for that every single time — the picker remembers their agent, but they still have to click "In a terminal window".</p></div>
+    <div><h4>Click cost</h4><ul><li>Any agent, terminal window: <b>2</b> — one more than today for every Claude user (the majority)</li><li>Any agent, browser: 2 (+ chooser if sessions exist), same as today</li><li>Change default: 0 extra — toggling the picker <em>is</em> the change</li></ul></div>
+    <div><h4>Discoverability</h4><p>Excellent. The word "agent" on the closed button plus two named radios on open means nobody can miss that Codex exists.</p></div>
+    <div><h4>Mobile</h4><p>Same as today: hidden. The popover itself would fit at 375px if a phone launch ever became possible.</p></div>
+    <div><h4>Accessibility</h4><ul><li>Popover is a <code>role="dialog"</code> with a label; focus lands on the selected radio (matches the shipped picker's keyboard rules: ←/→ switch, Tab moves on).</li><li>Beta chip is text + colour. Selected radio is tick + underline + text weight — not colour alone.</li><li>No split button means one fewer 28px-wide target.</li></ul></div>
+    <div><h4>Audit constraints</h4><p><b>Satisfies</b> FR-15 trivially (no agent in the label), FR-4a, precedence (the destination click is always explicit), link budgets. <b>Strains</b>: it <em>replaces</em> the signed-off split button and folds the approved agent × place menu into a new shape — a bigger "approved UX change" than A or C; and it regresses the one-click launch that today's users rely on. It also makes the browser-chooser look redundant when it appears a second time (two "Run it with" pickers in a row for browser launches with existing sessions).</p></div>
+  </div>
+
+  <!-- ─────────────────────────── OPTION C ─────────────────────────── -->
+  <h2 id="c">Option C — Your default lives in Settings</h2>
+  <p><b>In one sentence:</b> add a proper "Coding agent" section to your profile settings; the green button reflects it everywhere; the dropdown still lets you override per launch; the menu links to Settings rather than switching inline.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Profile › Settings</b> · new section beside the existing terminal model settings</div>
+    <div class="mock-body">
+      <div class="card">
+        <h5>Coding agent</h5>
+        <div class="d">Which agent the green Launch button starts. You can still pick the other one from the button's menu on any launch.</div>
+        <div class="radios" role="radiogroup" aria-label="Default coding agent" data-radios-c>
+          <label class="on" data-agent="claude"><span class="dot" aria-hidden="true"></span><span><span class="n">Claude Code</span><br><span class="s">Starting model and auto-accept follow your terminal settings below.</span></span></label>
+          <label data-agent="codex"><span class="dot" aria-hidden="true"></span><span><span class="n">Codex</span><br><span class="s">Codex uses its own model and permission settings. Signs in with your own ChatGPT account on this Mac.</span></span></label>
+        </div>
+        <div class="d" style="margin:10px 0 0">Saved automatically. Applies on every device you sign in to.</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">Copy reuses the shipped Codex lines word-for-word so the two places agree. This is the same account-level preference the browser picker writes today — C makes it visible and editable, not a second setting.</p>
+
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b> · primary + menu footer · desktop</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Closed — label follows the Settings choice</span>
+          <div class="toolbar">
+            <span class="ghost" aria-hidden="true"></span>
+            <span class="split">
+              <span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span data-label-a>Launch Claude Code</span></span>
+              <span class="chev"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+            </span>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Menu footer — the only menu change in C</span>
+          <div class="menu" style="width:288px">
+            <div class="hd">Claude Code</div>
+            <div class="it"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">On your computer — how it works today</span></div></div>
+            <div class="it" style="color:var(--z500)"><span style="font-size:11px;padding-left:26px">… browser · Codex group · folder items as today …</span></div>
+            <div class="sep"></div>
+            <div class="footer">Default agent: <b style="color:var(--z200)" data-agent-name>Claude Code</b> · <span class="link">Change in Settings ↗</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div><h4>Button states</h4><p>Identical to A: "Launch Claude Code" / "Launch Codex". Same tooltip naming the destination.</p></div>
+    <div><h4>What a click does</h4><p>Identical to A, including the Codex pre-flight and the folder-then-continue fix.</p></div>
+    <div><h4>First-timer vs repeat user</h4><p>First-timer: today's button. Repeat Codex user: has to <em>know</em> the setting exists, find Profile, scroll to it — then gets the one-click button. Once found, nothing ever changes underneath them, which is C's strength: the button only changes because they changed it on purpose.</p></div>
+    <div><h4>Click cost</h4><ul><li>Your default agent, terminal window: <b>1</b></li><li>Other agent, or browser: 2</li><li>Change default: ~4–5 (menu → Settings link → find section → pick), then back to the board</li></ul></div>
+    <div><h4>Discoverability</h4><p>Weakest for the preference itself — settings pages are where preferences go to hide. The menu footer link is doing all the work; without it, nobody finds this. The <em>agents</em> are as discoverable as today (in the chevron).</p></div>
+    <div><h4>Mobile</h4><p>The Settings section works fine on a phone (44px rows), so a Codex user could set their default from their phone and have it apply on the Mac — a small, real plus. Launch surfaces: same as today.</p></div>
+    <div><h4>Accessibility</h4><ul><li>Standard radio group with a visible label and per-option description — the most conventional control of the three.</li><li>Menu footer link to Settings is a real menu item; opens in the same tab (it's our own page).</li></ul></div>
+    <div><h4>Audit constraints</h4><p><b>Satisfies</b> FR-15, FR-4a, precedence, link budgets; touches the approved menu the least (one footer line, no reordering). <b>Strains</b>: to keep "the button only changes when I change it", the browser picker toggle would have to <em>stop</em> writing the account preference (and become a per-session-only choice) — otherwise C is just A with a longer walk. That is a behaviour change to an approved control (the chooser toggle) and re-creates the audit's gap 2 ("two notions of default") in reverse. It also lands a new Settings section while <code>c9837bbb</code> (Codex-aware starting model) is mid-flight in the same area.</p></div>
+  </div>
+
+  <!-- ─────────────────────────── SHARED: MOBILE ─────────────────────────── -->
+  <h2 id="mobile">Shared piece — the mobile dead end (applies to whichever option wins)</h2>
+  <p>Building on audit gap 6: on a phone the task-card ⋯ menu shows one <em>disabled</em> item, "Open on desktop to launch Claude Code or Codex", with no reason and no alternative. Both agents genuinely need the Mac, so no option above promises a phone launch — but the empty state should explain and offer the one thing that does work.</p>
+  <div class="mock">
+    <div class="mock-title"><b>Task card ⋯ menu</b> · phone · today vs proposed</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Today — disabled, unexplained</span>
+          <div class="phone">
+            <div class="it muted" aria-disabled="true"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Open on desktop to launch Claude Code or Codex</div>
+            <div class="sep"></div>
+            <div class="it">Edit task</div>
+          </div>
+        </div>
+        <div class="state">
+          <span class="lbl">Proposed — a reason and a working action, 44px targets</span>
+          <div class="phone">
+            <div class="it" style="align-items:flex-start;color:var(--z400);font-size:12.5px;min-height:auto;padding-bottom:4px">Launching runs on your Mac, so it isn't available here.</div>
+            <div class="it"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><span class="t" style="display:flex;flex-direction:column"><span>Copy <span data-agent-name>Claude Code</span> command for this task</span><span class="s">Paste it into Terminal on your Mac</span></span></div>
+            <div class="sep"></div>
+            <div class="it">Edit task</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">"Copy launch command" already exists on desktop; on the phone it names the agent (from your preference) so a Codex user isn't handed a Claude command. Text + action, no disabled control (persona rule).</p>
+
+  <!-- ─────────────────────────── COMPARISON ─────────────────────────── -->
+  <h2 id="compare">Side by side</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th></th><th>A — Button follows your pick</th><th>B — Neutral button, always asks</th><th>C — Default set in Settings</th></tr></thead>
+    <tbody>
+      <tr><td>Clicks: your agent → terminal window</td><td class="good">1</td><td class="bad">2 (regresses today's Claude users)</td><td class="good">1</td></tr>
+      <tr><td>Clicks: change your default</td><td class="good">2, in the menu</td><td class="good">0 (the picker is the change)</td><td class="bad">4–5, leaves the board</td></tr>
+      <tr><td>First-timer learns Codex exists</td><td class="meh">Only by opening the chevron</td><td class="good">Immediately</td><td class="meh">Only by opening the chevron</td></tr>
+      <tr><td>Button ever changes without you touching it here</td><td class="meh">Yes, after a picker toggle — with toast + Undo</td><td class="good">Never</td><td class="good">Never (but see chooser strain)</td></tr>
+      <tr><td>Change to signed-off UX</td><td class="meh">Group reorder + chip + footer line (reorder was already specified in FR-4a)</td><td class="bad">Replaces the split button and reshapes the menu</td><td class="good">One footer line + a new Settings section</td></tr>
+      <tr><td>"Where do I change agent?" has one answer</td><td class="meh">Two: the menu footer, or any picker</td><td class="good">One: the picker (same component everywhere)</td><td class="bad">Two, unless the chooser toggle stops persisting</td></tr>
+      <tr><td>Fixes gap 8 (Codex fallbacks route to Claude)</td><td class="good">Yes — copy/guide follow the default</td><td class="good">Yes — follow the picker</td><td class="good">Yes — follow the default</td></tr>
+      <tr><td>Link budget / new URL params</td><td class="good">None</td><td class="good">None</td><td class="good">None</td></tr>
+      <tr><td>Collides with in-flight work</td><td class="good">No</td><td class="meh">Touches the chooser's mental model</td><td class="meh">New Settings section next to <code>c9837bbb</code></td></tr>
+      <tr><td>Build size (rough)</td><td class="good">Small: read the preference in the button, label, footer, reorder</td><td class="meh">Medium: new popover, remove split, move items</td><td class="meh">Medium: Settings section + server action + footer link</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ─────────────────────────── RECOMMENDATION ─────────────────────────── -->
+  <h2 id="rec">Recommendation</h2>
+  <div class="verdict">
+    <div class="v rec"><span class="pill def tag">Recommended</span><b>A — the button follows your pick</b>Fixes the actual gap (a Codex user's remembered choice is finally honoured by the one-click button) with the smallest visible change, keeps today's experience byte-for-byte for every new and Claude-preferring user, and honours FR-15's exact licence: the label changes to match. The one behaviour to consciously accept is that toggling the picker in the browser terminal flips the green button — made safe by the one-time toast with Undo.</div>
+    <div class="v"><b>C as a follow-on, not a competitor</b>Once A ships, C's Settings section is a cheap, natural addition ("where can I see and change this?") and gives the menu footer a second, more conventional home. Do it after <code>c9837bbb</code> lands to avoid stepping on the same Settings area. Don't make the chooser toggle stop persisting — that would re-split the notion of "default".</div>
+    <div class="v"><b>B — not recommended</b>The best first-impression, but it charges every Claude user an extra click on every launch to solve a problem only Codex users have, and it's the largest change to UX that was signed off two days ago.</div>
+  </div>
+  <p class="callout green"><b>The trade-off in one line:</b> A gives Codex users their one-click launch and never surprises anyone at the moment of clicking — at the cost of the button's label being able to change because of a toggle made elsewhere (announced by toast, undoable).</p>
+
+  <h3>If A is approved, the precedence rule to write into the build card (verbatim)</h3>
+  <ol>
+    <li>The green button launches the agent named in its label, in a terminal window. Its label is always the account's remembered agent. Nothing else influences it.</li>
+    <li>Every dropdown item launches exactly what it says, regardless of the remembered agent, and never changes the remembered agent.</li>
+    <li>Only two things write the remembered agent: any "Run it with / Start fresh with" picker (as today), and the menu footer "Switch to …" link (new). Both are explicit user acts.</li>
+    <li>The first time the label changes because of a picker toggle (not the footer link), show the toast once, with Undo, then never again.</li>
+    <li>A primary Codex click runs the same pre-flight as the dropdown's "Codex › In a terminal window" today, and when a folder is missing it opens the folder dialog and continues the launch after save.</li>
+  </ol>
+
+  <h3>Out of scope, noted for later</h3>
+  <ul>
+    <li>Remembering the <em>destination</em> (terminal window vs browser) as well as the agent — audit gap 4. Worth its own card; the primary would then read "Launch Codex in browser". Not needed to fix this card.</li>
+    <li>The task-detail header icon stays Claude-only per FR-15; under A it would more honestly follow the remembered agent too (label + tooltip), a one-line change to fold into the build card if Nick agrees.</li>
+    <li>Guide pages and the stale "My sessions" empty-state copy belong to the guide-accuracy card (<code>cacc6f1e</code>).</li>
+    <li>The identifier rename tail (component, hook, event name, guide URL) — audit gap 10 — is engineering hygiene, not UX, and should not block this.</li>
+  </ul>
+</main>
+
+<script>
+(function () {
+  var NAME = { claude: "Claude Code", codex: "Codex" };
+  var OTHER = { claude: "codex", codex: "claude" };
+  var agent = "claude";
+  function q(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function render() {
+    q("[data-label-a]").forEach(function (el) { el.textContent = "Launch " + NAME[agent]; });
+    q("[data-agent-name]").forEach(function (el) { el.textContent = NAME[agent]; });
+    q("[data-switch-link]").forEach(function (el) { el.textContent = "Switch to " + NAME[OTHER[agent]]; });
+    q("[data-copy-sub]").forEach(function (el) { el.textContent = "For " + NAME[agent]; });
+    q("[data-guide-sub]").forEach(function (el) { el.textContent = agent === "codex" ? "Codex CLI docs" : "Claude Code docs"; });
+    q("[data-def-chip]").forEach(function (el) { el.hidden = el.getAttribute("data-def-chip") !== agent; });
+    // Option A: remembered group first
+    var menu = document.getElementById("menu-a");
+    if (menu) {
+      var first = menu.querySelector('[data-group="' + agent + '"]');
+      var second = menu.querySelector('[data-group="' + OTHER[agent] + '"]');
+      var sep = menu.querySelector("[data-sep]");
+      menu.insertBefore(first, menu.firstChild);
+      menu.insertBefore(sep, first.nextSibling);
+      menu.insertBefore(second, sep.nextSibling);
+    }
+    // Option B picker + settings line
+    q("[data-picker-b] [role=radio]").forEach(function (b) {
+      var on = b.getAttribute("data-agent") === agent;
+      b.setAttribute("aria-checked", on ? "true" : "false");
+      b.innerHTML = (on ? '<span aria-hidden="true">✓ </span>' : "") + NAME[b.getAttribute("data-agent")];
+    });
+    q("[data-settings-line]").forEach(function (el) {
+      el.textContent = agent === "codex" ? "Codex uses its own model and permission settings." : "Starting model and auto-accept follow your terminal settings.";
+    });
+    q("[data-term-sub]").forEach(function (el) {
+      el.textContent = agent === "codex" ? "Opens Terminal on this Mac — needs the VibeCodes helper" : "On your computer — how it works today";
+    });
+    // Option C radios
+    q("[data-radios-c] label").forEach(function (l) { l.classList.toggle("on", l.getAttribute("data-agent") === agent); });
+    // lab control
+    q(".lab [role=radio]").forEach(function (b) { b.setAttribute("aria-checked", b.getAttribute("data-agent") === agent ? "true" : "false"); });
+  }
+  q(".lab [role=radio]").forEach(function (b) {
+    b.addEventListener("click", function () { agent = b.getAttribute("data-agent"); render(); });
+  });
+  q(".lab [role=radiogroup]").forEach(function (g) {
+    g.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") { agent = OTHER[agent]; render(); g.querySelector('[aria-checked="true"]').focus(); e.preventDefault(); }
+    });
+  });
+  render();
+})();
+</script>
+</body>
+</html>

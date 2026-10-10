@@ -1,4 +1,5 @@
 import { encodePromptParam } from "./terminal/deep-link";
+import { type LaunchAgent } from "./terminal/agent-launch";
 
 /**
  * Launch Claude Code — pure logic for deep links, prompt builders, and per-idea
@@ -1972,14 +1973,27 @@ interface ShellCommandArgs {
   mode: LaunchMode;
   newProject?: NewProjectOptions;
   repoUrl?: string | null;
+  /**
+   * Codex support (card c4c27987, launch-button-remembered-agent-option-a-
+   * spec.html §2b "Copy launch command"). Absent or anything but "codex"
+   * keeps the byte-identical Claude output this always produced. Codex
+   * takes its prompt positionally too (see terminal/bridge/src/resume-cmd.js's
+   * comment: "Codex takes the prompt positionally … identical mechanism to
+   * Claude's") — same shell shape, different binary.
+   */
+  agent?: LaunchAgent;
 }
 
 /**
- * Build the `cd … && claude "…"` fallback command for when the deep link is
- * blocked. In create-new mode it is prefixed with the mkdir + clone/init steps
- * so the manual path matches the delegated bootstrap (Design §2.4c).
+ * Build the `cd … && claude "…"` (or `codex "…"`) fallback command for when
+ * the deep link is blocked, or for "Copy launch command" / the mobile
+ * "Copy {Agent} command for this task" item. In create-new mode it is
+ * prefixed with the mkdir + clone/init steps so the manual path matches the
+ * delegated bootstrap (Design §2.4c). `agent` defaults to "claude" — the
+ * exact command this produced before Codex existed.
  */
-export function buildLaunchCommand({ prompt, cwd, mode, newProject, repoUrl }: ShellCommandArgs): string {
+export function buildLaunchCommand({ prompt, cwd, mode, newProject, repoUrl, agent = "claude" }: ShellCommandArgs): string {
+  const bin = agent === "codex" ? "codex" : "claude";
   const quoted = shellSingleQuote(prompt);
   if (mode === "new" && newProject) {
     const repo = parseRepoFromGithubUrl(repoUrl);
@@ -1987,10 +2001,10 @@ export function buildLaunchCommand({ prompt, cwd, mode, newProject, repoUrl }: S
       ? `git clone https://github.com/${repo}.git . || git init`
       : `git init`;
     const path = newProject.newProjectPath;
-    return `mkdir -p ${path} && cd ${path} && (${setup}) && claude ${quoted}`;
+    return `mkdir -p ${path} && cd ${path} && (${setup}) && ${bin} ${quoted}`;
   }
   const dir = cwd ? `cd ${cwd} && ` : "";
-  return `${dir}claude ${quoted}`;
+  return `${dir}${bin} ${quoted}`;
 }
 
 /**
