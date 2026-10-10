@@ -9,7 +9,7 @@ import type { Database } from "@/types/database";
 // accidentally-cleared Vercel env var) would otherwise send `model: ""` to
 // every AI call. `.trim() || default` treats blank/whitespace-only the same
 // as unset.
-export const AI_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-5";
+export const AI_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-5-5";
 
 // Force the native structured-output API (`output_config.format`) rather than
 // trusting `@ai-sdk/anthropic`'s built-in model table. When the table lags a
