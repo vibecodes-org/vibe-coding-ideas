@@ -364,3 +364,61 @@ export function normalizeUserModelTierMap(raw: unknown): AgentAwareUserModelTier
 
   return result;
 }
+
+export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffort; fallback: string };
+
+/**
+ * Resolves a step's tier + agent to a concrete model + its fallback + its
+ * required reasoning effort: the caller's model_tier_map override for this
+ * tier/agent if set and valid, else the platform default (from
+ * `platformDefaults`, defaulting to the agent-aware seed); fallback is
+ * `platformDefaults.fallback[agent][resolved]`, falling back to the seed
+ * fallback chain, and finally to the resolved model itself if neither knows
+ * it (never a broken/undefined directive). Returns null for an unrecognised
+ * tier (defensive — the enum already constrains stored values).
+ *
+ * `userModelTierMap` is the RAW `users.model_tier_map` value (either the
+ * legacy flat shape or the new agent-aware shape) — normalized internally
+ * via `normalizeUserModelTierMap`, so callers never need to know which shape
+ * a given row is in.
+ *
+ * Claude override validity is checked against the SEED fallback chain's keys
+ * (the fixed 4-alias set the per-user Models dialog offers) — this is
+ * deliberately independent of `platformDefaults`, so a super-admin adding a
+ * novel platform-default family never silently changes what counts as a
+ * "valid" user override (per-user override precedence is preserved exactly).
+ * Codex overrides are free text (FR-1: no fixed catalogue) — any non-empty
+ * string the user configured is honored as-is; the catalogue in
+ * src/lib/codex-models.ts drives UI advisories only, never acceptance.
+ */
+export function resolveModelTier(
+  tier: "frontier" | "standard" | "cheap",
+  agent: AgentKind = "claude",
+  userModelTierMap?: unknown,
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+): ModelTierAgentResolution | null {
+  const tierDefaults = platformDefaults.defaults[tier] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults[tier];
+  if (!tierDefaults) return null;
+  const platformAgentDefault = tierDefaults[agent];
+  if (!platformAgentDefault) return null;
+
+  const overrideEntry = normalizeUserModelTierMap(userModelTierMap)[tier]?.[agent];
+
+  let resolvedModel = platformAgentDefault.model;
+  if (overrideEntry?.model) {
+    const validOverride =
+      agent === "claude"
+        ? overrideEntry.model in SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback.claude
+        : true;
+    if (validOverride) resolvedModel = overrideEntry.model;
+  }
+  const resolvedEffort = overrideEntry?.effort ?? platformAgentDefault.effort;
+
+  const fallbackMap = platformDefaults.fallback[agent] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent];
+  const fallback =
+    fallbackMap[resolvedModel] ??
+    SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent][resolvedModel] ??
+    resolvedModel;
+
+  return { resolved: resolvedModel, effort: resolvedEffort, fallback };
+}

@@ -5,11 +5,11 @@ import {
   SEED_PLATFORM_MODEL_DEFAULTS,
   getAgentAwarePlatformModelDefaults,
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
-  normalizeUserModelTierMap,
   REASONING_EFFORT_LEVELS,
+  resolveModelTier,
+  type ModelTierAgentResolution,
   type AgentAwarePlatformModelDefaults,
   type AgentKind,
-  type ReasoningEffort,
 } from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, verifyClaimToken } from "../claim-token";
@@ -34,6 +34,7 @@ import { notifyMentions } from "../lib/mention-notify";
 import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
+import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -101,63 +102,9 @@ export const MODEL_TIER_FALLBACK = SEED_PLATFORM_MODEL_DEFAULTS.fallback;
 // optional `agent` argument) keeps resolving exactly as before.
 // ============================================================
 
-export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffort; fallback: string };
-
-/**
- * Resolves a step's tier + agent to a concrete model + its fallback + its
- * required reasoning effort: the caller's model_tier_map override for this
- * tier/agent if set and valid, else the platform default (from
- * `platformDefaults`, defaulting to the agent-aware seed); fallback is
- * `platformDefaults.fallback[agent][resolved]`, falling back to the seed
- * fallback chain, and finally to the resolved model itself if neither knows
- * it (never a broken/undefined directive). Returns null for an unrecognised
- * tier (defensive — the enum already constrains stored values).
- *
- * `userModelTierMap` is the RAW `users.model_tier_map` value (either the
- * legacy flat shape or the new agent-aware shape) — normalized internally
- * via `normalizeUserModelTierMap`, so callers never need to know which shape
- * a given row is in.
- *
- * Claude override validity is checked against the SEED fallback chain's keys
- * (the fixed 4-alias set the per-user Models dialog offers) — this is
- * deliberately independent of `platformDefaults`, so a super-admin adding a
- * novel platform-default family never silently changes what counts as a
- * "valid" user override (per-user override precedence is preserved exactly).
- * Codex overrides are free text (FR-1: no fixed catalogue) — any non-empty
- * string the user configured is honored as-is; the catalogue in
- * src/lib/codex-models.ts drives UI advisories only, never acceptance.
- */
-export function resolveModelTier(
-  tier: "frontier" | "standard" | "cheap",
-  agent: AgentKind = "claude",
-  userModelTierMap?: unknown,
-  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
-): ModelTierAgentResolution | null {
-  const tierDefaults = platformDefaults.defaults[tier] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults[tier];
-  if (!tierDefaults) return null;
-  const platformAgentDefault = tierDefaults[agent];
-  if (!platformAgentDefault) return null;
-
-  const overrideEntry = normalizeUserModelTierMap(userModelTierMap)[tier]?.[agent];
-
-  let resolvedModel = platformAgentDefault.model;
-  if (overrideEntry?.model) {
-    const validOverride =
-      agent === "claude"
-        ? overrideEntry.model in SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback.claude
-        : true;
-    if (validOverride) resolvedModel = overrideEntry.model;
-  }
-  const resolvedEffort = overrideEntry?.effort ?? platformAgentDefault.effort;
-
-  const fallbackMap = platformDefaults.fallback[agent] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent];
-  const fallback =
-    fallbackMap[resolvedModel] ??
-    SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent][resolvedModel] ??
-    resolvedModel;
-
-  return { resolved: resolvedModel, effort: resolvedEffort, fallback };
-}
+// resolveModelTier lives in src/lib/platform-model-defaults.ts (shared with the
+// in-app terminal's session-agents endpoint); re-exported here for existing callers.
+export { resolveModelTier, type ModelTierAgentResolution };
 
 /**
  * Mandatory model directive for a claimed step's spawn instruction — placed
@@ -1248,10 +1195,32 @@ export async function claimNextStep(
     ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
     : null;
 
+  // Task 59889027: an in-app terminal launch defines the board's agents as
+  // real Claude Code subagents (`claude --agents`, see
+  // src/lib/terminal/session-agents.ts). Name the one for this step; a session
+  // without it (own terminal, copy-command launch, stale definition) matches
+  // nothing and follows the steps above unchanged. Claude claims only — Codex
+  // has no equivalent launch definition.
+  const nativeSubagent =
+    claimingAgent === "claude" && personaEmbeddable && updated.bot_id
+      ? (() => {
+          const tier = updated.model_tier as SessionAgentTier | null;
+          const claudeResolution = tier
+            ? resolveModelTier(tier, "claude", userModelTierMap, platformDefaults)
+            : null;
+          return sessionAgentClaimHint({
+            bot: { id: updated.bot_id, name: matchedBot!.name, system_prompt: matchedBot!.system_prompt! },
+            tier,
+            model: claudeResolution?.resolved ?? null,
+            effort: claudeResolution?.effort ?? null,
+          });
+        })()
+      : null;
+
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
   // the Auto path so .filter(Boolean) drops it and the instruction stays
   // byte-for-byte identical to today.
-  const instruction = [modelTierInstruction, identityInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
+  const instruction = [modelTierInstruction, identityInstruction, nativeSubagent?.instruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
 
   return {
     done: false,
@@ -1276,6 +1245,7 @@ export async function claimNextStep(
           persona_role: matchedBot!.role,
         }
       : {}),
+    ...(nativeSubagent ? { native_subagent: { name: nativeSubagent.name, tag: nativeSubagent.tag } } : {}),
     instruction,
     rework_instructions,
     available_agents,

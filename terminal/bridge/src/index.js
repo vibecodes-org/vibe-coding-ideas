@@ -44,6 +44,7 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
+import { buildSpawnArgs, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -334,6 +335,35 @@ async function fetchE2eeSessionKey() {
   }
 }
 
+// ── The board's agents as real subagents (task 59889027) ────────────────────
+// Same off-relay channel and token as the E2EE key above. The definitions can
+// be tens of KB, far past the launch link's length cap, so they never travel
+// in it. Never throws: any failure launches the session exactly as before.
+const SESSION_AGENTS_FETCH_TIMEOUT_MS = 5000;
+
+/** @returns {Promise<string|null>} the `--agents` JSON, or null */
+async function fetchSessionAgents() {
+  if (!TOKEN || !SESSION) return null;
+  if (!wantsSessionAgents({ agent: AGENT, prompt: PROMPT, resume: RESUME, resumeId: RESUME_ID, explicitCmd })) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SESSION_AGENTS_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/agents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sid: SESSION, token: TOKEN }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return serializeSessionAgents(await res.json());
+  } catch (e) {
+    log("warn", "session agents fetch failed — launching without them", { err: String(e?.message || e) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
@@ -385,7 +415,10 @@ const TERMINAL_CLOSE_CODES = new Set([
 const NORMAL_CLOSURE = 1000;
 
 const [file, ...cmdArgs] = shellSplit(CMD);
-const spawnArgs = PROMPT ? [...cmdArgs, PROMPT] : cmdArgs;
+// `--agents` (task 59889027) is added once fetchSessionAgents() resolves —
+// always before a prompt-carrying launch spawns (it waits for the relay's
+// `attached` frame, which comes after the fetch); see buildSpawnArgs.
+let spawnArgs = buildSpawnArgs(cmdArgs, null, PROMPT);
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
 // node-pty ships a `spawn-helper` binary under prebuilds/<platform>-<arch>/.
@@ -771,7 +804,13 @@ async function main() {
   // Never blocks/gates the PTY spawn above — only delays this bridge's OWN
   // relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
   // produced meanwhile is safely queued in preOpenBuffer, not lost.
-  const E2EE_KEY = await fetchE2eeSessionKey();
+  // Fetched in parallel; the agents only ever affect a prompt-carrying launch,
+  // which hasn't spawned yet (it waits for the relay's `attached` frame).
+  const [E2EE_KEY, SESSION_AGENTS_JSON] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
+  if (SESSION_AGENTS_JSON && !term) {
+    spawnArgs = buildSpawnArgs(cmdArgs, SESSION_AGENTS_JSON, PROMPT);
+    log("info", "session agents collected", { agentsChars: SESSION_AGENTS_JSON.length });
+  }
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
