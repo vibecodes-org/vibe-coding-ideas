@@ -15,7 +15,7 @@
 //   node verify-remote-control-live.mjs --mode resume-id --cwd <repo> --resume-id <uuid>
 //   node verify-remote-control-live.mjs --mode continue  --cwd <repo>
 //   node verify-remote-control-live.mjs --mode api-key   [--dir <base>]
-//   node verify-remote-control-live.mjs --mode old-claude [--dir <base>] [--old-version 1.0.100]
+//   node verify-remote-control-live.mjs --mode old-claude [--dir <base>] [--old-version 2.0.50]  (1.0.x crashes on Node 26 before parsing options)
 //
 // Modes (see the task's Technical Design §8):
 //   fresh      V4 — prompt "Reply with exactly RC-PROMPT-OK" + model + auto
@@ -167,7 +167,7 @@ async function main() {
     });
     let claudeDir = realClaudeDir();
     if (MODE === "old-claude") {
-      const old = installOldClaude(arg("old-version", "1.0.100"));
+      const old = installOldClaude(arg("old-version", "2.0.50"));
       cleanup.push(old.prefix, old.bin);
       claudeDir = old.bin;
       versionCmd = [path.join(old.bin, "claude"), "--version"];
