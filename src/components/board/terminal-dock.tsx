@@ -2086,6 +2086,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
          *  Codex label across a reload/reconnect (bug: read as Claude Code after
          *  a hard refresh — Nick, 7 Sep 2026). */
         agent?: LaunchAgent;
+        /** Task 5c8969cc — the user's current Remote Control preference
+         *  (omitted when off or for Codex), carried into the relaunch. */
+        remoteControl?: boolean;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2111,6 +2114,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // session key so ANY of this owner's tabs/devices reattaching to a
         // live session can decrypt it, not just the one that minted it.
         sessionKey: data.sessionKey,
+        remoteControl: data.remoteControl === true,
       };
 
       const currentSessions = sessionsRef.current;

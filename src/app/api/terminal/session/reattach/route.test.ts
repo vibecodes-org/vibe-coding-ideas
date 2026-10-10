@@ -166,3 +166,49 @@ describe("POST /api/terminal/session/reattach", () => {
     expect(body.sessionKey).toBeUndefined();
   });
 });
+
+// Task 5c8969cc: a relaunch of a silent bridge is resume-shaped, so the route
+// carries the user's CURRENT Remote Control preference into it.
+describe("POST /api/terminal/session/reattach — remote control (task 5c8969cc)", () => {
+  const liveRow = (agent?: string) => ({
+    sid: SID,
+    idea_id: "idea-1",
+    status: "active",
+    expires_at: new Date(Date.parse(NOW_ISO) + 60_000).toISOString(),
+    cwd: "/repo",
+    claude_session_id: null,
+    display_name: null,
+    e2ee_session_key: null,
+    ...(agent ? { agent } : {}),
+  });
+  function tables(row: unknown, users: { data?: unknown; error?: unknown }) {
+    mockFrom.mockImplementation((t: string) => (t === "users" ? makeChain(users) : makeChain({ data: row, error: null })));
+  }
+
+  it("returns remoteControl true for a Claude row when the preference is on", async () => {
+    tables(liveRow("claude"), { data: { terminal_remote_control: true }, error: null });
+    const res = await POST(req({ sid: SID }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).remoteControl).toBe(true);
+  });
+
+  it("omits it when the preference is off", async () => {
+    tables(liveRow(), { data: { terminal_remote_control: false }, error: null });
+    const body = await (await POST(req({ sid: SID }))).json();
+    expect(body).not.toHaveProperty("remoteControl");
+  });
+
+  it("omits it for a Codex row and never reads the user's preference", async () => {
+    tables(liveRow("codex"), { data: { terminal_remote_control: true }, error: null });
+    const body = await (await POST(req({ sid: SID }))).json();
+    expect(body).not.toHaveProperty("remoteControl");
+    expect(mockFrom).not.toHaveBeenCalledWith("users");
+  });
+
+  it("a users read error -> omitted, and the reattach still succeeds", async () => {
+    tables(liveRow("claude"), { data: null, error: { message: "connection reset" } });
+    const res = await POST(req({ sid: SID }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty("remoteControl");
+  });
+});

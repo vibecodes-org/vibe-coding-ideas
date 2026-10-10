@@ -97,6 +97,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error, code: `reattach_${reason}` }, { status });
     }
 
+    // Task 5c8969cc: a relaunch of a silent bridge is resume-shaped; carry the
+    // user's CURRENT Remote Control preference so the resumed claude keeps it.
+    // Fail-soft (off) like the mint route; never for a Codex row.
+    let remoteControl: true | undefined;
+    if (row.agent !== "codex") {
+      try {
+        const { data: prefs, error: prefsErr } = await supabase
+          .from("users")
+          .select("terminal_remote_control")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (prefsErr) {
+          logger.warn("Terminal session reattach: failed to read terminal_remote_control — relaunching without it", {
+            sid,
+            error: prefsErr.message,
+          });
+        } else if (prefs?.terminal_remote_control === true) {
+          remoteControl = true;
+        }
+      } catch (err) {
+        logger.warn("Terminal session reattach: unexpected error reading terminal_remote_control", {
+          sid,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     // Mint a fresh BROWSER token for the SAME sid — plus a fresh BRIDGE token
     // (mintSessionTokens mints both off the same sid/claims) and a fresh
     // HELPER token, exactly like the mint route does. Reconnect-relaunch fix:
@@ -150,6 +177,10 @@ export async function POST(req: Request) {
       // read as "Claude Code" on the panel after a hard refresh (Nick, 7 Sep
       // 2026). session/list already returns this; reattach now matches.
       agent: row.agent,
+      // Task 5c8969cc: the user's current Remote Control preference, carried
+      // into the resume-shaped relaunch link. Omitted when off or for Codex;
+      // the pop-out client ignores it.
+      remoteControl,
     });
   } catch (err) {
     logger.error("Terminal session reattach error", {

@@ -2189,6 +2189,180 @@ describe("useTerminalSession", () => {
     });
   });
 
+  // Task 5c8969cc ("Start with Remote Control on"): the mint/reattach route's
+  // `remoteControl` answer rides fresh AND resume-shaped links as
+  // `remoteControl=1` (before `prompt`), never for Codex.
+  describe("Remote Control on the launch link (task 5c8969cc)", () => {
+    function mountAndWait(result: { current: { containerRef: { current: HTMLDivElement | null } } }) {
+      result.current.containerRef.current = document.createElement("div");
+      return waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+    }
+    function firedSrc(): string {
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      return iframes[0].getAttribute("src") ?? "";
+    }
+    // launchFromBus only fires on a paired desktop Mac (same stub as Bug B above).
+    function pairedMac() {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+    }
+
+    it("fresh launch carries remoteControl=1 before prompt when the mint says remoteControl:true", async () => {
+      vi.mocked(global.fetch).mockImplementation(async () => mintResponse({ remoteControl: true }) as unknown as Response);
+      const { result } = setup();
+      await mountAndWait(result);
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+      const src = firedSrc();
+      expect(src).toContain("&remoteControl=1");
+      expect(src.indexOf("remoteControl=")).toBeLessThan(src.indexOf("prompt="));
+    });
+
+    it("omits it when the mint doesn't send it", async () => {
+      const { result } = setup();
+      await mountAndWait(result);
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+      const src = firedSrc();
+      expect(src).toContain("prompt=");
+      expect(src).not.toContain("remoteControl");
+    });
+
+    it("a resume-shaped (resumeId) launch carries it", async () => {
+      pairedMac();
+      vi.mocked(global.fetch).mockImplementation(async () => mintResponse({ remoteControl: true }) as unknown as Response);
+      const { result } = setup();
+      await mountAndWait(result);
+      act(() => {
+        result.current.actions.launchFromBus({ resumeId: "claude-conv-carried", cwd: "/Users/nick/projects/x" });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+      const src = firedSrc();
+      expect(src).toContain("resume_id=");
+      expect(src).toContain("&remoteControl=1");
+    });
+
+    it("a Codex launch never carries it, fresh or resume", async () => {
+      vi.mocked(global.fetch).mockImplementation(async () => mintResponse({ remoteControl: true }) as unknown as Response);
+      const fresh = setup();
+      await mountAndWait(fresh.result);
+      await act(async () => {
+        await fresh.result.current.actions.connect({ autoLaunch: true, agent: "codex" });
+      });
+      const freshSrc = firedSrc();
+      expect(freshSrc).toContain("agent=codex");
+      expect(freshSrc).not.toContain("remoteControl");
+      fresh.unmount();
+      document.querySelectorAll("iframe").forEach((f) => f.remove());
+
+      pairedMac();
+      const resumed = setup();
+      await mountAndWait(resumed.result);
+      act(() => {
+        resumed.result.current.actions.launchFromBus({
+          resumeId: "codex-conv",
+          cwd: "/Users/nick/projects/x",
+          agent: "codex",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+      const resumeSrc = firedSrc();
+      expect(resumeSrc).toContain("agent=codex");
+      expect(resumeSrc).not.toContain("remoteControl");
+    });
+
+    function renderAttach(remoteControl?: boolean) {
+      return renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand: vi.fn(),
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reattach-rc",
+            browserToken: "reattach-browser-token",
+            bridgeToken: "reattach-bridge-token",
+            helperToken: "reattach-helper-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            claudeSessionId: "live-conv-id",
+            ...(remoteControl === undefined ? {} : { remoteControl }),
+          },
+        }),
+      );
+    }
+
+    it("an attachExisting relaunch carries it when the pair has remoteControl:true", async () => {
+      const { result } = renderAttach(true);
+      await mountAndWait(result);
+      await flushEffects();
+      const src = firedSrc();
+      expect(src).toContain("resume_id=");
+      expect(src).toContain("&remoteControl=1");
+    });
+
+    it("an attachExisting relaunch omits it otherwise", async () => {
+      const { result } = renderAttach();
+      await mountAndWait(result);
+      await flushEffects();
+      const src = firedSrc();
+      expect(src).toContain("resume_id=");
+      expect(src).not.toContain("remoteControl");
+    });
+
+    it("reattachSameSession forwards the reattach route's remoteControl into the relaunch link", async () => {
+      const { result } = setup();
+      await mountAndWait(result);
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      vi.useFakeTimers();
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      act(() => latestSocket().simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      act(() => latestSocket().simulateOpen());
+      vi.setSystemTime(Date.now() + RECONNECT_GRACE_MS + 5_000);
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === "/api/terminal/session/reattach"
+          ? ({
+              ok: true,
+              json: async () => ({
+                sessionId: "sid-abc123",
+                browserToken: "fresh-browser-token",
+                bridgeToken: "fresh-bridge-token",
+                helperToken: "fresh-helper-token",
+                cwd: "/Users/nick/project",
+                claudeSessionId: "conv-1",
+                remoteControl: true,
+              }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(10);
+      });
+      const src = firedSrc();
+      expect(src).toContain("token=fresh-bridge-token");
+      expect(src).toContain("&remoteControl=1");
+    });
+  });
+
   // Nick, 29 Aug 2026: the in-browser launch NEVER trades the folder away to
   // make the prompt fit. The old ladder dropped `cwd=` from a launch whose
   // prompt missed the cap by 56 chars (long board title + a longer folder);
