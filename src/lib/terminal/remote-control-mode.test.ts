@@ -3,6 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   REMOTE_CONTROL_APPLIES_TO_RESUME,
+  REMOTE_CONTROL_EARLY_EXIT_HINT,
+  REMOTE_CONTROL_EARLY_EXIT_MS,
+  shouldShowRemoteControlEarlyExitHint,
   REMOTE_CONTROL_CHIP,
   REMOTE_CONTROL_CHOOSER_REMINDER_NEW_ONLY,
   REMOTE_CONTROL_DIALOG_REMINDER_NEW_ONLY,
@@ -102,5 +105,40 @@ describe("copy matches the approved mock (docs/terminal-remote-control-ux.html) 
     ["dialogReminderNewOnly", REMOTE_CONTROL_DIALOG_REMINDER_NEW_ONLY],
   ])("COPY.%s", (key, value) => {
     expect(value).toBe(copy(key));
+  });
+});
+
+describe("shouldShowRemoteControlEarlyExitHint (task 5c8969cc, live check V3)", () => {
+  const T = 1_000_000;
+  const base = { launchedWithRemoteControl: true, endedReason: "remote", firstOutputAt: T };
+
+  it("is shown when Claude stops 2s after its first output", () => {
+    expect(shouldShowRemoteControlEarlyExitHint({ ...base, endedAt: T + 2_000 })).toBe(true);
+  });
+
+  it("is shown at exactly 15000ms and not at 15001ms", () => {
+    expect(REMOTE_CONTROL_EARLY_EXIT_MS).toBe(15_000);
+    expect(shouldShowRemoteControlEarlyExitHint({ ...base, endedAt: T + 15_000 })).toBe(true);
+    expect(shouldShowRemoteControlEarlyExitHint({ ...base, endedAt: T + 15_001 })).toBe(false);
+  });
+
+  it("is shown when Claude ended before any output at all", () => {
+    expect(shouldShowRemoteControlEarlyExitHint({ ...base, firstOutputAt: null, endedAt: T })).toBe(true);
+  });
+
+  it("is not shown when the launch didn't ask for Remote Control", () => {
+    expect(
+      shouldShowRemoteControlEarlyExitHint({ ...base, launchedWithRemoteControl: false, endedAt: T + 1 }),
+    ).toBe(false);
+  });
+
+  it.each(["user", "idle", "max-duration", "reconnect-failed", null])("is not shown for ended reason %s", (endedReason) => {
+    expect(shouldShowRemoteControlEarlyExitHint({ ...base, endedReason, endedAt: T + 1 })).toBe(false);
+  });
+
+  it("copy matches the approved wording exactly", () => {
+    expect(REMOTE_CONTROL_EARLY_EXIT_HINT).toBe(
+      'Claude Code stopped straight away — if it\'s out of date, run "claude update", or turn off Remote Control in Settings.',
+    );
   });
 });

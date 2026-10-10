@@ -71,6 +71,7 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
       claudeSessionId: null,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,

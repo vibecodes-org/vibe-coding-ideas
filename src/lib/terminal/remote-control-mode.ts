@@ -84,3 +84,37 @@ export function remoteControlForLaunch(a: {
   if (!a.requested || a.agent === "codex" || (a.isResume && !applies)) return undefined;
   return true;
 }
+
+/**
+ * One line on the "Session ended" panel when a Remote Control launch stops
+ * straight away (Nick's decision, 10 Oct 2026). Live check V3: Claude Code
+ * 2.0.50 exits at once with "error: unknown option '--remote-control'", and
+ * that error is hidden under the ended overlay — so the hint lives on the
+ * panel itself, never in the PTY stream.
+ */
+export const REMOTE_CONTROL_EARLY_EXIT_HINT =
+  'Claude Code stopped straight away — if it\'s out of date, run "claude update", or turn off Remote Control in Settings.';
+
+/** How soon after Claude's first output an exit still counts as "straight
+ *  away" for {@link shouldShowRemoteControlEarlyExitHint} (V3, 10 Oct 2026). */
+export const REMOTE_CONTROL_EARLY_EXIT_MS = 15_000;
+
+/**
+ * Whether the ended panel shows {@link REMOTE_CONTROL_EARLY_EXIT_HINT}: the
+ * launch asked for Remote Control, Claude's own process ended the session
+ * ("remote"), and it did so within {@link REMOTE_CONTROL_EARLY_EXIT_MS} of its
+ * first output (or before any). Nick's decision of 10 Oct 2026, from live
+ * check V3 (an old Claude Code's "unknown option" error is hidden under the
+ * ended overlay).
+ */
+export function shouldShowRemoteControlEarlyExitHint(a: {
+  launchedWithRemoteControl: boolean;
+  endedReason: string | null;
+  firstOutputAt: number | null;
+  endedAt: number;
+}): boolean {
+  if (!a.launchedWithRemoteControl) return false;
+  if (a.endedReason !== "remote") return false;
+  if (a.firstOutputAt === null) return true;
+  return a.endedAt - a.firstOutputAt <= REMOTE_CONTROL_EARLY_EXIT_MS;
+}

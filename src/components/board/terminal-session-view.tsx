@@ -85,6 +85,7 @@ import {
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
+import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -388,6 +389,7 @@ export function TerminalSessionView({
     claudeSessionId,
     readOnly,
     autoAccept,
+    remoteControlEarlyExit,
     inputEnabled,
     platform,
     paired,
@@ -954,6 +956,7 @@ export function TerminalSessionView({
               onDownloadHelper={helperUpdate.start}
               agent={agent}
               onAgentChange={onAgentChange}
+              remoteControlEarlyExit={remoteControlEarlyExit && !poppedOut}
               onRetry={() => {
                 // Reconnect-relaunch fix: re-attempt THIS session (a fresh
                 // reattach → fresh deep link) instead of minting an unrelated
@@ -1101,6 +1104,7 @@ function StateOverlay({
   onDownloadHelper,
   agent,
   onAgentChange,
+  remoteControlEarlyExit = false,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -1143,6 +1147,10 @@ function StateOverlay({
   /** Codex support (docs/codex-terminal-ux-design.html §1b, implementation slice 2) — see TerminalSessionViewProps' same-named prop. */
   agent?: LaunchAgent;
   onAgentChange?: (agent: LaunchAgent) => void;
+  /** Task 5c8969cc (Nick, 10 Oct 2026): show REMOTE_CONTROL_EARLY_EXIT_HINT on
+   *  the session-ended panel — a Remote Control launch stopped straight away.
+   *  The caller passes false while popped out. */
+  remoteControlEarlyExit?: boolean;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -1210,6 +1218,14 @@ function StateOverlay({
           <Square className="h-7 w-7 text-zinc-400" />
           <div className="text-base font-semibold text-zinc-300">{endedTitle(state)}</div>
           <p className="max-w-md text-[13px] text-zinc-400">{endedMessage(state)}</p>
+          {/* Task 5c8969cc (Nick, 10 Oct 2026): a Remote Control launch that
+              stopped straight away — likely an old Claude Code whose own
+              "unknown option" error is hidden under this panel (live check V3). */}
+          {remoteControlEarlyExit && (
+            <p className="max-w-md text-[13px] text-zinc-400" data-testid="remote-control-early-exit">
+              {REMOTE_CONTROL_EARLY_EXIT_HINT}
+            </p>
+          )}
           {/* Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a
               timed-out/dropped session's only option used to be this ONE
               blind-new-mint button — no path back to the conversation that
