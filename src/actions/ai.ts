@@ -9,6 +9,8 @@ import {
   chargeAiUsage,
   resolveAiProvider,
   ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+  ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
+  ANTHROPIC_LOW_EFFORT_OPTIONS,
 } from "@/lib/ai-helpers";
 import type { AiAccess } from "@/lib/ai-helpers";
 import { getAttachmentContext, appendAttachmentBlock } from "@/lib/attachment-context";
@@ -124,6 +126,7 @@ export async function enhanceCreateDescription(data: {
       model: anthropic(AI_MODEL),
       system: `You are a concise product writer. The user is creating a new project idea on a project management platform. Expand their rough description into a clear, compelling 2-3 paragraph summary. Keep the original voice and intent — just make it clearer and more complete. Return ONLY the improved description, no preamble.${kitContext}`,
       prompt: `**Title:** ${title}\n\n**Description:**\n${description || title}`,
+      providerOptions: ANTHROPIC_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1500,
       abortSignal: AbortSignal.timeout(CREATE_ENHANCE_TIMEOUT_MS),
     });
@@ -185,7 +188,7 @@ export async function generateCreateClarifyingQuestions(data: {
 **Current Description:**
 ${data.description || title}`,
       schema: ClarifyingQuestionsSchema,
-      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -322,7 +325,7 @@ ${idea.description}${attachmentPromptBlock}`;
       system: systemPrompt,
       prompt: userPrompt,
       schema: ClarifyingQuestionsSchema,
-      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -630,6 +633,7 @@ export async function enhanceTaskDescription(
 ${taskDescription}
 
 **Context (for reference only, do NOT repeat in output):** Project "${idea.title}"`,
+      providerOptions: ANTHROPIC_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -678,6 +682,7 @@ export async function enhanceDiscussionBody(
 ${discussionBody}
 
 **Context (for reference only, do NOT repeat in output):** Project "${idea.title}"`,
+      providerOptions: ANTHROPIC_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 2000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));

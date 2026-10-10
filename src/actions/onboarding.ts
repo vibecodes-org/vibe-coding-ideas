@@ -12,6 +12,7 @@ import {
   getPlatformAiCallsToday,
   PLATFORM_AI_DAILY_LIMIT,
   ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+  ANTHROPIC_LOW_EFFORT_OPTIONS,
 } from "@/lib/ai-helpers";
 import { initializeBoardColumns, triggerAutoRulesForTasks } from "@/actions/board";
 import {
@@ -210,6 +211,7 @@ export async function enhanceOnboardingDescription(data: {
       system:
         "You are a concise product writer. The user is creating their first idea on a project management platform. Expand their rough description into a clear, compelling 2-3 paragraph summary. Keep the original voice and intent — just make it clearer and more complete. Return ONLY the improved description, no preamble.",
       prompt: `**Title:** ${title}\n\n**Description:**\n${description || title}`,
+      providerOptions: ANTHROPIC_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(ONBOARDING_ENHANCE_TIMEOUT_MS),
     });

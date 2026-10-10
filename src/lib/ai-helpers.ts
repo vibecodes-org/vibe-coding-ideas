@@ -11,14 +11,32 @@ import type { Database } from "@/types/database";
 // as unset.
 export const AI_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-5";
 
-// `@ai-sdk/anthropic`'s built-in model table predates claude-sonnet-5; for ids
-// it doesn't recognise it falls back to tool-mode JSON, which Sonnet 5
-// double-encodes ("No object generated: response did not match schema.").
-// Forcing the native structured-output API sidesteps the stale table. Every
-// `generateObject` call must pass this (enforced by
+// Force the native structured-output API (`output_config.format`) rather than
+// trusting `@ai-sdk/anthropic`'s built-in model table. When the table lags a
+// new model id it falls back to tool-mode JSON with a FORCED tool choice:
+// Sonnet 5 double-encodes the object ("No object generated: response did not
+// match schema.", the 2026-08-07 outage) and Sonnet 5.5 / Opus 5.5 reject a
+// forced tool_choice outright. Every generateObject/streamObject call must pass
+// this or ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS (enforced by
 // generate-object-structured-output-guard.test.ts).
 export const ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS = {
   anthropic: { structuredOutputMode: "outputFormat" as const },
+};
+
+// Thinking is always on for Claude 5.x models and counts against
+// maxOutputTokens, so on a tightly-capped call (matching, clarifying questions,
+// short rewrites) the default effort can spend the cap on thinking and truncate
+// the answer. Low effort keeps those calls short; larger generation calls keep
+// the model default.
+export const ANTHROPIC_LOW_EFFORT_OPTIONS = {
+  anthropic: { effort: "low" as const },
+};
+
+export const ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS = {
+  anthropic: {
+    ...ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS.anthropic,
+    ...ANTHROPIC_LOW_EFFORT_OPTIONS.anthropic,
+  },
 };
 
 export type AiAccess = {
