@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  agentNameLine,
   buildSessionAgents,
   personaHash,
   sessionAgentClaimHint,
@@ -60,10 +61,27 @@ describe("buildSessionAgents", () => {
     const agents = buildSessionAgents([input(), input({ tier: "standard", model: "sonnet", effort: "medium" })]);
     expect(Object.keys(agents!)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-atlas-37e8ffb2-standard"]);
     const frontier = agents!["vc-atlas-37e8ffb2-frontier"];
-    expect(frontier.prompt).toBe(ATLAS.system_prompt);
+    expect(frontier.prompt).toBe(`You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${ATLAS.system_prompt}`);
     expect(frontier.model).toBe("opus");
     expect(frontier.effort).toBe("high");
     expect(frontier.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+  });
+
+  // Live persona test, 10 Oct 2026: Atlas and Sentinel couldn't name
+  // themselves — their personas describe the job, never the name.
+  it("opens the prompt with the agent's own name, without changing the tag", () => {
+    const def = buildSessionAgents([input()])!["vc-atlas-37e8ffb2-frontier"];
+    expect(def.prompt.startsWith("You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n")).toBe(true);
+    // The tag hashes the persona alone, so the claim side (which never sees the
+    // name line) still matches.
+    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+  });
+
+  it("counts the name line against the size cap", () => {
+    const agents = buildSessionAgents([input()])!;
+    const bytes = Buffer.byteLength(JSON.stringify(agents), "utf8");
+    expect(buildSessionAgents([input()], bytes)).toEqual(agents);
+    expect(buildSessionAgents([input()], bytes - 1)).toBeNull();
   });
 
   it("leaves model and effort out on Auto steps so the subagent inherits the session's", () => {
@@ -116,5 +134,18 @@ describe("sessionAgentClaimHint", () => {
   it("asks for no model report on an Auto step", () => {
     const { instruction } = sessionAgentClaimHint({ bot: ATLAS, tier: null, model: null, effort: null });
     expect(instruction).not.toContain("model_used");
+  });
+});
+
+describe("agentNameLine", () => {
+  it("names the agent and its role", () => {
+    expect(agentNameLine({ name: "Sentinel", role: "QA Engineer" })).toBe(
+      "You are Sentinel, the QA Engineer on this VibeCodes board.",
+    );
+  });
+
+  it("falls back to 'an agent' when there's no role", () => {
+    expect(agentNameLine({ name: " Lens ", role: null })).toBe("You are Lens, an agent on this VibeCodes board.");
+    expect(agentNameLine({ name: "Lens", role: "  " })).toBe("You are Lens, an agent on this VibeCodes board.");
   });
 });

@@ -75,6 +75,15 @@ export type ClaudeCodeAgentDefinition = {
   effort?: string;
 };
 
+/** "You are Atlas, the Full Stack Engineer on this VibeCodes board." */
+export function agentNameLine(bot: { name: string; role: string | null }): string {
+  const name = bot.name.trim();
+  const role = bot.role?.trim();
+  return role
+    ? `You are ${name}, the ${role} on this VibeCodes board.`
+    : `You are ${name}, an agent on this VibeCodes board.`;
+}
+
 function definitionFor(input: SessionAgentInput, withSkillContent: boolean): ClaudeCodeAgentDefinition {
   const { bot, tier, model, effort, skills } = input;
   const role = bot.role ? ` (${bot.role})` : "";
@@ -84,7 +93,10 @@ function definitionFor(input: SessionAgentInput, withSkillContent: boolean): Cla
     `Use only when a VibeCodes claim_next_step response names this subagent. ` +
     sessionAgentTag(bot.system_prompt, model, effort);
 
-  let prompt = bot.system_prompt;
+  // Personas describe the job but rarely the agent's own name, so in a live
+  // test Atlas and Sentinel couldn't introduce themselves. The tag above still
+  // hashes system_prompt alone, so this line never desyncs the claim's tag.
+  let prompt = `${agentNameLine(bot)}\n\n${bot.system_prompt}`;
   if (skills.length > 0) {
     prompt += withSkillContent
       ? `\n\n## Skills\n${skills.map((s) => `### ${s.name}\n${s.content.trim()}`).join("\n\n")}`
