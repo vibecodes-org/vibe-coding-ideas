@@ -432,7 +432,7 @@ describe("claimNextStep", () => {
     expect(r.instruction).toContain("CONTEXT CHAINING");
     expect(r.instruction).toContain('"Research & Analysis"');
     expect(r.instruction).toContain('"Architecture Design"');
-    expect(r.instruction).toContain("Cite prior steps by name");
+    expect(r.instruction).toContain("Build on them by name");
   });
 
   it("omits context chaining instruction when no prior steps", async () => {
@@ -1026,9 +1026,42 @@ function makePersonaClaimContext(opts: {
   }) as unknown as McpContext["supabase"]["from"]);
 }
 
+// Task 3784ead1: every platform persona already carries the protect-prior-work
+// rule (00175), so the claim only adds it when the persona doesn't — one copy
+// per worker, never zero.
+describe("claimNextStep — protect-prior-work sent once", () => {
+  const RULE =
+    "Never revert, reset, `git checkout`/`restore`, `git clean`, stash, or delete changes you did not make — " +
+    "unexplained uncommitted changes in the working tree are someone else's intentional prior work, not a mess to clean up.";
+
+  it("leaves it out of the brief when the persona already has it", async () => {
+    const step = makeStepRow({ bot_id: PERSONA_BOT_ID });
+    const ctx = makePersonaClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      systemPrompt: `## Goal\nShip it.\n\n## Constraints\n${RULE}`,
+    });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(result.instruction).not.toContain("PROTECT PRIOR WORK");
+  });
+
+  it("keeps it in the brief when the persona doesn't have it", async () => {
+    const step = makeStepRow({ bot_id: PERSONA_BOT_ID });
+    const ctx = makePersonaClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress" },
+      systemPrompt: "You are Atlas. Ship it.",
+    });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(result.instruction).toContain("PROTECT PRIOR WORK");
+  });
+});
+
 describe("claimNextStep — persona embedding", () => {
-  // Captured before the Codex handoff fix: pin the COMPLETE Claude instruction,
-  // including Auto and missing-persona paths, without eight large text snapshots.
+  // Pins the COMPLETE Claude instruction, including Auto and missing-persona
+  // paths, without eight large text snapshots. First captured before the Codex
+  // handoff fix; re-pinned deliberately on 10 Oct 2026 when task 3784ead1
+  // calmed the wording (same rules, said once with their reasons).
   it("preserves pre-fix Claude instruction bytes for every tier and persona path", async () => {
     const hashes: Record<string, string> = {};
     for (const tier of [null, "frontier", "standard", "cheap"]) {
@@ -1052,14 +1085,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "ecf02c62167995659fe57e5c80b19d684568354cc8513c9ab6fc7fcdf092b012",
-        "auto/missing": "044ddd324969116f7ea62f5986328e8fa7cdb4317d4cd7ffe4788a05ad635b56",
-        "cheap/embedded": "5149e81b1f7c269572d421a5607d893a2c5d516a750d3fa15967487e02346e6f",
-        "cheap/missing": "b50fdf2046f0ec7fbf904f2035bfa49937dbb636e542084589b7f16b8434f175",
-        "frontier/embedded": "1dc7e1bc8003d5028c2b6232703c0f81823b60cca10ebad44156086e9802e809",
-        "frontier/missing": "e240ea9db65894bd49ed7fc855398d4daafb72e9d1768ca847bed7a381eae2cc",
-        "standard/embedded": "308b24500c4340defe7fa6e7e707833e25ec717546600a5f4acf6befd1737625",
-        "standard/missing": "bb8a4899755814b4d9fc94ed32f7c083518d1aad24649e79eec1c5901848d854",
+        "auto/embedded": "66f733bf78c10f27d198c77138253e73cf40653a1cbf94efacfdc983dc202be3",
+        "auto/missing": "fd25a65f455c28a61f321de3ed858865c57015a90d12268f4d0c3fba2bb6ce21",
+        "cheap/embedded": "5311923171719f06d248f887e8e5412cda14c44fcfae351ef8e5d50875fd02af",
+        "cheap/missing": "6711193777d7e967cfd5449dd1a9d74063ed55c3a4c18c1f5cf6bdf65ea0ab45",
+        "frontier/embedded": "c5ea3b23c5d859785e96049b2c9282c7570b9da42b0361a8dbce3c30ca65cdfe",
+        "frontier/missing": "ac0aef7d02a6c44a027e22e097dd6a88a41f3deca290a1986a8b2271191019b6",
+        "standard/embedded": "bfbd8d70d16af8545cd4ccebdb9b2a2b04f3186d73164bc976f33b2044607e3b",
+        "standard/missing": "fb0d687e3170e9eea11d5c38d73764d8db1bb9302bedf8ce63eb86b0faa7d746",
       }
     `);
   });
@@ -1131,16 +1164,16 @@ describe("claimNextStep — persona embedding", () => {
     expect(r.persona_role).toBe("Full Stack Engineer");
 
     // Adopt-verbatim replaces the get_agent_prompt round-trip.
-    expect(r.instruction).toContain('SPAWN a fresh subagent whose system prompt IS the "persona_prompt"');
+    expect(r.instruction).toContain('Spawn the subagent with the "persona_prompt" field in this response as its system prompt');
     expect(r.instruction).not.toContain("Call get_agent_prompt");
     // Attestation obligation on the completion-reporting sentence.
     expect(r.instruction).toContain("persona_used");
     expect(r.instruction).toContain('"verbatim" if the subagent ran on persona_prompt unchanged');
     expect(r.instruction).toContain("not verified, and never blocks completion");
     // Untouched surrounding clauses.
-    expect(r.instruction).toContain("DO NOT INLINE");
+    expect(r.instruction).toContain("FRESH SUBAGENT");
     expect(r.instruction).toContain("RELIABILITY");
-    expect(r.instruction).toContain("EXCEPTION (the ONLY one)");
+    expect(r.instruction).toContain("This is the only exception");
   });
 
   it("omits persona fields and keeps the get_agent_prompt fallback when the step is unassigned", async () => {
@@ -4442,8 +4475,8 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    expect(instruction).toContain("MANDATORY");
     expect(instruction).toContain("FRESH SUBAGENT");
+    expect(instruction).toContain("not in this conversation");
     expect(instruction).toContain("get_agent_prompt");
   });
 
@@ -4452,9 +4485,8 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     const instruction = (result as { instruction: string }).instruction;
 
     // No convenience escape hatch — the only exception is a genuine capability gap.
-    expect(instruction).toContain("DO NOT INLINE");
-    expect(instruction).toContain("NOT permitted");
-    expect(instruction).toContain("EXCEPTION (the ONLY one)");
+    expect(instruction).toContain('"only a small step" defeats the point of the step');
+    expect(instruction).toContain("This is the only exception");
     expect(instruction).toContain("no subagent/Agent tool");
   });
 
@@ -4462,7 +4494,7 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    expect(instruction).toContain("RETRY or RESUME");
+    expect(instruction).toContain("retry or resume it");
   });
 });
 
@@ -4570,13 +4602,13 @@ describe("modelTierClause", () => {
   // Design-Review CONDITION 1 — exact directive string, verbatim.
   it("produces the exact MANDATORY MODEL directive string for the Claude platform default (standard)", () => {
     expect(modelTierClause("standard")).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet" and reasoning effort "medium". If "sonnet" is unavailable on this plan/session, use model: "opus" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet" and reasoning effort "medium". If "sonnet" is unavailable on this plan/session, use model: "opus" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user\'s current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don\'t edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.'
     );
   });
 
   it("produces the exact directive string for a user-overridden Claude tier", () => {
     expect(modelTierClause("frontier", "claude", { frontier: { claude: { model: "opus" } } })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus" and reasoning effort "high". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus" and reasoning effort "high". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user\'s current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don\'t edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.'
     );
   });
 
@@ -4599,8 +4631,8 @@ describe("modelTierClause", () => {
   it("includes the doc-precedence rule for the platform-default path (URGENT stale-CLAUDE.md fix)", () => {
     const clause = modelTierClause("standard");
     expect(clause).toContain("resolved live at claim time");
-    expect(clause).toContain("OVERRIDES");
-    expect(clause).toContain("Never edit project docs");
+    expect(clause).toContain("overrides any tier→model mapping");
+    expect(clause).toContain("don't edit docs to match it");
   });
 
   it("includes the doc-precedence rule for the Codex path too", () => {
@@ -4612,9 +4644,9 @@ describe("modelTierClause", () => {
 
   it("includes the model_used + reasoning_effort_used capture sentence", () => {
     expect(modelTierClause("cheap")).toContain(
-      "pass model_used = the model you actually ran the subagent on"
+      "pass model_used = the model the subagent actually ran on"
     );
-    expect(modelTierClause("cheap")).toContain("reasoning_effort_used = the effort you actually ran with");
+    expect(modelTierClause("cheap")).toContain("reasoning_effort_used = the effort it actually ran with");
   });
 
   it("names the resolved model, effort and fallback for every tier and agent", () => {

@@ -131,7 +131,7 @@ export function modelTierClause(
     return `MANDATORY MODEL: launch this step's fresh Codex subagent with model: "${resolved}" and reasoning_effort: "${effort}" as actual spawn parameters, not just words in its prompt. Use fork_turns: "none" when supported; a full-history fork inherits the parent's model and cannot accept these overrides. The execution object contains the resolved launch settings. If the launch reports "${resolved}" unavailable, retry with model: "${fallback}" at the same effort and state the substitution in your output. Keep the accepted launch configuration with the returned child id. When calling complete_step/fail_step, pass agent: "codex", model_used and reasoning_effort_used from that child's accepted launch configuration (or a runtime-reported override). Do not ask the child to identify its model: lack of child introspection does not erase known launch settings. This is orchestrator-reported configuration, not independent verification of the provider runtime. Never report a requested configuration if the launch rejected it or fell back to something else. Do not switch the parent with /model or inherit its model for this tiered step. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. Never edit project docs to reconcile a model mismatch or record concrete tier→model mappings there; follow this claim's execution settings.`;
   }
 
-  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort you actually ran with. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
+  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user's current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don't edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.`;
 }
 
 // ============================================================
@@ -989,34 +989,41 @@ export async function claimNextStep(
   // inline on the persona_prompt and gets full agent voice via the
   // work_token, exactly like a spawned subagent would.
   const noSubagentException =
-    `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, do the step inline in ` +
+    `EXCEPTION: if your client genuinely has no subagent/Agent tool at all, do the step inline in ` +
     `this conversation. No identity switch is needed or possible: completion is attributed to ${personaRef} by ` +
     `the claim_token automatically. Adopt the persona_prompt as your working style, pass the work_token on any ` +
     `add_task_comment/add_step_comment you make so they post in the persona's voice, and when done call ` +
     `complete_step with the claim_token, stating verbatim in your output: "Completed inline — no subagent ` +
-    `capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
+    `capability." This is the only exception: if you have an Agent/Task tool, it doesn't apply to you.`;
+
+  // Said once, with the reason (task 3784ead1: newer models over-react to
+  // shouted, repeated rules and generalise better from an explanation). The
+  // rule itself stays — the bypass cards (23f65c41, 59263987) justify it.
+  const freshSubagentRule =
+    `FRESH SUBAGENT: run this step in a fresh subagent that you spawn with your Agent/Task tool, not in this ` +
+    `conversation. The step's persona, model and effort only take effect inside that subagent, and its separate ` +
+    `context keeps this step's work independent of the others, so doing it yourself because it seems simpler, ` +
+    `faster or "only a small step" defeats the point of the step.\n`;
 
   const claudeIdentityInstruction = personaEmbeddable
-    ? `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
-      `1. Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)\n` +
-      `2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is ${personaRef}, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
-      `3. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.\n` +
-      `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
-      `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
+    ? freshSubagentRule +
+      `1. Keep the claim_token from this response and don't pass it to the subagent. (The work_token is the one you pass along.)\n` +
+      `2. Spawn the subagent with the "persona_prompt" field in this response as its system prompt — this is ${personaRef}, already included in full, so there's no need to call get_agent_prompt. Give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
+      `3. When it returns, you (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.\n` +
+      `RELIABILITY: if the subagent errors or its connection drops before returning, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
       noSubagentException
-    : `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
+    : freshSubagentRule +
       pickStep +
-      `1. Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)\n` +
+      `1. Keep the claim_token from this response and don't pass it to the subagent. (The work_token is the one you pass along.)\n` +
       `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
-      `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
-      `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
-      `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
-      `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
+      `3. Spawn the subagent with that persona prompt as its system prompt, and give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
+      `4. When it returns, you (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
+      `RELIABILITY: if the subagent errors or its connection drops before returning, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
       noSubagentException;
 
   // Codex has native spawn controls, but not Claude's Task tool or a callable
-  // /model picker. Keep this separate so the established Claude paths stay
-  // byte-identical (pinned by the pre-fix instruction hashes in workflows.test).
+  // /model picker, so it gets its own wording; the Claude paths are pinned by
+  // the instruction hashes in workflows.test.
   const codexIdentityInstruction =
     `MANDATORY: execute each workflow step in a FRESH SUBAGENT using Codex's native spawn_agent capability (it may be namespaced as collaboration.spawn_agent).\n` +
     pickStep +
@@ -1041,7 +1048,16 @@ export async function claimNextStep(
   // subagent reverted a prior step's approved, uncommitted work because it
   // looked unexplained. Passed to every claim, on every step, so it reaches
   // the spawned worker's brief verbatim regardless of persona wording.
-  contextParts.push(
+  // Task 3784ead1: every platform persona (00175) and code-role starter
+  // template already carries this rule, so a worker would get it twice — once
+  // in its persona and once in its brief. Send it here only when the persona
+  // doesn't already have it (user-written agents, unassigned steps).
+  const personaCarriesProtectRule =
+    personaEmbeddable &&
+    matchedBot!.system_prompt!.toLowerCase().includes(
+      "unexplained uncommitted changes in the working tree are someone else's intentional prior work"
+    );
+  if (!personaCarriesProtectRule) contextParts.push(
     `PROTECT PRIOR WORK: Include this verbatim in your spawned subagent's brief — 'Never revert, reset, ` +
     "`git checkout`/`restore`, `git clean`, stash, or delete changes you did not make. Unexplained uncommitted " +
     `changes in the working tree are someone else's intentional prior work, not a mess to clean up — build on them. ` +
@@ -1069,12 +1085,8 @@ export async function claimNextStep(
   if (context.length > 0) {
     const stepNames = context.map((c) => `"${c.step_title}"`).join(", ");
     contextParts.push(
-      `CONTEXT CHAINING: The "context" array contains deliverables from ${context.length} completed prior step(s): ${stepNames}. ` +
-      `You MUST explicitly reference and build upon these prior deliverables in your output. Specifically:\n` +
-      `- Cite prior steps by name (e.g., "Building on the findings from [Step Name]...")\n` +
-      `- Show how your work extends, refines, or implements what prior steps produced\n` +
-      `- Do NOT repeat prior deliverables wholesale — reference them and add new value\n` +
-      `- If a prior step's output conflicts with your analysis, call out the discrepancy explicitly`
+      `CONTEXT CHAINING: the "context" array holds the deliverables of ${context.length} completed prior step(s): ${stepNames}. ` +
+      `Build on them by name rather than repeating them, and call out anything in them that your work contradicts.`
     );
   }
 
@@ -1095,8 +1107,8 @@ export async function claimNextStep(
       return `- ${d}${formatNote}`;
     });
     contextParts.push(
-      `EXPECTED DELIVERABLES: You MUST produce the following:\n${deliverableLines.join("\n")}\n` +
-      `Respect any format specified in parentheses (e.g. "(HTML)" means write a valid HTML file, not markdown).`
+      `EXPECTED DELIVERABLES: produce the following:\n${deliverableLines.join("\n")}\n` +
+      `A format in parentheses is part of the deliverable (e.g. "(HTML)" means a valid HTML file, not markdown).`
     );
   }
 
