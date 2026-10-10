@@ -187,3 +187,72 @@ describe("resolveAgentLaunch — codex (AC-3)", () => {
     expect(result).toEqual({ cmd: "bash", conv: null });
   });
 });
+
+// ── Remote Control (task 5c8969cc) — mirrors resume-cmd.test.js ─────────────
+
+describe("resolveAgentLaunch — remoteControl (task 5c8969cc)", () => {
+  it("fresh + remoteControl -> `claude --remote-control --session-id <id>`", () => {
+    expect(resolveAgentLaunch({ remoteControl: true, mintId: () => MINTED })).toEqual({
+      cmd: `claude --remote-control --session-id ${MINTED}`,
+      conv: MINTED,
+    });
+  });
+
+  it("every flag together keeps --remote-control straight after `claude`", () => {
+    const result = resolveAgentLaunch({
+      remoteControl: true,
+      model: "opus",
+      permissionMode: "auto",
+      worktree: true,
+      mintId: () => MINTED,
+    });
+    expect(result.cmd).toBe(
+      `claude --remote-control --session-id ${MINTED} --model opus --permission-mode auto --worktree ${MINTED}`,
+    );
+  });
+
+  it("resumeId + remoteControl -> `claude --remote-control --resume <id>`", () => {
+    expect(resolveAgentLaunch({ resumeId: RESUME_ID, remoteControl: true, mintId: () => MINTED })).toEqual({
+      cmd: `claude --remote-control --resume ${RESUME_ID}`,
+      conv: RESUME_ID,
+    });
+  });
+
+  it("legacy resume + remoteControl -> `claude --remote-control --continue`", () => {
+    expect(resolveAgentLaunch({ resume: true, remoteControl: true, mintId: () => MINTED })).toEqual({
+      cmd: "claude --remote-control --continue",
+      conv: null,
+    });
+  });
+
+  it("--remote-control is token[1] in all three Claude branches", () => {
+    for (const extra of [{}, { resumeId: RESUME_ID }, { resume: true }]) {
+      const tokens = resolveAgentLaunch({ ...extra, remoteControl: true, mintId: () => MINTED }).cmd.split(" ");
+      expect(tokens.slice(0, 2)).toEqual(["claude", "--remote-control"]);
+    }
+  });
+
+  it("off (false/undefined) -> byte-identical to today's commands", () => {
+    for (const remoteControl of [false, undefined]) {
+      expect(resolveAgentLaunch({ remoteControl, mintId: () => MINTED }).cmd).toBe(`claude --session-id ${MINTED}`);
+      expect(resolveAgentLaunch({ remoteControl, resumeId: RESUME_ID, mintId: () => MINTED }).cmd).toBe(
+        `claude --resume ${RESUME_ID}`,
+      );
+      expect(resolveAgentLaunch({ remoteControl, resume: true, mintId: () => MINTED }).cmd).toBe("claude --continue");
+    }
+  });
+
+  it("an explicit --cmd override is never touched", () => {
+    expect(resolveAgentLaunch({ explicitCmd: "bash", remoteControl: true, mintId: () => MINTED })).toEqual({
+      cmd: "bash",
+      conv: null,
+    });
+  });
+
+  it("codex fresh/resume/resumeId never contains --remote-control", () => {
+    for (const extra of [{}, { resume: true }, { resumeId: RESUME_ID }]) {
+      const { cmd } = resolveAgentLaunch({ agent: "codex", ...extra, remoteControl: true, mintId: () => MINTED });
+      expect(cmd).not.toContain("--remote-control");
+    }
+  });
+});

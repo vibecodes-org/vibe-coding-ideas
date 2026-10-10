@@ -331,6 +331,7 @@ export interface TerminalPreferencesInput {
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
   terminalAutoAccept: boolean;
+  terminalRemoteControl: boolean;
 }
 
 export interface TerminalPreferences {
@@ -339,6 +340,7 @@ export interface TerminalPreferences {
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
   terminalAutoAccept: boolean;
+  terminalRemoteControl: boolean;
 }
 
 /**
@@ -352,7 +354,12 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  if (typeof input !== "object" || input === null || typeof input.terminalAutoAccept !== "boolean") {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    typeof input.terminalAutoAccept !== "boolean" ||
+    typeof input.terminalRemoteControl !== "boolean"
+  ) {
     throw new Error("Invalid terminal preferences");
   }
 
@@ -433,10 +440,18 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     terminal_codex_model: terminalCodexModel,
     terminal_codex_effort: terminalCodexEffort,
     terminal_auto_accept: input.terminalAutoAccept,
+    terminal_remote_control: input.terminalRemoteControl,
   }).eq("id", user.id);
   if (error) throw new Error(error.message);
   revalidatePath(`/profile/${user.id}`);
-  return { agentAwareModelTierMap, terminalModel, terminalCodexModel, terminalCodexEffort, terminalAutoAccept: input.terminalAutoAccept };
+  return {
+    agentAwareModelTierMap,
+    terminalModel,
+    terminalCodexModel,
+    terminalCodexEffort,
+    terminalAutoAccept: input.terminalAutoAccept,
+    terminalRemoteControl: input.terminalRemoteControl,
+  };
 }
 
 // ── Terminal starting model (task c4ca2d95) ─────────────────────────────
@@ -581,6 +596,31 @@ export async function updateTerminalAutoAccept(autoAccept: boolean): Promise<boo
 
   revalidatePath(`/profile/${user.id}`);
   return autoAccept;
+}
+
+// ── Terminal Remote Control (task 5c8969cc) ────────────────────────────────
+// Per-user opt-in: in-app terminal Claude Code sessions launch with
+// `claude --remote-control`. Saved only through updateTerminalPreferences (the
+// Model Tiers dialog's single Save); this getter feeds the launch label's
+// cached hook (use-viewer-terminal-remote-control.ts).
+
+export async function getTerminalRemoteControl(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_remote_control")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_remote_control ?? false;
 }
 
 // ── Terminal remembered agent (docs/codex-terminal-requirements.md FR-4a,

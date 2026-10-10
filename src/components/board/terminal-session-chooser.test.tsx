@@ -879,3 +879,42 @@ describe("TerminalSessionChooser", () => {
     });
   });
 });
+
+describe("TerminalSessionChooser — Remote Control label (task 5c8969cc)", () => {
+  function renderChooser(props: { remoteControlChip?: string | null; remoteControlReminder?: string | null }) {
+    return render(
+      <TerminalSessionChooser
+        sections={EMPTY}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+        modelLine="New sessions start on Opus 5.5 · your setting."
+        autoAcceptChip="⚡ auto mode on"
+        {...props}
+      />,
+    );
+  }
+
+  it("renders '· 📱 remote control on' in violet straight after the auto chip", () => {
+    renderChooser({ remoteControlChip: "📱 remote control on" });
+    const rc = screen.getByText("· 📱 remote control on");
+    const auto = screen.getByText("· ⚡ auto mode on");
+    expect(rc).toHaveClass("ml-1", "whitespace-nowrap", "font-semibold", "text-violet-400");
+    expect(auto.nextElementSibling).toBe(rc);
+  });
+
+  it("renders nothing when null", () => {
+    renderChooser({ remoteControlChip: null });
+    expect(screen.queryByText(/remote control on/)).not.toBeInTheDocument();
+  });
+
+  it("renders the reminder only when given", () => {
+    const reminder = "Only a fresh session starts with Remote Control — resuming doesn't turn it on.";
+    const { unmount } = renderChooser({ remoteControlChip: "📱 remote control on" });
+    expect(screen.queryByText(reminder)).not.toBeInTheDocument();
+    unmount();
+    renderChooser({ remoteControlChip: "📱 remote control on", remoteControlReminder: reminder });
+    expect(screen.getByText(reminder)).toHaveClass("mt-1", "text-[11px]", "text-zinc-500");
+  });
+});

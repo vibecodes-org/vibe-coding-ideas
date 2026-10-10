@@ -73,6 +73,10 @@ export type Database = {
            *  and has no platform-wide default (per-user only, safety
            *  setting) — see src/lib/terminal/auto-accept-mode.ts. */
           terminal_auto_accept: boolean;
+          /** Task 5c8969cc — opt-in: in-app terminal Claude Code sessions launch with
+           *  `claude --remote-control`. Default false. Never Codex; no platform-wide
+           *  default — see src/lib/terminal/remote-control-mode.ts. */
+          terminal_remote_control: boolean;
           /** Codex support (docs/codex-terminal-requirements.md FR-4a,
            *  implementation slice 1) — the last agent the user picked,
            *  remembered per account (across devices), mirroring
@@ -128,6 +132,7 @@ export type Database = {
           terminal_codex_model?: string | null;
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_remote_control?: boolean;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;
@@ -170,6 +175,7 @@ export type Database = {
           terminal_codex_model?: string | null;
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_remote_control?: boolean;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;

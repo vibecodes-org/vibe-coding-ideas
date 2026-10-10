@@ -138,6 +138,7 @@ import {
   SNAPSHOT_SAVE_INTERVAL_MS,
 } from "@/lib/terminal/session-snapshot";
 import { matchFocusMoveChord } from "@/lib/terminal/split-view";
+import { remoteControlForLaunch, shouldShowRemoteControlEarlyExitHint } from "@/lib/terminal/remote-control-mode";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -461,6 +462,12 @@ export interface AttachExistingPair {
    * reattach) or a session that predates this feature / has already ended.
    */
   sessionKey?: string;
+  /**
+   * Task 5c8969cc: from the reattach route — the user's current Remote
+   * Control preference, carried into the resume-shaped relaunch. Absent for a
+   * popped-out window's hand-off (nothing to relaunch) and when off.
+   */
+  remoteControl?: boolean;
 }
 
 export interface PairInfo {
@@ -605,6 +612,13 @@ export interface UseTerminalSessionResult {
    * comment above for the fresh-launch-only / reset-per-attempt contract.
    */
   autoAccept: boolean;
+  /**
+   * Task 5c8969cc (Nick, 10 Oct 2026): the session ended by itself
+   * ("remote") within REMOTE_CONTROL_EARLY_EXIT_MS of its first output, and
+   * its launch asked for Remote Control — the ended panel shows one line
+   * suggesting `claude update` or turning the setting off.
+   */
+  remoteControlEarlyExit: boolean;
   /** isInputEnabled(state, readOnly) — convenience, the same predicate xterm's onData gates on. */
   inputEnabled: boolean;
   /** Install-first gate inputs, corrected client-side on mount (SSR default: unsupported/unpaired). */
@@ -701,6 +715,16 @@ export function useTerminalSession(
    * (attachExisting) never touches this — see that branch's own doc.
    */
   const [autoAccept, setAutoAccept] = useState(false);
+  /**
+   * Task 5c8969cc (Nick, 10 Oct 2026): the launch this tab last fired asked
+   * for Remote Control — set when its link actually opens, with the time of
+   * Claude's first PTY output. Feeds `remoteControlEarlyExit`, the one-line
+   * hint on the "Session ended" panel when such a launch stops straight away
+   * (live check V3: an old Claude Code's "unknown option" error is hidden
+   * under the ended overlay). Reset by connect() and attachToExisting.
+   */
+  const rcLaunchRef = useRef<{ sessionId: string; firstOutputAt: number | null } | null>(null);
+  const [remoteControlEarlyExit, setRemoteControlEarlyExit] = useState(false);
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   // Card cbe60db5 rework 9 (Bug A — timeout resume): the folder + claude
@@ -793,7 +817,7 @@ export function useTerminalSession(
     sessionId: string;
     bridgeToken: string;
     helperToken?: string;
-    opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null };
+    opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean };
   } | null>(null);
   // Ref-mirror of `fireLaunchDeepLink` (same idiom as `scheduleReconnectRef`
   // below) so the xterm-init effect above can call the LATEST callback
@@ -806,7 +830,7 @@ export function useTerminalSession(
       sessionId: string,
       bridgeToken: string,
       helperToken: string | undefined,
-      opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null },
+      opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean },
     ) => void
   >(() => {});
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1579,6 +1603,16 @@ export function useTerminalSession(
          * resume, which reopens whatever worktree it started in by itself.
          */
         isolate?: boolean;
+        /**
+         * Task 5c8969cc ("Start with Remote Control on") — the mint or
+         * reattach route's answer (set only when the user's own
+         * `terminal_remote_control` preference is on, never for Codex).
+         * Unlike `model`/`permissionMode` it is threaded into the fresh AND
+         * the resume link: Remote Control only lasts for one run of claude.
+         * `remoteControlForLaunch` makes the per-link call (Codex never;
+         * resumes only while REMOTE_CONTROL_APPLIES_TO_RESUME).
+         */
+        remoteControl?: boolean;
       },
     ) => {
       const trigger = opts?.trigger ?? "connect";
@@ -1624,6 +1658,9 @@ export function useTerminalSession(
           setLaunchPhase("helper-timeout");
           return;
         }
+        // Task 5c8969cc: Remote Control only lasts one run of claude, so a
+        // resume asks for it again (gated by REMOTE_CONTROL_APPLIES_TO_RESUME).
+        const resumeRc = remoteControlForLaunch({ requested: opts?.remoteControl === true, agent, isResume: true });
         let link: string;
         try {
           link = buildLaunchDeepLink({
@@ -1641,6 +1678,7 @@ export function useTerminalSession(
             // (carried on the payload by chooser-data.ts's row.agent /
             // buildResumePayload), never the chooser's current picker value.
             agent: agent === "codex" ? "codex" : undefined,
+            remoteControl: resumeRc,
           });
         } catch (err) {
           logger.error("Terminal resume deep-link build failed", {
@@ -1658,6 +1696,7 @@ export function useTerminalSession(
           urlChars: link.length,
         });
         if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
+        else rcLaunchRef.current = resumeRc === true ? { sessionId, firstOutputAt: null } : null;
         return;
       }
 
@@ -1674,6 +1713,13 @@ export function useTerminalSession(
         );
       }
 
+      // Task 5c8969cc: computed once — the link and the early-exit tracking
+      // below must agree on whether this launch asked for Remote Control.
+      const freshRc = remoteControlForLaunch({
+        requested: opts?.remoteControl === true,
+        agent: promptPartsRef.current?.agent,
+        isResume: false,
+      });
       let link: string;
       let urlChars = 0;
       let hasCwd = false;
@@ -1772,6 +1818,8 @@ export function useTerminalSession(
               // the launch button/chooser built). Absent/"claude" is dropped
               // entirely by buildLaunchDeepLink (byte-identical link, AC-1).
               agent: promptPartsRef.current?.agent === "codex" ? "codex" : undefined,
+              // Task 5c8969cc: never Codex; off = field omitted (byte-identical).
+              remoteControl: freshRc,
             }),
         });
         let result = buildWithHelperToken(effectiveHelperToken);
@@ -1843,6 +1891,7 @@ export function useTerminalSession(
         helperTokenDroppedForBudget,
       });
       if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
+      else rcLaunchRef.current = freshRc === true ? { sessionId, firstOutputAt: null } : null;
     },
     [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout, currentLaunchDims],
   );
@@ -2145,6 +2194,10 @@ export function useTerminalSession(
             setPaired(true);
           }
           dispatch({ type: "data" });
+          // Task 5c8969cc: first PTY output of a Remote Control launch — the
+          // early-exit hint measures from here.
+          const r = rcLaunchRef.current;
+          if (r && r.sessionId === sessionId && r.firstOutputAt === null) r.firstOutputAt = Date.now();
           termRef.current?.write(plaintext);
           // Reload-reattach instant-continue (design item 5): mark the buffer
           // dirty so the periodic snapshot effect below has something new to
@@ -2429,6 +2482,9 @@ export function useTerminalSession(
     // actually carries the flag (task d3de150c). Never carried forward from
     // a previous connect() on this same tab.
     setAutoAccept(false);
+    // Task 5c8969cc: same per-attempt reset for the early-exit hint.
+    rcLaunchRef.current = null;
+    setRemoteControlEarlyExit(false);
     removeLaunchIframe();
     // Stuck-pairing watchdog (card cbe60db5): the ONE opt-out — a literal
     // manual connect({autoLaunch:false}) is the legitimate indefinite-wait
@@ -2479,6 +2535,8 @@ export function useTerminalSession(
       permissionMode?: string;
       /** Concurrent-session isolation — true when another of this user's sessions is already live on this board (fires `--worktree`), fresh-launch only. */
       isolate?: boolean;
+      /** Task 5c8969cc — true when the user's Remote Control preference is on (never Codex); fresh AND resume. */
+      remoteControl?: boolean;
       /** Terminal P2 (E2EE) — base64 256-bit session key, browser-side only (FR-1). */
       sessionKey?: string;
       /** Terminal P2 (E2EE, FR-5) — Phase B enforcement flag (see e2ee-policy.ts). */
@@ -2626,6 +2684,7 @@ export function useTerminalSession(
         effort: data.effort,
         permissionMode: data.permissionMode,
         isolate: data.isolate,
+        remoteControl: data.remoteControl === true,
       });
 
     openBrowserLeg(data.sessionId, data.browserToken);
@@ -2658,6 +2717,10 @@ export function useTerminalSession(
       clearHelperTimer();
       removeLaunchIframe();
       setLaunchPhase("idle");
+      // Task 5c8969cc: a fresh attempt — only a relaunch fired below can arm
+      // the Remote Control early-exit hint again.
+      rcLaunchRef.current = null;
+      setRemoteControlEarlyExit(false);
       // Stuck-pairing watchdog (card cbe60db5): a reload-reattach / instant-
       // continue / chooser Reconnect all expect the bridge to show back up
       // on its own — no deep link fires here, so nothing else times this
@@ -2758,6 +2821,7 @@ export function useTerminalSession(
           trigger: "attach-existing" as const,
           forceResumeCwd: p.cwd,
           forceResumeId: p.claudeSessionId,
+          remoteControl: p.remoteControl === true,
         };
         const { sessionId, bridgeToken, helperToken } = p;
         const hasResumeCwd = !!(p.cwd && p.cwd.trim());
@@ -2903,6 +2967,7 @@ export function useTerminalSession(
         cwd?: string | null;
         claudeSessionId?: string | null;
         sessionKey?: string;
+        remoteControl?: boolean;
       } | null;
       if (isConnectSuperseded(gen, connectGenRef.current)) return;
       if (!data?.browserToken || data.sessionId !== sessionId) {
@@ -2925,6 +2990,7 @@ export function useTerminalSession(
         cwd: data.cwd,
         claudeSessionId: data.claudeSessionId,
         sessionKey: data.sessionKey,
+        remoteControl: data.remoteControl === true,
       });
     },
     [attachToExisting, clearReconnectTimer, openBrowserLeg, teardownSocket],
@@ -3138,6 +3204,24 @@ export function useTerminalSession(
     restoreScrollback(term, buffer);
   }, []);
 
+  // Task 5c8969cc (Nick, 10 Oct 2026): decide the ended panel's Remote Control
+  // early-exit line the moment the session ends; any other status clears it.
+  useEffect(() => {
+    if (state.status === "session-ended") {
+      const r = rcLaunchRef.current;
+      setRemoteControlEarlyExit(
+        shouldShowRemoteControlEarlyExitHint({
+          launchedWithRemoteControl: !!r && r.sessionId === pairRef.current?.sessionId,
+          endedReason: state.endedReason,
+          firstOutputAt: r?.firstOutputAt ?? null,
+          endedAt: Date.now(),
+        }),
+      );
+    } else {
+      setRemoteControlEarlyExit(false);
+    }
+  }, [state.status, state.endedReason]);
+
   const copyBridgeCommand = useCallback(() => {
     // No bridge token to copy for an attached (not minted) session — see
     // PairInfo.bridgeToken's doc. The legacy-waiting panel that renders this
@@ -3173,6 +3257,8 @@ export function useTerminalSession(
     claudeSessionId,
     readOnly,
     autoAccept,
+    // Task 5c8969cc — show the "stopped straight away" line on the ended panel.
+    remoteControlEarlyExit,
     inputEnabled: isInputEnabled(state, readOnly),
     platform,
     paired,

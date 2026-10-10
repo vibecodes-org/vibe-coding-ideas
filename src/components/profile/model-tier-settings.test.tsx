@@ -37,6 +37,10 @@ vi.mock("@/hooks/use-viewer-terminal-auto-accept", () => ({
   setViewerTerminalAutoAcceptCache: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-viewer-terminal-remote-control", () => ({
+  setViewerTerminalRemoteControlCache: vi.fn(),
+}));
+
 const mockUsePlatformAgentAwareModelDefaults = vi.fn();
 vi.mock("@/hooks/use-platform-model-defaults", () => ({
   usePlatformAgentAwareModelDefaults: () => mockUsePlatformAgentAwareModelDefaults(),
@@ -55,6 +59,8 @@ vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
 }));
 
 import { ModelTierSettings } from "./model-tier-settings";
+import { setViewerTerminalRemoteControlCache } from "@/hooks/use-viewer-terminal-remote-control";
+import { REMOTE_CONTROL_HELP_OFF, REMOTE_CONTROL_HELP_ON } from "@/lib/terminal/remote-control-mode";
 import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
 
 afterEach(cleanup);
@@ -229,6 +235,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalCodexModel: null,
       terminalCodexEffort: null,
       terminalAutoAccept: false,
+      terminalRemoteControl: false,
     });
     renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
 
@@ -249,6 +256,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
       terminalAutoAccept: false,
+      terminalRemoteControl: false,
     });
     renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
 
@@ -327,5 +335,84 @@ describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
       "aria-checked",
       "false",
     );
+  });
+});
+
+describe("ModelTierSettings — Remote Control switch (task 5c8969cc)", () => {
+  const LABEL = "Start with Remote Control on";
+  beforeEach(() => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
+    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue(null);
+    vi.mocked(updateTerminalPreferences).mockClear();
+    vi.mocked(setViewerTerminalRemoteControlCache).mockClear();
+  });
+
+  it("renders role=switch 'Start with Remote Control on', off, after 'Start in auto mode', with the off help linked", () => {
+    renderDialog();
+    const auto = screen.getByRole("switch", { name: "Start in auto mode" });
+    const rc = screen.getByRole("switch", { name: LABEL });
+    expect(rc).toHaveAttribute("aria-checked", "false");
+    expect(auto.compareDocumentPosition(rc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const help = document.getElementById(rc.getAttribute("aria-describedby") ?? "");
+    expect(help).toHaveTextContent(REMOTE_CONTROL_HELP_OFF);
+    expect(help).toHaveClass("text-muted-foreground");
+  });
+
+  it("an on preference -> aria-checked true, the on help, violet", () => {
+    renderDialog({ terminalRemoteControl: true });
+    const rc = screen.getByRole("switch", { name: LABEL });
+    expect(rc).toHaveAttribute("aria-checked", "true");
+    const help = document.getElementById("terminal-remote-control-help");
+    expect(help).toHaveTextContent(REMOTE_CONTROL_HELP_ON);
+    expect(help).toHaveClass("text-violet-600", "dark:text-violet-400");
+  });
+
+  it("clicking stages and enables Save; nothing is saved until Save", () => {
+    renderDialog();
+    const rc = screen.getByRole("switch", { name: LABEL });
+    const save = screen.getByRole("button", { name: /^Save$/i });
+    expect(save).toBeDisabled();
+    fireEvent.click(rc);
+    expect(rc).toHaveAttribute("aria-checked", "true");
+    expect(save).not.toBeDisabled();
+    expect(updateTerminalPreferences).not.toHaveBeenCalled();
+  });
+
+  it("Save sends terminalRemoteControl true and refreshes the cache", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({
+      agentAwareModelTierMap: null,
+      terminalModel: null,
+      terminalCodexModel: null,
+      terminalCodexEffort: null,
+      terminalAutoAccept: false,
+      terminalRemoteControl: true,
+    });
+    renderDialog();
+    fireEvent.click(screen.getByRole("switch", { name: LABEL }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalRemoteControl: true })),
+    );
+    await waitFor(() => expect(setViewerTerminalRemoteControlCache).toHaveBeenCalledWith(true));
+  });
+
+  it("Reset to defaults is enabled when only Remote Control is on, and turns it off", () => {
+    renderDialog({ terminalRemoteControl: true });
+    const reset = screen.getByRole("button", { name: /Reset to defaults/i });
+    expect(reset).not.toBeDisabled();
+    fireEvent.click(reset);
+    expect(screen.getByRole("switch", { name: LABEL })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("Cancel/reopen discards the staged switch", () => {
+    render(<ModelTierSettings agentAwareMap={{}} terminalModel={null} terminalAutoAccept={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    const rc = screen.getByRole("switch", { name: LABEL });
+    fireEvent.click(rc);
+    expect(rc).toHaveAttribute("aria-checked", "true");
+    fireEvent.keyDown(rc, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    expect(screen.getByRole("switch", { name: LABEL })).toHaveAttribute("aria-checked", "false");
   });
 });

@@ -44,7 +44,8 @@ const DESIGN_CODEX_BLOCK =
 
 /** Exactly what use-terminal-session.ts's fresh-launch closure fires, at the
  * largest realistic overhead: both tokens, real dims, model (+ Codex effort),
- * auto mode, and the worktree flag where a known folder makes it possible. */
+ * auto mode, Remote Control (Claude only), and the worktree flag where a
+ * known folder makes it possible. */
 function browserLink(agent: Agent, helperToken: string | undefined, worktree: boolean) {
   return (parts: { prompt: string; cwd?: string }): string =>
     buildLaunchDeepLink({
@@ -60,6 +61,8 @@ function browserLink(agent: Agent, helperToken: string | undefined, worktree: bo
       effort: agent === "codex" ? "medium" : undefined,
       permissionMode: "auto",
       worktree: worktree && !!parts.cwd,
+      // Task 5c8969cc: Remote Control is Claude-only and part of the worst case.
+      remoteControl: agent === "claude",
       agent,
     });
 }

@@ -188,6 +188,11 @@ const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // `BRIDGE_PERMISSION_MODE` env mirrors BRIDGE_MODEL's own dev/test
 // convenience fallback.
 const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSION_MODE || null;
+// Task 5c8969cc: the deep link's `remoteControl` flag (parse-time whitelisted
+// to "1" by the shared module). resolveClaudeLaunch puts `--remote-control`
+// straight after `claude` on every Claude branch; Codex and --cmd never read
+// it. `BRIDGE_REMOTE_CONTROL=1` mirrors BRIDGE_WORKTREE's dev/test fallback.
+const REMOTE_CONTROL = launched?.remoteControl === true || process.env.BRIDGE_REMOTE_CONTROL === "1";
 // Concurrent-terminal isolation (QA-flagged fix): the deep link's `worktree`
 // boolean (see shared/deep-link.mjs), set by the app whenever this launch
 // needs isolation (existing-mode with a known/possibly-shared folder — see
@@ -234,6 +239,7 @@ const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
   codexEffort: EFFORT,
   permissionMode: PERMISSION_MODE,
   worktree: WORKTREE,
+  remoteControl: REMOTE_CONTROL,
   mintId: () => crypto.randomUUID(),
 });
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two

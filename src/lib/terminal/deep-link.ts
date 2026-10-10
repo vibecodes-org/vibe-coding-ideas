@@ -48,7 +48,10 @@ export const OPEN_TERMINAL_HOST = "open-terminal";
  * optional ~300-char helperToken was dropped in 28 of 32 realistic launch
  * shapes (14 before the guide step). 2700 keeps it in all 32 (none drop from
  * 2686 up). Windows helper support (card 51d424f7) must re-check this value
- * against ShellExecute's limit before shipping.
+ * against ShellExecute's limit before shipping. Task 5c8969cc:
+ * `&remoteControl=1` (16 chars) leaves the tightest realistic Claude launch
+ * 15 chars under this cap (measured 10 Oct 2026); the next new param must
+ * re-measure.
  */
 export const MAX_LAUNCH_URL_LENGTH = 2700;
 
@@ -177,6 +180,18 @@ export interface LaunchDeepLinkParams {
    */
   worktree?: boolean;
   /**
+   * Task 5c8969cc ("Start with Remote Control on") — set only when the
+   * launching user's terminal_remote_control preference is on. Only ever the
+   * literal `1` on the wire, omitted entirely when false, and never sent
+   * alongside `agent=codex`. Unlike `model`/`permissionMode`/`worktree` it
+   * may ride fresh AND resume links: the bridge inserts `--remote-control`
+   * immediately after `claude` on every Claude branch (see
+   * terminal/bridge/src/resume-cmd.js). An old helper ignores it and starts
+   * without Remote Control. Not secret, so redactDeepLinkToken leaves it
+   * alone.
+   */
+  remoteControl?: boolean;
+  /**
    * Codex support (docs/codex-terminal-requirements.md FR-1/AC-1/AC-2,
    * implementation slice 1) — which agent the bridge should spawn. The ONLY
    * value ever put on the wire is the literal "codex"; "claude" (the
@@ -195,11 +210,12 @@ export interface LaunchDeepLinkParams {
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&worktree=1][&agent=codex]
- * [&prompt=…]` deep link. Throws when a required field is missing so a
+ * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&worktree=1][&remoteControl=1]
+ * [&agent=codex][&prompt=…]` deep link. Throws when a required field is missing so a
  * malformed link is never fired. `prompt` is always the LAST param so the
  * base-link length (and therefore the prompt budget) is stable — every other
- * optional param, including `cols`/`rows`, `model`, `worktree` and `agent`,
+ * optional param, including `cols`/`rows`, `model`, `worktree`,
+ * `remoteControl` and `agent`,
  * is inserted before it, alongside the other credentials.
  */
 export function buildLaunchDeepLink({
@@ -217,6 +233,7 @@ export function buildLaunchDeepLink({
   effort,
   permissionMode,
   worktree,
+  remoteControl,
   agent,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
@@ -261,6 +278,8 @@ export function buildLaunchDeepLink({
   // permissionMode. Only ever the literal "1"; omitted entirely when falsy
   // (no version-skew risk for an old bridge/helper).
   if (worktree) parts.push(`worktree=1`);
+  // Task 5c8969cc: only ever the literal "1"; never alongside agent=codex.
+  if (remoteControl === true && agent !== "codex") parts.push(`remoteControl=1`);
   // Codex support (FR-1): only ever the literal "codex" is put on the wire —
   // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
   // launch is byte-identical to before this field existed (AC-1).

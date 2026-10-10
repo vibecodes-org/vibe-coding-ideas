@@ -265,6 +265,56 @@ describe("POST /api/terminal/session — effective auto-accept resolution (task 
   });
 });
 
+describe("POST /api/terminal/session — remote control (task 5c8969cc)", () => {
+  it("omits remoteControl when the preference is off/absent (byte-identical response)", async () => {
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty("remoteControl");
+
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: false }, error: null };
+    const offBody = await (await POST(req({ ideaId: IDEA_1 }))).json();
+    expect(offBody).not.toHaveProperty("remoteControl");
+  });
+
+  it("returns true when the user's own preference is on", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const body = await (await POST(req({ ideaId: IDEA_1 }))).json();
+    expect(body.remoteControl).toBe(true);
+  });
+
+  it("reads the column in the same single users query as the other terminal settings", async () => {
+    await POST(req({ ideaId: IDEA_1 }));
+    const selects = mockFrom.mock.results
+      .map((r) => r.value)
+      .filter((chain) => chain?.select)
+      .flatMap((chain) => chain.select.mock.calls.map((c: unknown[]) => c[0]));
+    expect(selects).toContain(
+      "terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept, terminal_remote_control",
+    );
+  });
+
+  it("returns true on a resumeId mint too", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: "5a22fd93-0aad-4872-a28f-61c90ff7f25b" }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).remoteControl).toBe(true);
+  });
+
+  it("omits it for a Codex launch even when the preference is on", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const body = await (await POST(req({ ideaId: IDEA_1, agent: "codex" }))).json();
+    expect(body).not.toHaveProperty("remoteControl");
+  });
+
+  it("a users read error -> omitted, and the mint still succeeds (AC11)", async () => {
+    tableResults.users = { data: null, error: { message: "connection reset" } };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty("remoteControl");
+  });
+});
+
 // Nick, 28 Aug 2026: isolating EVERY launch put even a lone first session in
 // a throwaway `.claude/worktrees/<id>` copy. The mint route now answers
 // "is another of your sessions already live on this board?" and the client

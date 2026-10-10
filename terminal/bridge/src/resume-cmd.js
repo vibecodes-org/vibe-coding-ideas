@@ -84,15 +84,38 @@
 // risk fighting that native tracking rather than helping it. This mirrors
 // `model`/`permissionMode`'s own "a resumed conversation keeps what it
 // already had" rule exactly.
+//
+// `remoteControl` (task 5c8969cc, "Start with Remote Control on") inserts the
+// fixed literal `--remote-control` IMMEDIATELY after `claude` on branches
+// 2, 3 and 4 — never branch 1 (an explicit --cmd is never touched). Two
+// reasons it differs from the flags above:
+//   - Placement: `--remote-control [name]` takes an OPTIONAL name. index.js
+//     appends the bootstrap prompt as the next bare argv element after this
+//     command, so if the flag were last Claude would read the prompt as the
+//     session name. Straight after `claude` it is always followed by another
+//     flag, never a bare argument.
+//   - Resumes honour it too: Remote Control only lasts for one run of
+//     claude, so a resumed session that doesn't ask again loses it. The app
+//     decides whether a resume link carries the field at all
+//     (REMOTE_CONTROL_APPLIES_TO_RESUME in
+//     src/lib/terminal/remote-control-mode.ts), so changing that rule never
+//     needs a helper release.
+// Strict `=== true`; no user text ever. Off = byte-identical command.
 
 /**
- * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
+ * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId }) {
+export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, mintId }) {
+  // Task 5c8969cc: the fixed literal, IMMEDIATELY after `claude`, on every
+  // Claude branch. `--remote-control [name]` takes an OPTIONAL name: placed
+  // anywhere else, the next bare argv element (the bootstrap prompt, which
+  // index.js appends after this command) would be read as the session name.
+  // Strict `=== true`; no user text ever. Off = byte-identical command.
+  const rc = remoteControl === true ? " --remote-control" : "";
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
-  if (resumeId) return { cmd: `claude --resume ${resumeId}`, conv: resumeId };
-  if (resume) return { cmd: "claude --continue", conv: null };
+  if (resumeId) return { cmd: `claude${rc} --resume ${resumeId}`, conv: resumeId };
+  if (resume) return { cmd: `claude${rc} --continue`, conv: null };
   const conv = mintId();
   const modelFlag = model ? ` --model ${model}` : "";
   // Defense-in-depth re-check: only the exact literal is ever appended, no
@@ -102,7 +125,7 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
   // whitespace-free single argv token, same posture as the `--session-id`
   // flag it already rides alongside.
   const worktreeFlag = worktree ? ` --worktree ${conv}` : "";
-  return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`, conv };
+  return { cmd: `claude${rc} --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`, conv };
 }
 
 // ── Codex support (docs/codex-terminal-requirements.md FR-2, AC-3) ──────────
@@ -124,7 +147,7 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
 // those are ever safe to forward to Codex (either meaningless or actively
 // wrong), so the codex branch below refuses to emit them regardless of what
 // the caller passes in (AC-3's hard requirement) — `model`/`permissionMode`/
-// `worktree` are simply never read on that branch.
+// `worktree`/`remoteControl` are simply never read on that branch.
 
 // Dependency-free mirrors of validateCodexModelValue / validateReasoningEffort
 // (src/lib/codex-models.ts) — the bridge can't import the app's TS. Kept in
@@ -154,12 +177,15 @@ function codexModelFlags(model, effort) {
  * anything other than the exact literal `"codex"` delegates straight to
  * {@link resolveClaudeLaunch} (Claude's own four branches, unchanged).
  *
- * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, mintId: () => string }} opts
+ * `remoteControl` (task 5c8969cc) is Claude-only: passed into
+ * {@link resolveClaudeLaunch} and never read on the Codex branch.
+ *
+ * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, mintId }) {
+export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, remoteControl, mintId }) {
   if (agent !== "codex") {
-    return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, mintId });
+    return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, mintId });
   }
   // An explicit --cmd/BRIDGE_CMD override always wins (dev/test convenience),
   // identical posture to Claude's branch 1 — `conv` is null either way.
@@ -173,7 +199,7 @@ export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model
   if (resume) return { cmd: "codex resume --last", conv: null };
   // Fresh launch: Codex has no pre-assignable session id (§2.2), so `conv` is
   // honestly null. FR-4: open on the chosen Codex model + effort when both
-  // validate, else bare `codex`. `model`/`permissionMode`/`worktree` (Claude's)
-  // are still never read here.
+  // validate, else bare `codex`. `model`/`permissionMode`/`worktree`/
+  // `remoteControl` (Claude's) are still never read here.
   return { cmd: `codex${codexModelFlags(codexModel, codexEffort)}`, conv: null };
 }
