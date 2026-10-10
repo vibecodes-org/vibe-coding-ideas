@@ -94,8 +94,13 @@
  *  fetches the board's agents and passes them as `claude --agents`, so each
  *  workflow step's persona runs as a real subagent at its tier's model and
  *  effort. An older helper simply launches without them (steps fall back to
- *  the pasted-persona path) — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.19";
+ *  the pasted-persona path) — soft nudge.
+ *  0.3.20 (task 5c8969cc, 10 Oct 2026): first helper whose bridge understands
+ *  the launch link's `remoteControl=1` and starts Claude Code with
+ *  `--remote-control` (straight after `claude`; new and resumed sessions;
+ *  never Codex). An older helper ignores it and starts without Remote
+ *  Control — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.20";
 
 export type HelperVersionParts = readonly [number, number, number];
 
