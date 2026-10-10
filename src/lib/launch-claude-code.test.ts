@@ -317,7 +317,7 @@ describe("buildBoardBootstrapPrompt", () => {
     // A freshly created board has nothing ASSIGNED, so get_my_tasks would
     // return empty — the prompt must drive get_board instead.
     expect(p).toContain("get_board");
-    expect(p).toContain("Do NOT use get_my_tasks");
+    expect(p).toContain("rather than get_my_tasks");
     expect(p).toContain("My Idea");
     expect(p).not.toContain("mkdir -p");
   });
@@ -343,7 +343,7 @@ describe("buildBoardBootstrapPrompt", () => {
       repoUrl: "https://github.com/acme/widget",
     });
     expect(p).toContain("Only ever pick a task from To Do or Backlog");
-    expect(p).toMatch(/NEVER touch a task already in In Progress, Blocked, or Verify/);
+    expect(p).toMatch(/never touch a task already in In Progress, Blocked, or Verify/i);
     expect(p).toMatch(/Another live session may be actively working it right now/);
   });
 
@@ -358,10 +358,10 @@ describe("buildBoardBootstrapPrompt", () => {
       mode: "existing",
       repoUrl: "https://github.com/acme/widget",
     });
-    expect(p).toMatch(/ASK me first, don't just start/);
-    expect(p).toMatch(/STOP and ask me/);
+    expect(p).toMatch(/ask me first rather than just starting/i);
+    expect(p).toMatch(/stop and ask me/i);
     expect(p).toMatch(/Wait for my reply/);
-    expect(p).toMatch(/Do NOT call get_task, assign, move or start anything before I answer/);
+    expect(p).toMatch(/Don't call get_task, assign, move or start anything before I answer/);
   });
 
   it("create-new mode injects mkdir and git clone when repo present", () => {
@@ -403,7 +403,7 @@ describe("buildBoardBootstrapPrompt", () => {
     // Tells the agent to check existence and reuse rather than blindly create.
     expect(p).toMatch(/already exists/i);
     expect(p).toMatch(/reuse it as-is|use them as-is|leave it/i);
-    expect(p).toMatch(/do NOT (re-clone|overwrite|clone over)/i);
+    expect(p).toMatch(/(don't|without) (re-clone|overwrit|clone over)/i);
   });
 
   it("guards ENCODED length to <= 5000 keeping the MCP head", () => {
@@ -1477,7 +1477,7 @@ describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", ()
     const cd = p.indexOf("mkdir -p");
     const pwd = p.indexOf("Run `pwd`");
     const record = p.indexOf("record_project_path");
-    const writeGuard = p.indexOf("Only AFTER you are confirmed inside the project folder");
+    const writeGuard = p.indexOf("Only after you are confirmed inside the project folder");
     expect(cd).toBeGreaterThanOrEqual(0);
     expect(pwd).toBeGreaterThan(cd);
     expect(record).toBeGreaterThan(pwd);
