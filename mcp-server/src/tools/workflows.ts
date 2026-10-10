@@ -229,6 +229,28 @@ export function resolvePersonaAdherence(
   return { personaUsed, personaHonored: personaUsed === "verbatim" };
 }
 
+/** File-format words a deliverable's trailing parenthetical can name, mapped to how the claim text spells them. */
+const DELIVERABLE_FORMATS: Record<string, string> = {
+  html: "HTML", json: "JSON", csv: "CSV", tsv: "TSV", pdf: "PDF", svg: "SVG", png: "PNG", xml: "XML",
+  yaml: "YAML", yml: "YAML", sql: "SQL", markdown: "Markdown", md: "Markdown", txt: "TXT", css: "CSS",
+};
+const DELIVERABLE_FORMAT_WORD = new RegExp(`\\b(${Object.keys(DELIVERABLE_FORMATS).join("|")})\\b`, "i");
+/** Formats read letter by letter starting with a vowel sound ("an HTML file"). */
+const ARTICLE_AN_FORMATS = new Set(["HTML", "SVG", "SQL", "XML"]);
+
+/**
+ * The file format a deliverable asks for, or null. Only a trailing
+ * parenthetical that names a real format counts — "(HTML)" or "(HTML, attached
+ * to card)" do; "(pass / blocking issues)" or "(if any)" describe the
+ * deliverable and must not become "write this as a pass / blocking issues file"
+ * (found in a live persona test on 10 Oct 2026).
+ */
+export function deliverableFileFormat(deliverable: string): string | null {
+  const paren = deliverable.match(/\(([^)]+)\)\s*$/);
+  const word = paren?.[1].match(DELIVERABLE_FORMAT_WORD);
+  return word ? DELIVERABLE_FORMATS[word[1].toLowerCase()] : null;
+}
+
 // ============================================================
 // Template Tools
 // ============================================================
@@ -1098,17 +1120,22 @@ export async function claimNextStep(
   }
 
   if (expected_deliverables.length > 0) {
+    let anyFormat = false;
     const deliverableLines = expected_deliverables.map((d: string) => {
-      // Extract format hint from parenthetical like "Design document (HTML)"
-      const formatMatch = d.match(/\(([^)]+)\)\s*$/);
-      const formatNote = formatMatch
-        ? ` — write this as a ${formatMatch[1]} file (not markdown).`
+      // Format hint from a parenthetical like "Design document (HTML)" — only
+      // when it names a real file format (see deliverableFileFormat).
+      const format = deliverableFileFormat(d);
+      if (format) anyFormat = true;
+      const formatNote = format
+        ? ` — write this as ${ARTICLE_AN_FORMATS.has(format) ? "an" : "a"} ${format} file${format === "Markdown" ? "" : " (not markdown)"}.`
         : "";
       return `- ${d}${formatNote}`;
     });
     contextParts.push(
-      `EXPECTED DELIVERABLES: produce the following:\n${deliverableLines.join("\n")}\n` +
-      `A format in parentheses is part of the deliverable (e.g. "(HTML)" means a valid HTML file, not markdown).`
+      `EXPECTED DELIVERABLES: produce the following:\n${deliverableLines.join("\n")}` +
+      (anyFormat
+        ? `\nA format in parentheses is part of the deliverable (e.g. "(HTML)" means a valid HTML file, not markdown).`
+        : "")
     );
   }
 

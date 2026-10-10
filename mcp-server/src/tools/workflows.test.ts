@@ -32,6 +32,7 @@ import {
   addStepComment,
   addStepCommentSchema,
   resetWorkflow,
+  deliverableFileFormat,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
 
@@ -541,10 +542,54 @@ describe("claimNextStep", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).toContain("EXPECTED DELIVERABLES");
-    expect(r.instruction).toContain("write this as a HTML file");
-    expect(r.instruction).toContain("not markdown");
-    // Non-parenthetical deliverable should not get a format note
-    expect(r.instruction).not.toContain("write this as a Component file");
+    expect(r.instruction).toContain("- Design document (HTML) — write this as an HTML file (not markdown).");
+    expect(r.instruction).toContain("- Component inventory\n");
+    expect(r.instruction).toContain('A format in parentheses is part of the deliverable');
+  });
+
+  // Live persona test, 10 Oct 2026: "Verification note (repro re-run, test
+  // checked, nearby behaviour)" became "write this as a repro re-run, test
+  // checked, nearby behaviour file (not markdown)".
+  it("only reads a parenthetical as a format when it names a real file format", async () => {
+    const step = makeStepRow({
+      step_order: 1,
+      expected_deliverables: [
+        "Code review verdict (pass / blocking issues)",
+        "Decision pack (HTML, attached to card)",
+        "Follow-up cards (if any)",
+      ],
+    });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+
+    expect(r.instruction).toContain("- Code review verdict (pass / blocking issues)\n");
+    expect(r.instruction).toContain(
+      "- Decision pack (HTML, attached to card) — write this as an HTML file (not markdown).",
+    );
+    expect(r.instruction).toContain("- Follow-up cards (if any)\n");
+    expect(r.instruction).not.toMatch(/write this as an? (pass|if any)/);
+    expect(r.instruction).toContain("A format in parentheses is part of the deliverable");
+  });
+
+  it("drops the format sentence when no deliverable names a format", async () => {
+    const step = makeStepRow({
+      step_order: 1,
+      expected_deliverables: ["Verification note (repro re-run, test checked, nearby behaviour)", "Follow-up cards (if any)"],
+    });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+
+    expect(r.instruction).toContain(
+      "EXPECTED DELIVERABLES: produce the following:\n" +
+        "- Verification note (repro re-run, test checked, nearby behaviour)\n" +
+        "- Follow-up cards (if any)\n\n",
+    );
+    expect(r.instruction).not.toContain("write this as");
+    expect(r.instruction).not.toContain("A format in parentheses");
   });
 
   it("omits format constraint for deliverables without parenthetical", async () => {
@@ -4813,6 +4858,32 @@ describe("resolvePersonaAdherence", () => {
 
   it("omitted -> both NULL (never false — not reported is not a violation)", () => {
     expect(resolvePersonaAdherence(undefined)).toEqual({ personaUsed: null, personaHonored: null });
+  });
+});
+
+describe("deliverableFileFormat", () => {
+  it.each([
+    ["Design document (HTML)", "HTML"],
+    ["Decision pack (HTML, attached to card)", "HTML"],
+    ["Clickable mock-up (self-contained HTML)", "HTML"],
+    ["API schema (json)", "JSON"],
+    ["Config (yml)", "YAML"],
+    ["Release notes (md)", "Markdown"],
+    ["Export (CSV) ", "CSV"],
+  ])("%s -> %s", (deliverable, format) => {
+    expect(deliverableFileFormat(deliverable)).toBe(format);
+  });
+
+  it.each([
+    "Code review verdict (pass / blocking issues)",
+    "Follow-up cards (if any)",
+    "Verification note (repro re-run, test checked, nearby behaviour)",
+    "Responsive check (375px + 1280px)",
+    "Component (Storybook)",
+    "Design document (HTML) and notes",
+    "Requirements doc",
+  ])("%s -> null", (deliverable) => {
+    expect(deliverableFileFormat(deliverable)).toBeNull();
   });
 });
 
