@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHash } from "node:crypto";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
+import { sessionAgentClaimHint } from "../../../src/lib/terminal/session-agents";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
 
 // AI role matching hits the network — stub it so applyWorkflowTemplate can run
@@ -1042,8 +1043,11 @@ describe("claimNextStep — persona embedding", () => {
         const explicit = await claimNextStep(ctx(), { task_id: TASK_ID, agent: "claude" });
         expect(explicit.instruction).toBe(implicit.instruction);
         expect(explicit).not.toHaveProperty("execution");
+        // Task 59889027 added one NATIVE SUBAGENT paragraph on the embedded
+        // paths; everything else must stay byte-identical, so pin the rest.
+        const preexisting = implicit.instruction!.replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "");
         hashes[`${tier ?? "auto"}/${systemPrompt ? "embedded" : "missing"}`] =
-          createHash("sha256").update(implicit.instruction!).digest("hex");
+          createHash("sha256").update(preexisting).digest("hex");
       }
     }
     expect(hashes).toMatchInlineSnapshot(`
@@ -1058,6 +1062,53 @@ describe("claimNextStep — persona embedding", () => {
         "standard/missing": "bb8a4899755814b4d9fc94ed32f7c083518d1aad24649e79eec1c5901848d854",
       }
     `);
+  });
+
+  // Task 59889027: in-app terminal launches define the board's agents as real
+  // Claude Code subagents; the claim names the one for this step.
+  describe("native subagent hint", () => {
+    const PERSONA = "You are Atlas. Preserve the user's work.";
+    type NativeClaim = { native_subagent?: { name: string; tag: string }; instruction?: string };
+
+    it("names the session subagent and its tag for a Claude claim of an embedded persona", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
+      const expected = sessionAgentClaimHint({
+        bot: { id: PERSONA_BOT_ID, name: "Atlas", system_prompt: PERSONA },
+        tier: "frontier",
+        model: "opus",
+        effort: "high",
+      });
+      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+      expect(result.instruction).toContain(expected.instruction);
+      // Placed straight after the spawn steps it refines, before the skills/context blocks.
+      expect(result.instruction!.indexOf("NATIVE SUBAGENT:")).toBeGreaterThan(result.instruction!.indexOf("RELIABILITY:"));
+    });
+
+    it("uses the untiered subagent on an Auto step", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: null });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
+      expect(result.native_subagent?.name.endsWith("-frontier")).toBe(false);
+      expect(result.native_subagent?.tag).toContain(" auto auto]");
+    });
+
+    it("adds nothing when the bot has no persona", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: null });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
+      expect(result).not.toHaveProperty("native_subagent");
+      expect(result.instruction).not.toContain("NATIVE SUBAGENT");
+    });
+
+    it("adds nothing to a Codex claim", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" })) as NativeClaim;
+      expect(result).not.toHaveProperty("native_subagent");
+      expect(result.instruction).not.toContain("NATIVE SUBAGENT");
+    });
   });
 
   it("embeds persona_prompt/persona_name/persona_role when the matched bot has a system_prompt", async () => {
