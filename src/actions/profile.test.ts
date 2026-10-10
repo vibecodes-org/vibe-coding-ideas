@@ -30,6 +30,7 @@ import {
   updateTerminalCodexModel,
   updateTerminalPreferences,
   getTerminalAutoAccept,
+  getTerminalRemoteControl,
   updateTerminalAutoAccept,
 } from "./profile";
 import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
@@ -462,7 +463,8 @@ describe("updateTerminalPreferences", () => {
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
       terminalAutoAccept: true,
-    })).resolves.toMatchObject({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+      terminalRemoteControl: true,
+    })).resolves.toMatchObject({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high", terminalRemoteControl: true });
 
     expect(updatedWith).toEqual({
       model_tier_map: { standard: { claude: { model: "sonnet", effort: "medium" } } },
@@ -470,6 +472,7 @@ describe("updateTerminalPreferences", () => {
       terminal_codex_model: "gpt-6-astra",
       terminal_codex_effort: "high",
       terminal_auto_accept: true,
+      terminal_remote_control: true,
     });
     expect(scopedTo).toEqual({ id: FAKE_USER_ID });
     expect(mockSupabase.from).toHaveBeenCalledTimes(1);
@@ -482,6 +485,7 @@ describe("updateTerminalPreferences", () => {
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: null,
       terminalAutoAccept: false,
+      terminalRemoteControl: false,
     })).rejects.toThrow(/model and reasoning effort/i);
     expect(mockSupabase.from).not.toHaveBeenCalled();
   });
@@ -489,9 +493,49 @@ describe("updateTerminalPreferences", () => {
   it("rejects unauthenticated callers without writing another user's row", async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
     await expect(updateTerminalPreferences({
-      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false,
+      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false, terminalRemoteControl: false,
     })).rejects.toThrow("Not authenticated");
     expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-boolean terminalRemoteControl ('yes', undefined, 1) before any write (task 5c8969cc)", async () => {
+    for (const terminalRemoteControl of ["yes", undefined, 1]) {
+      await expect(updateTerminalPreferences({
+        agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false,
+        terminalRemoteControl: terminalRemoteControl as unknown as boolean,
+      })).rejects.toThrow("Invalid terminal preferences");
+    }
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("getTerminalRemoteControl (task 5c8969cc)", () => {
+  function selectReturning(result: { data: unknown; error: unknown }) {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve(result) }) }),
+    }));
+  }
+
+  it("returns true when the stored preference is on", async () => {
+    selectReturning({ data: { terminal_remote_control: true }, error: null });
+    expect(await getTerminalRemoteControl()).toBe(true);
+  });
+
+  it("returns false when off or unset", async () => {
+    selectReturning({ data: { terminal_remote_control: false }, error: null });
+    expect(await getTerminalRemoteControl()).toBe(false);
+    selectReturning({ data: null, error: null });
+    expect(await getTerminalRemoteControl()).toBe(false);
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(getTerminalRemoteControl()).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    selectReturning({ data: null, error: { message: "connection lost" } });
+    await expect(getTerminalRemoteControl()).rejects.toThrow("connection lost");
   });
 });
 

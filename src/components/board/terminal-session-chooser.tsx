@@ -85,6 +85,19 @@ export interface TerminalSessionChooserProps {
    */
   autoAcceptChip?: string | null;
   /**
+   * Task 5c8969cc ("Start with Remote Control on") — the violet label shown
+   * straight after the auto chip on the model line, e.g. "📱 remote control
+   * on". Omitted when null/undefined (loading, off, or Codex picked). See
+   * terminalLaunchRemoteControlChip in src/lib/terminal/remote-control-mode.ts.
+   */
+  remoteControlChip?: string | null;
+  /**
+   * Task 5c8969cc — the "new sessions only" reminder line, only when resumes
+   * don't carry Remote Control (REMOTE_CONTROL_APPLIES_TO_RESUME false).
+   * Omitted when null/undefined.
+   */
+  remoteControlReminder?: string | null;
+  /**
    * Persist a rename (card 3bf262ac) — the dock's shared `renameSession`:
    * PATCHes the session and, on success, keeps the dock's own registry rows
    * and any live tab entry in sync. This component owns its OWN optimistic
@@ -165,6 +178,8 @@ export function TerminalSessionChooser({
   onStartNew,
   modelLine = null,
   autoAcceptChip = null,
+  remoteControlChip = null,
+  remoteControlReminder = null,
   onRenameSession,
   cap,
   helperStatus = null,
@@ -414,6 +429,9 @@ export function TerminalSessionChooser({
           <p className="mt-1.5 text-[11px] text-zinc-500">
             {modelLine}
             {autoAcceptChip && <span className="ml-1 font-semibold text-amber-400">· {autoAcceptChip}</span>}
+            {remoteControlChip && (
+              <span className="ml-1 whitespace-nowrap font-semibold text-violet-400">· {remoteControlChip}</span>
+            )}
           </p>
         )}
         {/* Task d3de150c: fresh-launches-only reminder, shown only when the
@@ -425,6 +443,7 @@ export function TerminalSessionChooser({
             Only a fresh session starts in auto-accept mode — reconnecting or resuming keeps asking.
           </p>
         )}
+        {remoteControlReminder && <p className="mt-1 text-[11px] text-zinc-500">{remoteControlReminder}</p>}
       </div>
 
       {sections.liveHere.length > 0 && (

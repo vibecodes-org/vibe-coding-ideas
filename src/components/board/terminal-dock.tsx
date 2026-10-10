@@ -88,6 +88,11 @@ import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-m
 import { useViewerTerminalModel } from "@/hooks/use-viewer-terminal-model";
 import { useViewerTerminalAutoAccept } from "@/hooks/use-viewer-terminal-auto-accept";
 import { terminalLaunchAutoAcceptChip } from "@/lib/terminal/auto-accept-mode";
+import { useViewerTerminalRemoteControl } from "@/hooks/use-viewer-terminal-remote-control";
+import {
+  terminalLaunchRemoteControlChip,
+  terminalLaunchRemoteControlReminder,
+} from "@/lib/terminal/remote-control-mode";
 import { useViewerTerminalAgent, persistViewerTerminalAgent } from "@/hooks/use-viewer-terminal-agent";
 import type { LaunchAgent } from "@/lib/terminal/agent-launch";
 import { CODEX_SETTINGS_LINE, agentDedupeToast } from "@/lib/terminal/agent-copy";
@@ -306,6 +311,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const viewerTerminalModel = useViewerTerminalModel();
   const viewerAutoAccept = useViewerTerminalAutoAccept();
+  // Task 5c8969cc — the "📱 remote control on" launch label's source.
+  const viewerRemoteControl = useViewerTerminalRemoteControl();
   // Codex support (docs/codex-terminal-requirements.md FR-4a/US-8,
   // implementation slice 2) — the per-account remembered agent pick, seeded
   // into the picker's local state the first time it resolves (see the effect
@@ -2637,6 +2644,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // keeping the block's height stable (never hide, only replace).
   const chooserModelLine = chooserAgent === "codex" ? CODEX_SETTINGS_LINE : terminalModelLine;
   const chooserAutoAcceptChip = chooserAgent === "codex" ? null : terminalAutoAcceptChip;
+  // Task 5c8969cc — the violet label straight after the auto chip; hidden for
+  // Codex, null while loading or off. Its reminder only shows when resumes
+  // don't carry Remote Control.
+  const terminalRemoteControlChip =
+    viewerRemoteControl === undefined ? null : terminalLaunchRemoteControlChip(viewerRemoteControl);
+  const chooserRemoteControlChip = chooserAgent === "codex" ? null : terminalRemoteControlChip;
+  const chooserRemoteControlReminder = chooserRemoteControlChip ? terminalLaunchRemoteControlReminder("chooser") : null;
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
@@ -2710,6 +2724,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // scoped to "Start fresh anyway" (Reconnect/Resume never read either line).
   const taskDialogModelLine = taskDialogAgent === "codex" ? CODEX_SETTINGS_LINE : terminalTaskDialogModelLine;
   const taskDialogAutoAcceptChip = taskDialogAgent === "codex" ? null : terminalTaskDialogAutoAcceptChip;
+  // Task 5c8969cc — same label and reminder for "Start fresh anyway".
+  const taskDialogRemoteControlChip = taskDialogAgent === "codex" ? null : terminalRemoteControlChip;
+  const taskDialogRemoteControlReminder = taskDialogRemoteControlChip
+    ? terminalLaunchRemoteControlReminder("dialog")
+    : null;
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
   // status is usually mid-preemption at this exact moment and would
@@ -2953,6 +2972,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onStartNew={handleChooserStartNew}
             modelLine={chooserModelLine}
             autoAcceptChip={chooserAutoAcceptChip}
+            remoteControlChip={chooserRemoteControlChip}
+            remoteControlReminder={chooserRemoteControlReminder}
             agent={chooserAgent}
             onAgentChange={handleAgentPickerChange}
             sharesFolderWarning={otherLiveHere.length > 0}
@@ -3641,6 +3662,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onStartNew={handleChooserStartNew}
             modelLine={chooserModelLine}
             autoAcceptChip={chooserAutoAcceptChip}
+            remoteControlChip={chooserRemoteControlChip}
+            remoteControlReminder={chooserRemoteControlReminder}
             agent={chooserAgent}
             onAgentChange={handleAgentPickerChange}
             sharesFolderWarning={otherLiveHere.length > 0}
@@ -3674,6 +3697,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onCancel={handleTaskChoiceCancel}
           modelLine={taskDialogModelLine}
           autoAcceptChip={taskDialogAutoAcceptChip}
+          remoteControlChip={taskDialogRemoteControlChip}
+          remoteControlReminder={taskDialogRemoteControlReminder}
           agent={taskDialogAgent}
           onAgentChange={setTaskDialogAgent}
         />

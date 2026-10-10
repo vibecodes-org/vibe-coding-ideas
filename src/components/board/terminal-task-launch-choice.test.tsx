@@ -291,3 +291,42 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(screen.getByRole("button", { name: /start fresh anyway/i })).toBeDisabled();
   });
 });
+
+describe("TerminalTaskLaunchChoice — Remote Control label (task 5c8969cc)", () => {
+  function renderDialog(props: { remoteControlChip?: string | null; remoteControlReminder?: string | null }) {
+    return render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+        modelLine="Starts on Opus 5.5 · your setting."
+        autoAcceptChip="⚡ auto mode on"
+        {...props}
+      />,
+    );
+  }
+
+  it("renders '· 📱 remote control on' in violet straight after the auto chip", () => {
+    renderDialog({ remoteControlChip: "📱 remote control on" });
+    const rc = screen.getByText("· 📱 remote control on");
+    expect(rc).toHaveClass("ml-1", "whitespace-nowrap", "font-semibold", "text-violet-400");
+    expect(screen.getByText("· ⚡ auto mode on").nextElementSibling).toBe(rc);
+  });
+
+  it("renders nothing when null", () => {
+    renderDialog({ remoteControlChip: null });
+    expect(screen.queryByText(/remote control on/)).not.toBeInTheDocument();
+  });
+
+  it("renders the reminder only when given", () => {
+    const reminder = "Only starting fresh applies Remote Control.";
+    const { unmount } = renderDialog({ remoteControlChip: "📱 remote control on" });
+    expect(screen.queryByText(reminder)).not.toBeInTheDocument();
+    unmount();
+    renderDialog({ remoteControlChip: "📱 remote control on", remoteControlReminder: reminder });
+    expect(screen.getByText(reminder)).toHaveClass("mt-1", "text-[11px]", "text-zinc-500");
+  });
+});
