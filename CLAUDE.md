@@ -175,7 +175,8 @@ Migrations live in `supabase/migrations/`, numbered `NNNNN_name.sql` — `ls` it
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates, user_workflow_templates, workflow_suggestions
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, agent_skills, featured_teams, featured_team_agents
-- **Terminal**: idea_project_paths (recorded project folder per idea + machine)
+- **Terminal**: idea_project_paths (recorded project folder per idea + machine), terminal_sessions (the in-app terminal's session registry)
+- **Kits**: project_kits, kit_workflow_mappings
 - **AI**: ai_usage_log, ai_prompt_templates, idea_role_match_cache, platform_settings
 - **MCP**: mcp_oauth_clients, mcp_oauth_codes, mcp_tool_log, mcp_tool_stats, mcp_agent_sessions (retired with `set_agent_identity`; dropped in the pending Phase B task ec2bde45)
 - **User/integration**: user_api_keys, user_github_connections, github_oauth_states, pending_uploads
@@ -183,11 +184,9 @@ Migrations live in `supabase/migrations/`, numbered `NNNNN_name.sql` — `ls` it
 
 Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separates destructive ops from general admin access.
 
-### ⚠️ Tables that exist in the DB but are MISSING from `database.ts`
+### ⚠️ A table that exists in the DB but is MISSING from `database.ts`
 
-`database.ts` is hand-maintained, and it has drifted. These are created by migrations but have no typed entry, so any query against them resolves to `never` — add the full `Row`/`Insert`/`Update`/`Relationships` block before using them:
-
-`terminal_sessions` (created in 00141, extended by later `*terminal*` migrations — the in-app terminal's own session store), `project_kits`, `kit_workflow_mappings`, `bot_profile_prompt_backups`.
+`database.ts` is hand-maintained. `bot_profile_prompt_backups` (the persona-rewrite safety copies, written only by migrations) is created by migration 00148 but has no typed entry, so a query against it from app code resolves to `never` — add the full `Row`/`Insert`/`Update`/`Relationships` block before using it. (Some table blocks in `database.ts` are indented one level less than the rest; search for `<table>: {` without assuming the indentation.)
 
 (`board_checklist_items` also appears in migrations but was later dropped — it is correctly absent, don't re-add it.)
 
