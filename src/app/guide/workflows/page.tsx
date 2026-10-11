@@ -363,6 +363,34 @@ export default function WorkflowsPage() {
               critical checkpoints.
             </p>
           </div>
+          <h3 className="mb-3 mt-6 text-lg font-semibold">Where to put approval gates</h3>
+          <p className="mb-4 text-muted-foreground">
+            You are usually the slowest part of a workflow, so put your approvals where
+            changing course is cheap. A wrong approach caught at the plan costs minutes; the
+            same mistake caught at sign-off costs a whole build.
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Gate the thinking</strong> — requirements
+              (when they&apos;re contested), the design, and the technical plan.
+            </li>
+            <li>
+              <strong className="text-foreground">Let agents check the doing</strong> —
+              implementation, code review and QA run without a stop; a failed check sends the
+              work back on its own.
+            </li>
+            <li>
+              <strong className="text-foreground">One final gate</strong> — release sign-off.
+            </li>
+          </ul>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">A gate pauses after its step finishes.</strong>{" "}
+              Put it on the step whose result you want to see before the next step starts. A
+              gate on a &ldquo;Deploy&rdquo; step, for example, asks for approval once the
+              change is already live — gate the test step before it instead.
+            </p>
+          </div>
         </section>
 
         <section>
