@@ -1,5 +1,6 @@
-// In-app terminal — the board's agents for a fresh Claude Code or Codex launch
-// (tasks 59889027, e16d69e8). Sibling of session/key/route.ts: the bridge calls
+// In-app terminal — the board's agents for a Claude Code or Codex launch, fresh
+// or resumed (tasks 59889027, e16d69e8, f4bbd75c — a resumed CLI does not keep
+// the agents it was first started with, so the bridge asks again). Sibling of session/key/route.ts: the bridge calls
 // this directly (never through the relay or the length-capped launch link)
 // with the bridge token it already holds, and passes the result to
 // `claude --agents` or writes it out as temporary Codex agent-role files, so

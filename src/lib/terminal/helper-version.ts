@@ -105,8 +105,15 @@
  *  agent-role files in a private temp folder (removed when the session ends)
  *  and registered with `-c agents.<name>.config_file`. An older helper
  *  launches Codex without them (steps fall back to the pasted-persona path)
- *  — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.21";
+ *  — soft nudge.
+ *  0.3.22 (task f4bbd75c, 11 Oct 2026): first helper whose bridge hands a
+ *  RESUMED session the board's agents too (Claude `--resume`/`--continue`,
+ *  Codex `resume <id>`/`resume --last`) — neither CLI keeps them across a
+ *  resume, so after any pick-up (chooser Resume, a refresh, wake or
+ *  reconnect) every workflow step silently fell back to a general helper.
+ *  The resume now waits (≤5s) for the agents before starting the CLI. An
+ *  older helper resumes without them — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.22";
 
 export type HelperVersionParts = readonly [number, number, number];
 

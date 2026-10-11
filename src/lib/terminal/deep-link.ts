@@ -117,7 +117,8 @@ export interface LaunchDeepLinkParams {
    * uses (see use-terminal-session.ts's `currentLaunchDims`). Carrying it on
    * the launch link lets the bridge spawn the PTY at the correct size
    * instead of a hardcoded default — a promptless (Resume) launch spawns its
-   * PTY synchronously, before the browser's own resize can ever reach a
+   * PTY before the relay socket opens (straight after the board's agents are
+   * fetched — task f4bbd75c), before the browser's own resize can ever reach a
    * not-yet-existent process (resize send is gated on status "connected",
    * which itself can't flip before something spawns and streams a byte).
    * Only meaningful as a pair; a caller that hasn't mounted xterm yet (an
