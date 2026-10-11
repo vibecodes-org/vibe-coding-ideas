@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Reading a task never starts it</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d21; --muted: #5b6470; --border: #d9dee5;
+    --surface: #f5f7fa; --code-bg: #eef1f5; --accent: #0b6bcb;
+    --ok: #1a7f4b; --ok-bg: #e7f6ee; --err: #b3261e; --err-bg: #fdeceb;
+    --warn: #a15c00; --warn-bg: #fff4e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --fg: #e6e9ec; --muted: #9aa4b0; --border: #333a42;
+      --surface: #1c2126; --code-bg: #232930; --accent: #6cb2f7;
+      --ok: #4ade80; --ok-bg: #16301f; --err: #f87171; --err-bg: #3a1c1a;
+      --warn: #fbbf24; --warn-bg: #3a2c10;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 1.5rem 1rem 5rem; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .5rem; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 .75rem; padding-top: .9rem; border-top: 2px solid var(--border); }
+  h3 { font-size: 1.02rem; margin: 1.6rem 0 .4rem; }
+  p, li { max-width: 72ch; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; }
+  code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: .8rem .9rem; border-radius: 8px; overflow-x: auto;
+    white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin: .5rem 0 1rem; }
+  pre code { background: none; padding: 0; }
+  .summary { background: var(--surface); border-left: 4px solid var(--accent); padding: .9rem 1rem;
+    border-radius: 6px; margin: 1rem 0 1.5rem; font-size: 1.05rem; }
+  .meta { color: var(--muted); font-size: .9rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .75rem 0 1rem; }
+  .tablewrap { overflow-x: auto; }
+  th, td { border: 1px solid var(--border); padding: .5rem .6rem; text-align: left; vertical-align: top; }
+  th { background: var(--surface); }
+  .ba { display: grid; gap: .75rem; margin: .5rem 0 1rem; }
+  .ba > div { border: 1px solid var(--border); border-radius: 8px; padding: .7rem .85rem; }
+  .ba .before { border-left: 4px solid var(--err); }
+  .ba .after { border-left: 4px solid var(--ok); }
+  .ba .label { font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: .3rem; }
+  .ba pre { margin: 0; }
+  mark { background: var(--ok-bg); color: inherit; padding: 0 .1em; border-radius: 3px; }
+  del { background: var(--err-bg); color: inherit; text-decoration: line-through; }
+  .flow { border: 1px solid var(--border); border-radius: 8px; padding: .8rem .95rem; margin: .8rem 0; }
+  .flow .who { font-weight: 700; }
+  .flow .human { color: var(--accent); }
+  .flow ol { margin: .4rem 0 .2rem; padding-left: 1.3rem; }
+  .pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: .05rem .5rem; border-radius: 999px; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.no { background: var(--err-bg); color: var(--err); }
+  .pill.same { background: var(--warn-bg); color: var(--warn); }
+  .why { color: var(--muted); font-size: .9rem; margin: .2rem 0 0; }
+  .callout { background: var(--warn-bg); border-left: 4px solid var(--warn); padding: .7rem .9rem; border-radius: 6px; margin: 1rem 0; }
+  @media (min-width: 720px) { .ba { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Reading a task never starts it</h1>
+<p class="meta">UX Design step — task 7b0c94c6 — 25 Sep 2026 — branch <code>feat/read-only-task-reads</code></p>
+
+<div class="summary">
+  <strong>In one sentence:</strong> when Claude opens a card to read it, the wording it sees now says "this is just reading — report back and stop; only start the card if the human clearly asked you to work it", so a loose "yes" can no longer turn a read into a claim.
+</div>
+
+<p><strong>What this is.</strong> A wording-only change to the text that connected Claude sessions read from the VibeCodes MCP server. There is <strong>no user-visible UI change</strong>: nothing on the website, no new setting, no database change. Four strings change (three of them in one file), one stays as it is, and one line is added to <code>CLAUDE.md</code>.</p>
+
+<p><strong>Builds on the Requirements step.</strong> It found the same root cause I confirmed in the code: every instruction the agent gets after reading a task presumes work is about to start ("Do NOT begin implementation directly — use claim_next_step…", "Before starting work, pick the team agent…"). None of them say that reading on its own starts nothing. I keep the Requirements strings almost verbatim and make three small edits, each explained below.</p>
+
+<h2>1. What went wrong (the incident, in short)</h2>
+<ol>
+  <li>Human: <em>"pull the board"</em>. Claude called <code>get_board</code> and gave a good summary. Correct.</li>
+  <li>Claude ended with a loose question: <em>"Want me to pick it up and read the card properly?"</em> — "pick it up" and "read it" are two different things in one question.</li>
+  <li>Human: <em>"yes"</em>. Claude called <code>get_task</code>, then read the instruction: <em>"Do NOT begin implementation directly. Use claim_next_step(task_id)…"</em> — which reads as "the right way to start is claim_next_step". It claimed step 4 and spawned a subagent.</li>
+  <li>Human: <em>"what is happening, we are supposed to be reading the cards in Verify"</em>.</li>
+</ol>
+<p>So two things need fixing in the words the agent sees: (a) the tool text must say reading is not starting, and (b) the agent needs a tie-break rule for ambiguous consent — <strong>if unsure, ask; never claim on a guess.</strong> Point (b) is the one addition I make beyond Requirements, because the trigger in the incident was exactly an ambiguous "yes".</p>
+
+<h2>2. Before / after — the exact strings</h2>
+<p>Green marks new words; struck-through red marks removed words. Implementation should copy the "after" text exactly as printed in section 3.</p>
+
+<h3>2a. Task has a workflow with pending steps <span class="pill ok">changed</span></h3>
+<p class="meta">File: <code>mcp-server/src/tools/board-read.ts</code>, the <code>if (pendingCount &gt; 0)</code> branch (around line 297). <code>N</code>/<code>P</code> are the existing template values.</p>
+<div class="ba">
+  <div class="before"><div class="label">Before</div>
+    <pre>This task has a workflow with N steps (P pending). Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.[ Some steps require human approval before proceeding.]</pre></div>
+  <div class="after"><div class="label">After</div>
+    <pre>This task has a workflow with N steps (P pending). <mark>Reading this task does not start it. Report back and stop unless the human has explicitly asked you to work THIS task; if unsure, ask — do not claim. Once asked to work it:</mark> do NOT begin implementation directly — use claim_next_step(task_id) to claim and execute steps sequentially; each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.[ Some steps require human approval before proceeding.]</pre></div>
+</div>
+<p class="why"><strong>Changes from the Requirements draft:</strong> "Do nothing further" → "Report back and stop" (an agent that has just been asked to read must still answer; "do nothing" can be read as "say nothing"). Added "if unsure, ask — do not claim" (the tie-break the incident lacked). "If they have:" → "Once asked to work it:" (unambiguous subject). The orchestrator path is untouched: someone who has been asked to work the task is still pointed straight at <code>claim_next_step(task_id)</code>.</p>
+
+<h3>2b. Task has no workflow <span class="pill ok">changed</span></h3>
+<p class="meta">Same file, the <code>else</code> branch under <code>steps.length === 0</code> (around line 312).</p>
+<div class="ba">
+  <div class="before"><div class="label">Before</div>
+    <pre>This task has no workflow. Before starting work, pick the team agent that best fits it (your .vibecodes config botId, or choose from list_idea_agents) and call update_task with assignee_id set to that agent's ID so the board shows who is working on it. When finished, move the task to the appropriate done/verify column using move_task.</pre></div>
+  <div class="after"><div class="label">After</div>
+    <pre>This task has no workflow. <mark>Reading it does not start it — report back and stop unless the human has explicitly asked you to work this task; if unsure, ask. Once asked to work it,</mark> <del>Before starting work,</del> pick the team agent that best fits it (your .vibecodes config botId, or choose from list_idea_agents) and call update_task with assignee_id set to that agent's ID so the board shows who is working on it. When finished, move the task to the appropriate done/verify column using move_task.</pre></div>
+</div>
+<p class="why"><strong>Change from Requirements:</strong> same "report back and stop" + "if unsure, ask" phrasing as 2a so the two instructions read as one rule, and "If so, before starting work," collapses to "Once asked to work it," (shorter, same meaning). Still contains <code>update_task</code> and <code>assignee_id</code>, which the existing tests check.</p>
+
+<h3>2c. Task has an unresolved workflow suggestion <span class="pill same">unchanged</span></h3>
+<p class="meta">Same file, the <code>workflow_suggestions.length &gt; 0</code> branch (around line 307). Already says "Do NOT begin work or assign yourself" — correct today, leave it.</p>
+<pre>This task has an unresolved workflow suggestion. Do NOT begin work or assign yourself. Surface it to a human to Keep / Replace / Remove. Agents cannot resolve suggestions.</pre>
+
+<h3>2d. The <code>get_task</code> tool description <span class="pill ok">changed</span></h3>
+<p class="meta">File: <code>mcp-server/src/register-tools.ts</code>, the <code>server.tool("get_task", …)</code> description (around line 355). Only the first two sentences change; the comments/truncation sentences and the trailing <code>${LIVE_DATA_SENTENCE}</code> stay exactly as they are.</p>
+<div class="ba">
+  <div class="before"><div class="label">Before (opening)</div>
+    <pre>Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries…</pre></div>
+  <div class="after"><div class="label">After (opening)</div>
+    <pre>Get single task detail including workflow steps, comments, and recent activity. <mark>This is a read-only call: it never claims, assigns or moves anything, and reading a task is not permission to start it. Only act on a task (claim_next_step, update_task, move_task) when the human has explicitly asked you to work that specific task. Once you have been asked to work it and it has pending workflow steps,</mark> <del>If the task has a workflow with pending steps,</del> follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries…</pre></div>
+</div>
+<p class="why">Taken verbatim from Requirements AC-4. No change.</p>
+
+<h3>2e. Server-wide instructions <span class="pill ok">changed</span></h3>
+<p class="meta">File: <code>mcp-server/src/steering-copy.ts</code>, <code>SERVER_INSTRUCTIONS</code>. One sentence appended at the end. <code>LIVE_DATA_SENTENCE</code> and <code>RESPONSE_REMINDER</code> are untouched (the response reminder has a 200-character cap and is not the right place for this).</p>
+<div class="ba">
+  <div class="before"><div class="label">Before (ending)</div>
+    <pre>…Tool calls are cheap; stale reads cause double-claimed tasks and lost work.</pre></div>
+  <div class="after"><div class="label">After (ending)</div>
+    <pre>…Tool calls are cheap; stale reads cause double-claimed tasks and lost work. <mark>Reading board data (get_board, get_task, get_my_tasks) never starts work: when asked to read, review or pull something, report back and stop; only claim, assign or move a task when the human has explicitly asked you to work that specific task.</mark></pre></div>
+</div>
+<p class="why">Taken verbatim from Requirements AC-5. No change. Both transports already import this constant, so the sentence reaches every connected session automatically.</p>
+
+<h3>2f. <code>CLAUDE.md</code> — Board Task Workflow <span class="pill ok">one line added</span></h3>
+<p class="meta">Add one line directly under the heading "Board Task Workflow — BEFORE ANY IMPLEMENTATION", above step 1, so the rule is read before the "reassign to yourself" step.</p>
+<pre>**Reading is not starting.** `get_task` / `get_board` never claim, assign or move anything — only work a card the human has explicitly asked you to work; if unsure, ask first.</pre>
+
+<h2>3. Final strings for Implementation to copy</h2>
+<p>Exactly what goes in the code, with the existing template pieces shown as they are today.</p>
+
+<h3>3a. board-read.ts — pending steps</h3>
+<pre>`This task has a workflow with ${steps.length} steps (${pendingCount} pending). ` +
+`Reading this task does not start it. Report back and stop unless the human has explicitly asked you to work THIS task; if unsure, ask — do not claim. ` +
+`Once asked to work it: do NOT begin implementation directly — use claim_next_step(task_id) to claim and execute steps sequentially; ` +
+`each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
+(hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``)</pre>
+
+<h3>3b. board-read.ts — no workflow</h3>
+<pre>`This task has no workflow. Reading it does not start it — report back and stop unless the human has explicitly asked you to work this task; if unsure, ask. ` +
+`Once asked to work it, pick the team agent that best fits it ` +
+`(your .vibecodes config botId, or choose from list_idea_agents) and call update_task with ` +
+`assignee_id set to that agent's ID so the board shows who is working on it. ` +
+`When finished, move the task to the appropriate done/verify column using move_task.`</pre>
+
+<h3>3c. register-tools.ts — get_task description (full)</h3>
+<pre>`Get single task detail including workflow steps, comments, and recent activity. This is a read-only call: it never claims, assigns or moves anything, and reading a task is not permission to start it. Only act on a task (claim_next_step, update_task, move_task) when the human has explicitly asked you to work that specific task. Once you have been asked to work it and it has pending workflow steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries its own \`comments\` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's \`output\` field is canonical). If a step's \`comments_truncated\` is true, older comments exist beyond the 10 returned; \`comment_count\` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI. ${LIVE_DATA_SENTENCE}`</pre>
+
+<h3>3d. steering-copy.ts — SERVER_INSTRUCTIONS (full)</h3>
+<pre>"VibeCodes board data is live and shared: humans and other agents change it while your session runs. Every board tool response is a snapshot stamped with generated_at — treat it as already aging. Before acting on board state (choosing, moving, or completing anything), call the tool again for current state. Never re-read an earlier response from your transcript, never save responses to files for later, and never write scripts to parse tool output — present it directly. Tool calls are cheap; stale reads cause double-claimed tasks and lost work. Reading board data (get_board, get_task, get_my_tasks) never starts work: when asked to read, review or pull something, report back and stop; only claim, assign or move a task when the human has explicitly asked you to work that specific task."</pre>
+
+<h2>4. Conversation flows — what Claude should do and say</h2>
+<p>These are the "screens" of this design. Each shows the trigger, the tool calls, and the end state. The rule underneath all of them: <strong>read → report → stop. Work only on an explicit ask. Unsure → ask.</strong></p>
+
+<div class="flow">
+  <h3 style="margin-top:0">Flow 1 — "pull the board", then a loose "want me to read it?" → "yes"</h3>
+  <p><span class="who human">Human:</span> "pull the board"</p>
+  <ol>
+    <li>Claude calls <code>get_board</code>, summarises what is in progress / waiting / blocked. <span class="pill ok">read only</span></li>
+    <li>Claude may recommend a next card, but the closing question must have one meaning. <strong>Say:</strong> "Want me to read E5.22 in full (no changes), or start working it?" <strong>Not:</strong> "Want me to pick it up and read the card properly?"</li>
+    <li><span class="who human">Human:</span> "yes" (to the ambiguous version, if it was asked anyway).</li>
+    <li>Claude calls <code>get_task</code>. The response now says "Reading this task does not start it. Report back and stop unless… if unsure, ask — do not claim."</li>
+    <li>Claude reports what the card says (steps done, what is next, open questions) and ends with: "That's the read. Say 'work E5.22' if you want me to claim the next step." <span class="pill no">no claim_next_step, no update_task, no move_task</span></li>
+  </ol>
+  <p class="why">End state: board unchanged. The human decides. This is the incident, fixed.</p>
+</div>
+
+<div class="flow">
+  <h3 style="margin-top:0">Flow 2 — "read the cards in Verify"</h3>
+  <p><span class="who human">Human:</span> "read the cards in Verify"</p>
+  <ol>
+    <li>Claude calls <code>get_board</code> with the Verify column (by name), then <code>get_task</code> for each card there. <span class="pill ok">read only</span></li>
+    <li>For each card, Claude reports <em>what it is waiting on from the human</em>: steps done vs not run, any step sitting at "awaiting approval", the latest comment or failure note, attachments, due date.</li>
+    <li>Example line: "E5.23 Sanity publish loop — all steps done, waiting on you to confirm the publish-to-live test genuinely ran, then move to Done."</li>
+    <li>Claude stops. It does not approve steps, move cards, or reassign. If a card looks wrong (in Verify with 0 of 6 steps run) it says so and asks what the human wants.</li>
+  </ol>
+  <p class="why">The server-wide sentence ("when asked to read, review or pull something, report back and stop") covers this even before any single card is opened.</p>
+</div>
+
+<div class="flow">
+  <h3 style="margin-top:0">Flow 3 — "work task X" (the orchestrator loop, unchanged in behaviour)</h3>
+  <p><span class="who human">Human:</span> "work E5.22" / "pick up E5.22" / "yes" to "start working E5.22?"</p>
+  <ol>
+    <li>Claude may call <code>get_task</code> for context. The instruction's second half applies: "Once asked to work it: do NOT begin implementation directly — use claim_next_step(task_id)…"</li>
+    <li>Claude calls <code>claim_next_step</code>, hands the persona subagent the <code>work_token</code>, runs the step, calls <code>complete_step</code> with the <code>claim_token</code>, loops. <span class="pill ok">as today</span></li>
+    <li>Claude tells the human what it claimed and why, in plain words, as it does now.</li>
+  </ol>
+  <p class="why">The explicit ask names the task, so the "unless" clause is satisfied. Nothing about claiming, tokens or approval gates changes.</p>
+</div>
+
+<div class="flow">
+  <h3 style="margin-top:0">Flow 4 — task with no workflow: read vs work</h3>
+  <p><strong>Read:</strong> <span class="who human">Human:</span> "what's on the trademark card?" → <code>get_task</code> → Claude summarises the card and its comments → stops. No <code>update_task</code>, no assignee change. The new opening ("Reading it does not start it — report back and stop unless…") applies.</p>
+  <p><strong>Work:</strong> <span class="who human">Human:</span> "do the trademark card" → <code>get_task</code> → Claude picks the best-fitting team agent and calls <code>update_task</code> with <code>assignee_id</code> so the board shows who is on it → does the work → <code>move_task</code> to the done/verify column when finished. <span class="pill ok">as today</span></p>
+</div>
+
+<div class="flow">
+  <h3 style="margin-top:0">Flow 5 — task with an unresolved workflow suggestion <span class="pill same">unchanged</span></h3>
+  <p>Read or work, the answer is the same: Claude tells the human the card has a workflow suggestion waiting to be kept, replaced or removed, and that only a human can resolve it. No claim, no self-assign. The existing string already says this.</p>
+</div>
+
+<div class="callout">
+  <strong>The one habit change for Claude:</strong> never end a board summary with a two-meaning question. If the offer is to read, say "read"; if it is to start, say "start working". And if a human's reply could mean either, ask one more time rather than claiming.
+</div>
+
+<h2>5. Edge cases checked</h2>
+<div class="tablewrap"><table>
+  <tr><th>Situation</th><th>What the wording now does</th></tr>
+  <tr><td>Orchestrator re-reads a task mid-run (it has already been asked to work it)</td><td>The "unless the human has explicitly asked you to work THIS task" clause is satisfied; it proceeds to <code>claim_next_step</code> as before.</td></tr>
+  <tr><td>Human says "yes" to "read or work?" without picking</td><td>"if unsure, ask — do not claim" → Claude asks once more.</td></tr>
+  <tr><td>All steps completed (no pending)</td><td><code>workflow_instruction</code> stays <code>null</code>, as today. Nothing to change.</td></tr>
+  <tr><td>Approval gates present</td><td>The "Some steps require human approval before proceeding." tail is still appended, so the existing test for "human approval" still passes.</td></tr>
+  <tr><td>Launched from the VibeCodes terminal with a task in the launch prompt</td><td>That prompt already says which task to work; it counts as the explicit ask. Launch prompts are out of scope and unchanged.</td></tr>
+  <tr><td>Token budget</td><td>Roughly +45 words on the pending-steps string, +30 on no-workflow, +45 on the tool description, +40 on server instructions. Small, and only paid once per session for the descriptions.</td></tr>
+</table></div>
+
+<h2>6. Implementation checklist (for the next step)</h2>
+<ol>
+  <li><code>mcp-server/src/tools/board-read.ts</code> — replace the two strings (3a, 3b). Leave the suggestion string alone.</li>
+  <li><code>mcp-server/src/register-tools.ts</code> — replace the <code>get_task</code> description opening (3c). Keep the <code>${LIVE_DATA_SENTENCE}</code> tail.</li>
+  <li><code>mcp-server/src/steering-copy.ts</code> — append the sentence to <code>SERVER_INSTRUCTIONS</code> (3d).</li>
+  <li><code>CLAUDE.md</code> — add the one line (2f) under the Board Task Workflow heading.</li>
+  <li>Tests to add:
+    <ul>
+      <li><code>mcp-server/src/tools/board-read.test.ts</code> (the "getTask — workflow_instruction" block, ~line 284): pending-steps case asserts <code>toContain("Reading this task does not start it")</code>, <code>toContain("explicitly asked you to work THIS task")</code>, <code>toContain("do not claim")</code>, and still <code>toContain("claim_next_step")</code>; no-workflow case asserts <code>toContain("Reading it does not start it")</code> and still <code>update_task</code> / <code>assignee_id</code>; suggestion case untouched (AC-20 test already covers it).</li>
+      <li><code>mcp-server/src/steering-copy.test.ts</code>: <code>SERVER_INSTRUCTIONS</code> <code>toMatch(/never starts work/i)</code> and <code>toMatch(/explicitly asked you to work that specific task/i)</code>; add a guard that <code>LIVE_DATA_SENTENCE</code> and <code>RESPONSE_REMINDER</code> do not contain "never starts work" (so the rule lives in one place).</li>
+      <li><code>mcp-server/src/register-tools.test.ts</code> (near the LIVE_DATA_SENTENCE test, ~line 473): <code>get_task</code> description <code>toContain("This is a read-only call")</code> and <code>toContain("Once you have been asked to work it")</code>.</li>
+    </ul>
+  </li>
+  <li>No schema, parameter, query or response-key changes. <code>workflow_instruction</code> keeps its name and its three branches.</li>
+</ol>
+
+<h2>7. Out of scope (agreed with Requirements)</h2>
+<ul>
+  <li>A review-only collaborator role or permission.</li>
+  <li>Column-aware hints (e.g. "this card is in Verify, so…").</li>
+  <li>Launch-prompt wording, the terminal, or any web UI.</li>
+</ul>
+
+</main>
+</body>
+</html>

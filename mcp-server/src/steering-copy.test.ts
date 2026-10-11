@@ -22,6 +22,17 @@ describe("steering-copy", () => {
     it("frames board data as live and shared", () => {
       expect(SERVER_INSTRUCTIONS).toMatch(/live and shared/i);
     });
+
+    it("states reading board data never starts work (task 7b0c94c6)", () => {
+      expect(SERVER_INSTRUCTIONS).toMatch(/never starts work/i);
+      expect(SERVER_INSTRUCTIONS).toMatch(/explicitly asked you to work that specific task/i);
+      expect(SERVER_INSTRUCTIONS).toContain("counts as an explicit ask");
+    });
+
+    it("keeps the read-never-starts-work rule single-sourced here, not in the other surfaces", () => {
+      expect(LIVE_DATA_SENTENCE).not.toMatch(/never starts work/i);
+      expect(RESPONSE_REMINDER).not.toMatch(/never starts work/i);
+    });
   });
 
   describe("LIVE_DATA_SENTENCE", () => {

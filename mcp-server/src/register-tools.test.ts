@@ -501,4 +501,20 @@ describe("registerTools", () => {
     // by side they'd read as two slightly different rules (design doc §3b).
     expect(description).not.toContain("NEVER write scripts to parse it");
   });
+
+  // Task 7b0c94c6: reading a task must never be read as permission to start
+  // it, and the sanctioned path to actually work pending steps stays pinned.
+  it("get_task description states it is read-only and only claim_next_step executes steps", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "get_task");
+    const description = call![1] as string;
+
+    expect(description).toContain("This is a read-only call");
+    expect(description).toContain("Once you have been asked to work it");
+    expect(description).toContain(
+      "use claim_next_step to execute steps sequentially rather than implementing directly"
+    );
+  });
 });
