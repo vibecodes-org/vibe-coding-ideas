@@ -128,8 +128,8 @@ const RELAY = launched?.relay || args.relay || process.env.RELAY_URL || "ws://lo
 // whatever host it named — an attacker relay then verifies its OWN token, passes
 // the R1 `{"t":"attached"}` gate, and streams keystrokes into the spawned `claude`
 // PTY (see the Reproduce & Investigate step). Pin the dial target HERE, before
-// `new WebSocket()` and before ANY pty.spawn on every path (promptless spawn-first
-// AND prompt-deferred). Loopback is allowed only when NOT packaged (dev/tests dial
+// `new WebSocket()` and before ANY pty.spawn on every path (spawn-first, resume
+// after the agents fetch, AND prompt-deferred). Loopback is allowed only when NOT packaged (dev/tests dial
 // the Node stand-in on ws://127.0.0.1:<port>); the packaged helper sets
 // VIBECODES_PACKAGED=1, so loopback + any non-prod host are rejected in production.
 // On reject: log the HOST ONLY (never the token) and exit cleanly, zero spawn.
@@ -567,7 +567,7 @@ async function main() {
   // PTY spawn still reaps.
   shutdownRef = shutdown;
 
-  let term = null; // spawned lazily for prompt-carrying launches (R1 gate below)
+  let term = null; // spawned lazily: after the relay's `attached` frame (prompt launches) or the agents fetch (resumes) — R1 gate below
   let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
@@ -731,9 +731,10 @@ async function main() {
   }
 
   /**
-   * Spawn the PTY and wire its handlers. Called immediately for promptless
-   * launches (today's behaviour, unchanged) and ONLY after the relay's
-   * `attached` confirmation for prompt-carrying launches (R1 — see below).
+   * Spawn the PTY and wire its handlers. Called immediately only for a
+   * promptless launch that wants no board agents (an explicit command); a
+   * resume waits for the agents fetch, and a prompt-carrying launch spawns ONLY
+   * after the relay's `attached` confirmation (R1 — see below).
    * The prompt is one argv element in `spawnArgs`; it is deliberately NOT
    * logged (only its length is).
    */
@@ -854,23 +855,21 @@ async function main() {
     });
   }
 
-  // R1 SEQUENCING. Promptless launches spawn FIRST, exactly as before — nothing
-  // in their flow changes. A URL-carried prompt is different: it must NEVER
-  // reach a child process unless the relay has accepted the owner-bound token,
-  // and the relay REJECTS bad legs by accept()ing then immediately closing
-  // (4005/4006/…) — so `open` alone proves nothing. The spawn is therefore
-  // gated on the relay's explicit `attached` control frame, sent only after
-  // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
-  // A promptless launch spawns first too, unless it wants the board's agents
-  // (a resume): those must be on the command line, so it spawns after the
-  // fetch below instead.
+  // R1 SEQUENCING. A promptless launch spawns first only when it wants no board
+  // agents (an explicit command). A resume wants them on its command line, so it
+  // waits for the fetch below. A URL-carried prompt is different again: it must
+  // NEVER reach a child process unless the relay has accepted the owner-bound
+  // token, and the relay REJECTS bad legs by accept()ing then immediately
+  // closing (4005/4006/…) — so `open` alone proves nothing. The spawn is
+  // therefore gated on the relay's explicit `attached` control frame, sent only
+  // after authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
   if (!PROMPT && !WANTS_AGENTS) spawnPty();
   // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
   // relay connect URL is built, so a successful fetch can announce `e2ee=1`
   // on THIS attach (and every reconnect reuses the SAME key — see
   // E2EE_KEY/E2EE_ENC/E2EE_DEC below, refreshed per attach in openRelay()).
-  // Never blocks/gates the PTY spawn above (a resume spawns after, below) — only delays this bridge's OWN
-  // relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
+  // Never blocks/gates the PTY spawn above (a resume spawns after, below) — only
+  // delays this bridge's OWN relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
   // produced meanwhile is safely queued in preOpenBuffer, not lost.
   // Fetched in parallel; the agents must land before the child spawns. A
   // prompt-carrying launch hasn't spawned yet (it waits for the relay's

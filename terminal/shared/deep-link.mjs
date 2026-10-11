@@ -53,10 +53,10 @@
 //   cols/rows — Bug B (card cbe60db5, Nick's field test 2026-08-15): the
 //             browser's real panel size at launch time, so the bridge can
 //             spawn the PTY at the correct size instead of a hardcoded
-//             default. A PROMPTLESS launch spawns its PTY synchronously,
-//             before the browser's own resize control frame can ever reach a
-//             not-yet-existent process — see terminal/bridge/src/index.js's
-//             `resolveSpawnDims`. Only meaningful as a pair; either missing
+//             default. A PROMPTLESS launch spawns its PTY before the relay is
+//             even dialled, so the browser's own resize control frame can
+//             never reach a not-yet-existent process — see
+//             terminal/bridge/src/index.js's `resolveSpawnDims`. Only meaningful as a pair; either missing
 //             or non-sane falls back to the bridge's pre-existing hardcoded
 //             default, exactly like before this field existed (no
 //             version-skew risk).
