@@ -4931,6 +4931,10 @@ describe("claimNextStep — Codex handoff", () => {
       { step_id: "prior-step", step_title: "Requirements", output: "Preserve Claude behavior." },
     ]);
     expect(result.instruction).toContain("spawn_agent");
+    // Live test 11 Oct 2026: a Codex child that had the board tools said it
+    // had none and couldn't post its comment, so the child is told where they are.
+    expect(result.instruction).toContain("its VibeCodes board tools (add_task_comment, add_step_comment, get_task)");
+    expect(result.instruction).toContain("if it reports having no VibeCodes board tools");
     expect(result.instruction).not.toContain("Agent/Task tool");
     expect(result.instruction).not.toContain("Completed inline — no subagent capability.");
     expect(result.instruction).not.toContain("switch this Codex session");
