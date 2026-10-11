@@ -196,3 +196,49 @@ test("app unreachable on resume: still launches, just without agents", { timeout
   const argv = await launch(t, { resumeId: RESUME_ID }, { appUrl: "http://127.0.0.1:1" });
   assert.deepEqual(argv, ["--resume", RESUME_ID]);
 });
+
+// A SIGTERM must not strand the Codex role-file folder. The role files are
+// written right after the agents fetch, and the login-shell PATH lookup (a
+// blocking call of up to 3s) follows. Before the signal handlers moved ahead of
+// the fetch, a SIGTERM landing in that gap killed the bridge outright and left
+// the folder behind.
+const agentFolders = (tmp) => fs.readdirSync(tmp).filter((n) => n.startsWith("vibecodes-agents-"));
+
+function waitFor(pred, ms, what) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const iv = setInterval(() => {
+      if (pred()) { clearInterval(iv); resolve(); }
+      else if (Date.now() - started > ms) { clearInterval(iv); reject(new Error(`timed out waiting for ${what}`)); }
+    }, 10);
+  });
+}
+
+test("SIGTERM after the Codex role files are written (during the slow PATH lookup) leaves no folder behind", { timeout: 60000 }, async (t) => {
+  const app = await startFakeApp(); t.after(app.close);
+  // A login shell that takes 2s to answer: the bridge blocks in its PATH lookup.
+  const slowShell = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vc-slow-shell-")), "sh");
+  fs.writeFileSync(slowShell, "#!/bin/sh\nsleep 2\n", { mode: 0o755 });
+  t.after(() => fs.rmSync(path.dirname(slowShell), { recursive: true, force: true }));
+  const handle = {};
+  await launch(t, { agent: "codex", resumeId: RESUME_ID }, { appUrl: app.url, handle, shell: slowShell, awaitArgv: false });
+  await waitFor(() => agentFolders(handle.tmp).length === 1, 15000, "the role-file folder to be written");
+  handle.bridge.kill("SIGTERM");
+  const [code, signal] = await once(handle.bridge, "exit");
+  assert.equal(signal, null, "the bridge handled SIGTERM instead of dying to it");
+  assert.equal(code, 0);
+  assert.deepEqual(agentFolders(handle.tmp), [], "role-file folder removed");
+});
+
+test("SIGTERM while the agents fetch is still running: no child, no role files, clean exit", { timeout: 60000 }, async (t) => {
+  const app = await startFakeApp({ agentsDelayMs: 3000 }); t.after(app.close);
+  const handle = {};
+  await launch(t, { agent: "codex", resumeId: RESUME_ID }, { appUrl: app.url, handle, awaitArgv: false });
+  await waitFor(() => app.calls.some((c) => c.url === "/api/terminal/session/agents"), 15000, "the agents request");
+  handle.bridge.kill("SIGTERM");
+  const [code, signal] = await once(handle.bridge, "exit");
+  assert.equal(signal, null);
+  assert.equal(code, 0);
+  assert.ok(!handle.getBuf().includes("ARGV_BEGIN"), "the CLI never started");
+  assert.deepEqual(agentFolders(handle.tmp), []);
+});

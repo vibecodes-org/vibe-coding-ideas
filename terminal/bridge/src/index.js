@@ -841,6 +841,19 @@ async function main() {
     });
   }
 
+  // Clean teardown on Ctrl-C / kill. Registered BEFORE the first await below:
+  // with no handler a SIGTERM kills the process outright (no exit handlers), so
+  // the Codex role-file folder written right after the agents fetch would be
+  // left behind if it landed during the login-shell PATH lookup that follows.
+  // shutdown() is safe this early: every binding it reads is declared above, and
+  // with no PTY yet it just closes up and exits.
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => {
+      log("info", "received signal", { sig });
+      shutdown(0, sig);
+    });
+  }
+
   // R1 SEQUENCING. Promptless launches spawn FIRST, exactly as before — nothing
   // in their flow changes. A URL-carried prompt is different: it must NEVER
   // reach a child process unless the relay has accepted the owner-bound token,
@@ -864,6 +877,9 @@ async function main() {
   // `attached` frame); a resume is held until the fetch finishes (bounded by
   // SESSION_AGENTS_FETCH_TIMEOUT_MS, no agents on any failure).
   const [E2EE_KEY, SESSION_AGENTS_BODY] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
+  // A signal or helper-gone shutdown landed during the fetch: write no role
+  // files, spawn nothing and don't dial the relay.
+  if (shuttingDown) return;
   if (SESSION_AGENTS_BODY && !term) {
     const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
     if (agentArgs.length > 0) {
@@ -1180,13 +1196,6 @@ async function main() {
 
   openRelay();
 
-  // Clean teardown on Ctrl-C / kill.
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.on(sig, () => {
-      log("info", "received signal", { sig });
-      shutdown(0, sig);
-    });
-  }
 }
 
 let shutdownRef = null; // set by main() once its shutdown() closure exists
