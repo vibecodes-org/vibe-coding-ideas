@@ -149,6 +149,7 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions,
     onReportSummary,
     onPopOut,
+    onBringBack,
     onRegisterActions,
     paneFocused,
     grabFocus,
@@ -166,6 +167,10 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
+    // Stands in for the popped-out placeholder's "Bring back to dock" button
+    // (terminal-session-view.tsx), so a test can drive the dock's real
+    // `bringBackToDock` from the in-panel trigger, not just the chip menu.
+    onBringBack?: () => void;
     // Bug a9c37241 (Nick's field report, 2 Sep 2026): a popped-out session in
     // split view can never surface its "Bring back to dock" placeholder,
     // because `isActive` never goes true for it there (see terminal-dock.tsx's
@@ -340,6 +345,11 @@ vi.mock("./terminal-session-view", () => ({
         >
           report connected
         </button>
+        {onBringBack && (
+          <button data-testid={`inline-bring-back-${entry.key}`} onClick={onBringBack}>
+            Bring back to dock
+          </button>
+        )}
         {onPopOut && (
           <button data-testid={`pop-out-${entry.key}`} onClick={onPopOut}>
             Pop out
@@ -3033,4 +3043,208 @@ describe("TerminalDock — popped-out chip popover (bug a9c37241)", () => {
       expect(view?.dataset.poppedOut).toBe("false");
     });
   }, 10000);
+});
+
+// Card a827e22e (pop-out coverage gaps). The pure bring-back handshake
+// (`startBringBackRequest`) is unit-tested in popout-channel.test.ts, and the
+// single-tab resize-handle case above — but nothing drove the DOCK through
+// either with two tabs open. These do: the resize handle must follow the
+// ACTIVE tab (not "is anything popped out"), and bringing a tab back must
+// restore the popped window's fuller buffer before reconnecting, or fall back
+// to a plain reconnect when the window never answers.
+describe("TerminalDock — pop-out with two tabs: resize handle and bring-back handshake (card a827e22e)", () => {
+  type Msg = { type: string; buffer?: unknown };
+  const channels: FakeBroadcastChannel[] = [];
+
+  class FakeBroadcastChannel {
+    posted: Msg[] = [];
+    onmessage: ((ev: MessageEvent) => void) | null = null;
+    closed = false;
+    constructor(public name: string) {
+      channels.push(this);
+    }
+    postMessage(m: Msg) {
+      this.posted.push(m);
+    }
+    close() {
+      this.closed = true;
+    }
+    /** Simulates the popped window posting `data` back to the dock. */
+    deliver(data: unknown) {
+      this.onmessage?.({ data } as MessageEvent);
+    }
+  }
+
+  beforeEach(() => {
+    channels.length = 0;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function mintTwo(): Promise<[string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    return [firstKey, keys.find((k) => k !== firstKey) as string];
+  }
+
+  const tabEl = (key: string) => document.getElementById(`terminal-tab-${key}`) as HTMLElement;
+  const resizeHandle = () => screen.queryByTestId("terminal-dock-resize-handle");
+  const viewOf = (key: string) => screen.getAllByTestId("session-view").find((el) => el.dataset.key === key);
+
+  /** Two minted-and-connected tabs in an expanded dock. */
+  async function setup(): Promise<[string, string]> {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [a, b] = await mintTwo();
+    const expand = screen.queryByRole("button", { name: "Expand terminal panel" });
+    if (expand) fireEvent.click(expand);
+    fireEvent.click(screen.getByTestId(`report-connected-${a}`));
+    fireEvent.click(screen.getByTestId(`report-connected-${b}`));
+    return [a, b];
+  }
+
+  function bringBackViaChip(key: string) {
+    fireEvent.click(screen.getByTitle(/^Popped out:/));
+    fireEvent.click(screen.getByTestId(`bring-back-${key}`));
+  }
+
+  it("popping out a tab that is NOT the active one keeps the resize handle", async () => {
+    const [a, b] = await setup();
+    fireEvent.click(tabEl(b));
+    await waitFor(() => expect(tabEl(b)).toHaveAttribute("aria-selected", "true"));
+    expect(resizeHandle()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+
+    await waitFor(() => expect(viewOf(a)?.dataset.poppedOut).toBe("true"));
+    expect(tabEl(b)).toHaveAttribute("aria-selected", "true");
+    expect(resizeHandle()).toBeInTheDocument();
+  });
+
+  // jsdom does no layout, so the docked tab's real pixel height can't be
+  // measured here — this pins the DOM-level conditions for it (handle present,
+  // the docked tab's own view is the active one, not the placeholder).
+  it("the handle follows the active tab: hidden on the popped-out tab, back on the docked one", async () => {
+    const [a, b] = await setup();
+    fireEvent.click(tabEl(a));
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+    // Popping out the active tab moves focus to the tab still docked.
+    await waitFor(() => expect(tabEl(b)).toHaveAttribute("aria-selected", "true"));
+    expect(resizeHandle()).toBeInTheDocument();
+
+    fireEvent.click(tabEl(a));
+    await waitFor(() => expect(tabEl(a)).toHaveAttribute("aria-selected", "true"));
+    expect(resizeHandle()).not.toBeInTheDocument();
+    expect(viewOf(a)?.dataset.active).toBe("true");
+
+    fireEvent.click(tabEl(b));
+    await waitFor(() => expect(tabEl(b)).toHaveAttribute("aria-selected", "true"));
+    expect(resizeHandle()).toBeInTheDocument();
+    expect(viewOf(b)?.dataset.active).toBe("true");
+    expect(viewOf(b)?.dataset.poppedOut).toBe("false");
+  });
+
+  it("bring back restores the popped window's buffer (not the dock's stale one), then reconnects", async () => {
+    const [a] = await setup();
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+    const channel = channels[0];
+    const actions = registeredActionsByKey.get(a)!;
+    actions.serializeNow.mockReturnValue({ data: "DOCK-STALE", truncated: false });
+
+    bringBackViaChip(a);
+
+    expect(channel.posted.at(-1)).toEqual({ type: "bring-back-request" });
+    // Nothing reconnects until the popped window has answered.
+    expect(actions.reconnectNow).not.toHaveBeenCalled();
+
+    act(() => channel.deliver({ type: "buffer-reply", buffer: { data: "POPPED-FULL", truncated: false } }));
+
+    expect(actions.restoreBuffer).toHaveBeenCalledTimes(1);
+    expect(actions.restoreBuffer).toHaveBeenCalledWith({ data: "POPPED-FULL", truncated: false });
+    expect(actions.reconnectNow).toHaveBeenCalledTimes(1);
+    expect(actions.restoreBuffer.mock.invocationCallOrder[0]).toBeLessThan(
+      actions.reconnectNow.mock.invocationCallOrder[0],
+    );
+    expect(channel.closed).toBe(true);
+    await waitFor(() => expect(viewOf(a)?.dataset.poppedOut).toBe("false"));
+  });
+
+  it("a popped window that never answers: reconnects at exactly 500ms, restores nothing, ignores a late reply", async () => {
+    const [a] = await setup();
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+    const actions = registeredActionsByKey.get(a)!;
+    vi.useFakeTimers();
+
+    bringBackViaChip(a);
+
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+    expect(actions.reconnectNow).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(actions.reconnectNow).toHaveBeenCalledTimes(1);
+    expect(actions.restoreBuffer).not.toHaveBeenCalled();
+
+    act(() => channels[0].deliver({ type: "buffer-reply", buffer: { data: "LATE", truncated: false } }));
+    expect(actions.restoreBuffer).not.toHaveBeenCalled();
+    expect(actions.reconnectNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("the popped window closing mid-wait (buffer, then closed) reconnects once with its buffer", async () => {
+    const [a] = await setup();
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+    const channel = channels[0];
+    const actions = registeredActionsByKey.get(a)!;
+    vi.useFakeTimers();
+
+    bringBackViaChip(a);
+    act(() => {
+      channel.deliver({ type: "buffer-reply", buffer: { data: "CLOSING", truncated: false } });
+      channel.deliver({ type: "closed" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(actions.reconnectNow).toHaveBeenCalledTimes(1);
+    expect(actions.restoreBuffer).toHaveBeenCalledTimes(1);
+    expect(actions.restoreBuffer).toHaveBeenCalledWith({ data: "CLOSING", truncated: false });
+  });
+
+  // KNOWN BUG — card 31d1d32c ("double-clicking Bring back to dock reconnects
+  // the terminal twice"). `it.fails` passes while the bug is present; once
+  // 31d1d32c is fixed this starts failing — flip it to `it(...)` then.
+  it.fails("double-clicking the placeholder's Bring back reconnects only once (bug 31d1d32c)", async () => {
+    const [a] = await setup();
+    fireEvent.click(screen.getByTestId(`pop-out-${a}`));
+    const actions = registeredActionsByKey.get(a)!;
+    vi.useFakeTimers();
+
+    const button = screen.getByTestId(`inline-bring-back-${a}`);
+    fireEvent.click(button);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    fireEvent.click(button);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(actions.reconnectNow).toHaveBeenCalledTimes(1);
+  });
 });
