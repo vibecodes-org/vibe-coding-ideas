@@ -2,8 +2,8 @@
 // a promptless (Resume, or any prompt-less) launch used to spawn its PTY at a
 // hardcoded 80x24 because the browser's real panel size could never reach a
 // not-yet-existent process in time. Promptless launches call spawnPty()
-// SYNCHRONOUSLY, before the relay socket even opens (see index.js's R1
-// SEQUENCING comment) — and the browser's own resize send is gated on
+// BEFORE the relay socket even opens (right away, or for a resume once the
+// agents fetch is done; see index.js's R1 SEQUENCING comment) — and the browser's own resize send is gated on
 // connection status "connected", which itself only flips on the FIRST
 // inbound PTY byte. Waiting for a post-spawn resize is therefore circular:
 // nothing produces that first byte until the PTY exists.

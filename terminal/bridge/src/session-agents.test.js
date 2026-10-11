@@ -122,13 +122,17 @@ test("each role file is registered with its own -c flag pointing at its path", (
   assert.deepEqual(buildSpawnArgs(["-m", "gpt-5.6-sol"], args.slice(0, 2), "go"), ["-m", "gpt-5.6-sol", ...args.slice(0, 2), "go"]);
 });
 
-test("only a fresh, prompt-carrying Claude or Codex launch asks for agents", () => {
-  const fresh = { agent: "claude", prompt: "p", resume: false, resumeId: null, explicitCmd: null };
-  assert.equal(wantsSessionAgents(fresh), true);
-  assert.equal(wantsSessionAgents({ ...fresh, agent: "codex" }), true);
-  assert.equal(wantsSessionAgents({ ...fresh, agent: "bash" }), false);
-  assert.equal(wantsSessionAgents({ ...fresh, prompt: "" }), false);
-  assert.equal(wantsSessionAgents({ ...fresh, resume: true }), false);
-  assert.equal(wantsSessionAgents({ ...fresh, resumeId: "11111111-1111-4111-8111-111111111111" }), false);
-  assert.equal(wantsSessionAgents({ ...fresh, explicitCmd: "bash" }), false);
+test("every Claude or Codex launch asks for agents, resumed ones included", () => {
+  const launch = { agent: "claude", explicitCmd: null };
+  assert.equal(wantsSessionAgents(launch), true);
+  assert.equal(wantsSessionAgents({ ...launch, agent: "codex" }), true);
+  // A resume carries no prompt and no flags of its own here: it still gets agents,
+  // because a resumed conversation does not keep the ones it started with.
+  assert.equal(wantsSessionAgents({ agent: "claude", prompt: "", resume: true, resumeId: null, explicitCmd: null }), true);
+  assert.equal(
+    wantsSessionAgents({ agent: "codex", prompt: "", resume: false, resumeId: "11111111-1111-4111-8111-111111111111", explicitCmd: null }),
+    true,
+  );
+  assert.equal(wantsSessionAgents({ ...launch, agent: "bash" }), false);
+  assert.equal(wantsSessionAgents({ ...launch, explicitCmd: "bash" }), false);
 });
