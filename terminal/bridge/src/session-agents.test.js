@@ -1,8 +1,16 @@
-// Unit tests for the bridge's handling of the board's agents (task 59889027).
-// Run: cd terminal/bridge && node --test   (or: npm test)
+// Unit tests for the bridge's handling of the board's agents (tasks 59889027,
+// e16d69e8). Run: cd terminal/bridge && node --test   (or: npm test)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSpawnArgs, serializeSessionAgents, wantsSessionAgents, SESSION_AGENTS_MAX_BYTES } from "./session-agents.js";
+import {
+  buildSpawnArgs,
+  codexAgentConfigArgs,
+  codexAgentFiles,
+  serializeSessionAgents,
+  tomlString,
+  wantsSessionAgents,
+  SESSION_AGENTS_MAX_BYTES,
+} from "./session-agents.js";
 
 const ATLAS = {
   description: "VibeCodes agent Atlas for frontier-tier workflow steps. [vc 1a2b3c4d opus high]",
@@ -44,19 +52,81 @@ test("an oversized payload is dropped rather than risking the launch", () => {
 });
 
 test("agents and prompt are separate argv elements, after the command's own flags", () => {
-  const args = buildSpawnArgs(["--session-id", "abc", "--model", "opus"], '{"vc-a":{}}', "do the thing");
+  const args = buildSpawnArgs(["--session-id", "abc", "--model", "opus"], ["--agents", '{"vc-a":{}}'], "do the thing");
   assert.deepEqual(args, ["--session-id", "abc", "--model", "opus", "--agents", '{"vc-a":{}}', "do the thing"]);
 });
 
 test("without agents the argv is exactly today's", () => {
-  assert.deepEqual(buildSpawnArgs(["--session-id", "abc"], null, "p"), ["--session-id", "abc", "p"]);
-  assert.deepEqual(buildSpawnArgs(["--continue"], null, ""), ["--continue"]);
+  assert.deepEqual(buildSpawnArgs(["--session-id", "abc"], [], "p"), ["--session-id", "abc", "p"]);
+  assert.deepEqual(buildSpawnArgs(["--continue"], [], ""), ["--continue"]);
 });
 
-test("only a fresh, prompt-carrying Claude launch asks for agents", () => {
+// ── Codex: role files ──────────────────────────────────────────────────────
+
+test("tomlString writes a TOML basic string, escaping DEL as well as JSON's set", () => {
+  assert.equal(tomlString('say "hi"\\now\n\ttab'), '"say \\"hi\\"\\\\now\\n\\ttab"');
+  assert.equal(tomlString("a\u007fb"), '"a\\u007Fb"');
+  assert.equal(tomlString("a\u0001b"), '"a\\u0001b"');
+  // Non-ASCII passes through raw — TOML files are UTF-8.
+  assert.equal(tomlString("café — ✓"), '"café — ✓"');
+});
+
+test("each Codex agent becomes one role file holding the persona as its instructions", () => {
+  const files = codexAgentFiles({
+    agents: {
+      "vc-atlas-37e8ffb2-frontier": { ...ATLAS, model: "gpt-5.6-sol", effort: "high" },
+      "vc-lens-87e09eb1": { description: "d", prompt: "p" },
+    },
+  });
+  assert.equal(files.length, 2);
+  assert.deepEqual(files[0], {
+    name: "vc-atlas-37e8ffb2-frontier",
+    fileName: "vc-atlas-37e8ffb2-frontier.toml",
+    toml:
+      'name = "vc-atlas-37e8ffb2-frontier"\n' +
+      'description = "VibeCodes agent Atlas for frontier-tier workflow steps. [vc 1a2b3c4d opus high]"\n' +
+      'developer_instructions = "## Goal\\nShip it."\n' +
+      'model = "gpt-5.6-sol"\n' +
+      'model_reasoning_effort = "high"\n',
+  });
+  // Untiered: no model or effort lines, so the session's own apply.
+  assert.equal(files[1].toml, 'name = "vc-lens-87e09eb1"\ndescription = "d"\ndeveloper_instructions = "p"\n');
+});
+
+test("a persona can't break out of its string into other TOML keys", () => {
+  const hostile = 'x"\nmodel = "evil"\n[agents.other]\nconfig_file = "/etc/passwd'; // quotes and newlines
+  const [file] = codexAgentFiles({ agents: { "vc-a": { description: hostile, prompt: hostile } } });
+  const lines = file.toml.trimEnd().split("\n");
+  assert.equal(lines.length, 3, "every value stays on its own single line");
+  assert.ok(lines.every((l) => /^(name|description|developer_instructions) = ".*"$/.test(l)));
+});
+
+test("Codex role files get the same validation as Claude's definitions", () => {
+  assert.equal(codexAgentFiles(null), null);
+  assert.equal(codexAgentFiles({ agents: { "code-reviewer": ATLAS } }), null);
+  assert.equal(codexAgentFiles({ agents: { "vc-a": { ...ATLAS, model: "x y" } } }), null);
+});
+
+test("each role file is registered with its own -c flag pointing at its path", () => {
+  const args = codexAgentConfigArgs([
+    { name: "vc-atlas-37e8ffb2-frontier", path: "/tmp/vibecodes-agents-AbC/vc-atlas-37e8ffb2-frontier.toml" },
+    { name: "vc-lens-87e09eb1", path: '/tmp/odd "dir"/vc-lens-87e09eb1.toml' },
+  ]);
+  assert.deepEqual(args, [
+    "-c",
+    'agents.vc-atlas-37e8ffb2-frontier.config_file="/tmp/vibecodes-agents-AbC/vc-atlas-37e8ffb2-frontier.toml"',
+    "-c",
+    'agents.vc-lens-87e09eb1.config_file="/tmp/odd \\"dir\\"/vc-lens-87e09eb1.toml"',
+  ]);
+  // Before the prompt, which Codex takes as its one positional argument.
+  assert.deepEqual(buildSpawnArgs(["-m", "gpt-5.6-sol"], args.slice(0, 2), "go"), ["-m", "gpt-5.6-sol", ...args.slice(0, 2), "go"]);
+});
+
+test("only a fresh, prompt-carrying Claude or Codex launch asks for agents", () => {
   const fresh = { agent: "claude", prompt: "p", resume: false, resumeId: null, explicitCmd: null };
   assert.equal(wantsSessionAgents(fresh), true);
-  assert.equal(wantsSessionAgents({ ...fresh, agent: "codex" }), false);
+  assert.equal(wantsSessionAgents({ ...fresh, agent: "codex" }), true);
+  assert.equal(wantsSessionAgents({ ...fresh, agent: "bash" }), false);
   assert.equal(wantsSessionAgents({ ...fresh, prompt: "" }), false);
   assert.equal(wantsSessionAgents({ ...fresh, resume: true }), false);
   assert.equal(wantsSessionAgents({ ...fresh, resumeId: "11111111-1111-4111-8111-111111111111" }), false);

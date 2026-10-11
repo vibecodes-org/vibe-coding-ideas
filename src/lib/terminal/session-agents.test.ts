@@ -135,6 +135,37 @@ describe("sessionAgentClaimHint", () => {
     const { instruction } = sessionAgentClaimHint({ bot: ATLAS, tier: null, model: null, effort: null });
     expect(instruction).not.toContain("model_used");
   });
+
+  it("explicitly asking for Claude's wording changes nothing", () => {
+    const hint = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
+    expect(sessionAgentClaimHint({ ...hint, agent: "claude" })).toEqual(sessionAgentClaimHint(hint));
+  });
+
+  describe("for Codex", () => {
+    const codex = { bot: ATLAS, tier: "standard" as const, model: "gpt-5.6-sol", effort: "medium", agent: "codex" as const };
+
+    it("names the same agent type and tag a Codex payload defines", () => {
+      const agents = buildSessionAgents([input({ tier: "standard", model: "gpt-5.6-sol", effort: "medium" })])!;
+      const hint = sessionAgentClaimHint(codex);
+      expect(agents[hint.name]).toBeDefined();
+      expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
+    });
+
+    it("speaks Codex's spawn tool, not Claude's Agent tool", () => {
+      const { instruction } = sessionAgentClaimHint(codex);
+      expect(instruction).toContain('agent_type "vc-atlas-37e8ffb2-standard"');
+      expect(instruction).toContain("spawn_agent");
+      expect(instruction).not.toContain("Agent tool");
+      expect(instruction).toContain("don't put persona_prompt in its message");
+      expect(instruction).toContain('report agent "codex", persona_used "verbatim" and model_used "gpt-5.6-sol", reasoning_effort_used "medium"');
+      expect(instruction).toContain("follow the steps above");
+    });
+
+    it("asks for no model report on an Auto step", () => {
+      const { instruction } = sessionAgentClaimHint({ ...codex, tier: null, model: null, effort: null });
+      expect(instruction).not.toContain("model_used");
+    });
+  });
 });
 
 describe("agentNameLine", () => {

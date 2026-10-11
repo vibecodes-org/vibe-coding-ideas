@@ -1234,24 +1234,24 @@ export async function claimNextStep(
     ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
     : null;
 
-  // Task 59889027: an in-app terminal launch defines the board's agents as
-  // real Claude Code subagents (`claude --agents`, see
-  // src/lib/terminal/session-agents.ts). Name the one for this step; a session
-  // without it (own terminal, copy-command launch, stale definition) matches
-  // nothing and follows the steps above unchanged. Claude claims only — Codex
-  // has no equivalent launch definition.
+  // Tasks 59889027 / e16d69e8: an in-app terminal launch defines the board's
+  // agents as real subagents (`claude --agents`, or temporary Codex agent-role
+  // files — see src/lib/terminal/session-agents.ts). Name the one for this
+  // step; a session without it (own terminal, copy-command launch, stale
+  // definition) matches nothing and follows the steps above unchanged.
   const nativeSubagent =
-    claimingAgent === "claude" && personaEmbeddable && updated.bot_id
+    personaEmbeddable && updated.bot_id
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
-          const claudeResolution = tier
-            ? resolveModelTier(tier, "claude", userModelTierMap, platformDefaults)
+          const resolution = tier
+            ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults)
             : null;
           return sessionAgentClaimHint({
             bot: { id: updated.bot_id, name: matchedBot!.name, system_prompt: matchedBot!.system_prompt! },
             tier,
-            model: claudeResolution?.resolved ?? null,
-            effort: claudeResolution?.effort ?? null,
+            model: resolution?.resolved ?? null,
+            effort: resolution?.effort ?? null,
+            agent: claimingAgent,
           });
         })()
       : null;

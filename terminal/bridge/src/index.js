@@ -44,7 +44,7 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
-import { buildSpawnArgs, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
+import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -347,7 +347,7 @@ async function fetchE2eeSessionKey() {
 // in it. Never throws: any failure launches the session exactly as before.
 const SESSION_AGENTS_FETCH_TIMEOUT_MS = 5000;
 
-/** @returns {Promise<string|null>} the `--agents` JSON, or null */
+/** @returns {Promise<unknown>} the endpoint's body, or null */
 async function fetchSessionAgents() {
   if (!TOKEN || !SESSION) return null;
   if (!wantsSessionAgents({ agent: AGENT, prompt: PROMPT, resume: RESUME, resumeId: RESUME_ID, explicitCmd })) return null;
@@ -357,17 +357,59 @@ async function fetchSessionAgents() {
     const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/agents`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sid: SESSION, token: TOKEN }),
+      // `agent` picks the tier models/efforts: Claude's or Codex's.
+      body: JSON.stringify({ sid: SESSION, token: TOKEN, agent: AGENT }),
       signal: controller.signal,
     });
     if (!res.ok) return null;
-    return serializeSessionAgents(await res.json());
+    return await res.json();
   } catch (e) {
     log("warn", "session agents fetch failed — launching without them", { err: String(e?.message || e) });
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Codex reads custom agents only from role files (see session-agents.js), so
+// a Codex launch writes them to a private temp folder — outside the project
+// and ~/.codex — that is removed when this bridge exits, on every exit path
+// that runs code. (A SIGKILLed bridge leaves it to the OS temp cleaner.)
+let agentFilesDir = null;
+function removeAgentFiles() {
+  if (!agentFilesDir) return;
+  try { fs.rmSync(agentFilesDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  agentFilesDir = null;
+}
+process.on("exit", removeAgentFiles);
+
+/**
+ * The launch flags that hand the CLI the board's agents, or [] (launch as
+ * before). Claude Code takes them inline; Codex gets role files.
+ * @param {unknown} body
+ * @returns {string[]}
+ */
+function sessionAgentArgs(body) {
+  if (!body) return [];
+  if (AGENT === "codex") {
+    const files = codexAgentFiles(body);
+    if (!files) return [];
+    try {
+      agentFilesDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibecodes-agents-"));
+      const written = files.map(({ name, fileName, toml }) => {
+        const filePath = path.join(agentFilesDir, fileName);
+        fs.writeFileSync(filePath, toml, { mode: 0o600 });
+        return { name, path: filePath };
+      });
+      return codexAgentConfigArgs(written);
+    } catch (e) {
+      log("warn", "couldn't write codex agent files — launching without them", { err: String(e?.message || e) });
+      removeAgentFiles();
+      return [];
+    }
+  }
+  const json = serializeSessionAgents(body);
+  return json ? ["--agents", json] : [];
 }
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
@@ -424,7 +466,7 @@ const [file, ...cmdArgs] = shellSplit(CMD);
 // `--agents` (task 59889027) is added once fetchSessionAgents() resolves —
 // always before a prompt-carrying launch spawns (it waits for the relay's
 // `attached` frame, which comes after the fetch); see buildSpawnArgs.
-let spawnArgs = buildSpawnArgs(cmdArgs, null, PROMPT);
+let spawnArgs = buildSpawnArgs(cmdArgs, [], PROMPT);
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
 // node-pty ships a `spawn-helper` binary under prebuilds/<platform>-<arch>/.
@@ -602,6 +644,7 @@ async function main() {
   function shutdown(code, why) {
     if (shuttingDown) return;
     shuttingDown = true;
+    removeAgentFiles();
     clearTimeout(connectTimer);
     clearTimeout(maxTimer);
     clearTimeout(attachTimer);
@@ -812,10 +855,13 @@ async function main() {
   // produced meanwhile is safely queued in preOpenBuffer, not lost.
   // Fetched in parallel; the agents only ever affect a prompt-carrying launch,
   // which hasn't spawned yet (it waits for the relay's `attached` frame).
-  const [E2EE_KEY, SESSION_AGENTS_JSON] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
-  if (SESSION_AGENTS_JSON && !term) {
-    spawnArgs = buildSpawnArgs(cmdArgs, SESSION_AGENTS_JSON, PROMPT);
-    log("info", "session agents collected", { agentsChars: SESSION_AGENTS_JSON.length });
+  const [E2EE_KEY, SESSION_AGENTS_BODY] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
+  if (SESSION_AGENTS_BODY && !term) {
+    const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
+    if (agentArgs.length > 0) {
+      spawnArgs = buildSpawnArgs(cmdArgs, agentArgs, PROMPT);
+      log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
+    }
   }
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
   const url =

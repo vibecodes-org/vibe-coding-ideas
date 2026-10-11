@@ -1,5 +1,5 @@
-// In-app terminal — the board's agents as real Claude Code subagents (task
-// 59889027).
+// In-app terminal — the board's agents as real Claude Code and Codex
+// subagents (tasks 59889027, e16d69e8).
 //
 // Until now a workflow step's persona only ever reached the worker as text:
 // claim_next_step told the orchestrator to "spawn a subagent whose system
@@ -10,7 +10,10 @@
 // to disk — whose `prompt` IS their system prompt and whose `model`/`effort`
 // are part of the definition. The bridge fetches this payload from
 // POST /api/terminal/session/agents and passes it at launch; claim_next_step
-// then names the matching subagent (see sessionAgentClaimHint).
+// then names the matching subagent (see sessionAgentClaimHint). Codex has no
+// such flag, so for a Codex launch the bridge writes the same definitions out
+// as temporary agent-role files (terminal/bridge/src/session-agents.js) —
+// `prompt` becomes the role's developer instructions.
 //
 // Both sides derive the subagent's name and tag from the same inputs with the
 // functions below, so a session whose definitions have gone stale (persona
@@ -61,7 +64,7 @@ export function sessionAgentTag(systemPrompt: string, model: string | null, effo
 export type SessionAgentInput = {
   bot: { id: string; name: string; role: string | null; system_prompt: string };
   tier: SessionAgentTier | null;
-  /** Resolved Claude model alias for this tier (null on Auto steps — the subagent inherits). */
+  /** Resolved model for this tier, Claude's or Codex's (null on Auto steps — the subagent inherits). */
   model: string | null;
   effort: string | null;
   skills: { name: string; content: string }[];
@@ -134,19 +137,35 @@ export function buildSessionAgents(
 
 /**
  * The claim-side hint: which subagent to look for, and what to report when it
- * was used. Only for a Claude claim of a step whose assigned bot has a persona.
+ * was used. Only for a claim of a step whose assigned bot has a persona; the
+ * model and effort are the claiming agent's own resolution of the tier.
  */
 export function sessionAgentClaimHint(input: {
   bot: { id: string; name: string; system_prompt: string };
   tier: SessionAgentTier | null;
   model: string | null;
   effort: string | null;
+  agent?: "claude" | "codex";
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier);
   const tag = sessionAgentTag(input.bot.system_prompt, input.model, input.effort);
   const reportTier = input.model
     ? ` and model_used "${input.model}"${input.effort ? `, reasoning_effort_used "${input.effort}"` : ""}`
     : "";
+  if (input.agent === "codex") {
+    // Codex's spawn tool has no instructions field; a custom agent type's
+    // role file is the only way the persona becomes the child's own
+    // instructions. A role's model/effort override the spawn call's.
+    const instruction =
+      `NATIVE SUBAGENT: If your spawn_agent tool offers an agent_type named "${name}" whose description ends with ` +
+      `${tag}, spawn this step's child with agent_type "${name}". Its developer instructions already are this ` +
+      `step's persona and its definition already sets this step's model and reasoning effort, which meets the ` +
+      `capability check above: don't put persona_prompt in its message. Give it everything else listed above ` +
+      `(task requirements, step details, context, expected_deliverables, work_token, working directory). When ` +
+      `completing, report agent "codex", persona_used "verbatim"${reportTier}. If no agent type with that exact ` +
+      `name and tag is available, ignore this note and follow the steps above.`;
+    return { name, tag, instruction };
+  }
   const instruction =
     `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +
     `${tag}, spawn that subagent type for this step instead of a general-purpose one. Its system prompt already ` +
