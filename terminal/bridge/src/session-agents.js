@@ -6,7 +6,8 @@
 // instructions, not text pasted into its task.
 //
 // Claude Code (task 59889027): `claude --agents <json>`. Nothing is written to
-// disk; Claude Code keeps those definitions for that session only.
+// disk; Claude Code keeps those definitions for that launch only, so a resumed
+// conversation has lost them and is handed them again (same for Codex below).
 //
 // Codex (task e16d69e8): Codex can only read a custom agent's instructions
 // from a role file — `[agents.<name>]` config takes just description,
@@ -117,12 +118,14 @@ export function buildSpawnArgs(cmdArgs, agentArgs, prompt) {
 }
 
 /**
- * Only a fresh Claude Code or Codex launch that carries a board prompt gets
- * agents: a resumed conversation keeps its own, an explicit command override
- * is never touched, and a promptless launch spawns before any fetch could
- * finish.
- * @param {{ agent: string, prompt: string, resume: boolean, resumeId: string | null, explicitCmd: string | null }} launch
+ * Every Claude Code or Codex launch gets the board's agents — fresh or
+ * resumed. A resumed conversation does NOT keep the agents it was first
+ * started with: Claude's `--agents` are per launch, and Codex's role files
+ * live in a temp folder deleted when the old bridge exits. Only an explicit
+ * command override is never touched. (A resume carries no prompt, so the
+ * caller must hold the spawn until the fetch finishes.)
+ * @param {{ agent: string, explicitCmd: string | null }} launch
  */
-export function wantsSessionAgents({ agent, prompt, resume, resumeId, explicitCmd }) {
-  return (agent === "claude" || agent === "codex") && !!prompt && !resume && !resumeId && !explicitCmd;
+export function wantsSessionAgents({ agent, explicitCmd }) {
+  return (agent === "claude" || agent === "codex") && !explicitCmd;
 }

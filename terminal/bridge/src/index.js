@@ -346,11 +346,13 @@ async function fetchE2eeSessionKey() {
 // be tens of KB, far past the launch link's length cap, so they never travel
 // in it. Never throws: any failure launches the session exactly as before.
 const SESSION_AGENTS_FETCH_TIMEOUT_MS = 5000;
+// Fresh AND resumed launches (a resumed conversation loses its agents).
+const WANTS_AGENTS = wantsSessionAgents({ agent: AGENT, explicitCmd });
 
 /** @returns {Promise<unknown>} the endpoint's body, or null */
 async function fetchSessionAgents() {
   if (!TOKEN || !SESSION) return null;
-  if (!wantsSessionAgents({ agent: AGENT, prompt: PROMPT, resume: RESUME, resumeId: RESUME_ID, explicitCmd })) return null;
+  if (!WANTS_AGENTS) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SESSION_AGENTS_FETCH_TIMEOUT_MS);
   try {
@@ -464,8 +466,9 @@ const NORMAL_CLOSURE = 1000;
 
 const [file, ...cmdArgs] = shellSplit(CMD);
 // `--agents` (task 59889027) is added once fetchSessionAgents() resolves —
-// always before a prompt-carrying launch spawns (it waits for the relay's
-// `attached` frame, which comes after the fetch); see buildSpawnArgs.
+// always before the child spawns: a prompt-carrying launch waits for the
+// relay's `attached` frame (which comes after the fetch), and a promptless
+// resume waits for the fetch itself; see buildSpawnArgs.
 let spawnArgs = buildSpawnArgs(cmdArgs, [], PROMPT);
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
@@ -742,7 +745,7 @@ async function main() {
       // `attached` frame, so the socket is already open and the banner (just
       // queued above) can be flushed and the session ended right away. For a
       // PROMPTLESS launch this runs BEFORE the relay socket ever opens (see
-      // the top-level `if (!PROMPT) spawnPty()` call) — the banner is queued
+      // the top-level promptless spawnPty() calls) — the banner is queued
       // into preOpenBuffer instead, `open` is still false here, so we simply
       // return and let the normal flow continue to openRelay(); the ws
       // "open" handler below flushes the banner and ends the session once
@@ -845,16 +848,21 @@ async function main() {
   // (4005/4006/…) — so `open` alone proves nothing. The spawn is therefore
   // gated on the relay's explicit `attached` control frame, sent only after
   // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
-  if (!PROMPT) spawnPty();
+  // A promptless launch spawns first too, unless it wants the board's agents
+  // (a resume): those must be on the command line, so it spawns after the
+  // fetch below instead.
+  if (!PROMPT && !WANTS_AGENTS) spawnPty();
   // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
   // relay connect URL is built, so a successful fetch can announce `e2ee=1`
   // on THIS attach (and every reconnect reuses the SAME key — see
   // E2EE_KEY/E2EE_ENC/E2EE_DEC below, refreshed per attach in openRelay()).
-  // Never blocks/gates the PTY spawn above — only delays this bridge's OWN
+  // Never blocks/gates the PTY spawn above (a resume spawns after, below) — only delays this bridge's OWN
   // relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
   // produced meanwhile is safely queued in preOpenBuffer, not lost.
-  // Fetched in parallel; the agents only ever affect a prompt-carrying launch,
-  // which hasn't spawned yet (it waits for the relay's `attached` frame).
+  // Fetched in parallel; the agents must land before the child spawns. A
+  // prompt-carrying launch hasn't spawned yet (it waits for the relay's
+  // `attached` frame); a resume is held until the fetch finishes (bounded by
+  // SESSION_AGENTS_FETCH_TIMEOUT_MS, no agents on any failure).
   const [E2EE_KEY, SESSION_AGENTS_BODY] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
   if (SESSION_AGENTS_BODY && !term) {
     const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
@@ -863,6 +871,7 @@ async function main() {
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }
+  if (!PROMPT && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
