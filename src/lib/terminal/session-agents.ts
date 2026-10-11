@@ -161,7 +161,8 @@ export function sessionAgentClaimHint(input: {
       `${tag}, spawn this step's child with agent_type "${name}". Its developer instructions already are this ` +
       `step's persona and its definition already sets this step's model and reasoning effort, which meets the ` +
       `capability check above: don't put persona_prompt in its message. Give it everything else listed above ` +
-      `(task requirements, step details, context, expected_deliverables, work_token, working directory). When ` +
+      `(task requirements, step details, context, expected_deliverables, work_token, working directory, and where ` +
+      `to find its board tools). When ` +
       `completing, report agent "codex", persona_used "verbatim"${reportTier}. If no agent type with that exact ` +
       `name and tag is available, ignore this note and follow the steps above.`;
     return { name, tag, instruction };
