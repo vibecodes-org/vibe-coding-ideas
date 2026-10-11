@@ -85,11 +85,19 @@ function waitForText(getBuf, text, ms) {
   });
 }
 
-async function launch(t, linkParams, { appUrl, handle = {} }) {
+/**
+ * Each launch gets its own TMPDIR (the bridge's os.tmpdir() honours it), so the
+ * Codex role-file folder lands there and is removed with it, even when the test
+ * SIGKILLs the bridge. `handle` is filled with { bridge, tmp, getBuf }.
+ * `awaitArgv: false` returns right after the bridge is spawned (null result).
+ */
+async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/false", awaitArgv = true }) {
   const session = `ra-${Math.random().toString(36).slice(2, 8)}`;
   const owner = "user-RA-" + Math.random().toString(36).slice(2, 8);
   const fakeBin = makeFakeAgentBin();
   const cwd = makeCommittedRepo();
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vc-ra-tmp-")));
+  handle.tmp = tmp;
   let relay, bridge, browser;
   t.after(async () => {
     try { browser?.terminate(); } catch { /* ignore */ }
@@ -97,6 +105,7 @@ async function launch(t, linkParams, { appUrl, handle = {} }) {
     if (relay) await relay.close();
     fs.rmSync(fakeBin, { recursive: true, force: true });
     fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
   const tokens = await mintSessionTokens({ sub: owner, idea: "idea-RA", sid: session, secret: SECRET });
   relay = await startStandinRelay({ port: 0, secret: SECRET });
@@ -104,12 +113,14 @@ async function launch(t, linkParams, { appUrl, handle = {} }) {
   let buf = "";
   browser = new WebSocket(`${relay.url}/?session=${session}&role=browser&token=${encodeURIComponent(tokens.browser)}`);
   browser.on("message", (d) => (buf += Buffer.isBuffer(d) ? d.toString("utf8") : String(d)));
+  handle.getBuf = () => buf;
   await once(browser, "open");
   bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: process.env.HOME, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: process.env.HOME, SHELL: shell, TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "ignore"],
   });
   handle.bridge = bridge;
+  if (!awaitArgv) return null;
   await waitForText(() => buf, "ARGV_END", 20000);
   return JSON.parse(buf.match(/ARGV_BEGIN(.*?)ARGV_END/s)[1]);
 }
