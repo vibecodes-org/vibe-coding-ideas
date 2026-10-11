@@ -99,8 +99,14 @@
  *  the launch link's `remoteControl=1` and starts Claude Code with
  *  `--remote-control` (straight after `claude`; new and resumed sessions;
  *  never Codex). An older helper ignores it and starts without Remote
- *  Control — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.20";
+ *  Control — soft nudge.
+ *  0.3.21 (task e16d69e8, 11 Oct 2026): first helper whose bridge gives a
+ *  fresh Codex launch the board's agents too — written as temporary
+ *  agent-role files in a private temp folder (removed when the session ends)
+ *  and registered with `-c agents.<name>.config_file`. An older helper
+ *  launches Codex without them (steps fall back to the pasted-persona path)
+ *  — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.21";
 
 export type HelperVersionParts = readonly [number, number, number];
 
