@@ -1180,9 +1180,27 @@ describe("claimNextStep — persona embedding", () => {
       expect(result.instruction).not.toContain("NATIVE SUBAGENT");
     });
 
-    it("adds nothing to a Codex claim", async () => {
+    // Task e16d69e8: Codex launches get the same agents as temporary
+    // agent-role files, named and tagged with Codex's tier resolution.
+    it("names the Codex agent type and its tag for a Codex claim of an embedded persona", async () => {
       const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
       const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" })) as NativeClaim;
+      const expected = sessionAgentClaimHint({
+        bot: { id: PERSONA_BOT_ID, name: "Atlas", system_prompt: PERSONA },
+        tier: "frontier",
+        model: "gpt-6-astra",
+        effort: "high",
+        agent: "codex",
+      });
+      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+      expect(result.instruction).toContain(expected.instruction);
+      expect(result.instruction!.indexOf("NATIVE SUBAGENT:")).toBeGreaterThan(result.instruction!.indexOf("AUTO:"));
+    });
+
+    it("adds nothing to a Codex claim when the bot has no persona", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: null });
       const result = (await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" })) as NativeClaim;
       expect(result).not.toHaveProperty("native_subagent");
       expect(result.instruction).not.toContain("NATIVE SUBAGENT");

@@ -105,6 +105,21 @@ describe("POST /api/terminal/session/agents", () => {
     expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "fable", effort: "max" });
   });
 
+  it("carries Codex's tier models and efforts for a Codex session", async () => {
+    const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json();
+    // Seed platform defaults: frontier = gpt-6-astra/high, standard = gpt-5.6-sol/medium.
+    expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "gpt-6-astra", effort: "high" });
+    expect(agents["vc-atlas-37e8ffb2-standard"]).toMatchObject({ model: "gpt-5.6-sol", effort: "medium" });
+    expect(agents["vc-atlas-37e8ffb2-standard"].description).toContain(" gpt-5.6-sol medium]");
+    expect(agents["vc-lens-87e09eb1"]).not.toHaveProperty("model");
+  });
+
+  it("honours the owner's own Codex model choice for a tier", async () => {
+    tables.users = { data: { model_tier_map: { frontier: { codex: { model: "gpt-5.6-sol", effort: "xhigh" } } } } };
+    const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json();
+    expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "gpt-5.6-sol", effort: "xhigh" });
+  });
+
   it("answers null when the board has no claimable agent steps", async () => {
     tables.task_workflow_steps = { data: [] };
     const res = await POST(req({ sid: SID, token: "bridge-tok" }));
@@ -133,5 +148,6 @@ describe("POST /api/terminal/session/agents", () => {
   it("rejects a malformed body", async () => {
     const res = await POST(req({ sid: SID }));
     expect(res.status).toBe(400);
+    expect((await POST(req({ sid: SID, token: "t", agent: "bash" }))).status).toBe(400);
   });
 });

@@ -1,9 +1,10 @@
-// In-app terminal — the board's agents for a fresh Claude Code launch (task
-// 59889027). Sibling of session/key/route.ts: the bridge calls this directly
-// (never through the relay or the length-capped launch link) with the bridge
-// token it already holds, and passes the result to `claude --agents`, so each
-// workflow step's persona runs as a real subagent system prompt at its tier's
-// model and effort. See src/lib/terminal/session-agents.ts.
+// In-app terminal — the board's agents for a fresh Claude Code or Codex launch
+// (tasks 59889027, e16d69e8). Sibling of session/key/route.ts: the bridge calls
+// this directly (never through the relay or the length-capped launch link)
+// with the bridge token it already holds, and passes the result to
+// `claude --agents` or writes it out as temporary Codex agent-role files, so
+// each workflow step's persona runs as a real subagent's instructions at its
+// tier's model and effort. See src/lib/terminal/session-agents.ts.
 //
 // AUTH: the same bridge-token check as session/key (authorizeAttach, role
 // "bridge"), plus the token's owner must own the session row. Service-role
@@ -28,6 +29,9 @@ export const dynamic = "force-dynamic";
 const BodySchema = z.object({
   sid: z.string().min(1).max(128),
   token: z.string().min(1).max(4096),
+  // Which CLI the session runs — picks whose tier models and efforts the
+  // definitions carry. Bridges from before Codex support send none.
+  agent: z.enum(["claude", "codex"]).default("claude"),
 });
 
 /** Steps a session might still claim. */
@@ -46,7 +50,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { sid, token } = parsed.data;
+    const { sid, token, agent } = parsed.data;
 
     const auth = await authorizeAttach({ token, secret, session: sid, role: "bridge" });
     if (!auth.ok) {
@@ -111,7 +115,7 @@ export async function POST(req: Request) {
       if (!bot?.system_prompt) continue;
       // Resolved exactly as claim_next_step resolves it, so the definition's
       // model/effort match the step's MANDATORY MODEL directive.
-      const resolution = tier ? resolveModelTier(tier, "claude", owner?.model_tier_map ?? null, platformDefaults) : null;
+      const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults) : null;
       inputs.push({
         bot: { id: bot.id, name: bot.name, role: bot.role, system_prompt: bot.system_prompt },
         tier,
@@ -124,6 +128,7 @@ export async function POST(req: Request) {
     const agents = buildSessionAgents(inputs);
     logger.info("Terminal session agents delivered to bridge", {
       sid,
+      agent,
       agents: agents ? Object.keys(agents).length : 0,
     });
     return NextResponse.json({ agents });
