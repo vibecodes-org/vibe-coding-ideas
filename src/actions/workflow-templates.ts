@@ -573,6 +573,7 @@ export async function resyncWorkflowTemplate(templateId: string) {
   return {
     runsUpdated: propagation.runsUpdated,
     stepsUpdated: propagation.stepsUpdated,
+    runsReplaced: propagation.runsReplaced,
     skippedStructuralMismatch: propagation.skippedStructuralMismatch,
     rematched,
   };

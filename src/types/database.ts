@@ -3016,6 +3016,10 @@ export type Database = {
         Args: { target_user_id: string };
         Returns: undefined;
       };
+      replace_unstarted_workflow_run: {
+        Args: { p_run_id: string; p_steps: Json };
+        Returns: boolean;
+      };
       initialize_board_columns: {
         Args: { p_idea_id: string; p_columns: Json };
         Returns: undefined;

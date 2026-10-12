@@ -479,16 +479,18 @@ export async function checkAndCompleteRun(
 
 /**
  * Propagate template step edits to pending steps in active workflow runs.
- * Only updates steps with status = 'pending'. Skips runs where the step
- * count differs (structural changes are too risky to propagate).
- * Does NOT re-match bot_id — use rematch_workflow_agents separately.
+ * Only updates steps with status = 'pending'. When the step count differs, the
+ * run is swapped to the new steps by replace_unstarted_workflow_run (atomic) if
+ * nothing has started on it; otherwise it is skipped (structural mismatch).
+ * Does NOT re-match bot_id — replaced runs are returned in affectedTaskIds so
+ * callers rematch them (swapped steps start with no agent).
  */
 export async function propagateTemplateEdits(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   templateId: string,
   newSteps: WorkflowTemplateStep[]
-): Promise<{ runsUpdated: number; stepsUpdated: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
+): Promise<{ runsUpdated: number; stepsUpdated: number; runsReplaced: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
   // Find active runs for this template
   const { data: activeRuns } = await supabase
     .from("workflow_runs")
@@ -497,11 +499,12 @@ export async function propagateTemplateEdits(
     .not("status", "in", '("completed","failed")');
 
   if (!activeRuns || activeRuns.length === 0) {
-    return { runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
+    return { runsUpdated: 0, stepsUpdated: 0, runsReplaced: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
   }
 
   let runsUpdated = 0;
   let stepsUpdated = 0;
+  let runsReplaced = 0;
   let skippedStructuralMismatch = 0;
   const affectedTaskIds: string[] = [];
 
@@ -513,7 +516,33 @@ export async function propagateTemplateEdits(
       .order("step_order", { ascending: true });
 
     if (!steps || steps.length !== newSteps.length) {
-      skippedStructuralMismatch++;
+      const { data: replaced, error: replaceError } = steps
+        ? await supabase.rpc("replace_unstarted_workflow_run", {
+            p_run_id: run.id,
+            p_steps: newSteps.map((s) => ({
+              title: s.title,
+              description: s.description ?? null,
+              agent_role: s.role,
+              human_check_required: s.requires_approval ?? false,
+              expected_deliverables: s.deliverables ?? [],
+              model_tier: s.model_tier ?? null,
+            })),
+          })
+        : { data: false, error: null };
+
+      if (replaceError) {
+        logger.error("Failed to replace unstarted workflow run", {
+          error: replaceError.message,
+          runId: run.id,
+        });
+      }
+
+      if (replaced === true) {
+        runsReplaced++;
+        affectedTaskIds.push(run.task_id);
+      } else {
+        skippedStructuralMismatch++;
+      }
       continue;
     }
 
@@ -549,5 +578,5 @@ export async function propagateTemplateEdits(
     }
   }
 
-  return { runsUpdated, stepsUpdated, skippedStructuralMismatch, affectedTaskIds };
+  return { runsUpdated, stepsUpdated, runsReplaced, skippedStructuralMismatch, affectedTaskIds };
 }
