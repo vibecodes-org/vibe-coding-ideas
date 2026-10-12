@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
-import { getDefaultSkillsForRole } from "@/lib/agent-skills";
+import { normalizeToolAccess, toolAccessFromFrontmatter, type ToolAccess } from "@/lib/agent-tool-access";
 import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
@@ -17,7 +17,8 @@ export async function createBot(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[]
+  skills?: string[],
+  toolAccess?: ToolAccess
 ): Promise<string> {
   const supabase = await createClient();
   const {
@@ -30,9 +31,10 @@ export async function createBot(
   if (name.length > 100) throw new Error("Agent name must be 100 characters or less");
 
   const validatedBio = validateBio(bio ?? null);
-  // Use provided skills, or fall back to role-based defaults
-  const rawSkills = skills && skills.length > 0 ? skills : getDefaultSkillsForRole(role);
-  const validatedSkills = validateSkills(rawSkills);
+  // Tags are only what the owner typed: the agent never reads them, so
+  // filling them in from the role added nothing but noise.
+  const validatedSkills = validateSkills(skills ?? []);
+  const validatedToolAccess = normalizeToolAccess(toolAccess);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -46,11 +48,12 @@ export async function createBot(
 
   const botId = data as string;
 
-  // Set bio/skills via follow-up UPDATE (RPC doesn't know about new columns)
-  if (validatedBio || validatedSkills.length > 0) {
+  // Set bio/skills/tool access via follow-up UPDATE (RPC doesn't know about new columns)
+  if (validatedBio || validatedSkills.length > 0 || validatedToolAccess !== "full") {
     const extras: Record<string, unknown> = {};
     if (validatedBio) extras.bio = validatedBio;
     if (validatedSkills.length > 0) extras.skills = validatedSkills;
+    if (validatedToolAccess !== "full") extras.tool_access = validatedToolAccess;
 
     await supabase
       .from("bot_profiles")
@@ -75,6 +78,7 @@ export async function updateBot(
     bio?: string | null;
     skills?: string[];
     is_published?: boolean;
+    tool_access?: ToolAccess;
   }
 ) {
   const supabase = await createClient();
@@ -102,6 +106,7 @@ export async function updateBot(
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
   if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
   if (updates.is_published !== undefined) profileUpdates.is_published = updates.is_published;
+  if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase
@@ -235,6 +240,7 @@ export async function cloneBotProfile(
       .update({
         bio: source.bio,
         skills: source.skills,
+        tool_access: source.tool_access,
         cloned_from: source.id,
       })
       .eq("id", newBotId)
@@ -498,6 +504,11 @@ export async function importAgentFromSkill(
   if (!user) throw new Error("Not authenticated");
 
   const role = parsed.metadata.role ?? inferRole(parsed) ?? null;
+  const toolAccess = toolAccessFromFrontmatter({
+    tools: parsed.tools,
+    disallowedTools: parsed.disallowedTools,
+    metadataToolAccess: parsed.metadata.tool_access,
+  });
   const displayName = parsed.name
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -511,6 +522,14 @@ export async function importAgentFromSkill(
     if (role) updates.role = role;
     if (parsed.metadata.bio) updates.bio = validateBio(parsed.metadata.bio);
     if (parsed.metadata.tags) updates.skills = validateSkills(parsed.metadata.tags);
+    // A file that says nothing about tools leaves the agent's setting alone.
+    if (
+      parsed.metadata.tool_access !== undefined ||
+      parsed.tools !== undefined ||
+      parsed.disallowedTools !== undefined
+    ) {
+      updates.tool_access = toolAccess;
+    }
 
     const { error: updateErr } = await supabase
       .from("bot_profiles")
@@ -532,7 +551,8 @@ export async function importAgentFromSkill(
     parsed.body || null,
     null,
     parsed.metadata.bio ?? null,
-    parsed.metadata.tags ?? undefined
+    parsed.metadata.tags ?? undefined,
+    toolAccess
   );
 
   return botId;

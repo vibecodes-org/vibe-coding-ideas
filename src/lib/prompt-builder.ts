@@ -8,50 +8,39 @@ export interface StructuredPromptFields {
 const EXPERTISE_MARKER = "Domain expertise:";
 const CONSTRAINTS_MARKER = "You must not:";
 const APPROACH_MARKER = "Your approach:";
-const ROLE_PREFIX = "You are a";
 
-export function generatePromptFromFields(
-  role: string,
-  fields: StructuredPromptFields
-): string {
-  const { goal, expertise, constraints, approach } = fields;
-  const parts: string[] = [];
+/**
+ * How the converter reads old-layout text differently from the display parser
+ * (task 472d5672): it keeps any text before the first `## Goal`-style heading
+ * as the start of the goal, and strips a leading "You are a X." sentence only
+ * when X is the agent's own role. Without these options the parser behaves as
+ * it always has (the editor's old Builder tab relied on that).
+ */
+export interface LegacyParseOptions {
+  /** Set to switch to converter behaviour. null = no role known: strip nothing. */
+  role?: string | null;
+}
 
-  // Role + goal paragraph
-  const rolePart = role.trim() ? `${ROLE_PREFIX} ${role.trim()}.` : "";
-  const goalPart = goal.trim();
-  if (rolePart && goalPart) {
-    parts.push(`${rolePart} ${goalPart}`);
-  } else if (rolePart) {
-    parts.push(rolePart);
-  } else if (goalPart) {
-    parts.push(goalPart);
-  }
-
-  if (expertise?.trim()) {
-    parts.push(`${EXPERTISE_MARKER} ${expertise.trim()}`);
-  }
-
-  if (constraints.trim()) {
-    parts.push(`${CONSTRAINTS_MARKER} ${constraints.trim()}`);
-  }
-
-  if (approach.trim()) {
-    parts.push(`${APPROACH_MARKER} ${approach.trim()}`);
-  }
-
-  return parts.join("\n\n");
+/** Strip "You are a/an <role>." from the start of the text, only when it is exactly the agent's role. */
+export function stripOwnRolePrefix(text: string, role: string | null | undefined): string {
+  const r = role?.trim();
+  if (!r) return text;
+  const escaped = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = text.match(new RegExp(`^You are (?:a |an )?${escaped}\\.\\s*`, "i"));
+  return m ? text.slice(m[0].length).trim() : text;
 }
 
 export function parsePromptToFields(
-  prompt: string
+  prompt: string,
+  options?: LegacyParseOptions
 ): StructuredPromptFields | null {
   if (!prompt || !prompt.trim()) return null;
 
   const text = prompt.trim();
+  const converter = options !== undefined;
 
   // Try markdown header format first: ## Goal / ## Constraints / ## Approach
-  const mdResult = parseMarkdownHeaders(text);
+  const mdResult = parseMarkdownHeaders(text, options);
   if (mdResult) return mdResult;
 
   // Fall back to inline marker format: "Domain expertise:" / "You must not:" / "Your approach:"
@@ -88,12 +77,16 @@ export function parsePromptToFields(
   const firstMarkerIdx = markers[0]?.idx ?? text.length;
   let goalSection = text.slice(0, firstMarkerIdx).trim();
 
-  // Strip "You are a [role]." prefix from goal
-  const rolePrefixMatch = goalSection.match(
-    /^You are (?:a |an )?[^.]+\.\s*/i
-  );
-  if (rolePrefixMatch) {
-    goalSection = goalSection.slice(rolePrefixMatch[0].length).trim();
+  if (converter) {
+    goalSection = stripOwnRolePrefix(goalSection, options.role);
+  } else {
+    // Strip "You are a [role]." prefix from goal
+    const rolePrefixMatch = goalSection.match(
+      /^You are (?:a |an )?[^.]+\.\s*/i
+    );
+    if (rolePrefixMatch) {
+      goalSection = goalSection.slice(rolePrefixMatch[0].length).trim();
+    }
   }
 
   goal = goalSection;
@@ -101,7 +94,7 @@ export function parsePromptToFields(
   return { goal, expertise, constraints, approach };
 }
 
-function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
+function parseMarkdownHeaders(text: string, converter?: LegacyParseOptions): StructuredPromptFields | null {
   const goalMatch = text.match(/##\s*Goal\s*\n/i);
   const expertiseMatch = text.match(/##\s*Expertise\s*\n/i);
   const constraintsMatch = text.match(/##\s*Constraints\s*\n/i);
@@ -136,6 +129,13 @@ function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
   for (let i = 0; i < sections.length; i++) {
     const end = i + 1 < sections.length ? sections[i + 1].start : text.length;
     fields[sections[i].key] = text.slice(sections[i].headerEnd, end).trim();
+  }
+
+  // Text before the first heading is dropped by the display parser; the
+  // converter keeps it, as the start of the goal.
+  if (converter && sections[0].start > 0) {
+    const preamble = stripOwnRolePrefix(text.slice(0, sections[0].start).trim(), converter.role);
+    if (preamble) fields.goal = fields.goal ? `${preamble}\n\n${fields.goal}` : preamble;
   }
 
   return {

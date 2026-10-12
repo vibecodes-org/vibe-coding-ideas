@@ -22,8 +22,17 @@ export interface ParsedSkill {
   description: string;
   license?: string;
   compatibility?: string;
+  /** Raw top-level `tools` / `disallowedTools` of a Claude Code style agent file. */
+  tools?: string | string[];
+  disallowedTools?: string | string[];
   metadata: SkillMetadata;
   body: string;
+}
+
+function rawToolList(value: unknown): string | string[] | undefined {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.trim()) return value;
+  return undefined;
 }
 
 /**
@@ -99,6 +108,8 @@ export function parseSkillMd(content: string): ParsedSkill {
     description,
     license: parsed.license ? String(parsed.license) : undefined,
     compatibility: parsed.compatibility ? String(parsed.compatibility) : undefined,
+    tools: rawToolList(parsed.tools),
+    disallowedTools: rawToolList(parsed.disallowedTools),
     metadata,
     body,
   };

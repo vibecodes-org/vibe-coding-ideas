@@ -31,10 +31,13 @@ const LIBRARY_BOT = {
 const eqValue = (c: FakeCall, col: string) =>
   (c.filters.find((f) => f[0] === "eq" && (f[1] as unknown[])[0] === col)?.[1] as unknown[] | undefined)?.[1];
 
-function setup(skillsResult: { data?: unknown; error?: { message: string } | null }) {
+function setup(
+  skillsResult: { data?: unknown; error?: { message: string } | null },
+  agentRoles: { role: string; name_suggestion: string }[] = [{ role: "Full Stack Engineer", name_suggestion: "Atlas" }],
+) {
   const fake = fakeSupabase({
     tables: {
-      project_kits: () => ({ data: { id: "kit", agent_roles: [{ role: "Full Stack Engineer", name_suggestion: "Atlas" }], label_presets: [] } }),
+      project_kits: () => ({ data: { id: "kit", agent_roles: agentRoles, label_presets: [] } }),
       bot_profiles: (c) =>
         c.op !== "select" ? { error: null } : eqValue(c, "owner_id") === VIBECODES_USER_ID ? { data: [LIBRARY_BOT] } : { data: [] },
       agent_skills: (c) => (c.op === "select" ? skillsResult : { error: null }),
@@ -65,5 +68,26 @@ describe("applyKit (app)", () => {
     expect(result.agentsCreated).toBe(1);
     expect(result.agentsFailed).toEqual([]);
     expect(fake.writesTo("agent_skills", "insert")).toHaveLength(1);
+  });
+});
+
+// Task 472d5672: with no platform agent for a role, the kit builds one from the
+// starting template, in the new layout and with the template's tool access.
+describe("applyKit (app) — starting-template fallback", () => {
+  it("creates a Code Reviewer from the template on Read-only, in the new layout", async () => {
+    const fake = setup({ data: [] }, [{ role: "Code Reviewer", name_suggestion: "Lens" }]);
+    const result = await applyKit("idea", "kit");
+
+    expect(result.agentsCreated).toBe(1);
+    const create = fake.rpcCalls.find((c) => c.name === "create_bot_user");
+    expect(String((create?.args as { p_system_prompt: string }).p_system_prompt)).toContain("## Your job");
+    expect(fake.writesTo("bot_profiles", "update")[0].payload).toMatchObject({ tool_access: "read_only" });
+  });
+
+  it("leaves a Full-access template's tool access alone", async () => {
+    const fake = setup({ data: [] }, [{ role: "Business Analyst", name_suggestion: "Bob" }]);
+    await applyKit("idea", "kit");
+
+    expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
   });
 });

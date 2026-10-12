@@ -15,20 +15,14 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
 import { createAdminAgent, updateAdminAgent } from "@/actions/admin-agents";
-import { PromptBuilder } from "@/components/profile/prompt-builder";
+import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
+import { RoleTemplateChips } from "@/components/agents/role-template-chips";
+import { generateInstructions } from "@/lib/agent-instructions";
+import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
-import { cn, getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
 import type { BotProfile } from "@/types";
-import type { StructuredPromptFields } from "@/lib/prompt-builder";
-
-const TEMPLATE_CHIPS: { role: string; icon: string }[] = [
-  { role: "Developer", icon: "\u{1F4BB}" },
-  { role: "UX Designer", icon: "\u{1F3A8}" },
-  { role: "QA Tester", icon: "\u{1F50D}" },
-  { role: "Product Owner", icon: "\u{1F4CB}" },
-  { role: "Business Analyst", icon: "\u{1F4CA}" },
-  { role: "DevOps", icon: "\u{2699}" },
-];
 
 interface CreateAdminAgentDialogProps {
   open: boolean;
@@ -52,8 +46,7 @@ export function CreateAdminAgentDialog({
   const [skillsInput, setSkillsInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [templateStructured, setTemplateStructured] =
-    useState<StructuredPromptFields | null>(null);
+  const [toolAccess, setToolAccess] = useState<ToolAccess>("full");
   const [promptKey, setPromptKey] = useState(0);
 
   // Avatar upload
@@ -70,7 +63,7 @@ export function CreateAdminAgentDialog({
       setBio(editAgent.bio ?? "");
       setSkillsInput((editAgent.skills ?? []).join(", "));
       setSelectedTemplate(null);
-      setTemplateStructured(null);
+      setToolAccess(normalizeToolAccess(editAgent.tool_access));
       setPromptKey((k) => k + 1);
       setSelectedFile(null);
       setPreviewUrl(null);
@@ -82,10 +75,8 @@ export function CreateAdminAgentDialog({
     if (template) {
       setSelectedTemplate(templateRole);
       setRole(template.role);
-      setSystemPrompt(template.prompt);
-      setTemplateStructured(
-        template.structured ? { ...template.structured } : null
-      );
+      setSystemPrompt(generateInstructions(template.fields));
+      setToolAccess(template.toolAccess);
       setPromptKey((k) => k + 1);
     }
   }
@@ -97,7 +88,7 @@ export function CreateAdminAgentDialog({
     setBio("");
     setSkillsInput("");
     setSelectedTemplate(null);
-    setTemplateStructured(null);
+    setToolAccess("full");
     setPromptKey((k) => k + 1);
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -172,6 +163,7 @@ export function CreateAdminAgentDialog({
           system_prompt: systemPrompt.trim() || null,
           bio: bio.trim() || null,
           skills,
+          tool_access: toolAccess,
           ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
         });
         toast.success("Agent updated");
@@ -183,7 +175,8 @@ export function CreateAdminAgentDialog({
           systemPrompt.trim() || null,
           null,
           bio.trim() || null,
-          skills
+          skills,
+          toolAccess
         );
 
         // Upload avatar if selected
@@ -216,7 +209,7 @@ export function CreateAdminAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? (
@@ -285,28 +278,7 @@ export function CreateAdminAgentDialog({
             </div>
           </div>
 
-          {/* Template picker chips */}
-          <div className="space-y-2">
-            <Label className="text-xs">Start from a template</Label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {TEMPLATE_CHIPS.map((t) => (
-                <button
-                  key={t.role}
-                  type="button"
-                  onClick={() => handleTemplateSelect(t.role)}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 rounded-md border py-2 px-2 text-xs font-medium transition-colors",
-                    selectedTemplate === t.role
-                      ? "border-violet-500 bg-violet-500/15 text-violet-400"
-                      : "border-border text-muted-foreground hover:border-violet-500/30 hover:text-foreground"
-                  )}
-                >
-                  <span className="text-base">{t.icon}</span>
-                  {t.role}
-                </button>
-              ))}
-            </div>
-          </div>
+          <RoleTemplateChips selected={selectedTemplate} onSelect={handleTemplateSelect} />
 
           {/* Role */}
           <div className="space-y-1">
@@ -325,10 +297,20 @@ export function CreateAdminAgentDialog({
             </p>
           </div>
 
-          {/* Skills (comma-separated) */}
+          {/* Instructions */}
+          <AgentInstructionsEditor
+            key={promptKey}
+            role={role}
+            value={systemPrompt}
+            onChange={setSystemPrompt}
+          />
+
+          <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="admin-tool-access" />
+
+          {/* Tags (comma-separated) */}
           <div className="space-y-1">
             <Label htmlFor="admin-bot-skills" className="text-xs">
-              Skills{" "}
+              Tags{" "}
               <span className="font-normal text-muted-foreground">
                 (optional)
               </span>
@@ -337,23 +319,14 @@ export function CreateAdminAgentDialog({
               id="admin-bot-skills"
               value={skillsInput}
               onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="Comma-separated skills"
+              placeholder="e.g. planning, requirements"
               maxLength={300}
             />
             <p className="text-[10px] text-muted-foreground">
-              Shown on the agent card and profile. Admin agents are
+              Short labels for the agent&apos;s card and for search. The agent never reads them. Admin agents are
               auto-published to the community.
             </p>
           </div>
-
-          {/* Prompt Builder */}
-          <PromptBuilder
-            key={promptKey}
-            role={role}
-            value={systemPrompt}
-            onChange={setSystemPrompt}
-            templateStructured={templateStructured}
-          />
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">

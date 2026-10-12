@@ -58,12 +58,12 @@ export default function AiAgentTeamsPage() {
             <li>Enter a name (e.g., &quot;Dev Alpha&quot;)</li>
             <li>
               Pick a <strong className="text-foreground">role template</strong>{" "}
-              — choose from 18 pre-built roles spanning engineering, design,
+              — choose from 19 pre-built roles spanning engineering, design,
               product, go-to-market, and operations (see the list below) — or
               leave it blank for a general-purpose agent
             </li>
             <li>
-              Customize the <strong className="text-foreground">system prompt
+              Customize the <strong className="text-foreground">instructions
               </strong> if you want. This prompt is stored on the agent and
               available to Claude Code via the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
@@ -83,18 +83,20 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Role Templates</h2>
           <p className="mb-4 text-muted-foreground">
-            VibeCodes ships <strong className="text-foreground">18 role
-            templates</strong>, each with a pre-written{" "}
-            <strong className="text-foreground">structured prompt</strong>{" "}
-            (goal, expertise, constraints, and approach) that you can customise.
-            Pick one as a starting point, then edit to match your needs. They
-            span the whole product team, not just engineering:
+            VibeCodes ships <strong className="text-foreground">19 role
+            templates</strong>, each with pre-written{" "}
+            <strong className="text-foreground">instructions</strong>{" "}
+            (what the agent does, its job, what it hands back, and what it must
+            not do) that you can customise. Pick one as a starting point, then
+            edit to match your needs. They span the whole product team, not
+            just engineering, and start with the Planner, which takes a card to
+            an approved plan:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border p-4">
               <h3 className="font-medium">Engineering</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Full Stack Engineer, Front End Engineer, Backend Engineer, QA
+                Planner, Full Stack Engineer, Front End Engineer, Backend Engineer, QA
                 Engineer, DevOps Engineer, Security Engineer, Code Reviewer,
                 Data Engineer
               </p>
@@ -122,41 +124,50 @@ export default function AiAgentTeamsPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">
-            Structured Prompt Builder
-          </h2>
+          <h2 className="mb-4 text-2xl font-semibold">Writing Instructions</h2>
           <p className="mb-4 text-muted-foreground">
             When creating or editing an agent, the{" "}
-            <strong className="text-foreground">prompt builder</strong> helps
-            you craft effective system prompts using four structured fields:
+            <strong className="text-foreground">Instructions</strong> editor
+            asks for what a good agent definition needs, in four boxes:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">Goal</strong> — what the agent
-              should achieve (e.g., &quot;Deliver production-ready code that
-              follows project conventions&quot;)
+              <strong className="text-foreground">What it does, in one line</strong>{" "}
+              — the agent&apos;s role in a sentence (e.g., &quot;You review code
+              changes for correctness and consistency&quot;)
             </li>
             <li>
-              <strong className="text-foreground">Expertise</strong> — the
-              domain knowledge, principles, and frameworks the agent should
-              bring (e.g., &quot;Modern React, accessibility, and testing best
-              practices&quot;)
+              <strong className="text-foreground">Its job</strong> — the
+              specific work it does in your workflows: what it reads, what it
+              checks, the steps it follows
             </li>
             <li>
-              <strong className="text-foreground">Constraints</strong> — what
-              the agent must never do (e.g., &quot;Ship code without tests&quot;)
+              <strong className="text-foreground">What it hands back</strong> —
+              what the next step, or you, get from it
             </li>
             <li>
-              <strong className="text-foreground">Approach</strong> — how the
-              agent should work (e.g., &quot;Read existing code before writing
-              new code&quot;)
+              <strong className="text-foreground">What it must not do</strong>{" "}
+              — the things it should never touch or do
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            Role templates pre-fill these fields. You can edit them or switch
-            to a freeform text prompt at any time. The builder combines the
-            fields into a single system prompt that Claude follows when acting
-            as that agent.
+            Leave out general know-how a strong model already has; skills hold
+            what only your project knows. Role templates pre-fill the boxes.
+            You can edit them or switch to{" "}
+            <strong className="text-foreground">Write it yourself</strong> for
+            free-form text at any time. The boxes are saved as one block of
+            text with plain headings, which Claude follows when acting as that
+            agent.
+          </p>
+          <p className="mt-3 text-muted-foreground">
+            Each agent also has a{" "}
+            <strong className="text-foreground">What it can do</strong>{" "}
+            setting: <strong className="text-foreground">Full access</strong>{" "}
+            (the default) can read and change code and files;{" "}
+            <strong className="text-foreground">Read-only</strong> is for
+            reviewers and checkers. A read-only agent is told not to create,
+            edit or delete files, and in the in-app browser terminal its
+            file-editing tools are switched off.
           </p>
         </section>
 
