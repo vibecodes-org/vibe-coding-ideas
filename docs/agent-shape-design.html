@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent Instructions Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens copied from src/app/globals.css (.dark), the app's default theme. */
+  :root {
+    --background: #09090b;          /* oklch(0.141 0.005 285.823) */
+    --foreground: #fafafa;
+    --card: #18181b;                /* oklch(0.21 0.006 285.885) */
+    --muted: #27272a;               /* oklch(0.274 0.006 286.033) */
+    --muted-foreground: #a1a1aa;    /* oklch(0.705 0.015 286.067) */
+    --border: rgba(255,255,255,0.10);
+    --input: rgba(255,255,255,0.15);
+    --primary: #e4e4e7;             /* oklch(0.92 0.004 286.32) */
+    --primary-foreground: #18181b;
+    --violet-500: #8b5cf6; --violet-400: #a78bfa; --violet-300: #c4b5fd;
+    --emerald-500: #10b981; --emerald-400: #34d399;
+    --amber-500: #f59e0b; --amber-400: #fbbf24;
+    --red-500: #ef4444; --blue-500: #3b82f6;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    line-height: 1.5;
+    padding: 40px 16px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1120px; margin: 0 auto; }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; }
+
+  /* ---------- Document chrome (not part of the app) ---------- */
+  .doc-h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .doc-sub { color: var(--muted-foreground); font-size: 15px; margin-top: 6px; max-width: 760px; }
+  .doc-h2 { font-size: 18px; font-weight: 600; margin: 56px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .doc-p { color: var(--muted-foreground); font-size: 14px; max-width: 780px; margin: 8px 0 18px; }
+  .note {
+    background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--violet-300); margin: 14px 0;
+  }
+  .note strong { color: var(--violet-400); }
+  .two-col { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 28px; align-items: start; }
+  .callouts { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 16px; }
+  .callout { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--muted-foreground); background: rgba(255,255,255,0.02); }
+  .callout b { color: var(--foreground); font-weight: 600; }
+  .num { display: inline-flex; width: 18px; height: 18px; border-radius: 999px; background: var(--violet-500); color: #fff; font-size: 11px; font-weight: 700; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 1px; }
+  .pin { position: relative; }
+  .pin > .num.abs { position: absolute; left: -26px; top: 0; }
+  .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .ba-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); }
+  .ba-card h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-foreground); margin-bottom: 8px; }
+  .ba-card ul { list-style: none; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+  .strike { text-decoration: line-through; color: #71717a; }
+  table.rules { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  table.rules th, table.rules td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.rules th { color: var(--muted-foreground); font-weight: 500; font-size: 12px; }
+  .width-tag { display: inline-block; font-size: 11px; font-weight: 600; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-bottom: 10px; }
+
+  /* ---------- App components (shadcn New York, dark) ---------- */
+  .dialog {
+    background: var(--background); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 10px 40px rgba(0,0,0,.5); padding: 24px; width: 100%; max-width: 672px; /* sm:max-w-2xl (was sm:max-w-lg) */
+    position: relative;
+  }
+  .dialog-close { position: absolute; top: 16px; right: 16px; width: 16px; height: 16px; color: var(--muted-foreground); }
+  .dialog.narrow { max-width: 375px; padding: 20px 16px; border-radius: 10px; }
+  .dialog-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+  .ico { width: 16px; height: 16px; display: inline-block; vertical-align: -3px; }
+  .stack > * + * { margin-top: 16px; }
+  .row { display: flex; gap: 16px; }
+  .avatar { width: 56px; height: 56px; border-radius: 999px; background: rgba(228,228,231,0.1); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; flex-shrink: 0; color: var(--foreground); }
+  .avatar.violet { background: rgba(139,92,246,0.15); color: var(--violet-400); }
+  .label { font-size: 12px; font-weight: 500; display: block; }
+  .label .opt { font-weight: 400; color: var(--muted-foreground); }
+  .input, .textarea {
+    width: 100%; margin-top: 4px; border: 1px solid var(--input); background: rgba(255,255,255,0.045);
+    border-radius: 6px; color: var(--foreground); font: inherit; font-size: 14px; padding: 6px 10px; min-height: 36px;
+  }
+  .textarea { white-space: pre-wrap; line-height: 1.5; padding: 8px 10px; font-size: 13.5px; }
+  .textarea.empty { color: #71717a; }
+  .helper { font-size: 10.5px; color: var(--muted-foreground); margin-top: 4px; }
+  .sub-label { font-size: 12px; color: var(--muted-foreground); font-weight: 500; }
+  .sub-help { font-size: 11px; color: #8b8b94; margin: 1px 0 0; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--muted); border-radius: 8px; padding: 3px; height: 32px; margin-top: 6px; }
+  .tab { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; color: var(--muted-foreground); border-radius: 6px; border: 1px solid transparent; }
+  .tab.on { background: rgba(255,255,255,0.06); border-color: var(--input); color: var(--foreground); }
+
+  .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
+  .chip { border: 1px solid var(--border); border-radius: 6px; padding: 8px 6px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+  .chip .em { font-size: 15px; }
+  .chip.on { border-color: var(--violet-500); background: rgba(139,92,246,0.15); color: var(--violet-400); }
+  .chip.more { border-style: dashed; }
+
+  .banner { border-radius: 6px; padding: 8px 10px; font-size: 12px; display: flex; gap: 8px; align-items: flex-start; }
+  .banner.info { border: 1px solid rgba(139,92,246,0.25); background: rgba(139,92,246,0.06); color: var(--violet-300); }
+  .banner.amber { border: 1px solid rgba(245,158,11,0.22); background: rgba(245,158,11,0.07); color: var(--amber-400); }
+
+  .leftover { border: 1px solid rgba(245,158,11,0.25); background: rgba(245,158,11,0.04); border-radius: 8px; padding: 10px; }
+  .leftover-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .leftover-title { font-size: 12px; font-weight: 600; color: var(--amber-400); }
+  .ghost-btn { font-size: 12px; color: var(--muted-foreground); background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; font-family: inherit; }
+  .leftover .textarea { border-color: rgba(245,158,11,0.2); color: #d4d4d8; font-size: 12.5px; }
+
+  .radio-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .radio-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
+  .radio-card.on { border-color: var(--violet-500); background: rgba(139,92,246,0.08); }
+  .dot { width: 16px; height: 16px; border-radius: 999px; border: 1px solid var(--input); flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; }
+  .radio-card.on .dot { border-color: var(--violet-400); }
+  .radio-card.on .dot::after { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--violet-400); }
+  .rc-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .rc-desc { font-size: 11.5px; color: var(--muted-foreground); margin-top: 2px; }
+
+  .community { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .switch { width: 32px; height: 18px; border-radius: 999px; background: var(--muted); position: relative; flex-shrink: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: #a1a1aa; }
+  .actions { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid var(--border); }
+  .btn { font-family: inherit; font-size: 14px; font-weight: 500; border-radius: 6px; padding: 7px 14px; border: 0; }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn.ghost { background: transparent; color: var(--foreground); }
+  .btn.ghost.dim { color: var(--muted-foreground); font-size: 13px; }
+
+  .preview { background: rgba(255,255,255,0.03); border: 1px dashed var(--input); border-radius: 8px; padding: 12px; font-family: "Geist Mono", monospace; font-size: 12px; white-space: pre-wrap; color: #d4d4d8; line-height: 1.55; }
+  .preview .h { color: var(--violet-400); }
+  .preview .sys { color: var(--emerald-400); }
+
+  /* Profile page */
+  .profile { border: 1px solid var(--border); border-radius: 12px; padding: 24px; background: var(--background); }
+  .crumb { font-size: 12px; color: var(--muted-foreground); margin-bottom: 16px; }
+  .crumb a { color: var(--violet-400); text-decoration: none; }
+  .hero { display: flex; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .hero .avatar { width: 80px; height: 80px; font-size: 26px; }
+  .hero h1 { font-size: 20px; font-weight: 700; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; border-radius: 6px; padding: 2px 8px; }
+  .badge.role { background: rgba(139,92,246,0.15); color: var(--violet-400); }
+  .badge.ro { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
+  .badge.tag { background: var(--muted); color: var(--muted-foreground); }
+  .sec-h { font-size: 14px; font-weight: 600; margin: 22px 0 10px; display: flex; align-items: center; gap: 8px; }
+  .icard { border: 1px solid var(--border); background: rgba(39,39,42,0.3); border-radius: 8px; overflow: hidden; }
+  .icard-h { padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .icard-b { padding: 12px 14px; font-size: 12.5px; color: var(--muted-foreground); white-space: pre-wrap; line-height: 1.6; }
+  .ig { display: grid; gap: 12px; }
+  .ig2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .c-emerald { color: var(--emerald-500); } .c-violet { color: var(--violet-400); } .c-blue { color: #60a5fa; } .c-red { color: var(--red-500); } .c-amber { color: var(--amber-400); }
+
+  .phone { width: 375px; border: 1px solid #3f3f46; border-radius: 28px; padding: 14px 0; background: #000; }
+  .phone-inner { height: 760px; overflow: hidden; background: rgba(0,0,0,.6); display: flex; justify-content: center; padding: 8px 0; }
+  .phone .dialog { box-shadow: none; }
+  .mobile-row { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    .callouts { position: static; }
+    .before-after, .ig2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .radio-cards { grid-template-columns: 1fr; }
+    .chips { grid-template-columns: repeat(2, 1fr); }
+    .row.top { flex-direction: column; }
+    .phone { width: 100%; }
+    .pin > .num.abs { position: static; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="doc-h1">How you write an agent: the new layout</h1>
+  <p class="doc-sub">Stage 1 of the "best practice" card, updated with your two changes. The screens where you create and edit an agent stop asking for Goal, Expertise, Constraints and Approach. They ask what Anthropic's guidance asks for instead: what the agent does in one line, its job in your workflows, what it hands back, and what it must not do. Every existing agent is moved into this layout in one go, with a backup first. The Planner becomes part of the product: the first starting template, and an agent any board can copy.</p>
+
+  <div class="before-after">
+    <div class="ba-card">
+      <h4>Today</h4>
+      <ul>
+        <li>Goal</li>
+        <li>Expertise <span style="color:var(--muted-foreground)">(invites textbook material: Fitts's Law, the 5 Whys, code smells)</span></li>
+        <li>Constraints</li>
+        <li>Approach</li>
+        <li style="color:var(--muted-foreground)">Every agent can use every tool</li>
+        <li style="color:var(--muted-foreground)">"Skills" box that is really just card labels</li>
+        <li style="color:var(--muted-foreground)">The Planner exists only on this board</li>
+      </ul>
+    </div>
+    <div class="ba-card" style="border-color:rgba(139,92,246,.35)">
+      <h4 style="color:var(--violet-400)">After stage 1</h4>
+      <ul>
+        <li>What it does, in one line</li>
+        <li>Its job <span style="color:var(--muted-foreground)">(the specific work it does in your workflows)</span></li>
+        <li>What it hands back</li>
+        <li>What it must not do</li>
+        <li>What it can do: <b>Full access</b> or <b>Read-only</b></li>
+        <li>"Tags" box, clearly labelled as card labels the agent never reads</li>
+        <li>Every existing agent moved into the new layout in one go</li>
+        <li><b>Planner</b> first in the starting templates, and a platform Planner any board can copy</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">1. Creating an agent: the Planner comes first</h2>
+  <p class="doc-p">Planner is the first starting template, because every feature now starts with it: it writes the requirements, the mock and the build plan in one go. Security Engineer moves under "More" to keep the row the same size. No workflow or kit uses it today. Choosing Planner fills the four boxes with the same text as the platform Planner agent, on Full access, because it writes the mock and the notes file.</p>
+
+  <div class="two-col">
+    <div class="dialog" role="img" aria-label="Create Agent dialog with the Planner template chosen">
+      <svg class="dialog-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Close"><path d="M18 6 6 18M6 6l12 12"/></svg><div class="dialog-title"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>Create Agent</div>
+      <div class="stack">
+        <div class="row top">
+          <div class="avatar" style="border:2px dashed var(--border);background:rgba(228,228,231,0.06)">📷</div>
+          <div style="flex:1" class="stack">
+            <div><span class="label">Name</span><div class="input">Planner</div></div>
+            <div><span class="label">Tagline <span class="opt">(optional)</span></span><div class="input" style="color:#71717a">e.g. "I break things so users don't have to"</div></div>
+          </div>
+        </div>
+        <div class="pin">
+          <span class="num abs">1</span>
+          <span class="label">Start from a template</span>
+          <div class="chips">
+            <div class="chip on"><span class="em">🗺️</span>Planner</div>
+            <div class="chip"><span class="em">💻</span>Full Stack Engineer</div>
+            <div class="chip"><span class="em">🌐</span>Front End Engineer</div>
+            <div class="chip"><span class="em">🎨</span>UX Designer</div>
+            <div class="chip"><span class="em">🔍</span>QA Engineer</div>
+            <div class="chip"><span class="em">⚙</span>DevOps Engineer</div>
+            <div class="chip"><span class="em">📋</span>Product Owner</div>
+            <div class="chip more"><span class="em">+</span>More…</div>
+          </div>
+        </div>
+        <div><span class="label">Role</span><div class="input">Planner</div><p class="helper">Used to auto-assign workflow steps. Use roles that match your workflow template steps.</p></div>
+
+        <div class="pin">
+          <span class="num abs">2</span>
+          <span class="label">Instructions</span>
+          <div class="tabs"><div class="tab on">Guided</div><div class="tab">Write it yourself</div></div>
+        </div>
+        <div>
+          <div class="sub-label">What it does, in one line</div>
+          <div class="textarea" style="min-height:0">You plan changes, from card to approved plan, in one conversation.</div>
+        </div>
+        <div>
+          <div class="sub-label">Its job</div>
+          <p class="sub-help">The specific work it does in your workflows: what it reads, what it checks, the steps it follows.</p>
+          <div class="textarea" style="min-height:150px">For the card you're given:
+1. Read the card, its comments, and the code and live data it touches. Check facts; don't plan from assumptions.
+2. Write the requirements: what changes and why, testable acceptance checks, and on its own line "User-facing change: YES" or "User-facing change: NO".
+3. If YES, design it as an HTML mock in docs/ that matches the app's existing look and components, and attach the mock to the card so it's in front of whoever approves the plan.
+4. Write the technical plan the build agent will follow …
+5. Keep a working-notes file at docs/notes/&lt;first 8 characters of the card's id&gt;.md …</div>
+        </div>
+        <div>
+          <div class="sub-label">What it hands back</div>
+          <p class="sub-help">What the next step, or you, get from it.</p>
+          <div class="textarea" style="min-height:52px">A plain-English summary for whoever approves the plan first (what will change, and each decision they need to make, with your recommendation), then the mock's location if there is one, then the plan.</div>
+        </div>
+        <div>
+          <div class="sub-label">What it must not do</div>
+          <div class="textarea" style="min-height:52px">Don't write production code, change the database, or create or edit other cards. Your plan is approved before anything is built.</div>
+        </div>
+        <p class="helper">Leave out general know-how a strong model already has. Skills hold what only your project knows.</p>
+        <div class="pin">
+          <span class="num abs">3</span>
+          <span class="label">What it can do</span>
+          <div class="radio-cards">
+            <div class="radio-card on"><span class="dot"></span><div><div class="rc-title">Full access</div><div class="rc-desc">Can read and change code and files.</div></div></div>
+            <div class="radio-card"><span class="dot"></span><div><div class="rc-title">Read-only</div><div class="rc-desc">Can read code and run checks, but can't create or edit files. For reviewers and checkers.</div></div></div>
+          </div>
+          <p class="helper">In the browser terminal this is enforced: the agent's file-editing tools are switched off. In other Claude Code sessions the agent is told.</p>
+        </div>
+        <div class="pin">
+          <span class="num abs">4</span>
+          <span class="label">Tags <span class="opt">(optional)</span></span><div class="input" style="color:#71717a">e.g. planning, requirements</div><p class="helper">Short labels for the agent's card and for search. The agent never reads them.</p>
+        </div>
+        <div class="actions" style="justify-content:flex-end"><div><button class="btn ghost" type="button">Cancel</button> <button class="btn primary" type="button">Create Agent</button></div></div>
+      </div>
+    </div>
+    <div class="callouts">
+      <div class="callout"><span class="num">1</span><b>Planner first, Security Engineer under "More".</b> The other chips and the "More" list are as today. The admin screen for platform agents gets this same list. Its own chip list today names roles that match no template, so clicking those chips does nothing.</div>
+      <div class="callout"><span class="num">2</span><b>"Instructions"</b> replaces "System Prompt". The two tabs are today's Builder and Raw, renamed to say what they do. Name, tagline, avatar and role are unchanged.</div>
+      <div class="callout"><span class="num">3</span><b>New setting.</b> New agents start on Full access. The Planner stays on Full access because it writes the mock and the notes file. The Code Reviewer template starts on Read-only.</div>
+      <div class="callout"><span class="num">4</span><b>Was "Skills".</b> It's renamed so it can't be mistaken for real skills, which you add on the agent's page, and it's no longer filled in for you. Whether to keep tags at all is decided with the Agents pages (stage 5).</div>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">2. Editing an agent after the one-go conversion (this board's Lens)</h2>
+  <p class="doc-p">When this ships, every agent in the old layout is moved into the new boxes in one go: this board's, the platform's and every other copy. Each one is backed up first. So when you next open Lens it already looks like this. Its old Expertise text is kept in its own amber box, so nothing is lost. The dialog is wider than today (672px instead of 512px) because "Its job" needs room for a numbered list.</p>
+
+  <div class="two-col">
+    <div class="dialog" role="img" aria-label="Edit Agent dialog, Lens, after the one-go conversion">
+      <svg class="dialog-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Close"><path d="M18 6 6 18M6 6l12 12"/></svg><div class="dialog-title"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Agent</div>
+      <div class="stack">
+        <div class="row top">
+          <div class="avatar violet">L</div>
+          <div style="flex:1" class="stack">
+            <div><span class="label">Name</span><div class="input">Lens</div></div>
+            <div><span class="label">Tagline <span class="opt">(optional)</span></span><div class="input" style="color:#71717a">e.g. "I break things so users don't have to"</div></div>
+          </div>
+        </div>
+
+        <div>
+          <span class="label">Role</span>
+          <div class="input">Code Reviewer</div>
+          <p class="helper">Used to auto-assign workflow steps. Use roles that match your workflow template steps.</p>
+        </div>
+
+        <div>
+          <span class="label">Instructions</span>
+          <div class="tabs"><div class="tab on">Guided</div><div class="tab">Write it yourself</div></div>
+        </div>
+
+        <div>
+          <div class="sub-label">What it does, in one line</div>
+          <div class="textarea" style="min-height:0">Review every code change for correctness, maintainability, security, and consistency with project conventions.</div>
+        </div>
+
+        <div class="pin">
+          <span class="num abs">1</span>
+          <div class="sub-label">Its job</div>
+          <p class="sub-help">The specific work it does in your workflows: what it reads, what it checks, the steps it follows.</p>
+          <div class="textarea" style="min-height:120px">Catch bugs and anti-patterns before they reach production. Every review should teach something or confirm good practice.
+
+When picking up a board task, ALWAYS reassign it to yourself before starting work. Read the PR description and linked task/issue first to understand the intent. Review the diff file by file: check correctness, edge cases, error handling, naming, and consistency with existing patterns. …</div>
+        </div>
+
+        <div class="pin">
+          <span class="num abs">2</span>
+          <div class="sub-label">What it hands back</div>
+          <p class="sub-help">What the next step, or you, get from it.</p>
+          <div class="textarea empty" style="min-height:52px">e.g. Pass, or a numbered list of blocking issues with file and line, then any non-blocking notes.</div>
+          <p class="helper c-amber">Not set yet. Old-layout agents never had this box.</p>
+        </div>
+
+        <div>
+          <div class="sub-label">What it must not do</div>
+          <div class="textarea" style="min-height:80px">Never approve changes without reading every modified file in the diff. Do not nitpick formatting, whitespace, or import order — that's the linter's job. Never let security issues (injection, auth bypass, secret leakage) pass without flagging as a blocker. … Never revert, reset, `git checkout`/`restore`, `git clean`, stash, or delete changes you did not make …</div>
+        </div>
+
+        <div class="leftover pin">
+          <span class="num abs">3</span>
+          <div class="leftover-head">
+            <span class="leftover-title">Notes from the old format (was "Expertise")</span>
+            <button class="ghost-btn" type="button">Clear</button>
+          </div>
+          <p class="sub-help" style="margin:4px 0 6px;color:#c8a560">The new layout leaves out general know-how a strong model already has. Move anything specific to your project into "Its job", then clear this box. Whatever is left here stays in the agent's instructions.</p>
+          <div class="textarea" style="min-height:0">- Prioritise review feedback by severity: correctness bugs &gt; security issues &gt; performance problems &gt; maintainability &gt; style. …
+- Recognise common code smells: Feature Envy, Shotgun Surgery, Long Parameter List, Primitive Obsession. …
+- Review for cognitive complexity, not just cyclomatic complexity …
+- (3 more points)</div>
+        </div>
+
+        <p class="helper" style="margin-top:8px">Leave out general know-how a strong model already has. Skills hold what only your project knows.</p>
+
+        <div class="pin">
+          <span class="num abs">4</span>
+          <span class="label">What it can do</span>
+          <div class="radio-cards">
+            <div class="radio-card"><span class="dot"></span><div><div class="rc-title">Full access</div><div class="rc-desc">Can read and change code and files.</div></div></div>
+            <div class="radio-card on"><span class="dot"></span><div><div class="rc-title">Read-only</div><div class="rc-desc">Can read code and run checks, but can't create or edit files. For reviewers and checkers.</div></div></div>
+          </div>
+          <p class="helper">In the browser terminal this is enforced: the agent's file-editing tools are switched off. In other Claude Code sessions the agent is told.</p>
+        </div>
+
+        <div>
+          <span class="label">Tags <span class="opt">(optional)</span></span>
+          <div class="input">code-review, refactoring, architecture, testing</div>
+          <p class="helper">Short labels for the agent's card and for search. The agent never reads them.</p>
+        </div>
+
+        <div class="community">
+          <p style="font-size:12px;font-weight:500">Community</p>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+            <div><p style="font-size:14px">Publish to Community</p><p class="helper" style="margin:0">Make this agent discoverable by others</p></div>
+            <span class="switch"></span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost dim" type="button">Delete</button>
+          <div><button class="btn ghost" type="button">Cancel</button> <button class="btn primary" type="button">Save</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout"><span class="num">1</span><b>How the old text was moved.</b> Goal's first sentence became the one line. The rest of Goal, then Approach, became "Its job". Constraints became "What it must not do". The wording itself is unchanged; the proper rewrite of each agent is stage 3.</div>
+      <div class="callout"><span class="num">2</span><b>New box.</b> Old agents never said what they return, so it starts empty with an amber note. It's optional.</div>
+      <div class="callout"><span class="num">3</span><b>Nothing is thrown away.</b> The old Expertise is kept at the end of the instructions as "Notes from the old format", and the agent still reads it. Clear it when you're ready, or leave it for the stage 3 rewrite.</div>
+      <div class="callout"><span class="num">4</span><b>Lens is shown on Read-only to illustrate.</b> The conversion doesn't change anyone's tool setting: every agent starts on Full access. Setting checkers like Lens to Read-only is part of stage 3, or one click here.</div>
+      <div class="callout"><b>If old-layout text ever turns up again</b> (an imported file, or text pasted into "Write it yourself"), switching to Guided moves it into the boxes by the same rule, with a short notice above them.</div>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">3. "Write it yourself", and what the Planner actually receives</h2>
+  <p class="doc-p">The guided boxes are saved as one block of text with plain headings. "Write it yourself" shows that text and lets you edit it freely. Switching back to Guided reads the headings again. If the text doesn't follow the layout, all of it goes into "Its job" so nothing is lost. Today's editor empties the boxes in that case and can wipe your text, which this fixes.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="width-tag">The platform Planner and the Planner starting template: identical text</div>
+      <div class="preview">You plan changes, from card to approved plan, in one conversation.
+
+<span class="h">## Your job</span>
+For the card you're given:
+1. Read the card, its comments, and the code and live data it touches. Check facts; don't plan from assumptions.
+2. Write the requirements: what changes and why, testable acceptance checks, and on its own line "User-facing change: YES" or "User-facing change: NO".
+3. If YES, design it as an HTML mock in docs/ that matches the app's existing look and components, and attach the mock to the card so it's in front of whoever approves the plan.
+4. Write the technical plan the build agent will follow: files to change and why, any data or interface changes (including database changes), the tests to write, and the risks. If the work is too big for one change, split it into stages that each ship on their own, and plan stage 1 in full.
+5. Keep a working-notes file at docs/notes/&lt;first 8 characters of the card's id&gt;.md: what you decided, why, what you ruled out, and where things are. Later steps read it.
+
+<span class="h">## What to hand back</span>
+A plain-English summary for whoever approves the plan first (what will change, and each decision they need to make, with your recommendation), then the mock's location if there is one, then the plan.
+
+<span class="h">## What not to do</span>
+Don't write production code, change the database, or create or edit other cards. Your plan is approved before anything is built.</div>
+
+      <div class="width-tag" style="margin-top:20px">Added when a Read-only agent runs a step (never stored, so it can't go stale)</div>
+      <div class="preview"><span class="sys">## Tools</span>
+You're read-only: don't create, edit or delete files, including through shell commands. Say what should change instead.</div>
+    </div>
+    <div class="callouts">
+      <div class="callout"><b>How it differs from this board's Planner.</b> It drops "VibeCodes" and your name, and it doesn't run a command on your Mac to open the mock. It says "whoever approves the plan" so it works on any board. Your board's Planner keeps its own wording.</div>
+      <div class="callout"><b>Empty boxes leave no heading.</b> An agent with only a one line and a job is saved as just those.</div>
+      <div class="callout"><b>The agent's name line</b> ("You are Planner, the Planner on this VibeCodes board.") is still added in front when a step runs, as today.</div>
+      <div class="callout"><b>Full-access agents get no Tools note.</b> Only Read-only agents get it, at the moment a step runs.</div>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">4. The agent's page: the platform Planner</h2>
+  <p class="doc-p">"Personality &amp; Instructions" becomes "Instructions", laid out in the same four parts. The platform Planner is published, so it's in the Agents hub for any board to copy, and kits can copy it once stage 2 decides which ones use it. The pop-up you get from clicking an agent card shows the same thing. The rest of the page (activity, ideas, tasks, the real "Skills &amp; Capabilities" section) is unchanged in stage 1.</p>
+
+  <div class="profile">
+    <div class="crumb"><a href="#">Agents Hub</a> / Planner</div>
+    <div class="hero">
+      <div class="avatar violet">P</div>
+      <div>
+        <h1>Planner</h1>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <span class="badge role">Planner</span>
+        </div>
+        <p style="font-size:13px;color:var(--muted-foreground);margin-top:8px;max-width:560px">Takes a card to an approved plan: requirements, a design mock if users will see a change, and the build plan, in one conversation.</p>
+      </div>
+    </div>
+
+    <div class="sec-h">🧠&nbsp;Instructions</div>
+    <div class="ig">
+      <div class="icard"><div class="icard-h c-emerald">🎯&nbsp;In one line</div><div class="icard-b">You plan changes, from card to approved plan, in one conversation.</div></div>
+      <div class="icard"><div class="icard-h c-violet">📋&nbsp;Its job</div><div class="icard-b">For the card you're given:
+1. Read the card, its comments, and the code and live data it touches. Check facts; don't plan from assumptions.
+2. Write the requirements: what changes and why, testable acceptance checks, and on its own line "User-facing change: YES" or "User-facing change: NO".
+3. If YES, design it as an HTML mock in docs/ … and attach the mock to the card …
+4. Write the technical plan the build agent will follow …
+5. Keep a working-notes file at docs/notes/&lt;first 8 characters of the card's id&gt;.md …</div></div>
+      <div class="ig2">
+        <div class="icard"><div class="icard-h c-blue">📤&nbsp;Hands back</div><div class="icard-b">A plain-English summary for whoever approves the plan first (what will change, and each decision they need to make, with your recommendation), then the mock's location if there is one, then the plan.</div></div>
+        <div class="icard"><div class="icard-h c-red">🚫&nbsp;Must not do</div><div class="icard-b">Don't write production code, change the database, or create or edit other cards. Your plan is approved before anything is built.</div></div>
+      </div>
+    </div>
+
+    <div style="margin-top:22px;padding-top:16px;border-top:1px dashed var(--border)">
+      <p class="helper" style="font-size:12px;margin-bottom:8px">How a Read-only agent's heading looks (this board's Lens, once set to Read-only):</p>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="avatar violet" style="width:40px;height:40px;font-size:15px">L</div>
+        <div>
+          <div style="font-weight:700">Lens</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            <span class="badge role">Code Reviewer</span>
+            <span class="badge ro"><svg class="ico" style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Read-only</span>
+          </div>
+        </div>
+      </div>
+      <p class="helper" style="font-size:12px;margin-top:10px">Agents converted from the old layout show their leftover Expertise as a fifth, amber card titled "Notes from the old format", until it's cleared.</p>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">5. On a phone (375px)</h2>
+  <p class="doc-p">The dialog goes full width with the usual 16px margins. The template chips drop to two per row with Planner first, the two tool cards stack, and the avatar sits above the name.</p>
+  <div class="mobile-row">
+    <div class="phone"><div class="phone-inner">
+      <div class="dialog narrow">
+        <svg class="dialog-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Close"><path d="M18 6 6 18M6 6l12 12"/></svg><div class="dialog-title" style="font-size:17px"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>Create Agent</div>
+        <div class="stack">
+          <div><span class="label">Start from a template</span>
+            <div class="chips" style="grid-template-columns:repeat(2,1fr)">
+              <div class="chip on"><span class="em">🗺️</span>Planner</div>
+              <div class="chip"><span class="em">💻</span>Full Stack Engineer</div>
+              <div class="chip"><span class="em">🌐</span>Front End Engineer</div>
+              <div class="chip"><span class="em">🎨</span>UX Designer</div>
+            </div>
+            <p class="helper">(and the rest, two per row)</p>
+          </div>
+          <div><span class="label">Instructions</span><div class="tabs"><div class="tab on">Guided</div><div class="tab">Write it yourself</div></div></div>
+          <div><div class="sub-label">What it does, in one line</div><div class="textarea" style="min-height:0;font-size:13px">You plan changes, from card to approved plan, in one conversation.</div></div>
+          <div><div class="sub-label">Its job</div><p class="sub-help">The specific work it does in your workflows.</p><div class="textarea" style="min-height:90px;font-size:13px">For the card you're given:
+1. Read the card, its comments, and the code and live data it touches. …</div></div>
+          <div><span class="label">What it can do</span>
+            <div class="radio-cards" style="grid-template-columns:1fr">
+              <div class="radio-card on"><span class="dot"></span><div><div class="rc-title">Full access</div><div class="rc-desc">Can read and change code and files.</div></div></div>
+              <div class="radio-card"><span class="dot"></span><div><div class="rc-title">Read-only</div><div class="rc-desc">Can read code and run checks, but can't create or edit files.</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <div style="flex:1;min-width:260px">
+      <div class="note"><strong>What stays the same on a phone:</strong> the dialog scrolls inside 85% of the screen height as today, Cancel and the main button stay at the bottom of the form, and every box keeps its label above it.</div>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2 class="doc-h2">6. Details for the build</h2>
+  <table class="rules">
+    <thead><tr><th>Box</th><th>Saved as</th><th>Old layout maps from</th><th>Size limit</th></tr></thead>
+    <tbody>
+      <tr><td>What it does, in one line</td><td>The opening paragraph</td><td>Goal's first sentence (any text before the first old heading comes first)</td><td>300</td></tr>
+      <tr><td>Its job</td><td class="mono">## Your job</td><td>Rest of Goal, then Approach</td><td>6,000</td></tr>
+      <tr><td>What it hands back</td><td class="mono">## What to hand back</td><td>Nothing (starts empty)</td><td>1,500</td></tr>
+      <tr><td>What it must not do</td><td class="mono">## What not to do</td><td>Constraints</td><td>2,000</td></tr>
+      <tr><td>Notes from the old format</td><td class="mono">## Notes from the old format</td><td>Expertise (agents). Dropped for the starting templates.</td><td>no extra limit</td></tr>
+      <tr><td>Write it yourself</td><td>The whole text</td><td>Anything that isn't in either layout (left exactly as it is)</td><td>10,000 (as today)</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><strong>The one-go conversion:</strong> backed up first under its own reason, run with a dry run, then the real run, then a check that every converted agent reads back into the same boxes with no text lost. It's safe to run twice, and any agent can be put back from its backup. Agents in neither layout, like this board's own Planner, are left exactly as they are.</div>
+  <div class="note"><strong>Not in stage 1:</strong> rewriting any agent's wording, setting any existing agent to Read-only, changing workflow templates or kits, showing which steps use which skills, or removing tags. Those are stages 2 to 5.</div>
+
+</div>
+</body>
+</html>
