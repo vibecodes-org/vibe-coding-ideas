@@ -400,6 +400,7 @@ export async function resyncWorkflowTemplate(
   return {
     runsUpdated: propagation.runsUpdated,
     stepsUpdated: propagation.stepsUpdated,
+    runsReplaced: propagation.runsReplaced,
     skippedStructuralMismatch: propagation.skippedStructuralMismatch,
     rematched,
   };
