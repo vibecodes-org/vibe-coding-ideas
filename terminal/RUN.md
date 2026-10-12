@@ -97,6 +97,18 @@ Proves: (a) PTY output reaches the browser, (b) keystroke round-trip, (c)
 single-attach, (d) owner-mismatch rejected (4005), (e) expired token rejected
 (4006) — all through the real Durable Object.
 
+Reconnecting over a STUCK old leg (board task b829d62d) — same setup, then:
+
+```bash
+cd terminal/test && TERMINAL_SESSION_SECRET=<same-as-.dev.vars> \
+  RELAY_URL=ws://127.0.0.1:8787 node verify-stuck-leg-reconnect.mjs
+```
+
+Freezes the old legs' network path without closing it (laptop sleep, Wi-Fi
+change, a frozen background tab) and reconnects. Typing must get through. The
+Node stand-in relay can't show this bug — only the real DO kept routing to a
+leg it had already replaced.
+
 ## Manual visual check (xterm.js)
 
 With `wrangler dev` running, mint a token pair, start a bridge with the bridge
