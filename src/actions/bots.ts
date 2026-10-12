@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
+import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
 import { fetchSkillsFromGitHub, withCurated } from "@/lib/skills-directory";
@@ -222,6 +223,10 @@ export async function cloneBotProfile(
   });
 
   if (createError) throw new Error(createError.message);
+
+  // Filed skills come with the copy (and a failure discards it), before the
+  // source's times_cloned counter moves.
+  await copyAgentSkills(supabase, source.id, newBotId as string, ownerId);
 
   // Set extended fields + provenance, and atomically increment source counter
   const [updateResult, rpcResult] = await Promise.all([

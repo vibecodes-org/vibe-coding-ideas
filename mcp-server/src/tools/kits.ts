@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { VIBECODES_USER_ID } from "../constants";
+import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
 
 // --- List Kits ---
 
@@ -195,6 +196,9 @@ export async function applyKitToIdea(
             p_avatar_url: libraryAgent.avatar_url,
           });
           if (clonedId) {
+            // Filed skills come with the copy; a failure discards the copy and
+            // lands in the catch below, so the agent isn't counted as created.
+            await copyAgentSkills(ctx.supabase, libraryAgent.id, clonedId, ownerId);
             await ctx.supabase
               .from("bot_profiles")
               .update({
