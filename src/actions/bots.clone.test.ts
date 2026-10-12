@@ -8,7 +8,8 @@ vi.mock("@/lib/logger", () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { cloneBotProfile } from "./bots";
+import { createClient } from "@/lib/supabase/server";
+import { addFeaturedTeam, cloneBotProfile } from "./bots";
 
 // Task d04408b0: cloneBotProfile is the one routine behind cloneAgent,
 // addFeaturedTeam and the app's kit apply, so covering it covers all three.
@@ -57,5 +58,47 @@ describe("cloneBotProfile", () => {
     await expect(cloneBotProfile(fake.client, SOURCE, OWNER)).rejects.toThrow("Couldn't copy the agent's skills: boom");
     expect(fake.rpcCalls.map((c) => c.name)).toEqual(["create_bot_user", "delete_bot_user"]);
     expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
+  });
+});
+
+describe("addFeaturedTeam", () => {
+  const OK_BOT = { ...SOURCE, id: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", name: "Compass", role: "UX Designer" };
+  const BAD_BOT = { ...SOURCE, id: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb", name: "Atlas", role: "Full Stack Engineer" };
+
+  /** A two-agent team; with `failFirstSkillsRead` the first agent's skills can't be read. */
+  function setupTeam(failFirstSkillsRead: boolean) {
+    let reads = 0;
+    const fake = fakeSupabase({
+      tables: {
+        featured_teams: () => ({ data: { id: "t", agents: [{ bot: BAD_BOT }, { bot: OK_BOT }] } }),
+        bot_profiles: () => ({ data: [] }),
+        agent_skills: (c) => {
+          if (c.op !== "select") return { error: null };
+          return failFirstSkillsRead && ++reads === 1 ? { data: null, error: { message: "boom" } } : { data: SKILLS };
+        },
+      },
+      rpc: (name) => (name === "create_bot_user" ? { data: COPY } : { error: null }),
+    });
+    Object.assign(fake.client, { auth: { getUser: async () => ({ data: { user: { id: OWNER } } }) } });
+    vi.mocked(createClient).mockResolvedValue(fake.client as never);
+  }
+
+  it("reports an agent whose copy failed, and still adds the rest of the team", async () => {
+    setupTeam(true);
+    const result = await addFeaturedTeam("t");
+
+    expect(result.created).toEqual(["UX Designer"]);
+    expect(result.createdBotIds).toEqual([COPY]);
+    expect(result.failed).toEqual([
+      { role: "Full Stack Engineer", reason: "Couldn't copy the agent's skills: boom" },
+    ]);
+  });
+
+  it("reports nothing failed when every copy works", async () => {
+    setupTeam(false);
+    const result = await addFeaturedTeam("t");
+
+    expect(result.created).toEqual(["Full Stack Engineer", "UX Designer"]);
+    expect(result.failed).toEqual([]);
   });
 });

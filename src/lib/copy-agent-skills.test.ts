@@ -6,6 +6,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 import { copyAgentSkills } from "./copy-agent-skills";
+import { SKILLS_READ_LIMIT } from "./fetch-agent-skills";
 
 const SOURCE = "37e8ffb2-3f88-49e5-9ab4-a516c1088f77";
 const COPY = "11111111-1111-4111-a111-111111111111";
@@ -41,6 +42,9 @@ describe("copyAgentSkills", () => {
     const [read] = fake.writesTo("agent_skills", "select");
     expect(read.filters).toContainEqual(["eq", ["bot_id", SOURCE]]);
     expect(read.filters).toContainEqual(["order", ["created_at", { ascending: true }]]);
+    expect(read.filters).toContainEqual(["order", ["id", { ascending: true }]]);
+    // Every skill is copied: the ceiling is the read limit, not the 50-skill send cap.
+    expect(read.filters).toContainEqual(["limit", SKILLS_READ_LIMIT]);
     const [insert] = fake.writesTo("agent_skills", "insert");
     expect(insert.payload).toEqual(SKILLS.map((s) => ({ ...s, bot_id: COPY })));
     expect(fake.rpcCalls).toEqual([]);

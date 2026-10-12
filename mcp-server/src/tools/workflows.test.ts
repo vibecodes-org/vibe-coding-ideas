@@ -890,6 +890,7 @@ function makeSkillsClaimContext(opts: {
   skills: { name: string; content: string }[];
   systemPrompt?: string | null;
   skillsError?: string;
+  ideaAgentsError?: string;
 }) {
   const tableCounts: Record<string, number> = {};
   let claimChain: ReturnType<typeof createChain> | null = null;
@@ -923,22 +924,26 @@ function makeSkillsClaimContext(opts: {
       // matchedAgent needs the assigned bot to appear in available_agents
       const chain = createChain(null);
       chain.chain.then = (resolve: (val: unknown) => void) =>
-        Promise.resolve({
-          data: [
-            {
-              bot_id: SKILL_BOT_ID,
-              bot: {
-                id: SKILL_BOT_ID,
-                name: "Atlas",
-                role: "Full Stack Engineer",
-                avatar_url: null,
-                is_active: true,
-                system_prompt: systemPrompt,
+        Promise.resolve(
+          opts.ideaAgentsError
+            ? { data: null, error: { message: opts.ideaAgentsError } }
+            : {
+                data: [
+                  {
+                    bot_id: SKILL_BOT_ID,
+                    bot: {
+                      id: SKILL_BOT_ID,
+                      name: "Atlas",
+                      role: "Full Stack Engineer",
+                      avatar_url: null,
+                      is_active: true,
+                      system_prompt: systemPrompt,
+                    },
+                  },
+                ],
+                error: null,
               },
-            },
-          ],
-          error: null,
-        }).then(resolve);
+        ).then(resolve);
       return chain.chain;
     }
 
@@ -948,7 +953,7 @@ function makeSkillsClaimContext(opts: {
         Promise.resolve(
           opts.skillsError
             ? { data: null, error: { message: opts.skillsError } }
-            : { data: opts.skills, error: null },
+            : { data: opts.skills.map((s) => ({ bot_id: SKILL_BOT_ID, ...s })), error: null },
         ).then(resolve);
       return chain.chain;
     }
@@ -1086,6 +1091,30 @@ describe("claimNextStep — agent skills", () => {
     });
     await expect(claimNextStep(ctx, { task_id: TASK_ID })).rejects.toThrow("Failed to read the agent's skills: permission denied");
     expect(claimUpdate()).toEqual({});
+  });
+
+  it("aborts the claim, with nothing written, when the board's agents can't be read", async () => {
+    const { ctx, claimUpdate, skillsQueried } = makeSkillsClaimContext({
+      pendingStep: step,
+      updatedStep,
+      skills: SKILLS,
+      ideaAgentsError: "agents unavailable",
+    });
+    await expect(claimNextStep(ctx, { task_id: TASK_ID })).rejects.toThrow("Failed to read the board's agents: agents unavailable");
+    expect(claimUpdate()).toEqual({});
+    expect(skillsQueried()).toBe(false);
+  });
+
+  it("names skills beyond the 50-skill cap instead of dropping them", async () => {
+    const many = Array.from({ length: 52 }, (_, i) => ({ name: `skill-${i + 1}`, content: `body ${i + 1}` }));
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: many });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(r.persona_prompt).toContain("### skill-50\nbody 50");
+    expect(r.persona_prompt).not.toContain("### skill-51");
+    expect(r.persona_prompt).toContain("Not included here (over the size limit): skill-51, skill-52.");
+    expect(r.persona_prompt).toContain(`get_agent_skill_content (agent_id "${SKILL_BOT_ID}")`);
+    expect(claimUpdate().skills_used).toHaveLength(50);
   });
 
   it("does not fetch skills for a bot_id=null step (byte-identical path)", async () => {

@@ -241,6 +241,11 @@ export function OnboardingDialog({
 
       setCreatedIdeaId(result.ideaId);
       if (result.kitResult) {
+        if (result.kitResult.agentsFailed.length > 0) {
+          toast.error(`Couldn't add ${result.kitResult.agentsFailed.map((f) => f.role).join(", ")}`, {
+            description: result.kitResult.agentsFailed[0].reason,
+          });
+        }
         setAgentCount(result.kitResult.agentsCreated + result.kitResult.agentsSkipped);
         setWorkflowApplied(result.kitResult.templateImported);
         setAutoRuleCreated(result.kitResult.autoRuleCreated);

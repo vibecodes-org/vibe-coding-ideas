@@ -6,12 +6,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { logger } from "@/lib/logger";
-import { MAX_SKILLS_PER_AGENT } from "@/lib/skills-section";
+import { SKILLS_READ_LIMIT } from "@/lib/fetch-agent-skills";
 
 /**
  * Copy every skill of `sourceBotId` onto `newBotId` (a bot the caller owns,
  * created a moment ago). Skills keep their original created_at so the order
- * agents read them in is preserved; the copy is a snapshot, so later edits to
+ * agents read them in is preserved (every skill is copied; the per-agent send
+ * cap only applies when skills are sent to a step); the copy is a snapshot, so later edits to
  * the original don't flow through, same as the persona.
  *
  * If the copy fails, the half-made agent is deleted and the error is thrown:
@@ -30,7 +31,8 @@ export async function copyAgentSkills(
       .select("name, description, content, source_url, source_type, category, created_at")
       .eq("bot_id", sourceBotId)
       .order("created_at", { ascending: true })
-      .limit(MAX_SKILLS_PER_AGENT);
+      .order("id", { ascending: true })
+      .limit(SKILLS_READ_LIMIT);
     if (readError) throw new Error(readError.message);
     if (!skills || skills.length === 0) return 0;
 

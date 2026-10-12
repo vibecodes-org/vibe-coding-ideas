@@ -311,6 +311,11 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
         }
 
         if (result.kitResult) {
+          if (result.kitResult.agentsFailed.length > 0) {
+            toast.error(`Couldn't add ${result.kitResult.agentsFailed.map((f) => f.role).join(", ")}`, {
+              description: result.kitResult.agentsFailed[0].reason,
+            });
+          }
           const parts: string[] = [];
           if (result.kitResult.agentsCreated > 0) parts.push(`${result.kitResult.agentsCreated} agent${result.kitResult.agentsCreated !== 1 ? "s" : ""}`);
           if (result.kitResult.labelsCreated > 0) parts.push(`${result.kitResult.labelsCreated} label${result.kitResult.labelsCreated !== 1 ? "s" : ""}`);

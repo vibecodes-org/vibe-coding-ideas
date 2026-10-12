@@ -35,7 +35,8 @@ import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
-import { buildSkillsSection, personaWithSkills, MAX_SKILLS_PER_AGENT } from "../../../src/lib/skills-section";
+import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
+import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -702,11 +703,14 @@ export async function claimNextStep(
   // extracted ONLY for the matched row below, never folded into every
   // available_agents entry (that would bloat the response with every agent's
   // full prompt).
-  const { data: ideaAgents } = await ctx.supabase
+  const { data: ideaAgents, error: ideaAgentsError } = await ctx.supabase
     .from("idea_agents")
     .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)")
     .eq("idea_id", step.idea_id)
     .order("created_at", { ascending: true });
+  // Read before the claim write, so a failure aborts with nothing changed:
+  // carrying on would claim with no persona and no skills and record [].
+  if (ideaAgentsError) throw new Error(`Failed to read the board's agents: ${ideaAgentsError.message}`);
 
   // The assigned agent's persona and skills (task d04408b0). Read before the
   // claim write so the step can record, in that same write, exactly which
@@ -717,17 +721,8 @@ export async function claimNextStep(
     ? (ideaAgents ?? []).find((r) => r.bot_id === step.bot_id)
     : null;
   const matchedBot = matchedAgentRow?.bot as { name: string; role: string; system_prompt: string | null } | null;
-  let skillRows: { name: string; content: string }[] = [];
-  if (step.bot_id && matchedBot) {
-    const { data, error: skillsError } = await ctx.supabase
-      .from("agent_skills")
-      .select("name, content")
-      .eq("bot_id", step.bot_id)
-      .order("created_at", { ascending: true })
-      .limit(MAX_SKILLS_PER_AGENT);
-    if (skillsError) throw new Error(`Failed to read the agent's skills: ${skillsError.message}`);
-    skillRows = data ?? [];
-  }
+  const skillRows =
+    step.bot_id && matchedBot ? ((await fetchAgentSkills(ctx.supabase, [step.bot_id])).get(step.bot_id) ?? []) : [];
   const skillsSection = buildSkillsSection(step.bot_id ?? "", skillRows);
   const personaPrompt = matchedBot ? personaWithSkills(matchedBot.system_prompt ?? "", skillsSection.text) : "";
 
@@ -963,8 +958,8 @@ export async function claimNextStep(
 
   const claimingAgent: AgentKind = params.agent ?? "claude";
   // Select the persona independently of the CLI used to execute the step.
-  const matchedAgent = updated.bot_id
-    ? available_agents.find((a) => a.bot_id === updated.bot_id)
+  const matchedAgent = step.bot_id
+    ? available_agents.find((a) => a.bot_id === step.bot_id)
     : null;
 
   // Embed the matched agent's full persona prompt directly in this response
@@ -1010,8 +1005,8 @@ export async function claimNextStep(
   // personaEmbeddable rewrites steps 2-3 to adopt the embedded persona_prompt
   // verbatim (no get_agent_prompt round-trip) and adds the persona_used
   // attestation obligation to the completion-reporting sentence. The
-  // unassigned / prompt-less fallback (bot_id null, or an assigned bot with
-  // no system_prompt) is UNTOUCHED — byte-identical to today, still fetching
+  // unassigned / persona-less fallback (bot_id null, or an assigned bot with
+  // neither a persona nor skills) is UNTOUCHED — byte-identical to today, still fetching
   // via get_agent_prompt (persona-attestation design §2/§A2).
   // Rewritten EXCEPTION per docs/agent-voice-comments-design.html §2.3: a
   // client with no Agent/Task tool no longer switches identity (there is
@@ -1250,14 +1245,14 @@ export async function claimNextStep(
   const nativeSubagent =
     // The definitions only exist for a persona with text, so a skills-only
     // persona has no native subagent to name.
-    personaEmbeddable && updated.bot_id && matchedBot?.system_prompt
+    personaEmbeddable && step.bot_id && matchedBot?.system_prompt
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
           const resolution = tier
             ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults)
             : null;
           return sessionAgentClaimHint({
-            bot: { id: updated.bot_id, name: matchedBot.name, system_prompt: matchedBot.system_prompt! },
+            bot: { id: step.bot_id, name: matchedBot.name, system_prompt: matchedBot.system_prompt! },
             tier,
             model: resolution?.resolved ?? null,
             effort: resolution?.effort ?? null,

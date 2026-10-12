@@ -71,4 +71,4 @@ WHERE id = 'd9841b57-695c-4166-9c29-ae44bf759eff'
 
 -- 3. skills_used is now VibeCodes' own record.
 COMMENT ON COLUMN public.task_workflow_steps.skills_used IS
-  'Names of the skills whose full text claim_next_step sent with this step, recorded by VibeCodes at claim time (a re-claim refreshes it; complete_step/fail_step no longer write it). Empty array = the agent had no skills. NULL = never claimed since 00184. Rows from before 00184 hold what the agent reported about itself and were never verified.';
+  'Names of the skills whose full text claim_next_step sent with this step, recorded by VibeCodes at claim time (a re-claim refreshes it; complete_step/fail_step no longer write it). Empty array = nothing was sent (the agent has no skills, or the step has no agent). NULL = never claimed since 00184. Rows from before 00184 hold what the agent reported about itself and were never verified.';

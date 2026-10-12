@@ -100,6 +100,7 @@ describe("MCP kit apply", () => {
     const result = await applyKitToIdea(ctxFor(fake), IDEA, KIT);
 
     expect(result.agentsCreated).toBe(1);
+    expect(result.agentsFailed).toEqual([]);
     const [insert] = fake.writesTo("agent_skills", "insert");
     expect(insert.payload).toEqual(SKILLS.map((s) => ({ ...s, bot_id: COPY })));
     expect(fake.writesTo("idea_agents", "upsert")).toHaveLength(1);
@@ -110,6 +111,10 @@ describe("MCP kit apply", () => {
     const result = await applyKitToIdea(ctxFor(fake), IDEA, KIT);
 
     expect(result.agentsCreated).toBe(0);
+    // ...and the failure is reported, not silently one agent short.
+    expect(result.agentsFailed).toEqual([
+      { role: "Full Stack Engineer", reason: "Couldn't copy the agent's skills: boom" },
+    ]);
     expect(fake.writesTo("idea_agents", "upsert")).toEqual([]);
     expect(fake.rpcCalls.map((c) => c.name)).toContain("delete_bot_user");
   });

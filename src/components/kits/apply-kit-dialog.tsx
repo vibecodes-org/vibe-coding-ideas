@@ -96,6 +96,11 @@ export function ApplyKitDialog({
       toast.success(
         `${selectedKit!.name} kit applied${parts.length > 0 ? ` — ${parts.join(", ")}` : ""}`
       );
+      if (result.agentsFailed.length > 0) {
+        toast.error(`Couldn't add ${result.agentsFailed.map((f) => f.role).join(", ")}`, {
+          description: result.agentsFailed[0].reason,
+        });
+      }
       onOpenChange(false);
       onApplied?.(result);
     } catch {

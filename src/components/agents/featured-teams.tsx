@@ -56,7 +56,13 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
   async function handleAddTeam(teamId: string, teamName: string) {
     setLoadingTeamId(teamId);
     try {
-      const { created, skipped, createdBotIds } = await addFeaturedTeam(teamId);
+      const { created, skipped, createdBotIds, failed } = await addFeaturedTeam(teamId);
+      if (failed.length > 0) {
+        toast.error(
+          `Couldn't add ${failed.map((f) => f.role).join(", ")}. ${created.length > 0 ? "The rest of the team was added." : "Try again."}`,
+          { description: failed[0].reason }
+        );
+      }
       if (created.length === 0 && skipped.length > 0) {
         toast.info("All agents from this team already exist");
         return;

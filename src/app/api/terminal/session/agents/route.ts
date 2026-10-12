@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger";
 import { authorizeAttach } from "../../../../../../terminal/shared/session-token.mjs";
 import { isSessionExpired } from "@/lib/terminal/session-registry";
 import { buildSessionAgents, type SessionAgentInput, type SessionAgentTier } from "@/lib/terminal/session-agents";
-import { MAX_SKILLS_PER_AGENT } from "@/lib/skills-section";
+import { fetchAgentSkills } from "@/lib/fetch-agent-skills";
 import { getAgentAwarePlatformModelDefaults, resolveModelTier } from "@/lib/platform-model-defaults";
 import type { Database } from "@/types/database";
 
@@ -99,16 +99,22 @@ export async function POST(req: Request) {
     if (pairs.size === 0) return NextResponse.json({ agents: null });
 
     const botIds = [...new Set([...pairs.values()].map((p) => p.botId))];
-    const [{ data: bots }, { data: skills }, { data: owner }, platformDefaults] = await Promise.all([
+    const [{ data: bots }, skillsByBot, { data: owner }, platformDefaults] = await Promise.all([
       supabase.from("bot_profiles").select("id, name, role, system_prompt").in("id", botIds),
-      supabase
-        .from("agent_skills")
-        .select("bot_id, name, content")
-        .in("bot_id", botIds)
-        .order("created_at", { ascending: true }),
+      // Same read claim_next_step uses, so both build the same Skills text. A
+      // failed read gives nothing rather than agents that would never match.
+      fetchAgentSkills(supabase, botIds).catch((err: unknown) => {
+        logger.error("Terminal session agents fetch: skills read failed", {
+          sid,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }),
       supabase.from("users").select("model_tier_map").eq("id", session.user_id).maybeSingle(),
       getAgentAwarePlatformModelDefaults(supabase),
     ]);
+
+    if (!skillsByBot) return NextResponse.json({ agents: null });
 
     const botsById = new Map((bots ?? []).map((b) => [b.id, b]));
     const inputs: SessionAgentInput[] = [];
@@ -123,11 +129,7 @@ export async function POST(req: Request) {
         tier,
         model: resolution?.resolved ?? null,
         effort: resolution?.effort ?? null,
-        // Same cap and order as claim_next_step, so both build the same Skills text.
-        skills: (skills ?? [])
-          .filter((s) => s.bot_id === botId)
-          .slice(0, MAX_SKILLS_PER_AGENT)
-          .map((s) => ({ name: s.name, content: s.content })),
+        skills: skillsByBot.get(botId) ?? [],
       });
     }
 

@@ -53,6 +53,21 @@ describe("buildSkillsSection", () => {
     expect(section.text).not.toContain("### small");
   });
 
+  it("sends at most maxSkills in full and names the rest", () => {
+    const skills = ["a", "b", "c"].map((name) => ({ name, content: name }));
+    const section = buildSkillsSection(BOT, skills, SKILLS_SECTION_MAX_CHARS, 2);
+    expect(section.sent).toEqual(["a", "b"]);
+    expect(section.omitted).toEqual(["c"]);
+    expect(section.text).toContain("Not included here (over the size limit): c.");
+  });
+
+  it("caps at 50 skills by default", () => {
+    const skills = Array.from({ length: 51 }, (_, i) => ({ name: `s${i}`, content: "x" }));
+    const section = buildSkillsSection(BOT, skills);
+    expect(section.sent).toHaveLength(50);
+    expect(section.omitted).toEqual(["s50"]);
+  });
+
   it("names the omitted skills with a fetch instruction for those only", () => {
     const { text } = buildSkillsSection(
       BOT,

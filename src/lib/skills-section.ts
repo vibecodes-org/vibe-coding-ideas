@@ -8,7 +8,10 @@
 // function, so the wording is identical wherever the step runs and the
 // in-app match fingerprint can hash exactly what the claim sends.
 
-/** Most skills read per agent — claim_next_step and the in-app payload agree on it. */
+/**
+ * Most skills sent in full per agent. Any beyond this are named in the section
+ * (with the fetch hint) rather than dropped, same as ones over the size budget.
+ */
 export const MAX_SKILLS_PER_AGENT = 50;
 
 /**
@@ -34,6 +37,7 @@ export function buildSkillsSection(
   botId: string,
   skills: SkillText[],
   maxChars: number = SKILLS_SECTION_MAX_CHARS,
+  maxSkills: number = MAX_SKILLS_PER_AGENT,
 ): SkillsSection {
   if (skills.length === 0) return { text: "", sent: [], omitted: [] };
 
@@ -44,7 +48,7 @@ export function buildSkillsSection(
     const body = skill.content.trim();
     // Stop at the first skill that doesn't fit so what's sent is always a
     // prefix of the creation order.
-    if (!fits || used + body.length > maxChars) {
+    if (!fits || sent.length >= maxSkills || used + body.length > maxChars) {
       fits = false;
       continue;
     }
