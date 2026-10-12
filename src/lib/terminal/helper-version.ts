@@ -112,8 +112,13 @@
  *  resume, so after any pick-up (chooser Resume, a refresh, wake or
  *  reconnect) every workflow step silently fell back to a general helper.
  *  The resume now waits (≤5s) for the agents before starting the CLI. An
- *  older helper resumes without them — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.22";
+ *  older helper resumes without them — soft nudge.
+ *  0.3.23 (task 472d5672, 12 Oct 2026): first helper whose bridge passes an
+ *  agent's `disallowedTools` through to Claude Code, so a Read-only agent's
+ *  Edit/Write/NotebookEdit tools are really switched off in the browser
+ *  terminal. An older helper drops the field: the agent is only told not to
+ *  edit files (the "## Tools" note) — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.23";
 
 export type HelperVersionParts = readonly [number, number, number];
 
