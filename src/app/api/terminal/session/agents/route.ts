@@ -21,6 +21,7 @@ import { logger } from "@/lib/logger";
 import { authorizeAttach } from "../../../../../../terminal/shared/session-token.mjs";
 import { isSessionExpired } from "@/lib/terminal/session-registry";
 import { buildSessionAgents, type SessionAgentInput, type SessionAgentTier } from "@/lib/terminal/session-agents";
+import { MAX_SKILLS_PER_AGENT } from "@/lib/skills-section";
 import { getAgentAwarePlatformModelDefaults, resolveModelTier } from "@/lib/platform-model-defaults";
 import type { Database } from "@/types/database";
 
@@ -122,7 +123,11 @@ export async function POST(req: Request) {
         tier,
         model: resolution?.resolved ?? null,
         effort: resolution?.effort ?? null,
-        skills: (skills ?? []).filter((s) => s.bot_id === botId).map((s) => ({ name: s.name, content: s.content })),
+        // Same cap and order as claim_next_step, so both build the same Skills text.
+        skills: (skills ?? [])
+          .filter((s) => s.bot_id === botId)
+          .slice(0, MAX_SKILLS_PER_AGENT)
+          .map((s) => ({ name: s.name, content: s.content })),
       });
     }
 

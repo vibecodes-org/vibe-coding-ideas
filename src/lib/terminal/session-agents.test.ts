@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { buildSkillsSection, personaWithSkills } from "../skills-section";
 import {
   agentNameLine,
   buildSessionAgents,
@@ -51,6 +52,23 @@ describe("sessionAgentTag", () => {
     expect(sessionAgentTag("persona", "opus", "medium")).not.toBe(base);
   });
 
+  // AC8
+  it("changes when a skill is added, edited or removed, and not otherwise", () => {
+    const skills = [{ name: "a", content: "First." }];
+    const tagFor = (s: { name: string; content: string }[]) =>
+      sessionAgentTag("persona", "opus", "high", buildSkillsSection(ATLAS.id, s).text);
+    const base = tagFor(skills);
+    expect(tagFor([{ name: "a", content: "First." }])).toBe(base);
+    expect(tagFor([{ name: "a", content: "First, edited." }])).not.toBe(base);
+    expect(tagFor([...skills, { name: "b", content: "Second." }])).not.toBe(base);
+    expect(tagFor([])).not.toBe(base);
+  });
+
+  it("is unchanged for an agent without skills, so sessions launched before skills were fingerprinted still match", () => {
+    expect(sessionAgentTag("persona", "opus", "high", "")).toBe(sessionAgentTag("persona", "opus", "high"));
+    expect(sessionAgentTag("persona", "opus", "high")).toBe(`[vc ${personaHash("persona")} opus high]`);
+  });
+
   it("reads 'auto' for an untiered step", () => {
     expect(sessionAgentTag("p", null, null)).toBe(`[vc ${personaHash("p")} auto auto]`);
   });
@@ -91,9 +109,29 @@ describe("buildSessionAgents", () => {
     expect(def).not.toHaveProperty("effort");
   });
 
-  it("folds skill content into the prompt", () => {
-    const agents = buildSessionAgents([input({ skills: [{ name: "testing", content: "Write the test first." }] })]);
-    expect(agents!["vc-atlas-37e8ffb2-frontier"].prompt).toContain("### testing\nWrite the test first.");
+  it("folds the shared Skills section into the prompt, after the persona", () => {
+    const skills = [{ name: "testing", content: "  Write the test first.\n" }];
+    const agents = buildSessionAgents([input({ skills })]);
+    const prompt = agents!["vc-atlas-37e8ffb2-frontier"].prompt;
+    expect(prompt).toContain("### testing\nWrite the test first.");
+    expect(prompt).toBe(
+      personaWithSkills(
+        `You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${ATLAS.system_prompt}`,
+        buildSkillsSection(ATLAS.id, skills).text,
+      ),
+    );
+  });
+
+  // AC2: one function builds the section on both sides, so the persona text
+  // after the name line is exactly what claim_next_step sends as persona_prompt.
+  it("is byte-identical to the claim's persona_prompt apart from the name line (AC2)", () => {
+    const skills = [
+      { name: "a", content: "First." },
+      { name: "b", content: "Second." },
+    ];
+    const prompt = buildSessionAgents([input({ skills })])!["vc-atlas-37e8ffb2-frontier"].prompt;
+    const claimPersona = personaWithSkills(ATLAS.system_prompt, buildSkillsSection(ATLAS.id, skills).text);
+    expect(prompt).toBe(`${agentNameLine(ATLAS)}\n\n${claimPersona}`);
   });
 
   it("swaps skill content for load-on-demand pointers when the payload is too big", () => {
@@ -103,6 +141,29 @@ describe("buildSessionAgents", () => {
     expect(prompt).not.toContain("xxxx");
     expect(prompt).toContain(`get_agent_skill_content (agent_id "${ATLAS.id}")`);
     expect(prompt).toContain("huge");
+  });
+
+  // AC9
+  it("never lets a names-only definition match a claim", () => {
+    const skills = [{ name: "huge", content: "x".repeat(5000) }];
+    const claimTag = sessionAgentTag(ATLAS.system_prompt, "opus", "high", buildSkillsSection(ATLAS.id, skills).text);
+
+    const full = buildSessionAgents([input({ skills })])!["vc-atlas-37e8ffb2-frontier"];
+    expect(full.description.endsWith(claimTag)).toBe(true);
+
+    const namesOnly = buildSessionAgents([input({ skills })], 2000)!["vc-atlas-37e8ffb2-frontier"];
+    expect(namesOnly.description.endsWith(claimTag)).toBe(false);
+    expect(namesOnly.description).toMatch(/\[vc skills-names-only opus high\]$/);
+  });
+
+  it("keeps matching for agents without skills when another agent's skills force names-only", () => {
+    const other = { ...ATLAS, id: "da04a09c-c04f-43be-b167-d9b321fabdf6", name: "Sentinel" };
+    const agents = buildSessionAgents(
+      [input({ bot: other, skills: [{ name: "huge", content: "x".repeat(5000) }] }), input()],
+      2200,
+    )!;
+    const plain = agents["vc-atlas-37e8ffb2-frontier"];
+    expect(plain.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
   });
 
   it("returns null when even the slimmed payload can't fit", () => {
@@ -121,6 +182,22 @@ describe("sessionAgentClaimHint", () => {
     const hint = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
     expect(agents[hint.name]).toBeDefined();
     expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
+  });
+
+  it("names the same tag as a definition that carries the agent's skills", () => {
+    const skills = [{ name: "testing", content: "Write the test first." }];
+    const agents = buildSessionAgents([input({ skills })])!;
+    const hint = sessionAgentClaimHint({
+      bot: ATLAS,
+      tier: "frontier",
+      model: "opus",
+      effort: "high",
+      skillsText: buildSkillsSection(ATLAS.id, skills).text,
+    });
+    expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
+    // The same claim without the skills text no longer matches.
+    const bare = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
+    expect(agents[bare.name].description.endsWith(bare.tag)).toBe(false);
   });
 
   it("tells the orchestrator to fall back when there's no match, and what to report when there is", () => {

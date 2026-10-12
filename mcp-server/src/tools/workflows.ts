@@ -35,6 +35,7 @@ import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
+import { buildSkillsSection, personaWithSkills, MAX_SKILLS_PER_AGENT } from "../../../src/lib/skills-section";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -694,6 +695,42 @@ export async function claimNextStep(
     });
   }
 
+  // Fetch available agents on this idea so Claude Code can reason about
+  // which agent persona to assume for the step's agent_role. system_prompt is
+  // widened onto this existing fetch (no new round-trip) so the assigned
+  // bot's full persona can be embedded directly in this response — it is
+  // extracted ONLY for the matched row below, never folded into every
+  // available_agents entry (that would bloat the response with every agent's
+  // full prompt).
+  const { data: ideaAgents } = await ctx.supabase
+    .from("idea_agents")
+    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)")
+    .eq("idea_id", step.idea_id)
+    .order("created_at", { ascending: true });
+
+  // The assigned agent's persona and skills (task d04408b0). Read before the
+  // claim write so the step can record, in that same write, exactly which
+  // skills this claim sends. The full skill text goes at the end of the
+  // persona (shared with the in-app terminal's definitions); a failed read
+  // aborts the claim rather than silently sending a skill-less persona.
+  const matchedAgentRow = step.bot_id
+    ? (ideaAgents ?? []).find((r) => r.bot_id === step.bot_id)
+    : null;
+  const matchedBot = matchedAgentRow?.bot as { name: string; role: string; system_prompt: string | null } | null;
+  let skillRows: { name: string; content: string }[] = [];
+  if (step.bot_id && matchedBot) {
+    const { data, error: skillsError } = await ctx.supabase
+      .from("agent_skills")
+      .select("name, content")
+      .eq("bot_id", step.bot_id)
+      .order("created_at", { ascending: true })
+      .limit(MAX_SKILLS_PER_AGENT);
+    if (skillsError) throw new Error(`Failed to read the agent's skills: ${skillsError.message}`);
+    skillRows = data ?? [];
+  }
+  const skillsSection = buildSkillsSection(step.bot_id ?? "", skillRows);
+  const personaPrompt = matchedBot ? personaWithSkills(matchedBot.system_prompt ?? "", skillsSection.text) : "";
+
   // Mint the one-time claim token; only its hash is stored (capability layer
   // verified by complete_step/fail_step).
   const { token: claim_token, hash: claimTokenHash } = mintClaimToken();
@@ -715,6 +752,9 @@ export async function claimNextStep(
       claimed_by: claimedFor,
       claim_token_hash: claimTokenHash,
       work_token_hash: workTokenPair?.hash ?? null,
+      // VibeCodes' own record of what this claim sends; a re-claim refreshes it
+      // and complete_step/fail_step leave it alone.
+      skills_used: skillsSection.sent,
     })
     .eq("id", step.id)
     .in("status", ["pending", "in_progress"])
@@ -866,19 +906,6 @@ export async function claimNextStep(
     }
   }
 
-  // Fetch available agents on this idea so Claude Code can reason about
-  // which agent persona to assume for the step's agent_role. system_prompt is
-  // widened onto this existing fetch (no new round-trip) so the assigned
-  // bot's full persona can be embedded directly in this response — it is
-  // extracted ONLY for the matched row below, never folded into every
-  // available_agents entry (that would bloat the response with every agent's
-  // full prompt).
-  const { data: ideaAgents } = await ctx.supabase
-    .from("idea_agents")
-    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)")
-    .eq("idea_id", step.idea_id)
-    .order("created_at", { ascending: true });
-
   const available_agents = (ideaAgents ?? []).map((row) => {
     const bot = (row as Record<string, unknown>).bot as Record<string, unknown> | null;
     return {
@@ -944,45 +971,26 @@ export async function claimNextStep(
   // when it has one, so the orchestrator never needs a get_agent_prompt
   // round-trip (persona-attestation design §A1). personaEmbeddable gates the
   // response fields AND the instruction rewrite below as a unit — an
-  // unassigned step (bot_id null) or an assigned bot with no system_prompt
-  // falls through to today's get_agent_prompt fallback, byte-identical.
-  const matchedAgentRow = updated.bot_id
-    ? (ideaAgents ?? []).find((r) => r.bot_id === updated.bot_id)
-    : null;
-  const matchedBot = matchedAgentRow?.bot as { name: string; role: string; system_prompt: string | null } | null;
-  const personaEmbeddable = !!(matchedBot?.system_prompt);
+  // unassigned step (bot_id null) or an assigned bot with neither a
+  // system_prompt nor any skills falls through to today's get_agent_prompt
+  // fallback, byte-identical. matchedBot and personaPrompt (the persona with
+  // the agent's skills appended in full) were read above, before the claim
+  // write, so the step could record which skills this claim sends.
+  const personaEmbeddable = !!personaPrompt;
 
-  // Surface the assigned agent's skills so the executing subagent can self-load
-  // the relevant ones (names + descriptions only — never the skill bodies). Only
-  // fetched when a bot is assigned; bot_id = null steps stay byte-identical.
-  let available_skills: { name: string; description: string }[] = [];
-  if (updated.bot_id) {
-    const { data: skillRows } = await ctx.supabase
-      .from("agent_skills")
-      .select("name, description")
-      .eq("bot_id", updated.bot_id)
-      .order("created_at", { ascending: true })
-      .limit(50);
-    available_skills = skillRows ?? [];
-  }
-
-  // Subagent-addressed directive advertising the agent's skills. Built only when
-  // skills exist so skill-less / bot_id=null paths add nothing to `instruction`.
+  // Directive naming the skills that ride along inside persona_prompt. Built
+  // only when skills exist so skill-less / bot_id=null paths add nothing to
+  // `instruction`. Nothing here tells anyone to fetch a skill that was sent.
   let skillsInstruction = "";
-  if (available_skills.length > 0) {
-    const skillList = available_skills
-      .map((s) => `- ${s.name} — ${s.description}`)
-      .join("\n");
-    skillsInstruction =
-      `SKILLS: You have these skills available:\n${skillList}\n\n` +
-      `As you work, if one of these is relevant to your task, call get_agent_skill_content ` +
-      `with agent_id "${updated.bot_id}" and the skill name, then follow its instructions. ` +
-      `Load ONLY the skills that are relevant to this step — do not load all of them. ` +
-      `Pass agent_id directly.\n` +
-      `EXCEPTION — if your spawned subagent does NOT have the get_agent_skill_content tool in its own context: ` +
-      `you (the orchestrator) call get_agent_skill_content yourself for each relevant skill and fold the returned ` +
-      `instructions into the subagent's system prompt before spawning it. This is a fallback only — prefer letting the subagent self-load.\n` +
-      `When calling complete_step/fail_step, also report skills_used: the names of the skills whose content was actually loaded for this step (empty array if none).`;
+  if (skillsSection.sent.length > 0 || skillsSection.omitted.length > 0) {
+    skillsInstruction = skillsSection.sent.length > 0
+      ? `SKILLS: this agent's skills (${skillsSection.sent.join(", ")}) are included in full at the end of persona_prompt, under "## Skills". ` +
+        `Wherever persona_prompt is used as the worker's instructions, use it unchanged with the skills in it; the worker applies the ones relevant to this step.`
+      : `SKILLS: this agent's skills (${skillsSection.omitted.join(", ")}) are too large to include; persona_prompt names them and says how to load them.`;
+    if (skillsSection.sent.length > 0 && skillsSection.omitted.length > 0) {
+      skillsInstruction +=
+        ` These were over the size limit and are only named there, with a note on loading them: ${skillsSection.omitted.join(", ")}.`;
+    }
   }
 
   // Subagent orchestration is the ONLY mode (task bd13ee8f — the per-session
@@ -1053,9 +1061,9 @@ export async function claimNextStep(
     (personaEmbeddable
       ? `2. Use persona_prompt verbatim as the child's persona instructions: ${personaRef}. It is already included; do not call get_agent_prompt.\n`
       : `2. Call get_agent_prompt with agent_id ${agentIdArg} to obtain ${personaRef}'s full persona instructions.\n`) +
-    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, context (prior outputs with step names and IDs), approval_notes, rework_instructions, available_skills and their loading instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
-    `4. The child does this step's work, comments with work_token, and returns its deliverable, relevant skills actually loaded, and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
-    `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once before failing the step). Complete only after receiving its deliverable, using agent: "codex", claim_token, output, model_used and reasoning_effort_used from the accepted launch, persona_used (verbatim/adapted/none), and skills_used. Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
+    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, context (prior outputs with step names and IDs), approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
+    `4. The child does this step's work, comments with work_token, and returns its deliverable and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
+    `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once before failing the step). Complete only after receiving its deliverable, using agent: "codex", claim_token, output, model_used and reasoning_effort_used from the accepted launch, and persona_used (verbatim/adapted/none). Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
     `CAPABILITY CHECK: inspect the actual spawn tool schema. If it cannot set both model and effort for a tiered step, or there is no supported subagent capability, do not pretend an inline /model command or a model name in the prompt changes execution. Report the capability gap with a work_token comment and stop before doing the work; do not complete it as a successful tier test. Only report unknown when no accepted launch/runtime configuration is available.\n` +
     `AUTO: when execution.model is null the tier makes no model promise; choose a supported model/effort for the fresh child and record what you actually launched.`;
   const identityInstruction = claimingAgent === "codex" ? codexIdentityInstruction : claudeIdentityInstruction;
@@ -1076,7 +1084,7 @@ export async function claimNextStep(
   // doesn't already have it (user-written agents, unassigned steps).
   const personaCarriesProtectRule =
     personaEmbeddable &&
-    matchedBot!.system_prompt!.toLowerCase().includes(
+    (matchedBot?.system_prompt ?? "").toLowerCase().includes(
       "unexplained uncommitted changes in the working tree are someone else's intentional prior work"
     );
   if (!personaCarriesProtectRule) contextParts.push(
@@ -1240,17 +1248,22 @@ export async function claimNextStep(
   // step; a session without it (own terminal, copy-command launch, stale
   // definition) matches nothing and follows the steps above unchanged.
   const nativeSubagent =
-    personaEmbeddable && updated.bot_id
+    // The definitions only exist for a persona with text, so a skills-only
+    // persona has no native subagent to name.
+    personaEmbeddable && updated.bot_id && matchedBot?.system_prompt
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
           const resolution = tier
             ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults)
             : null;
           return sessionAgentClaimHint({
-            bot: { id: updated.bot_id, name: matchedBot!.name, system_prompt: matchedBot!.system_prompt! },
+            bot: { id: updated.bot_id, name: matchedBot.name, system_prompt: matchedBot.system_prompt! },
             tier,
             model: resolution?.resolved ?? null,
             effort: resolution?.effort ?? null,
+            // Hashed into the tag, so a session whose skills have changed
+            // since launch no longer matches this claim.
+            skillsText: skillsSection.text,
             agent: claimingAgent,
           });
         })()
@@ -1279,7 +1292,7 @@ export async function claimNextStep(
     } : {}),
     ...(personaEmbeddable
       ? {
-          persona_prompt: matchedBot!.system_prompt,
+          persona_prompt: personaPrompt,
           persona_name: matchedBot!.name,
           persona_role: matchedBot!.role,
         }
@@ -1291,7 +1304,6 @@ export async function claimNextStep(
     context,
     approval_notes,
     expected_deliverables,
-    ...(available_skills.length > 0 ? { available_skills } : {}),
   };
 }
 
@@ -1337,7 +1349,7 @@ export const completeStepSchema = z.object({
     ),
   skills_used: z.array(z.string()).optional()
     .describe(
-      "Self-reported: names of the skills (from claim_next_step's available_skills) whose content was actually loaded via get_agent_skill_content for this step. Pass [] to explicitly report none were loaded. Omit if you don't know."
+      "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
 });
 
@@ -1442,7 +1454,6 @@ export async function completeStep(
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
-    skills_used: params.skills_used ?? null,
   };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
@@ -1567,7 +1578,7 @@ export const failStepSchema = z.object({
     ),
   skills_used: z.array(z.string()).optional()
     .describe(
-      "Self-reported: names of the skills (from claim_next_step's available_skills) whose content was actually loaded via get_agent_skill_content for this step. Pass [] to explicitly report none were loaded. Omit if you don't know."
+      "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
   reset_to_step_id: z
     .string()
@@ -1674,7 +1685,6 @@ export async function failStep(
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
-    skills_used: params.skills_used ?? null,
   };
   if (params.output !== undefined) updateFields.output = params.output;
 

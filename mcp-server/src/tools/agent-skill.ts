@@ -126,7 +126,7 @@ export const getAgentSkillContentSchema = z.object({
   skill_name: z
     .string()
     .min(1)
-    .describe("Name of the skill to load full instructions for (from the available_skills list)"),
+    .describe("Name of the skill to re-read (as named in the agent's Skills section)"),
   agent_id: z
     .string()
     .uuid()
@@ -159,9 +159,9 @@ export async function getAgentSkillContent(
     throw new Error(
       args.agent_id
         ? `Skill "${args.skill_name}" not found for agent ${args.agent_id}. ` +
-          `Check the skill name matches one from this step's available_skills list, and that agent_id is the step's bot_id.`
+          `Check the skill name matches one in the agent's Skills section, and that agent_id is the step's bot_id.`
         : `Skill "${args.skill_name}" not found. ` +
-          `Pass agent_id (the bot whose skill you're loading) and check the name against available_skills.`
+          `Pass agent_id (the bot whose skill you're loading) and check the name against the agent's Skills section.`
     );
   }
 

@@ -20,13 +20,15 @@
 // edited, tier remapped) simply doesn't match and falls back to the old path.
 
 import { createHash } from "node:crypto";
+import { buildSkillsSection, personaWithSkills } from "../skills-section";
 
 export type SessionAgentTier = "frontier" | "standard" | "cheap";
 
 /**
  * Upper bound on the serialized payload. It travels as a single argv element
  * (macOS allows ~1 MB of argv + env); a busy board measured ~46 KB. Past this
- * the skill content is dropped first, then the whole payload.
+ * the skill content is dropped first (the agents that own skills then stop
+ * matching claims — see namesOnlyTag), then the whole payload.
  */
 export const SESSION_AGENTS_MAX_BYTES = 200_000;
 
@@ -54,11 +56,28 @@ export function sessionAgentName(bot: { id: string; name: string }, tier: Sessio
 
 /**
  * The tag that ends the subagent's description. The orchestrator matches it
- * against the claim, so any change to the persona or to the tier's resolved
- * model/effort since launch reads as "not this agent".
+ * against the claim, so any change to the persona, to the skills text the step
+ * is sent, or to the tier's resolved model/effort since launch reads as "not
+ * this agent". `skillsText` is the exact Skills section buildSkillsSection
+ * produces ("" for an agent without skills, which leaves the hash as it was
+ * before skills were fingerprinted).
  */
-export function sessionAgentTag(systemPrompt: string, model: string | null, effort: string | null): string {
-  return `[vc ${personaHash(systemPrompt)} ${model ?? "auto"} ${effort ?? "auto"}]`;
+export function sessionAgentTag(
+  systemPrompt: string,
+  model: string | null,
+  effort: string | null,
+  skillsText: string = "",
+): string {
+  return `[vc ${personaHash(personaWithSkills(systemPrompt, skillsText))} ${model ?? "auto"} ${effort ?? "auto"}]`;
+}
+
+/**
+ * Tag for a definition that couldn't carry the full skill text (payload over
+ * budget). The hash slot isn't hex, so it can never equal a claim's tag: the
+ * step runs on the general path, whose persona carries the skills in full.
+ */
+function namesOnlyTag(model: string | null, effort: string | null): string {
+  return `[vc skills-names-only ${model ?? "auto"} ${effort ?? "auto"}]`;
 }
 
 export type SessionAgentInput = {
@@ -91,21 +110,29 @@ function definitionFor(input: SessionAgentInput, withSkillContent: boolean): Cla
   const { bot, tier, model, effort, skills } = input;
   const role = bot.role ? ` (${bot.role})` : "";
   const scope = tier ? `${tier}-tier` : "untiered";
-  const description =
-    `VibeCodes agent ${bot.name}${role} for ${scope} workflow steps. ` +
-    `Use only when a VibeCodes claim_next_step response names this subagent. ` +
-    sessionAgentTag(bot.system_prompt, model, effort);
+  const skillsSection = buildSkillsSection(bot.id, skills);
 
   // Personas describe the job but rarely the agent's own name, so in a live
-  // test Atlas and Sentinel couldn't introduce themselves. The tag above still
-  // hashes system_prompt alone, so this line never desyncs the claim's tag.
+  // test Atlas and Sentinel couldn't introduce themselves. The tag below
+  // hashes the persona and skills text without this line, so it never desyncs
+  // the claim's tag.
   let prompt = `${agentNameLine(bot)}\n\n${bot.system_prompt}`;
-  if (skills.length > 0) {
-    prompt += withSkillContent
-      ? `\n\n## Skills\n${skills.map((s) => `### ${s.name}\n${s.content.trim()}`).join("\n\n")}`
-      : `\n\n## Skills\nLoad these with get_agent_skill_content (agent_id "${bot.id}") when one is relevant: ` +
-        `${skills.map((s) => s.name).join(", ")}.`;
+  let tag: string;
+  if (skills.length === 0) {
+    tag = sessionAgentTag(bot.system_prompt, model, effort);
+  } else if (withSkillContent) {
+    prompt = personaWithSkills(prompt, skillsSection.text);
+    tag = sessionAgentTag(bot.system_prompt, model, effort, skillsSection.text);
+  } else {
+    prompt +=
+      `\n\n## Skills\nLoad these with get_agent_skill_content (agent_id "${bot.id}") when one is relevant: ` +
+      `${skills.map((s) => s.name).join(", ")}.`;
+    tag = namesOnlyTag(model, effort);
   }
+
+  const description =
+    `VibeCodes agent ${bot.name}${role} for ${scope} workflow steps. ` +
+    `Use only when a VibeCodes claim_next_step response names this subagent. ${tag}`;
 
   return { description, prompt, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
 }
@@ -145,10 +172,12 @@ export function sessionAgentClaimHint(input: {
   tier: SessionAgentTier | null;
   model: string | null;
   effort: string | null;
+  /** The Skills section the claim sends (buildSkillsSection(...).text); "" for an agent without skills. */
+  skillsText?: string;
   agent?: "claude" | "codex";
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier);
-  const tag = sessionAgentTag(input.bot.system_prompt, input.model, input.effort);
+  const tag = sessionAgentTag(input.bot.system_prompt, input.model, input.effort, input.skillsText ?? "");
   const reportTier = input.model
     ? ` and model_used "${input.model}"${input.effort ? `, reasoning_effort_used "${input.effort}"` : ""}`
     : "";

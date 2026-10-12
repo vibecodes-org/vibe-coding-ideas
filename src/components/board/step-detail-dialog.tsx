@@ -197,9 +197,11 @@ function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
 }
 
 /**
- * Persona-attestation design §C — the self-reported sibling of
- * StepExecutionLine: whether this step's subagent actually ran on the
- * persona_prompt embedded by claim_next_step. Gated purely on
+ * Persona-attestation design §C — the sibling of StepExecutionLine: whether
+ * this step's subagent actually ran on the persona_prompt embedded by
+ * claim_next_step (self-reported by the orchestrator). The "Skills sent" line
+ * is not self-reported: claim_next_step records the skills it sent (task
+ * d04408b0); steps from before that hold the agent's own report. Gated purely on
  * `persona_honored` — that column is set ONLY by complete_step/fail_step, so
  * this one null-check alone hides in-flight steps, unreported completions,
  * AND every legacy row (no model_tier equivalent to check, unlike
@@ -211,7 +213,7 @@ function StepPersonaLine({ step }: { step: TaskWorkflowStep }) {
   const skillsLine =
     step.skills_used != null ? (
       <span className="block text-[11px] text-muted-foreground">
-        Skills: {step.skills_used.length > 0 ? step.skills_used.join(", ") : "none"}
+        Skills sent: {step.skills_used.length > 0 ? step.skills_used.join(", ") : "none"}
       </span>
     ) : null;
 
