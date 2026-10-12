@@ -7,7 +7,7 @@ vi.mock("../../../src/lib/logger", () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { cloneAgent } from "./bots";
+import { cloneAgent, createBot, createBotSchema } from "./bots";
 import { applyKitToIdea } from "./kits";
 
 // Task d04408b0: both MCP copy routines carry the source agent's skills.
@@ -57,6 +57,19 @@ describe("MCP clone_agent", () => {
     expect(result).toEqual({ cloned_bot_id: COPY, source_name: "Atlas" });
     const [insert] = fake.writesTo("agent_skills", "insert");
     expect(insert.payload).toEqual(SKILLS.map((s) => ({ ...s, bot_id: COPY })));
+  });
+
+  it("copies the source agent's tool access (task 472d5672)", async () => {
+    const fake = fakeSupabase({
+      tables: {
+        bot_profiles: (c) => (c.op === "select" ? { data: { ...SOURCE_BOT, tool_access: "read_only" } } : { error: null }),
+        agent_skills: (c) => (c.op === "select" ? { data: [] } : { error: null }),
+      },
+      rpc: (name) => (name === "create_bot_user" ? { data: COPY } : { error: null }),
+    });
+    await cloneAgent(ctxFor(fake), { bot_id: SOURCE });
+
+    expect(fake.writesTo("bot_profiles", "update")[0].payload).toMatchObject({ tool_access: "read_only" });
   });
 
   it("copies an agent without skills exactly as before", async () => {
@@ -117,5 +130,32 @@ describe("MCP kit apply", () => {
     ]);
     expect(fake.writesTo("idea_agents", "upsert")).toEqual([]);
     expect(fake.rpcCalls.map((c) => c.name)).toContain("delete_bot_user");
+  });
+});
+
+describe("MCP create_agent tool_access", () => {
+  function setup() {
+    return fakeSupabase({
+      tables: { bot_profiles: (c) => (c.op === "select" ? { data: { id: COPY } } : { error: null }) },
+      rpc: (name) => (name === "create_bot_user" ? { data: COPY } : { error: null }),
+    });
+  }
+
+  it("stores read_only when asked", async () => {
+    const fake = setup();
+    await createBot(ctxFor(fake), createBotSchema.parse({ name: "Lens", tool_access: "read_only" }));
+
+    expect(fake.writesTo("bot_profiles", "update")[0].payload).toEqual({ tool_access: "read_only" });
+  });
+
+  it("leaves new agents on full access by default, with no extra write", async () => {
+    const fake = setup();
+    await createBot(ctxFor(fake), createBotSchema.parse({ name: "Atlas" }));
+
+    expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
+  });
+
+  it("rejects a value that isn't full or read_only", () => {
+    expect(createBotSchema.safeParse({ name: "X", tool_access: "admin" }).success).toBe(false);
   });
 });

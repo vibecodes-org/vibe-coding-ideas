@@ -961,7 +961,7 @@ export function registerTools(
 
   server.tool(
     "list_agents",
-    "List agents owned by the current user (or a specific owner). Returns agent profiles with name, role, system prompt, and active status.",
+    "List agents owned by the current user (or a specific owner). Returns agent profiles with name, role, system prompt, tool access (full or read_only), and active status.",
     listBotsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -975,7 +975,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
+    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1006,7 +1006,7 @@ export function registerTools(
 
   server.tool(
     "create_agent",
-    "Create a new agent profile with a name, role, and system prompt. The agent gets its own user identity for assignments and activity logs.",
+    "Create a new agent profile with a name, role, and system prompt (tool_access: full by default, or read_only for reviewers and checkers). The agent gets its own user identity for assignments and activity logs.",
     createBotSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1487,7 +1487,7 @@ export function registerTools(
 
   server.tool(
     "import_agent_skill",
-    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio/tags either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
+    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio/tags either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Tool access is read from `metadata.tool_access` (full | read_only) or a Claude Code style `tools:` / `disallowedTools:` line (a deny list naming Edit or Write, or a tools list with no file-writing tool, means read_only). Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
     importAgentSkillSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

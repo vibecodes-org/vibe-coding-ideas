@@ -26,13 +26,17 @@ export const SESSION_AGENTS_MAX_BYTES = 200_000;
 
 const AGENT_NAME = /^vc-[a-z0-9-]{1,80}$/;
 const SAFE_SETTING = /^[a-z0-9._\-]{1,40}$/i;
+// A Claude Code tool name (Edit, Write, NotebookEdit …). The only extra field a
+// definition may carry (task 472d5672): tools a Read-only agent can't use.
+const TOOL_NAME = /^[A-Z][A-Za-z0-9_]{0,63}$/;
+const MAX_DISALLOWED_TOOLS = 10;
 
 /**
  * Validate the endpoint's `{ agents }` body. Anything unexpected — wrong
  * shape, a name outside the `vc-` namespace, an oversized payload — returns
  * null, and the session launches exactly as it did before.
  * @param {unknown} body
- * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string }> | null}
+ * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string, disallowedTools?: string[] }> | null}
  */
 export function validateSessionAgents(body) {
   const agents = body && typeof body === "object" ? /** @type {any} */ (body).agents : null;
@@ -40,11 +44,26 @@ export function validateSessionAgents(body) {
   const clean = {};
   for (const [name, def] of Object.entries(agents)) {
     if (!AGENT_NAME.test(name) || !def || typeof def !== "object") return null;
-    const { description, prompt, model, effort } = /** @type {any} */ (def);
+    const { description, prompt, model, effort, disallowedTools } = /** @type {any} */ (def);
     if (typeof description !== "string" || typeof prompt !== "string" || !prompt.trim()) return null;
     if (model !== undefined && (typeof model !== "string" || !SAFE_SETTING.test(model))) return null;
     if (effort !== undefined && (typeof effort !== "string" || !SAFE_SETTING.test(effort))) return null;
-    clean[name] = { description, prompt, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+    if (
+      disallowedTools !== undefined &&
+      (!Array.isArray(disallowedTools) ||
+        disallowedTools.length < 1 ||
+        disallowedTools.length > MAX_DISALLOWED_TOOLS ||
+        !disallowedTools.every((t) => typeof t === "string" && TOOL_NAME.test(t)))
+    ) {
+      return null;
+    }
+    clean[name] = {
+      description,
+      prompt,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      ...(disallowedTools ? { disallowedTools } : {}),
+    };
   }
   if (Object.keys(clean).length === 0) return null;
   return Buffer.byteLength(JSON.stringify(clean), "utf8") <= SESSION_AGENTS_MAX_BYTES ? clean : null;

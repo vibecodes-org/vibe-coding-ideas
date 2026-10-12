@@ -99,6 +99,14 @@ describe("POST /api/terminal/session/agents", () => {
     expect(agents["vc-lens-87e09eb1"]).not.toHaveProperty("model");
   });
 
+  it("switches file-editing tools off for a read-only agent and leaves a full-access one alone", async () => {
+    tables.bot_profiles = { data: [{ ...ATLAS, tool_access: "full" }, { ...LENS, tool_access: "read_only" }] };
+    const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+    expect(agents["vc-lens-87e09eb1"].disallowedTools).toEqual(["Edit", "Write", "NotebookEdit"]);
+    expect(agents["vc-lens-87e09eb1"].prompt).toContain("## Tools\nYou're read-only");
+    expect(agents["vc-atlas-37e8ffb2-frontier"]).not.toHaveProperty("disallowedTools");
+  });
+
   it("honours the owner's own model choice for a tier", async () => {
     tables.users = { data: { model_tier_map: { frontier: { claude: { model: "fable", effort: "max" } } } } };
     const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();

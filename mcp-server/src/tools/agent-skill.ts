@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { parseSkillMd, inferRole } from "../lib/skill-md";
+import { toolAccessFromFrontmatter } from "../../../src/lib/agent-tool-access";
 
 // --- Schemas ---
 
@@ -27,6 +28,16 @@ export async function importAgentSkill(
 
   const parsed = parseSkillMd(args.skill_md_content);
   const role = inferRole(parsed);
+  // The file's tool settings (`metadata.tool_access`, or a Claude Code style
+  // `tools:` / `disallowedTools:`). A file that says nothing leaves an existing
+  // agent's setting alone rather than resetting it to full access.
+  const toolAccess = toolAccessFromFrontmatter({
+    tools: parsed.tools,
+    disallowedTools: parsed.disallowedTools,
+    metadataToolAccess: parsed.metadata.tool_access,
+  });
+  const statesToolAccess =
+    parsed.metadata.tool_access !== undefined || parsed.tools !== undefined || parsed.disallowedTools !== undefined;
 
   // Un-slugify the name for display: "qa-engineer" → "Qa Engineer"
   const displayName = parsed.name
@@ -53,6 +64,7 @@ export async function importAgentSkill(
       if (parsed.metadata.tags) {
         updates.skills = parsed.metadata.tags.slice(0, 10).map((s) => s.slice(0, 30));
       }
+      if (statesToolAccess) updates.tool_access = toolAccess;
 
       const { error: updateErr } = await ctx.supabase
         .from("bot_profiles")
@@ -88,6 +100,7 @@ export async function importAgentSkill(
   if (parsed.metadata.tags && parsed.metadata.tags.length > 0) {
     extras.skills = parsed.metadata.tags.slice(0, 10).map((s) => s.slice(0, 30));
   }
+  if (toolAccess !== "full") extras.tool_access = toolAccess;
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
       .from("bot_profiles")
@@ -108,7 +121,7 @@ export async function importAgentSkill(
   // Fetch created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, bio, skills")
+    .select("id, name, role, system_prompt, is_active, bio, skills, tool_access")
     .eq("id", botId)
     .single();
 

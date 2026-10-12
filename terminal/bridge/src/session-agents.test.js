@@ -46,6 +46,29 @@ test("settings that aren't plain tokens are refused", () => {
   assert.equal(serializeSessionAgents({ agents: { "vc-a": { ...ATLAS, prompt: "  " } } }), null);
 });
 
+test("disallowedTools passes through when it is a short list of tool names", () => {
+  const def = { ...ATLAS, disallowedTools: ["Edit", "Write", "NotebookEdit"] };
+  const json = serializeSessionAgents({ agents: { "vc-lens-87e09eb1": def } });
+  assert.deepEqual(JSON.parse(json), { "vc-lens-87e09eb1": def });
+});
+
+test("disallowedTools that isn't a list of plain tool names refuses the payload", () => {
+  const bad = ["edit", "Edit; rm -rf", 3, "", "A".repeat(65)];
+  for (const entry of bad) {
+    assert.equal(serializeSessionAgents({ agents: { "vc-a": { ...ATLAS, disallowedTools: [entry] } } }), null);
+  }
+  assert.equal(serializeSessionAgents({ agents: { "vc-a": { ...ATLAS, disallowedTools: "Edit" } } }), null);
+  assert.equal(serializeSessionAgents({ agents: { "vc-a": { ...ATLAS, disallowedTools: [] } } }), null);
+  const eleven = Array.from({ length: 11 }, (_, i) => `Tool${i}`);
+  assert.equal(serializeSessionAgents({ agents: { "vc-a": { ...ATLAS, disallowedTools: eleven } } }), null);
+});
+
+test("Codex role files ignore disallowedTools (Codex is out of scope)", () => {
+  const files = codexAgentFiles({ agents: { "vc-lens-87e09eb1": { ...ATLAS, disallowedTools: ["Edit"] } } });
+  assert.ok(files);
+  assert.ok(!JSON.stringify(files).includes("disallowedTools"));
+});
+
 test("an oversized payload is dropped rather than risking the launch", () => {
   const big = { ...ATLAS, prompt: "x".repeat(SESSION_AGENTS_MAX_BYTES) };
   assert.equal(serializeSessionAgents({ agents: { "vc-a": big } }), null);

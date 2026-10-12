@@ -55,7 +55,13 @@ export const createBotSchema = z.object({
     .array(z.string().max(30))
     .max(10)
     .optional()
-    .describe("Capability tags (max 10, 30 chars each)"),
+    .describe("Tags for the agent's card and search (max 10, 30 chars each). The agent never reads them."),
+  tool_access: z
+    .enum(["full", "read_only"])
+    .optional()
+    .describe(
+      "What the agent can do. full (default): can read and change files. read_only: told not to create, edit or delete files, and in the in-app Claude Code terminal its file-editing tools are switched off. For reviewers and checkers."
+    ),
 });
 
 export const toggleAgentVoteSchema = z.object({
@@ -121,6 +127,7 @@ export async function listBots(
       is_active: bot.is_active,
       bio: bot.bio,
       skills: bot.skills,
+      tool_access: bot.tool_access,
       is_published: bot.is_published,
       community_upvotes: bot.community_upvotes,
       times_cloned: bot.times_cloned,
@@ -138,7 +145,7 @@ export async function getBotPrompt(
 
   const { data, error } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt")
+    .select("id, name, role, system_prompt, tool_access")
     .eq("id", botId)
     .maybeSingle();
 
@@ -198,6 +205,7 @@ export async function createBot(
   if (args.skills && args.skills.length > 0) {
     extras.skills = args.skills.map((s) => s.trim().toLowerCase());
   }
+  if (args.tool_access && args.tool_access !== "full") extras.tool_access = args.tool_access;
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
       .from("bot_profiles")
@@ -209,7 +217,7 @@ export async function createBot(
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published, tool_access")
     .eq("id", data)
     .single();
 
@@ -285,6 +293,7 @@ export async function cloneAgent(
       .update({
         bio: source.bio,
         skills: source.skills,
+        tool_access: source.tool_access,
         cloned_from: args.bot_id,
       })
       .eq("id", newId)

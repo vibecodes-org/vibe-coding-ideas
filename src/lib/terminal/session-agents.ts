@@ -21,6 +21,7 @@
 
 import { createHash } from "node:crypto";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
+import { agentPersonaBody, disallowedToolsFor, type ToolAccess } from "../agent-tool-access";
 
 export type SessionAgentTier = "frontier" | "standard" | "cheap";
 
@@ -81,7 +82,7 @@ function namesOnlyTag(model: string | null, effort: string | null): string {
 }
 
 export type SessionAgentInput = {
-  bot: { id: string; name: string; role: string | null; system_prompt: string };
+  bot: { id: string; name: string; role: string | null; system_prompt: string; tool_access?: ToolAccess | null };
   tier: SessionAgentTier | null;
   /** Resolved model for this tier, Claude's or Codex's (null on Auto steps — the subagent inherits). */
   model: string | null;
@@ -95,6 +96,8 @@ export type ClaudeCodeAgentDefinition = {
   prompt: string;
   model?: string;
   effort?: string;
+  /** Claude Code tools switched off for this agent (a Read-only agent can't edit files). */
+  disallowedTools?: string[];
 };
 
 /** "You are Atlas, the Full Stack Engineer on this VibeCodes board." */
@@ -111,18 +114,22 @@ function definitionFor(input: SessionAgentInput, withSkillContent: boolean): Cla
   const role = bot.role ? ` (${bot.role})` : "";
   const scope = tier ? `${tier}-tier` : "untiered";
   const skillsSection = buildSkillsSection(bot.id, skills);
+  // The persona as delivered: a Read-only agent's stored prompt plus the Tools
+  // note, exactly as claim_next_step sends it. Full access is the stored text
+  // unchanged, so fingerprints made before tool access existed still match.
+  const persona = agentPersonaBody(bot.system_prompt, bot.tool_access);
 
   // Personas describe the job but rarely the agent's own name, so in a live
   // test Atlas and Sentinel couldn't introduce themselves. The tag below
   // hashes the persona and skills text without this line, so it never desyncs
   // the claim's tag.
-  let prompt = `${agentNameLine(bot)}\n\n${bot.system_prompt}`;
+  let prompt = `${agentNameLine(bot)}\n\n${persona}`;
   let tag: string;
   if (skills.length === 0) {
-    tag = sessionAgentTag(bot.system_prompt, model, effort);
+    tag = sessionAgentTag(persona, model, effort);
   } else if (withSkillContent) {
     prompt = personaWithSkills(prompt, skillsSection.text);
-    tag = sessionAgentTag(bot.system_prompt, model, effort, skillsSection.text);
+    tag = sessionAgentTag(persona, model, effort, skillsSection.text);
   } else {
     prompt +=
       `\n\n## Skills\nLoad these with get_agent_skill_content (agent_id "${bot.id}") when one is relevant: ` +
@@ -134,7 +141,14 @@ function definitionFor(input: SessionAgentInput, withSkillContent: boolean): Cla
     `VibeCodes agent ${bot.name}${role} for ${scope} workflow steps. ` +
     `Use only when a VibeCodes claim_next_step response names this subagent. ${tag}`;
 
-  return { description, prompt, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+  const disallowedTools = disallowedToolsFor(bot.tool_access);
+  return {
+    description,
+    prompt,
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    ...(disallowedTools ? { disallowedTools } : {}),
+  };
 }
 
 function build(inputs: SessionAgentInput[], withSkillContent: boolean): Record<string, ClaudeCodeAgentDefinition> {
@@ -168,7 +182,7 @@ export function buildSessionAgents(
  * model and effort are the claiming agent's own resolution of the tier.
  */
 export function sessionAgentClaimHint(input: {
-  bot: { id: string; name: string; system_prompt: string };
+  bot: { id: string; name: string; system_prompt: string; tool_access?: ToolAccess | null };
   tier: SessionAgentTier | null;
   model: string | null;
   effort: string | null;
@@ -177,7 +191,12 @@ export function sessionAgentClaimHint(input: {
   agent?: "claude" | "codex";
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier);
-  const tag = sessionAgentTag(input.bot.system_prompt, input.model, input.effort, input.skillsText ?? "");
+  const tag = sessionAgentTag(
+    agentPersonaBody(input.bot.system_prompt, input.bot.tool_access),
+    input.model,
+    input.effort,
+    input.skillsText ?? "",
+  );
   const reportTier = input.model
     ? ` and model_used "${input.model}"${input.effort ? `, reasoning_effort_used "${input.effort}"` : ""}`
     : "";

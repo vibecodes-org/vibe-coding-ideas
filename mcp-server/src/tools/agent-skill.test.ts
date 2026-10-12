@@ -159,6 +159,69 @@ describe("importAgentSkill", () => {
 });
 
 // ---------------------------------------------------------------------------
+// import_agent_skill — tool access (task 472d5672)
+// ---------------------------------------------------------------------------
+
+describe("importAgentSkill — tool access", () => {
+  const NEW_BOT_ID = "00000000-0000-4000-a000-000000000099";
+
+  /** Runs a create-from-file import and returns the extras written after creation. */
+  async function createFrom(frontmatter: string[]) {
+    const md = ["---", "name: lens", "description: Code Reviewer agent", ...frontmatter, "---", "", "Review it."].join("\n");
+    const updateChain = createChain(null);
+    const fetchChain = createChain({ id: NEW_BOT_ID });
+    let n = 0;
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => (++n === 1 ? updateChain : fetchChain)),
+        rpc: vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null })),
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+    await importAgentSkill(ctx, importAgentSkillSchema.parse({ skill_md_content: md }));
+    return (updateChain.update as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+  }
+
+  it("reads a deny list that names Edit or Write as read_only", async () => {
+    const writes = await createFrom(["disallowedTools: Edit, Write"]);
+    expect(writes).toEqual([{ tool_access: "read_only" }]);
+  });
+
+  it("reads a tools list with no file-writing tool as read_only", async () => {
+    const writes = await createFrom(["tools: Read, Grep, Bash"]);
+    expect(writes).toEqual([{ tool_access: "read_only" }]);
+  });
+
+  it("lets metadata.tool_access win over the tools lists", async () => {
+    const writes = await createFrom(["disallowedTools: Edit", "metadata:", "  tool_access: full"]);
+    expect(writes).toEqual([]);
+  });
+
+  it("writes nothing for a file that says nothing about tools", async () => {
+    expect(await createFrom([])).toEqual([]);
+  });
+
+  it("updates an existing agent's tool access only when the file states one", async () => {
+    const roundTrip = (extra: string[]) =>
+      ["---", "name: lens", "description: d", "metadata:", "  source: vibecodes", `  source_id: ${BOT_ID}`, ...extra, "---", "", "Review it."].join("\n");
+
+    async function update(md: string) {
+      const updateChain = createChain(null);
+      let n = 0;
+      const ctx: McpContext = {
+        supabase: { from: vi.fn(() => (++n === 1 ? createChain({ id: BOT_ID, name: "Lens" }) : updateChain)) } as unknown as McpContext["supabase"],
+        userId: USER_ID,
+      };
+      await importAgentSkill(ctx, importAgentSkillSchema.parse({ skill_md_content: md }));
+      return (updateChain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    }
+
+    expect(await update(roundTrip(["  tool_access: read_only"]))).toMatchObject({ tool_access: "read_only" });
+    expect(await update(roundTrip([]))).not.toHaveProperty("tool_access");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // get_agent_skill_content
 // ---------------------------------------------------------------------------
 

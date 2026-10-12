@@ -36,6 +36,7 @@ import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
 import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
+import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
@@ -705,7 +706,7 @@ export async function claimNextStep(
   // full prompt).
   const { data: ideaAgents, error: ideaAgentsError } = await ctx.supabase
     .from("idea_agents")
-    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)")
+    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt, tool_access)")
     .eq("idea_id", step.idea_id)
     .order("created_at", { ascending: true });
   // Read before the claim write, so a failure aborts with nothing changed:
@@ -720,11 +721,22 @@ export async function claimNextStep(
   const matchedAgentRow = step.bot_id
     ? (ideaAgents ?? []).find((r) => r.bot_id === step.bot_id)
     : null;
-  const matchedBot = matchedAgentRow?.bot as { name: string; role: string; system_prompt: string | null } | null;
+  const matchedBot = matchedAgentRow?.bot as {
+    name: string;
+    role: string;
+    system_prompt: string | null;
+    tool_access: ToolAccess | null;
+  } | null;
   const skillRows =
     step.bot_id && matchedBot ? ((await fetchAgentSkills(ctx.supabase, [step.bot_id])).get(step.bot_id) ?? []) : [];
   const skillsSection = buildSkillsSection(step.bot_id ?? "", skillRows);
-  const personaPrompt = matchedBot ? personaWithSkills(matchedBot.system_prompt ?? "", skillsSection.text) : "";
+  // A Read-only agent's persona ends with the Tools note, ahead of the Skills
+  // section; Full access is the stored text unchanged. A bot with no persona
+  // text gets no note (so it still falls through to get_agent_prompt).
+  const personaBody = matchedBot?.system_prompt
+    ? agentPersonaBody(matchedBot.system_prompt, matchedBot.tool_access)
+    : (matchedBot?.system_prompt ?? "");
+  const personaPrompt = matchedBot ? personaWithSkills(personaBody, skillsSection.text) : "";
 
   // Mint the one-time claim token; only its hash is stored (capability layer
   // verified by complete_step/fail_step).
@@ -1252,7 +1264,12 @@ export async function claimNextStep(
             ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults)
             : null;
           return sessionAgentClaimHint({
-            bot: { id: step.bot_id, name: matchedBot.name, system_prompt: matchedBot.system_prompt! },
+            bot: {
+              id: step.bot_id,
+              name: matchedBot.name,
+              system_prompt: matchedBot.system_prompt!,
+              tool_access: matchedBot.tool_access,
+            },
             tier,
             model: resolution?.resolved ?? null,
             effort: resolution?.effort ?? null,
