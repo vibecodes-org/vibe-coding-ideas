@@ -305,3 +305,74 @@ describe("tool access", () => {
     expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(false);
   });
 });
+
+describe("buildSessionAgents with optional agents", () => {
+  const PLANNER = { id: "d799aba2-dc93-4379-8172-786dd8be0246", name: "Planner", role: "Planner", system_prompt: "## Goal\nPlan it." };
+  const waiting = () => input({ skills: [{ name: "testing", content: "x".repeat(2000) }] });
+  const optional = () => input({ bot: PLANNER, skills: [{ name: "planning", content: "y".repeat(2000) }] });
+  const size = (a: object) => Buffer.byteLength(JSON.stringify(a), "utf8");
+
+  it("adds optional agents when there is room", () => {
+    const agents = buildSessionAgents([waiting()], undefined, { optional: [optional()] })!;
+    expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-planner-d799aba2-frontier"]);
+  });
+
+  it("never lets an optional agent displace a waiting one on a tight budget", () => {
+    const base = size(buildSessionAgents([waiting()])!);
+    const agents = buildSessionAgents([waiting()], base + 10, { optional: [optional()] })!;
+    expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-frontier"]);
+  });
+
+  it("skips an optional agent that does not fit but still takes a smaller one after it", () => {
+    const small = input({ bot: { ...PLANNER, id: "11111111-0000-0000-0000-000000000000", name: "Tiny" } });
+    const base = size(buildSessionAgents([waiting()])!);
+    const agents = buildSessionAgents([waiting()], base + 1500, { optional: [optional(), small] })!;
+    expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-tiny-11111111-frontier"]);
+  });
+
+  it("sends optional agents with their skills in full, never names-only", () => {
+    const agents = buildSessionAgents([waiting()], undefined, { optional: [optional()] })!;
+    expect(agents["vc-planner-d799aba2-frontier"].prompt).toContain("### planning");
+    expect(agents["vc-planner-d799aba2-frontier"].description).not.toContain("names-only");
+  });
+
+  it("never exceeds the budget, whatever it is", () => {
+    for (let max = 300; max < 9000; max += 350) {
+      const agents = buildSessionAgents([waiting(), input({ tier: "standard" })], max, { optional: [optional()] });
+      if (agents) expect(size(agents)).toBeLessThanOrEqual(max);
+    }
+  });
+
+  it("keeps the waiting agents that fit instead of returning nothing when even names-only is over", () => {
+    const big = input({ bot: { ...ATLAS, system_prompt: "z".repeat(3000) } });
+    const small = input({ tier: "standard", model: "sonnet", effort: "medium" });
+    const agents = buildSessionAgents([big, small], 1200)!;
+    expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-standard"]);
+  });
+
+  it("defines the optional agents when nothing is waiting, and returns null only when nothing at all", () => {
+    expect(Object.keys(buildSessionAgents([], undefined, { optional: [optional()] })!)).toEqual([
+      "vc-planner-d799aba2-frontier",
+    ]);
+    expect(buildSessionAgents([], undefined, { optional: [] })).toBeNull();
+    expect(buildSessionAgents([input({ bot: { ...ATLAS, system_prompt: " " } })])).toBeNull();
+  });
+
+  it("gives an optional agent the same tag a claim hands out, for Claude and Codex", () => {
+    const skills = [{ name: "planning", content: "y".repeat(50) }];
+    for (const [model, effort, agent] of [["opus", "high", "claude"], ["gpt-6-astra", "high", "codex"]] as const) {
+      const agents = buildSessionAgents([waiting()], undefined, {
+        optional: [input({ bot: PLANNER, model, effort, skills })],
+      })!;
+      const hint = sessionAgentClaimHint({
+        bot: PLANNER,
+        tier: "frontier",
+        model,
+        effort,
+        skillsText: buildSkillsSection(PLANNER.id, skills).text,
+        agent,
+      });
+      expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
+    }
+  });
+});

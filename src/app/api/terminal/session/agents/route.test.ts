@@ -9,19 +9,25 @@ const SID = "sid-1";
 const OWNER = "user-1";
 const IDEA = "idea-1";
 const ATLAS = { id: "37e8ffb2-3f88-49e5-9ab4-a516c1088f77", name: "Atlas", role: "Full Stack Engineer", system_prompt: "## Goal\nShip it." };
+const PLANNER = { id: "d799aba2-dc93-4379-8172-786dd8be0246", name: "Planner", role: "Planner", system_prompt: "## Goal\nPlan it." };
 const LENS = { id: "87e09eb1-0c3e-4f96-9ddc-986fc10a58fd", name: "Lens", role: "Code Reviewer", system_prompt: "## Goal\nReview it." };
 
 const { mockAuthorizeAttach, tables } = vi.hoisted(() => ({
   mockAuthorizeAttach: vi.fn(),
-  tables: {} as Record<string, { data: unknown; error?: unknown }>,
+  tables: {} as Record<string, { data: unknown; error?: unknown; pages?: unknown[][] }>,
 }));
 
-function makeChain(result: { data: unknown; error?: unknown }) {
+function makeChain(result: { data: unknown; error?: unknown; pages?: unknown[][] }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chain: any = {};
   for (const m of ["select", "eq", "in", "not", "limit", "order", "maybeSingle"]) chain[m] = vi.fn().mockReturnValue(chain);
+  // A paged read answers from `pages`, by the page the range asks for.
+  chain.range = vi.fn((from: number) => {
+    if (result.pages) chain.pageData = result.pages[from / 1000] ?? [];
+    return chain;
+  });
   chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-    Promise.resolve({ error: null, ...result }).then(resolve, reject);
+    Promise.resolve({ error: null, ...result, ...(chain.pageData ? { data: chain.pageData } : {}) }).then(resolve, reject);
   return chain;
 }
 
@@ -38,6 +44,7 @@ vi.mock("../../../../../../terminal/shared/session-token.mjs", () => ({
 }));
 
 import { POST } from "./route";
+import { sessionAgentClaimHint } from "@/lib/terminal/session-agents";
 
 function req(body: unknown) {
   return new Request("http://localhost/api/terminal/session/agents", {
@@ -126,6 +133,62 @@ describe("POST /api/terminal/session/agents", () => {
     tables.users = { data: { model_tier_map: { frontier: { codex: { model: "gpt-5.6-sol", effort: "xhigh" } } } } };
     const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json();
     expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "gpt-5.6-sol", effort: "xhigh" });
+  });
+
+  describe("agents the board's templates use", () => {
+    beforeEach(() => {
+      tables.bot_profiles = { data: [ATLAS, LENS, PLANNER] };
+      tables.idea_agents = {
+        data: [
+          { bot_id: ATLAS.id, bot: { id: ATLAS.id, role: ATLAS.role } },
+          { bot_id: PLANNER.id, bot: { id: PLANNER.id, role: PLANNER.role } },
+        ],
+      };
+      tables.workflow_templates = { data: [{ steps: [{ role: "Planner", model_tier: "frontier" }] }] };
+    });
+
+    it("includes the Planner with no waiting step, with the tag a claim hands out", async () => {
+      const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+      const hint = sessionAgentClaimHint({ bot: PLANNER, tier: "frontier", model: "opus", effort: "high" });
+      expect(agents[hint.name]).toBeDefined();
+      expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
+      expect(Object.keys(agents)).toHaveLength(4);
+    });
+
+    it("carries Codex's model for a template-only agent", async () => {
+      const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json();
+      expect(agents["vc-planner-d799aba2-frontier"]).toMatchObject({ model: "gpt-6-astra", effort: "high" });
+    });
+
+    it("resolves a role through the board's cached match", async () => {
+      tables.workflow_templates = { data: [{ steps: [{ role: "Architect", model_tier: "frontier" }] }] };
+      tables.idea_role_match_cache = { data: { matches: { Architect: { botId: PLANNER.id, tier: "ai" } } } };
+      const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+      expect(agents["vc-planner-d799aba2-frontier"]).toBeDefined();
+    });
+
+    it("still answers with the waiting agents when the template reads fail", async () => {
+      tables.workflow_templates = { data: null, error: { message: "boom" } };
+      const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+      expect(Object.keys(agents).sort()).toEqual([
+        "vc-atlas-37e8ffb2-frontier",
+        "vc-atlas-37e8ffb2-standard",
+        "vc-lens-87e09eb1",
+      ]);
+    });
+
+    it("defines the template's agents even when nothing is waiting", async () => {
+      tables.task_workflow_steps = { data: [] };
+      const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+      expect(Object.keys(agents)).toEqual(["vc-planner-d799aba2-frontier"]);
+    });
+  });
+
+  it("reads past 1,000 claimable steps instead of stopping at the first page", async () => {
+    const full = Array.from({ length: 1000 }, () => ({ bot_id: ATLAS.id, model_tier: "frontier" }));
+    tables.task_workflow_steps = { data: [], pages: [full, [{ bot_id: LENS.id, model_tier: null }]] };
+    const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
+    expect(Object.keys(agents).sort()).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-lens-87e09eb1"]);
   });
 
   it("answers null when the board has no claimable agent steps", async () => {

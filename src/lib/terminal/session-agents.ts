@@ -27,9 +27,10 @@ export type SessionAgentTier = "frontier" | "standard" | "cheap";
 
 /**
  * Upper bound on the serialized payload. It travels as a single argv element
- * (macOS allows ~1 MB of argv + env); a busy board measured ~46 KB. Past this
- * the skill content is dropped first (the agents that own skills then stop
- * matching claims — see namesOnlyTag), then the whole payload.
+ * (macOS allows ~1 MB of argv + env); the busiest board measured ~96 KB. The
+ * bridge drops the WHOLE list past this, so buildSessionAgents packs to it
+ * itself: waiting agents first (skill content is dropped before any agent is,
+ * see namesOnlyTag), then template-only agents into the room left.
  */
 export const SESSION_AGENTS_MAX_BYTES = 200_000;
 
@@ -160,20 +161,51 @@ function build(inputs: SessionAgentInput[], withSkillContent: boolean): Record<s
   return agents;
 }
 
+function sizeOf(agents: Record<string, ClaudeCodeAgentDefinition>): number {
+  return Buffer.byteLength(JSON.stringify(agents), "utf8");
+}
+
 /**
- * Build the `--agents` payload. Returns null when there's nothing to define
- * or it can't be made to fit — the session then runs exactly as before.
+ * Build the `--agents` payload. Returns null only when there's nothing to
+ * define. `inputs` are the agents with a step waiting and always win; the
+ * `optional` ones (agents the board's templates would use, task 3a579815) only
+ * fill whatever room is left, in the order given, with their full skills: one
+ * that doesn't fit is skipped, never shrunk. The result never exceeds
+ * `maxBytes`, so the bridge's all-or-nothing size check can't trip.
  */
 export function buildSessionAgents(
   inputs: SessionAgentInput[],
   maxBytes: number = SESSION_AGENTS_MAX_BYTES,
+  options: { optional?: SessionAgentInput[] } = {},
 ): Record<string, ClaudeCodeAgentDefinition> | null {
+  type Agents = Record<string, ClaudeCodeAgentDefinition>;
+  let fitted: Agents | null = null;
   for (const withSkillContent of [true, false]) {
-    const agents = build(inputs, withSkillContent);
-    if (Object.keys(agents).length === 0) return null;
-    if (Buffer.byteLength(JSON.stringify(agents), "utf8") <= maxBytes) return agents;
+    const candidate = build(inputs, withSkillContent);
+    if (Object.keys(candidate).length === 0) break;
+    if (sizeOf(candidate) <= maxBytes) {
+      fitted = candidate;
+      break;
+    }
   }
-  return null;
+
+  let agents: Agents = fitted ?? {};
+  if (!fitted && Object.keys(build(inputs, false)).length > 0) {
+    // Even names-only is over: keep as many waiting agents as fit, in order.
+    for (const input of inputs) {
+      const next: Agents = { ...agents, ...build([input], true) };
+      if (sizeOf(next) <= maxBytes) agents = next;
+    }
+  }
+
+  for (const input of options.optional ?? []) {
+    const one = build([input], true);
+    const [name] = Object.keys(one);
+    if (!name || name in agents) continue;
+    const next: Agents = { ...agents, ...one };
+    if (sizeOf(next) <= maxBytes) agents = next;
+  }
+  return Object.keys(agents).length > 0 ? agents : null;
 }
 
 /**
