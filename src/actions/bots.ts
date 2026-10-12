@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
+import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
 import { fetchSkillsFromGitHub, withCurated } from "@/lib/skills-directory";
@@ -223,6 +224,10 @@ export async function cloneBotProfile(
 
   if (createError) throw new Error(createError.message);
 
+  // Filed skills come with the copy (and a failure discards it), before the
+  // source's times_cloned counter moves.
+  await copyAgentSkills(supabase, source.id, newBotId as string, ownerId);
+
   // Set extended fields + provenance, and atomically increment source counter
   const [updateResult, rpcResult] = await Promise.all([
     supabase
@@ -269,7 +274,12 @@ export async function cloneAgent(botId: string): Promise<string> {
 
 export async function addFeaturedTeam(
   teamId: string
-): Promise<{ created: string[]; skipped: string[]; createdBotIds: string[] }> {
+): Promise<{
+  created: string[];
+  skipped: string[];
+  createdBotIds: string[];
+  failed: { role: string; reason: string }[];
+}> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -301,6 +311,7 @@ export async function addFeaturedTeam(
   const created: string[] = [];
   const skipped: string[] = [];
   const createdBotIds: string[] = [];
+  const failed: { role: string; reason: string }[] = [];
 
   for (const entry of typedTeam.agents) {
     const bot = entry.bot;
@@ -315,13 +326,15 @@ export async function addFeaturedTeam(
       const newBotId = await cloneBotProfile(supabase, bot as unknown as BotProfile, user.id);
       created.push(role || bot.name);
       if (newBotId) createdBotIds.push(newBotId);
-    } catch {
-      // Skip individual clone failures
+    } catch (err) {
+      // One failed copy (including a failed skills copy, which discards the
+      // half-made agent) doesn't stop the rest of the team; it's reported.
+      failed.push({ role: role || bot.name, reason: err instanceof Error ? err.message : String(err) });
     }
   }
 
   revalidatePath("/agents");
-  return { created, skipped, createdBotIds };
+  return { created, skipped, createdBotIds, failed };
 }
 
 export type AgentProfileData = {

@@ -1517,7 +1517,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_skill_content",
-    "Load the full SKILL.md instructions for a specific skill attached to an agent. Use this when a task matches a skill's description from an available_skills list (returned by claim_next_step). Pass the optional agent_id (a bot_id) — the preferred path for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Progressive disclosure: only call this when you need the skill's detailed instructions.",
+    "Re-read the full SKILL.md instructions for a specific skill attached to an agent. A workflow step already includes its agent's skills in full inside the claim_next_step persona_prompt, so you don't need this to start a step; use it to re-read a skill on demand, or to load a skill that persona_prompt names as too large to include. Pass the optional agent_id (a bot_id) of the agent that owns the skill. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getAgentSkillContentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

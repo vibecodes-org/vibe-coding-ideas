@@ -872,24 +872,31 @@ describe("claimNextStep — workflow suggestion precedence", () => {
 });
 
 // ---------------------------------------------------------------------------
-// claimNextStep — agent skills advertisement
+// claimNextStep — agent skills are sent in full (task d04408b0)
 // ---------------------------------------------------------------------------
 
 const SKILL_BOT_ID = "00000000-0000-4000-a000-000000000050";
+const SKILL_PERSONA = "## Goal\nShip it.";
 
 /**
  * Like makeClaimContext but assigns a bot (so matchedAgent resolves) and lets a
- * test supply the agent_skills the assigned bot owns. claimNextStep queries
- * agent_skills once (only when bot_id is set) — routed here.
+ * test supply the agent_skills the assigned bot owns and its system_prompt.
+ * claimNextStep reads agent_skills once (only when a bot is assigned) and
+ * writes the skills it sent into the claim update — captured here.
  */
 function makeSkillsClaimContext(opts: {
   pendingStep: ReturnType<typeof makeStepRow>;
   updatedStep: Record<string, unknown>;
-  skills: { name: string; description: string }[];
+  skills: { name: string; content: string }[];
+  systemPrompt?: string | null;
+  skillsError?: string;
+  ideaAgentsError?: string;
 }) {
   const tableCounts: Record<string, number> = {};
+  let claimChain: ReturnType<typeof createChain> | null = null;
+  const systemPrompt = opts.systemPrompt === undefined ? SKILL_PERSONA : opts.systemPrompt;
 
-  return makeContext(((table: string) => {
+  const ctx = makeContext(((table: string) => {
     tableCounts[table] = (tableCounts[table] ?? 0) + 1;
     const callNum = tableCounts[table];
 
@@ -899,6 +906,7 @@ function makeSkillsClaimContext(opts: {
         chain.chain.then = (resolve: (val: unknown) => void) =>
           Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
       } else if (callNum === 2) {
+        claimChain = chain;
         chain.chain.maybeSingle = vi.fn(() =>
           Promise.resolve({ data: opts.updatedStep, error: null })
         );
@@ -916,22 +924,37 @@ function makeSkillsClaimContext(opts: {
       // matchedAgent needs the assigned bot to appear in available_agents
       const chain = createChain(null);
       chain.chain.then = (resolve: (val: unknown) => void) =>
-        Promise.resolve({
-          data: [
-            {
-              bot_id: SKILL_BOT_ID,
-              bot: { id: SKILL_BOT_ID, name: "Atlas", role: "Full Stack Engineer", avatar_url: null, is_active: true },
-            },
-          ],
-          error: null,
-        }).then(resolve);
+        Promise.resolve(
+          opts.ideaAgentsError
+            ? { data: null, error: { message: opts.ideaAgentsError } }
+            : {
+                data: [
+                  {
+                    bot_id: SKILL_BOT_ID,
+                    bot: {
+                      id: SKILL_BOT_ID,
+                      name: "Atlas",
+                      role: "Full Stack Engineer",
+                      avatar_url: null,
+                      is_active: true,
+                      system_prompt: systemPrompt,
+                    },
+                  },
+                ],
+                error: null,
+              },
+        ).then(resolve);
       return chain.chain;
     }
 
     if (table === "agent_skills") {
       const chain = createChain(null);
       chain.chain.then = (resolve: (val: unknown) => void) =>
-        Promise.resolve({ data: opts.skills, error: null }).then(resolve);
+        Promise.resolve(
+          opts.skillsError
+            ? { data: null, error: { message: opts.skillsError } }
+            : { data: opts.skills.map((s) => ({ bot_id: SKILL_BOT_ID, ...s })), error: null },
+        ).then(resolve);
       return chain.chain;
     }
 
@@ -941,64 +964,197 @@ function makeSkillsClaimContext(opts: {
 
     return createChain(null).chain;
   }) as unknown as McpContext["supabase"]["from"]);
+
+  return {
+    ctx,
+    claimUpdate: () =>
+      ((claimChain as ReturnType<typeof createChain> | null)?.captured.updated ?? {}) as Record<string, unknown>,
+    skillsQueried: () => (tableCounts["agent_skills"] ?? 0) > 0,
+  };
 }
 
 describe("claimNextStep — agent skills", () => {
-  it("includes available_skills and a SKILLS directive when the assigned bot has skills", async () => {
-    const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
-    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
-    const skills = [
-      { name: "api-design-review", description: "Checklist for REST/RPC contracts" },
-      { name: "a11y-audit", description: "WCAG 2.2 AA pass for new UI" },
-    ];
+  const SKILLS = [
+    { name: "api-design-review", content: "  Check REST contracts first.\n" },
+    { name: "a11y-audit", content: "Run a WCAG 2.2 AA pass." },
+  ];
+  const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
+  const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
 
-    const ctx = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills });
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+  type SkillClaim = {
+    instruction: string;
+    persona_prompt?: string;
+    native_subagent?: { name: string; tag: string };
+    available_skills?: unknown;
+  };
 
-    const r = result as {
-      instruction: string;
-      available_skills?: { name: string; description: string }[];
-    };
+  it("appends each skill's stored text to persona_prompt, in order, trimmed (AC1)", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
-    expect(r.available_skills).toEqual(skills);
-    expect(r.instruction).toContain("SKILLS: You have these skills available");
-    expect(r.instruction).toContain("- api-design-review — Checklist for REST/RPC contracts");
-    expect(r.instruction).toContain("- a11y-audit — WCAG 2.2 AA pass for new UI");
-    // Directive must reference get_agent_skill_content with the bot's id as agent_id
-    expect(r.instruction).toContain("get_agent_skill_content");
-    expect(r.instruction).toContain(`agent_id "${SKILL_BOT_ID}"`);
-    // Includes the tool-less subagent EXCEPTION fallback
-    expect(r.instruction).toContain("EXCEPTION");
+    expect(r.persona_prompt).toBe(
+      `${SKILL_PERSONA}\n\n## Skills\nThese are your reference skills. Apply the ones relevant to this step.\n\n` +
+        `### api-design-review\nCheck REST contracts first.\n\n### a11y-audit\nRun a WCAG 2.2 AA pass.`,
+    );
   });
 
-  it("omits available_skills key and adds no SKILLS directive when the assigned bot has none", async () => {
-    const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
-    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+  it("names the included skills and never tells anyone to fetch them (AC3)", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
-    const ctx = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [] });
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
-
-    const r = result as {
-      instruction: string;
-      available_skills?: unknown;
-    };
-
+    expect(r.instruction).toContain("SKILLS: this agent's skills (api-design-review, a11y-audit) are included in full");
+    expect(r.instruction).toContain("use it unchanged with the skills in it");
+    expect(r.instruction).not.toContain("get_agent_skill_content");
+    expect(r.instruction).not.toContain("EXCEPTION — if your spawned subagent");
+    expect(r.instruction).not.toContain("skills_used");
     expect(r).not.toHaveProperty("available_skills");
-    expect(r.instruction).not.toContain("SKILLS: You have these skills available");
   });
 
-  it("does not fetch skills or add the key for a bot_id=null step (byte-identical path)", async () => {
-    const step = makeStepRow({ step_order: 1, bot_id: null });
-    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+  it("records the skills it sent in the claim write itself (AC5)", async () => {
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    await claimNextStep(ctx, { task_id: TASK_ID });
+
+    expect(claimUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+  });
+
+  it("records an empty list for an agent without skills, and adds nothing to the instruction (AC4/AC5)", async () => {
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(claimUpdate().skills_used).toEqual([]);
+    expect(r.persona_prompt).toBe(SKILL_PERSONA);
+    expect(r.instruction).not.toContain("SKILLS:");
+    expect(r).not.toHaveProperty("available_skills");
+  });
+
+  it("sends the skills as the worker's instructions when the agent has no persona text", async () => {
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, systemPrompt: null });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(r.persona_prompt!.startsWith("## Skills\n")).toBe(true);
+    expect(r.instruction).toContain('Spawn the subagent with the "persona_prompt" field');
+    expect(r.instruction).not.toContain("Call get_agent_prompt with agent_id");
+    expect(claimUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+    // No persona text means no in-app definition exists to name.
+    expect(r.native_subagent).toBeUndefined();
+  });
+
+  it("sends whole skills up to the size limit, names the rest and records only the sent ones (AC10)", async () => {
+    const big = "x".repeat(40_001);
+    const { ctx, claimUpdate } = makeSkillsClaimContext({
+      pendingStep: step,
+      updatedStep,
+      skills: [SKILLS[0], { name: "huge", content: big }, { name: "after-huge", content: "short" }],
+    });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(r.persona_prompt).toContain("### api-design-review");
+    expect(r.persona_prompt).not.toContain("xxxx");
+    expect(r.persona_prompt).not.toContain("### after-huge");
+    expect(r.persona_prompt).toContain(`Not included here (over the size limit): huge, after-huge.`);
+    expect(r.persona_prompt).toContain(`get_agent_skill_content (agent_id "${SKILL_BOT_ID}")`);
+    expect(r.instruction).toContain("(api-design-review) are included in full");
+    expect(r.instruction).toContain("only named there, with a note on loading them: huge, after-huge");
+    expect(claimUpdate().skills_used).toEqual(["api-design-review"]);
+  });
+
+  it("the native subagent hint carries a tag built from the same skills text (AC2/AC8)", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    const { buildSkillsSection } = await import("../../../src/lib/skills-section");
+    const section = buildSkillsSection(SKILL_BOT_ID, SKILLS);
+    const expected = sessionAgentClaimHint({
+      bot: { id: SKILL_BOT_ID, name: "Atlas", system_prompt: SKILL_PERSONA },
+      tier: null,
+      model: null,
+      effort: null,
+      skillsText: section.text,
+    });
+    expect(r.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+    // ...and differs from the tag of the same agent with no skills.
+    const bare = sessionAgentClaimHint({
+      bot: { id: SKILL_BOT_ID, name: "Atlas", system_prompt: SKILL_PERSONA },
+      tier: null,
+      model: null,
+      effort: null,
+    });
+    expect(r.native_subagent!.tag).not.toBe(bare.tag);
+  });
+
+  it("aborts the claim when the skills can't be read, rather than sending a skill-less persona", async () => {
+    const { ctx, claimUpdate } = makeSkillsClaimContext({
+      pendingStep: step,
+      updatedStep,
+      skills: [],
+      skillsError: "permission denied",
+    });
+    await expect(claimNextStep(ctx, { task_id: TASK_ID })).rejects.toThrow("Failed to read the agent's skills: permission denied");
+    expect(claimUpdate()).toEqual({});
+  });
+
+  it("aborts the claim, with nothing written, when the board's agents can't be read", async () => {
+    const { ctx, claimUpdate, skillsQueried } = makeSkillsClaimContext({
+      pendingStep: step,
+      updatedStep,
+      skills: SKILLS,
+      ideaAgentsError: "agents unavailable",
+    });
+    await expect(claimNextStep(ctx, { task_id: TASK_ID })).rejects.toThrow("Failed to read the board's agents: agents unavailable");
+    expect(claimUpdate()).toEqual({});
+    expect(skillsQueried()).toBe(false);
+  });
+
+  it("names skills beyond the 50-skill cap instead of dropping them", async () => {
+    const many = Array.from({ length: 52 }, (_, i) => ({ name: `skill-${i + 1}`, content: `body ${i + 1}` }));
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: many });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(r.persona_prompt).toContain("### skill-50\nbody 50");
+    expect(r.persona_prompt).not.toContain("### skill-51");
+    expect(r.persona_prompt).toContain("Not included here (over the size limit): skill-51, skill-52.");
+    expect(r.persona_prompt).toContain(`get_agent_skill_content (agent_id "${SKILL_BOT_ID}")`);
+    expect(claimUpdate().skills_used).toHaveLength(50);
+  });
+
+  it("does not fetch skills for a bot_id=null step (byte-identical path)", async () => {
+    const noBotStep = makeStepRow({ step_order: 1, bot_id: null });
+    const noBotUpdated = { ...noBotStep, status: "in_progress", claimed_by: USER_ID };
 
     // Reuse the original no-bot harness — it has no agent_skills branch, proving
     // claimNextStep never queries agent_skills when bot_id is null.
-    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const ctx = makeClaimContext({ pendingStep: noBotStep, updatedStep: noBotUpdated, priorSteps: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
-    const r = result as { instruction: string; available_skills?: unknown };
     expect(r).not.toHaveProperty("available_skills");
-    expect(r.instruction).not.toContain("SKILLS: You have these skills available");
+    expect(r).not.toHaveProperty("persona_prompt");
+    expect(r.instruction).not.toContain("SKILLS:");
+  });
+
+  it("Codex claims carry the same persona-with-skills text and don't forward a skills list (AC11)", async () => {
+    const claude = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const claudeResult = (await claimNextStep(claude.ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    const codex = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const r = (await claimNextStep(codex.ctx, { task_id: TASK_ID, agent: "codex" })) as SkillClaim;
+
+    expect(r.persona_prompt).toBe(claudeResult.persona_prompt);
+    expect(r.instruction).toContain("SKILLS: this agent's skills (api-design-review, a11y-audit) are included in full");
+    expect(r.instruction).not.toContain("available_skills");
+    expect(r.instruction).not.toContain("skills_used");
+    expect(r.instruction).not.toContain("get_agent_skill_content");
+    expect(codex.claimUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+  });
+
+  it("a re-claim records the skills sent on the latest claim (AC6)", async () => {
+    const inProgress = { ...step, status: "in_progress" };
+    const first = makeSkillsClaimContext({ pendingStep: inProgress, updatedStep, skills: SKILLS });
+    await claimNextStep(first.ctx, { task_id: TASK_ID });
+    expect(first.claimUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+
+    const second = makeSkillsClaimContext({ pendingStep: inProgress, updatedStep, skills: [SKILLS[1]] });
+    await claimNextStep(second.ctx, { task_id: TASK_ID });
+    expect(second.claimUpdate().skills_used).toEqual(["a11y-audit"]);
   });
 });
 
@@ -1879,7 +2035,9 @@ describe("completeStep — persona attestation", () => {
     ).toThrow();
   });
 
-  it("skills_used present -> stored verbatim", async () => {
+  // Task d04408b0: skills_used is VibeCodes' own record of what claim_next_step
+  // sent. complete_step never writes it, whatever a caller still passes.
+  it("skills_used passed by a caller -> accepted but not written", async () => {
     const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
     await completeStep(ctx, {
       claim_token: TCT.token,
@@ -1887,23 +2045,17 @@ describe("completeStep — persona attestation", () => {
       skills_used: ["api-design-review", "a11y-audit"],
     });
 
-    expect(getUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+    expect(getUpdate()).not.toHaveProperty("skills_used");
   });
 
-  it("skills_used=[] -> stored as an explicit empty array, not NULL", async () => {
-    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
+  it("skills_used=[] and skills_used omitted -> neither is written", async () => {
+    const empty = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(empty.ctx, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
+    expect(empty.getUpdate()).not.toHaveProperty("skills_used");
 
-    const update = getUpdate();
-    expect(update.skills_used).toEqual([]);
-    expect(update.skills_used).not.toBeNull();
-  });
-
-  it("skills_used omitted -> stored as NULL", async () => {
-    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
-
-    expect(getUpdate().skills_used).toBeNull();
+    const omitted = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(omitted.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
+    expect(omitted.getUpdate()).not.toHaveProperty("skills_used");
   });
 
   it("echoes persona_used/persona_honored/skills_used on the .select() list", async () => {
@@ -1930,7 +2082,7 @@ describe("completeStep — persona attestation", () => {
     const update = getUpdate();
     expect(update.persona_used).toBeNull();
     expect(update.persona_honored).toBeNull();
-    expect(update.skills_used).toBeNull();
+    expect(update).not.toHaveProperty("skills_used");
   });
 });
 
@@ -3546,19 +3698,12 @@ describe("failStep — persona attestation", () => {
     ).toThrow();
   });
 
-  it("skills_used matrix — present, empty, and omitted", async () => {
-    const { ctx: ctxPresent, getUpdate: getPresent } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await failStep(ctxPresent, { claim_token: TCT.token, step_id: STEP_ID, skills_used: ["a11y-audit"] });
-    expect(getPresent().skills_used).toEqual(["a11y-audit"]);
-
-    const { ctx: ctxEmpty, getUpdate: getEmpty } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await failStep(ctxEmpty, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
-    expect(getEmpty().skills_used).toEqual([]);
-    expect(getEmpty().skills_used).not.toBeNull();
-
-    const { ctx: ctxOmitted, getUpdate: getOmitted } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await failStep(ctxOmitted, { claim_token: TCT.token, step_id: STEP_ID });
-    expect(getOmitted().skills_used).toBeNull();
+  it("skills_used (present, empty or omitted) is accepted but never written", async () => {
+    for (const extra of [{ skills_used: ["a11y-audit"] }, { skills_used: [] }, {}]) {
+      const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+      await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, ...extra });
+      expect(getUpdate()).not.toHaveProperty("skills_used");
+    }
   });
 
   it("echoes persona_used/persona_honored/skills_used on the .select() list", async () => {
@@ -4941,7 +5086,7 @@ describe("claimNextStep — Codex handoff", () => {
     expect(result.instruction).toContain("actual spawn parameters");
     expect(result.instruction).toContain("Keep claim_token in the orchestrator only");
     expect(result.instruction).toContain("context (prior outputs with step names and IDs)");
-    expect(result.instruction).toContain("approval_notes, rework_instructions, available_skills");
+    expect(result.instruction).toContain("approval_notes, rework_instructions");
     expect(result.instruction).toContain("actual working directory");
     expect(result.instruction).toContain("It must not claim another step, complete/fail this step, or approve anything");
     expect(result.instruction).toContain("CAPABILITY CHECK");

@@ -529,8 +529,9 @@ export default function AiAgentTeamsPage() {
             </li>
             <li>
               <strong className="text-foreground">Use via Claude Code</strong>{" "}
-              — connected agents load their skill instructions on demand with
-              the{" "}
+              — when an agent works on a workflow step, VibeCodes sends its
+              skills in full along with the step, so they always arrive. Agents
+              can also re-read a skill with the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 get_agent_skill_content
               </code>{" "}

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
+import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
 
 // --- Schemas ---
 
@@ -273,6 +274,9 @@ export async function cloneAgent(
   });
 
   if (createErr) throw new Error(createErr.message);
+
+  // Filed skills come with the copy (and a failure discards it).
+  await copyAgentSkills(ctx.supabase, source.id, newId as string, ownerId);
 
   // Set extended fields + provenance, and atomically increment source counter
   await Promise.all([

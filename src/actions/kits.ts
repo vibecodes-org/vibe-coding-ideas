@@ -119,6 +119,8 @@ export async function getActiveKitsWithSteps(): Promise<KitWithSteps[]> {
 export interface ApplyKitResult {
   agentsCreated: number;
   agentsSkipped: number;
+  /** Roles whose agent couldn't be made (a failed skills copy discards the half-made copy). */
+  agentsFailed: { role: string; reason: string }[];
   labelsCreated: number;
   templatesImported: number;
   triggersCreated: number;
@@ -153,6 +155,7 @@ export async function applyKit(
   const result: ApplyKitResult = {
     agentsCreated: 0,
     agentsSkipped: 0,
+    agentsFailed: [],
     labelsCreated: 0,
     templatesImported: 0,
     triggersCreated: 0,
@@ -233,8 +236,11 @@ export async function applyKit(
           botIdsToAllocate.push(newBotId);
           result.agentsCreated++;
         }
-      } catch {
-        // Skip individual creation failures
+      } catch (err) {
+        result.agentsFailed.push({
+          role: agentRole.role,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
