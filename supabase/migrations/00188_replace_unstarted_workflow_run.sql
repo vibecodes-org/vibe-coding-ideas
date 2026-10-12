@@ -45,10 +45,13 @@ BEGIN
     RETURN false;
   END IF;
 
-  SELECT task_id, idea_id INTO v_task_id, v_idea_id
-  FROM workflow_runs
-  WHERE id = p_run_id
-  FOR UPDATE;
+  -- workflow_runs has no idea_id; take it from the card. OF r locks only the
+  -- run row, not the card.
+  SELECT r.task_id, bt.idea_id INTO v_task_id, v_idea_id
+  FROM workflow_runs r
+  JOIN board_tasks bt ON bt.id = r.task_id
+  WHERE r.id = p_run_id
+  FOR UPDATE OF r;
 
   IF NOT FOUND THEN
     RETURN false;

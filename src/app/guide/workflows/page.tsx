@@ -618,8 +618,9 @@ export default function WorkflowsPage() {
             Steps that are already in progress, completed, or failed are not
             affected. If the number of steps has changed (structural edit), a
             workflow that has not started yet (every step pending, nothing
-            claimed or commented on) is switched to the new steps; one that has
-            started is left alone, so remove and re-apply it in that case.
+            claimed or commented on) is switched to the new steps, which also
+            drops any hand-made tweaks on it, such as a hand-picked agent or a
+            flipped approval; one that has started is left alone, so remove and re-apply it in that case.
           </p>
         </section>
 
