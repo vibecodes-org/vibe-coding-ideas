@@ -8,6 +8,7 @@ import {
   POSITION_GAP,
   SORT_OPTIONS,
   BOT_ROLE_TEMPLATES,
+  ROLE_TEMPLATE_CHIPS,
   SUGGESTED_TAGS,
   defaultTierForRole,
   modelTierGloss,
@@ -18,7 +19,7 @@ import {
   tierResolutionLine,
   capitalizeModelName,
 } from "./constants";
-import { generatePromptFromFields } from "./prompt-builder";
+import { generateInstructions, parseInstructions } from "./agent-instructions";
 import type { IdeaStatus, CommentType } from "@/types";
 
 // ── STATUS_CONFIG completeness ────────────────────────────────────────
@@ -172,20 +173,19 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(BOT_ROLE_TEMPLATES.length).toBeGreaterThan(0);
   });
 
-  it("each template has role, prompt, and structured fields", () => {
+  it("each template has a role, a one line, a job and a tool setting", () => {
     for (const template of BOT_ROLE_TEMPLATES) {
       expect(template.role).toBeTruthy();
-      expect(typeof template.prompt).toBe("string");
-      expect(template.structured).toBeDefined();
-      expect(template.structured.goal).toBeTruthy();
-      expect(template.structured.constraints).toBeTruthy();
-      expect(template.structured.approach).toBeTruthy();
+      expect(template.fields.oneLine, template.role).toBeTruthy();
+      expect(template.fields.job, template.role).toBeTruthy();
+      expect(["full", "read_only"]).toContain(template.toolAccess);
     }
   });
 
-  it("each template has expertise in structured fields", () => {
+  it("no template carries old Expertise", () => {
     for (const template of BOT_ROLE_TEMPLATES) {
-      expect(template.structured.expertise).toBeTruthy();
+      expect(template.fields.leftover, template.role).toBe("");
+      expect(generateInstructions(template.fields), template.role).not.toContain("Notes from the old format");
     }
   });
 
@@ -194,16 +194,26 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(new Set(roles).size).toBe(roles.length);
   });
 
-  it("includes a Copywriter / Content template with a valid structured shape", () => {
-    const copywriter = BOT_ROLE_TEMPLATES.find(
-      (t) => t.role === "Copywriter / Content"
-    );
+  it("starts with Planner, and Code Reviewer is the only Read-only starter", () => {
+    expect(BOT_ROLE_TEMPLATES[0].role).toBe("Planner");
+    const readOnly = BOT_ROLE_TEMPLATES.filter((t) => t.toolAccess === "read_only").map((t) => t.role);
+    expect(readOnly).toEqual(["Code Reviewer"]);
+  });
+
+  it("every template reads back from its generated text into the same boxes", () => {
+    for (const template of BOT_ROLE_TEMPLATES) {
+      const parsed = parseInstructions(generateInstructions(template.fields), template.role);
+      expect(parsed?.source, template.role).toBe("new");
+      expect(parsed?.fields, template.role).toEqual(template.fields);
+    }
+  });
+
+  it("includes a Copywriter / Content template with a valid shape", () => {
+    const copywriter = BOT_ROLE_TEMPLATES.find((t) => t.role === "Copywriter / Content");
     expect(copywriter).toBeDefined();
-    expect(typeof copywriter!.prompt).toBe("string");
-    expect(copywriter!.structured.goal).toBeTruthy();
-    expect(copywriter!.structured.expertise).toBeTruthy();
-    expect(copywriter!.structured.constraints).toBeTruthy();
-    expect(copywriter!.structured.approach).toBeTruthy();
+    expect(copywriter!.fields.oneLine).toBeTruthy();
+    expect(copywriter!.fields.job).toBeTruthy();
+    expect(copywriter!.fields.mustNot).toBeTruthy();
   });
 
   // Task 7d1ca3c1 (real incident, 7 Sep 2026): a spawned engineer subagent
@@ -225,22 +235,19 @@ describe("BOT_ROLE_TEMPLATES", () => {
     const MARKER =
       "unexplained uncommitted changes in the working tree are someone else's intentional prior work";
 
-    it("appends the sentence to structured.constraints for every code-touching role", () => {
+    it("appends the sentence to what-not-to-do for every code-touching role", () => {
       for (const role of CODE_TOUCHING_ROLES) {
         const template = BOT_ROLE_TEMPLATES.find((t) => t.role === role);
         expect(template, `missing template for ${role}`).toBeDefined();
-        expect(template!.structured.constraints).toContain(MARKER);
-        expect(template!.structured.constraints).toContain("fail_step");
+        expect(template!.fields.mustNot).toContain(MARKER);
+        expect(template!.fields.mustNot).toContain("fail_step");
       }
     });
 
     it("does not add the sentence to non-code-touching roles", () => {
       for (const template of BOT_ROLE_TEMPLATES) {
         if (CODE_TOUCHING_ROLES.includes(template.role)) continue;
-        expect(
-          template.structured.constraints,
-          `unexpected sentence on ${template.role}`
-        ).not.toContain(MARKER);
+        expect(template.fields.mustNot, `unexpected sentence on ${template.role}`).not.toContain(MARKER);
       }
     });
   });
@@ -254,18 +261,8 @@ describe("BOT_ROLE_TEMPLATES", () => {
 
     it(`every generated starter prompt is at most ${PROMPT_CEILING} characters`, () => {
       for (const template of BOT_ROLE_TEMPLATES) {
-        const prompt = generatePromptFromFields(template.role, template.structured);
-        expect(prompt.length, `${template.role} is ${prompt.length} chars`).toBeLessThanOrEqual(
-          PROMPT_CEILING
-        );
-      }
-    });
-
-    it("keeps each expertise list to a handful of points", () => {
-      for (const template of BOT_ROLE_TEMPLATES) {
-        const bullets = template.structured.expertise.split("\n").filter((l) => l.startsWith("- "));
-        expect(bullets.length, template.role).toBeGreaterThan(0);
-        expect(bullets.length, template.role).toBeLessThanOrEqual(4);
+        const prompt = generateInstructions(template.fields);
+        expect(prompt.length, `${template.role} is ${prompt.length} chars`).toBeLessThanOrEqual(PROMPT_CEILING);
       }
     });
 
@@ -275,10 +272,27 @@ describe("BOT_ROLE_TEMPLATES", () => {
       const STACK_SPECIFIC =
         /Next\.js|React|Supabase|shadcn|Tailwind|maybeSingle|\bRLS\b|Vercel|VibeCodes|\bNick\b/;
       for (const template of BOT_ROLE_TEMPLATES) {
-        const prompt = generatePromptFromFields(template.role, template.structured);
-        expect(prompt, template.role).not.toMatch(STACK_SPECIFIC);
+        expect(generateInstructions(template.fields), template.role).not.toMatch(STACK_SPECIFIC);
       }
     });
+  });
+});
+
+describe("ROLE_TEMPLATE_CHIPS", () => {
+  it("lists Planner first and keeps seven chips in the first row", () => {
+    expect(ROLE_TEMPLATE_CHIPS[0].role).toBe("Planner");
+    expect(ROLE_TEMPLATE_CHIPS.filter((c) => c.group === "primary")).toHaveLength(7);
+  });
+
+  it("puts Security Engineer under More", () => {
+    expect(ROLE_TEMPLATE_CHIPS.find((c) => c.role === "Security Engineer")?.group).toBe("more");
+  });
+
+  it("every chip names a real template (so clicking it always fills the boxes)", () => {
+    const templateRoles = new Set(BOT_ROLE_TEMPLATES.map((t) => t.role));
+    for (const chip of ROLE_TEMPLATE_CHIPS) {
+      expect(templateRoles.has(chip.role), chip.role).toBe(true);
+    }
   });
 });
 

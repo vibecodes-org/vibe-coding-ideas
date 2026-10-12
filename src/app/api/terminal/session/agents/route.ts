@@ -100,7 +100,7 @@ export async function POST(req: Request) {
 
     const botIds = [...new Set([...pairs.values()].map((p) => p.botId))];
     const [{ data: bots }, skillsByBot, { data: owner }, platformDefaults] = await Promise.all([
-      supabase.from("bot_profiles").select("id, name, role, system_prompt").in("id", botIds),
+      supabase.from("bot_profiles").select("id, name, role, system_prompt, tool_access").in("id", botIds),
       // Same read claim_next_step uses, so both build the same Skills text. A
       // failed read gives nothing rather than agents that would never match.
       fetchAgentSkills(supabase, botIds).catch((err: unknown) => {
@@ -125,7 +125,13 @@ export async function POST(req: Request) {
       // model/effort match the step's MANDATORY MODEL directive.
       const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults) : null;
       inputs.push({
-        bot: { id: bot.id, name: bot.name, role: bot.role, system_prompt: bot.system_prompt },
+        bot: {
+          id: bot.id,
+          name: bot.name,
+          role: bot.role,
+          system_prompt: bot.system_prompt,
+          tool_access: bot.tool_access,
+        },
         tier,
         model: resolution?.resolved ?? null,
         effort: resolution?.effort ?? null,

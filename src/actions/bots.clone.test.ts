@@ -46,6 +46,16 @@ describe("cloneBotProfile", () => {
     expect(fake.rpcCalls.map((c) => c.name)).toEqual(["create_bot_user", "increment_times_cloned"]);
   });
 
+  it("copies the source's tool access to the new agent", async () => {
+    const fake = setup({ data: [] });
+    await cloneBotProfile(fake.client, { ...SOURCE, tool_access: "read_only" } as BotProfile, OWNER);
+
+    expect(fake.writesTo("bot_profiles", "update")[0].payload).toMatchObject({
+      tool_access: "read_only",
+      cloned_from: SOURCE.id,
+    });
+  });
+
   it("clones an agent without skills exactly as before", async () => {
     const fake = setup({ data: [] });
     expect(await cloneBotProfile(fake.client, SOURCE, OWNER)).toBe(COPY);

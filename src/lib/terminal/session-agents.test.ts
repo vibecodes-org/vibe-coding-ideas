@@ -257,3 +257,51 @@ describe("agentNameLine", () => {
     expect(agentNameLine({ name: "Lens", role: "  " })).toBe("You are Lens, an agent on this VibeCodes board.");
   });
 });
+
+// Task 472d5672: a Read-only agent's session definition switches its file-
+// editing tools off and carries the Tools note; Full access is untouched.
+describe("tool access", () => {
+  const READ_ONLY = { ...ATLAS, tool_access: "read_only" as const };
+  const NOTE = "## Tools\nYou're read-only: don't create, edit or delete files";
+  const key = "vc-atlas-37e8ffb2-frontier";
+
+  it("gives a read-only agent disallowedTools and the Tools note in its prompt", () => {
+    const def = buildSessionAgents([input({ bot: READ_ONLY })])![key];
+    expect(def.disallowedTools).toEqual(["Edit", "Write", "NotebookEdit"]);
+    expect(def.prompt).toContain(NOTE);
+    expect(def.prompt.endsWith("Say what should change instead.")).toBe(true);
+  });
+
+  it("leaves a full-access definition exactly as it was, with no disallowedTools key", () => {
+    const plain = buildSessionAgents([input()])![key];
+    const explicit = buildSessionAgents([input({ bot: { ...ATLAS, tool_access: "full" } })])![key];
+    expect(plain).not.toHaveProperty("disallowedTools");
+    expect(explicit).toEqual(plain);
+    expect(plain.prompt).not.toContain("## Tools");
+  });
+
+  // Regression: full-access tags must not move, or every running session stops matching.
+  it("keeps a full-access agent's tag identical to the persona-only tag", () => {
+    const def = buildSessionAgents([input({ bot: { ...ATLAS, tool_access: "full" } })])![key];
+    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+  });
+
+  it("the claim-hint tag equals the definition tag for a read-only agent, with and without skills", () => {
+    for (const skills of [[], [{ name: "testing", content: "Write the test first." }]]) {
+      const def = buildSessionAgents([input({ bot: READ_ONLY, skills })])![key];
+      const hint = sessionAgentClaimHint({
+        bot: READ_ONLY,
+        tier: "frontier",
+        model: "opus",
+        effort: "high",
+        skillsText: buildSkillsSection(ATLAS.id, skills).text,
+      });
+      expect(def.description.endsWith(hint.tag), `skills: ${skills.length}`).toBe(true);
+    }
+  });
+
+  it("a read-only agent no longer matches a full-access claim tag", () => {
+    const def = buildSessionAgents([input({ bot: READ_ONLY })])![key];
+    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(false);
+  });
+});

@@ -1,0 +1,105 @@
+name: Agent layout conversion
+
+# One-off job (task 472d5672): move every old-layout agent's instructions into
+# the new layout, against production. It lives in CI, not in a migration,
+# because this repository is PUBLIC: a migration with literal UPDATEs would
+# publish other people's agent prompts. The script prints ids, owner group,
+# layout, lengths and counts only; nothing is uploaded as an artifact.
+#
+# Run order: dry-run, then apply (confirm CONVERT), then verify, then apply
+# again (expect 0 converted). Migration 00186 (the backup of every agent) must
+# be applied to production first; apply refuses to run without it.
+# restore (confirm RESTORE) puts back only agents still exactly as the
+# conversion left them. See src/lib/agent-layout-conversion.ts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'What to run'
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - verify
+          - apply
+          - restore
+      confirm:
+        description: 'apply needs CONVERT, restore needs RESTORE'
+        required: false
+        type: string
+      owner_id:
+        description: 'Optional user id: report that person''s agents as their own group'
+        required: false
+        type: string
+      show_id:
+        description: 'Optional: print before/after text for ONE platform-owned agent (refused for anyone else)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-layout-conversion
+  cancel-in-progress: false
+
+jobs:
+  # dry-run, verify and --show only read production.
+  read:
+    if: github.event.inputs.mode == 'dry-run' || github.event.inputs.mode == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build the script
+        run: npx esbuild scripts/convert-agent-layouts.ts --bundle --platform=node --format=cjs --outfile="$RUNNER_TEMP/convert-agent-layouts.cjs" --log-level=warning
+      - name: Run
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_KEY }}
+          MODE: ${{ github.event.inputs.mode }}
+          OWNER_ID: ${{ github.event.inputs.owner_id }}
+          SHOW_ID: ${{ github.event.inputs.show_id }}
+        run: |
+          set -o pipefail
+          ARGS=(--mode "$MODE")
+          if [ -n "$OWNER_ID" ]; then ARGS+=(--owner-id "$OWNER_ID"); fi
+          if [ -n "$SHOW_ID" ]; then ARGS+=(--show "$SHOW_ID"); fi
+          node "$RUNNER_TEMP/convert-agent-layouts.cjs" "${ARGS[@]}" | tee "$RUNNER_TEMP/out.txt"
+          { echo '### Agent layout conversion'; echo '```'; cat "$RUNNER_TEMP/out.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # apply and restore change production: behind the same approval gate as the
+  # production migrations, and they need the confirm word.
+  write:
+    if: github.event.inputs.mode == 'apply' || github.event.inputs.mode == 'restore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build the script
+        run: npx esbuild scripts/convert-agent-layouts.ts --bundle --platform=node --format=cjs --outfile="$RUNNER_TEMP/convert-agent-layouts.cjs" --log-level=warning
+      - name: Run
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_KEY }}
+          MODE: ${{ github.event.inputs.mode }}
+          CONFIRM: ${{ github.event.inputs.confirm }}
+          OWNER_ID: ${{ github.event.inputs.owner_id }}
+        run: |
+          set -o pipefail
+          ARGS=(--mode "$MODE" --confirm "$CONFIRM")
+          if [ -n "$OWNER_ID" ]; then ARGS+=(--owner-id "$OWNER_ID"); fi
+          node "$RUNNER_TEMP/convert-agent-layouts.cjs" "${ARGS[@]}" | tee "$RUNNER_TEMP/out.txt"
+          { echo '### Agent layout conversion'; echo '```'; cat "$RUNNER_TEMP/out.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

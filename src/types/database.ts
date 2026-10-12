@@ -1860,6 +1860,7 @@ export type Database = {
           community_upvotes: number;
           times_cloned: number;
           cloned_from: string | null;
+          tool_access: "full" | "read_only";
           created_at: string;
           updated_at: string;
         };
@@ -1877,6 +1878,7 @@ export type Database = {
           community_upvotes?: number;
           times_cloned?: number;
           cloned_from?: string | null;
+          tool_access?: "full" | "read_only";
           created_at?: string;
           updated_at?: string;
         };
@@ -1894,6 +1896,7 @@ export type Database = {
           community_upvotes?: number;
           times_cloned?: number;
           cloned_from?: string | null;
+          tool_access?: "full" | "read_only";
           created_at?: string;
           updated_at?: string;
         };
@@ -1915,6 +1918,44 @@ export type Database = {
           {
             foreignKeyName: "bot_profiles_cloned_from_fkey";
             columns: ["cloned_from"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      bot_profile_prompt_backups: {
+        Row: {
+          id: string;
+          bot_id: string;
+          name: string | null;
+          role: string | null;
+          system_prompt: string | null;
+          reason: string;
+          backed_up_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          name?: string | null;
+          role?: string | null;
+          system_prompt?: string | null;
+          reason: string;
+          backed_up_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          name?: string | null;
+          role?: string | null;
+          system_prompt?: string | null;
+          reason?: string;
+          backed_up_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bot_profile_prompt_backups_bot_id_fkey";
+            columns: ["bot_id"];
             isOneToOne: false;
             referencedRelation: "bot_profiles";
             referencedColumns: ["id"];

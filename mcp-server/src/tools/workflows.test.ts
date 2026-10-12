@@ -889,6 +889,7 @@ function makeSkillsClaimContext(opts: {
   updatedStep: Record<string, unknown>;
   skills: { name: string; content: string }[];
   systemPrompt?: string | null;
+  toolAccess?: "full" | "read_only";
   skillsError?: string;
   ideaAgentsError?: string;
 }) {
@@ -938,6 +939,7 @@ function makeSkillsClaimContext(opts: {
                       avatar_url: null,
                       is_active: true,
                       system_prompt: systemPrompt,
+                      tool_access: opts.toolAccess ?? "full",
                     },
                   },
                 ],
@@ -1115,6 +1117,38 @@ describe("claimNextStep — agent skills", () => {
     expect(r.persona_prompt).toContain("Not included here (over the size limit): skill-51, skill-52.");
     expect(r.persona_prompt).toContain(`get_agent_skill_content (agent_id "${SKILL_BOT_ID}")`);
     expect(claimUpdate().skills_used).toHaveLength(50);
+  });
+
+  // Task 472d5672: a Read-only agent's persona ends with the Tools note, ahead
+  // of the Skills section; a Full-access agent's persona is unchanged.
+  it("puts the read-only Tools note at the end of the persona, before the Skills section", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, toolAccess: "read_only" });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    const note = "## Tools\nYou're read-only: don't create, edit or delete files";
+    const personaPart = r.persona_prompt!.split("\n\n## Skills\n")[0];
+    expect(personaPart.startsWith(SKILL_PERSONA)).toBe(true);
+    expect(personaPart).toContain(note);
+    expect(personaPart.endsWith("Say what should change instead.")).toBe(true);
+    expect(r.persona_prompt).toContain("### api-design-review");
+  });
+
+  it("adds no Tools note for a Full-access agent", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [], toolAccess: "full" });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(r.persona_prompt).toBe(SKILL_PERSONA);
+  });
+
+  it("the read-only claim's native-subagent tag differs from the full-access one (the note is fingerprinted)", async () => {
+    const full = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [] });
+    const ro = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [], toolAccess: "read_only" });
+    const a = (await claimNextStep(full.ctx, { task_id: TASK_ID })) as SkillClaim;
+    const b = (await claimNextStep(ro.ctx, { task_id: TASK_ID })) as SkillClaim;
+
+    expect(a.native_subagent?.tag).toBeTruthy();
+    expect(b.native_subagent?.tag).toBeTruthy();
+    expect(b.native_subagent?.tag).not.toBe(a.native_subagent?.tag);
   });
 
   it("does not fetch skills for a bot_id=null step (byte-identical path)", async () => {

@@ -6,7 +6,7 @@ import { allocateAllAgents } from "./idea-agents";
 import { cloneBotProfile } from "./bots";
 import { triggerAutoRulesForTasks } from "./board";
 import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
-import { generatePromptFromFields } from "@/lib/prompt-builder";
+import { generateInstructions } from "@/lib/agent-instructions";
 import { chunkIds } from "@/lib/db-helpers";
 import { logger } from "@/lib/logger";
 import type { Database } from "@/types/database";
@@ -210,9 +210,7 @@ export async function applyKit(
           const template = BOT_ROLE_TEMPLATES.find(
             (t) => t.role.toLowerCase() === roleLower
           );
-          const systemPrompt = template?.structured
-            ? generatePromptFromFields(template.role, template.structured)
-            : template?.prompt ?? null;
+          const systemPrompt = template ? generateInstructions(template.fields) : null;
 
           const { data: botUser } = await supabase.rpc("create_bot_user", {
             p_owner_id: user.id,
@@ -223,11 +221,11 @@ export async function applyKit(
 
           if (botUser) {
             newBotId = botUser;
-            if (agentRole.skills && agentRole.skills.length > 0) {
-              await supabase
-                .from("bot_profiles")
-                .update({ skills: agentRole.skills })
-                .eq("id", botUser);
+            const extras: { skills?: string[]; tool_access?: "read_only" } = {};
+            if (agentRole.skills && agentRole.skills.length > 0) extras.skills = agentRole.skills;
+            if (template?.toolAccess === "read_only") extras.tool_access = "read_only";
+            if (Object.keys(extras).length > 0) {
+              await supabase.from("bot_profiles").update(extras).eq("id", botUser);
             }
           }
         }

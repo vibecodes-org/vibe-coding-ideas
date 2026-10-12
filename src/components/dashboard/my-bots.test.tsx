@@ -29,6 +29,7 @@ const baseBot = (overrides: Partial<DashboardBot> = {}): DashboardBot => ({
   community_upvotes: 0,
   times_cloned: 0,
   cloned_from: null,
+  tool_access: "full",
   created_at: "2026-05-01T00:00:00Z",
   updated_at: "2026-05-01T00:00:00Z",
   currentTask: null,
