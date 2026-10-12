@@ -39,35 +39,35 @@ export function AgentInstructionsView({ systemPrompt, role }: AgentInstructionsV
 
   return (
     <div className="space-y-3">
-      <h2 className="flex items-center gap-2 text-sm font-semibold">&#x1F9E0; Instructions</h2>
+      <h2 className="flex items-center gap-2 text-sm font-semibold">&#x1F9E0;&nbsp;Instructions</h2>
       {parsed ? (
         <div className="flex flex-col gap-3">
           {parsed.fields.oneLine && (
-            <Card title="&#x1F3AF; In one line" color="text-emerald-500">
+            <Card title="&#x1F3AF;&nbsp;In one line" color="text-emerald-500">
               {parsed.fields.oneLine}
             </Card>
           )}
           {parsed.fields.job && (
-            <Card title="&#x1F4CB; Its job" color="text-violet-400">
+            <Card title="&#x1F4CB;&nbsp;Its job" color="text-violet-400">
               {parsed.fields.job}
             </Card>
           )}
           {(parsed.fields.handBack || parsed.fields.mustNot) && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={`grid gap-3 ${parsed.fields.handBack && parsed.fields.mustNot ? "sm:grid-cols-2" : ""}`}>
               {parsed.fields.handBack && (
-                <Card title="&#x1F4E4; Hands back" color="text-blue-400">
+                <Card title="&#x1F4E4;&nbsp;Hands back" color="text-blue-400">
                   {parsed.fields.handBack}
                 </Card>
               )}
               {parsed.fields.mustNot && (
-                <Card title="&#x1F6AB; Must not do" color="text-red-500">
+                <Card title="&#x1F6AB;&nbsp;Must not do" color="text-red-500">
                   {parsed.fields.mustNot}
                 </Card>
               )}
             </div>
           )}
           {parsed.fields.leftover && (
-            <Card title="&#x1F4DD; Notes from the old format" color="text-amber-400">
+            <Card title="&#x1F4DD;&nbsp;Notes from the old format" color="text-amber-400">
               {parsed.fields.leftover}
             </Card>
           )}

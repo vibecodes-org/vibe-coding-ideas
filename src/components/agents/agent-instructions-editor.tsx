@@ -70,7 +70,7 @@ export function AgentInstructionsEditor({ value, onChange, role }: AgentInstruct
 
   return (
     <div className="space-y-2">
-      <Label>Instructions</Label>
+      <Label className="text-xs">Instructions</Label>
       <Tabs value={mode} onValueChange={handleModeChange}>
         <TabsList className="h-8 w-full">
           <TabsTrigger value="guided" className="text-xs">
@@ -106,7 +106,7 @@ export function AgentInstructionsEditor({ value, onChange, role }: AgentInstruct
               placeholder="e.g. You review code changes for correctness and consistency."
               rows={1}
               maxLength={INSTRUCTION_LIMITS.oneLine}
-              className="min-h-0 text-sm"
+              className="min-h-0 resize-none text-sm"
             />
           </div>
 

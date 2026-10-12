@@ -221,8 +221,8 @@ export function CreateAdminAgentDialog({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Avatar + Name + Tagline row */}
-          <div className="flex gap-4">
+          {/* Avatar + Name + Tagline row (avatar above the fields on a phone) */}
+          <div className="flex flex-col gap-4 sm:flex-row">
             <div
               className="group relative cursor-pointer shrink-0"
               onClick={() => fileInputRef.current?.click()}
