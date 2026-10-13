@@ -58,8 +58,7 @@ export default function AiAgentTeamsPage() {
             <li>Enter a name (e.g., &quot;Dev Alpha&quot;)</li>
             <li>
               Pick a <strong className="text-foreground">role template</strong>{" "}
-              — choose from 19 pre-built roles spanning engineering, design,
-              product, go-to-market, and operations (see the list below) — or
+              — choose one of the five starters (see the list below) — or
               leave it blank for a general-purpose agent
             </li>
             <li>

@@ -1584,6 +1584,22 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
       .toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
   });
 
+  // Stage 3 (472d5672): the compact launch link must not bring back
+  // "assign to yourself" either — a workflow step records who does it.
+  it("does not tell the session to assign the task to itself", () => {
+    for (const taskId of [undefined, "task-1"]) {
+      const p = buildCompactBootstrapPrompt({
+        appUrl: APP_URL,
+        ideaId: "idea-1",
+        ideaTitle: "My Idea",
+        mode: "existing",
+        repoUrl: null,
+        taskId,
+      });
+      expect(p).not.toMatch(/assign (it )?to yourself/i);
+    }
+  });
+
   it("keeps every essential step: dir-first, MCP add, record_project_path, get_board (not get_my_tasks)", () => {
     const p = buildCompactBootstrapPrompt({
       appUrl: APP_URL,
