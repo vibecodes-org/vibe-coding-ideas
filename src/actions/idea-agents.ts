@@ -6,7 +6,7 @@ import { createClient as createServerClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
 import { matchRolesWithAiOrFuzzy, roleMatchSignature, type AiRoleMatchAgent, type RoleMatchWithTier } from "@/lib/ai-role-matching";
-import { tierRank } from "@/lib/role-matching";
+import { decideStepRematch } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/types/database";
@@ -68,6 +68,7 @@ async function rematchActiveWorkflows(
     const roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, uniqueRoles, candidates);
 
     // 4. Apply matches to all steps in parallel
+    const roleByBot = new Map(candidates.map((c) => [c.botId, c.role]));
     let matched = 0;
     const updates: Promise<unknown>[] = [];
 
@@ -77,23 +78,29 @@ async function rematchActiveWorkflows(
       const newBotId = newMatch?.botId ?? null;
       const newTier = newMatch?.tier ?? "none";
 
-      if (!newBotId) continue;
+      const decision = decideStepRematch({
+        step,
+        newBotId,
+        newTier,
+        assignedAgentRole: step.bot_id ? roleByBot.get(step.bot_id) : undefined,
+      });
+      if (decision.action === "keep") continue;
 
-      const oldTierRank = tierRank(step.match_tier);
-      const newTierRank = tierRank(newTier);
-
-      // Only update if: no existing match, or new match is strictly better tier
-      if (!step.bot_id || newTierRank > oldTierRank) {
-        matched++;
-        updates.push(
-          Promise.resolve(
-            supabase
-              .from("task_workflow_steps")
-              .update({ bot_id: newBotId, match_tier: newTier })
-              .eq("id", step.id)
-          )
-        );
-      }
+      // Status guard: a step claimed since we read it must not be rewritten.
+      const patch =
+        decision.action === "clear"
+          ? { bot_id: null, match_tier: null }
+          : { bot_id: decision.botId, match_tier: decision.tier };
+      if (decision.action === "assign") matched++;
+      updates.push(
+        Promise.resolve(
+          supabase
+            .from("task_workflow_steps")
+            .update(patch)
+            .eq("id", step.id)
+            .eq("status", "pending")
+        )
+      );
     }
 
     if (updates.length > 0) {

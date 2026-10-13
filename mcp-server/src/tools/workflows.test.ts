@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { createHash } from "node:crypto";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
@@ -32,6 +33,7 @@ import {
   addStepComment,
   addStepCommentSchema,
   resetWorkflow,
+  rematchWorkflowAgents,
   deliverableFileFormat,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
@@ -5612,5 +5614,71 @@ describe("addStepComment — mentions", () => {
       );
       expect((commentChain as unknown as { insert: ReturnType<typeof vi.fn> }).insert).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("rematchWorkflowAgents — stale exact agents", () => {
+  function setup(step: { bot_id: string | null; match_tier: string | null }, match: { botId: string | null; tier: string }) {
+    vi.mocked(matchRolesWithAiOrFuzzy).mockResolvedValueOnce({ Planner: match } as never);
+    const writes: { patch: unknown; eqs: [string, unknown][] }[] = [];
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "task_workflow_steps") {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  not: () => Promise.resolve({ data: [{ id: STEP_ID, agent_role: "Planner", ...step }], error: null }),
+                }),
+              }),
+            }),
+            update: (patch: unknown) => {
+              const w = { patch, eqs: [] as [string, unknown][] };
+              writes.push(w);
+              const chain = { eq: (c: string, v: unknown) => { w.eqs.push([c, v]); return chain; } };
+              return chain;
+            },
+          };
+        }
+        if (table === "board_tasks") {
+          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { idea_id: IDEA_ID }, error: null }) }) }) };
+        }
+        // idea_agents
+        return {
+          select: () => ({
+            eq: () =>
+              Promise.resolve({
+                data: [
+                  { bot_id: "sentinel", bot: { id: "sentinel", name: "Sentinel", role: "QA Engineer" } },
+                  { bot_id: "planner", bot: { id: "planner", name: "Planner", role: "Planner" } },
+                ],
+                error: null,
+              }),
+          }),
+        };
+      }),
+    };
+    return { ctx: { supabase, userId: USER_ID } as unknown as McpContext, writes };
+  }
+
+  it("replaces an exact agent whose role no longer fits the step, guarded on pending", async () => {
+    const { ctx, writes } = setup({ bot_id: "sentinel", match_tier: "exact" }, { botId: "planner", tier: "exact" });
+    const result = await rematchWorkflowAgents(ctx, { task_id: TASK_ID });
+    expect(result.matched).toBe(1);
+    expect(writes[0].patch).toEqual({ bot_id: "planner", match_tier: "exact" });
+    expect(writes[0].eqs).toContainEqual(["status", "pending"]);
+  });
+
+  it("clears a stale exact agent when no agent in the pool fits", async () => {
+    const { ctx, writes } = setup({ bot_id: "sentinel", match_tier: "exact" }, { botId: null, tier: "none" });
+    await rematchWorkflowAgents(ctx, { task_id: TASK_ID });
+    expect(writes[0].patch).toEqual({ bot_id: null, match_tier: null });
+  });
+
+  it("leaves a correct exact agent alone", async () => {
+    const { ctx, writes } = setup({ bot_id: "planner", match_tier: "exact" }, { botId: "planner", tier: "exact" });
+    const result = await rematchWorkflowAgents(ctx, { task_id: TASK_ID });
+    expect(result.matched).toBe(0);
+    expect(writes).toHaveLength(0);
   });
 });

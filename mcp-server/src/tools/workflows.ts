@@ -20,7 +20,7 @@ import {
 } from "../lib/work-token-auth";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
-import { tierRank } from "../../../src/lib/role-matching";
+import { decideStepRematch } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
@@ -2171,6 +2171,7 @@ export async function rematchWorkflowAgents(
   const matchUserId = ctx.ownerUserId ?? ctx.userId;
   const roleMatches = await matchRolesWithAiOrFuzzy(ctx.supabase, matchUserId, stepRoles, candidates);
 
+  const roleByBot = new Map(candidates.map((c) => [c.botId, c.role]));
   let matched = 0;
   let unmatched = 0;
   let upgraded = 0;
@@ -2182,26 +2183,39 @@ export async function rematchWorkflowAgents(
     const newBotId = newMatch?.botId ?? null;
     const newTier = newMatch?.tier ?? "none";
 
-    if (!newBotId) {
-      if (!step.bot_id) unmatched++;
+    const decision = decideStepRematch({
+      step,
+      newBotId,
+      newTier,
+      assignedAgentRole: step.bot_id ? roleByBot.get(step.bot_id) : undefined,
+    });
+
+    if (decision.action === "keep") {
+      if (!newBotId && !step.bot_id) unmatched++;
       continue;
     }
 
-    const oldTierRank = tierRank(step.match_tier);
-    const newTierRank = tierRank(newTier);
-
-    // Only update if: no existing match, or new match is strictly better tier
-    if (!step.bot_id || newTierRank > oldTierRank) {
-      if (step.bot_id) upgraded++;
-
+    // Status guard: a step claimed since we read it must not be rewritten.
+    if (decision.action === "clear") {
       await ctx.supabase
         .from("task_workflow_steps")
-        .update({ bot_id: newBotId, match_tier: newTier })
-        .eq("id", step.id);
-
-      matches[role] = newBotId;
-      matched++;
+        .update({ bot_id: null, match_tier: null })
+        .eq("id", step.id)
+        .eq("status", "pending");
+      unmatched++;
+      continue;
     }
+
+    if (step.bot_id) upgraded++;
+
+    await ctx.supabase
+      .from("task_workflow_steps")
+      .update({ bot_id: decision.botId, match_tier: decision.tier })
+      .eq("id", step.id)
+      .eq("status", "pending");
+
+    matches[role] = decision.botId;
+    matched++;
   }
 
   return { matched, unmatched, upgraded, matches };
