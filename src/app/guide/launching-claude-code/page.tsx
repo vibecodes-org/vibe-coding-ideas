@@ -262,14 +262,14 @@ export default function LaunchingClaudeCodePage() {
             A board launch reads the board, tells you which unstarted task is
             next up, and asks whether you want it — so you can say yes, or point
             the session at something else entirely (a bug you just spotted, work
-            you left half-finished). Say yes and it assigns the task to you,
-            moves it to{" "}
-            <strong className="text-foreground">In Progress</strong>, and if the
+            you left half-finished). Say yes and it moves the task to{" "}
+            <strong className="text-foreground">In Progress</strong>. If the
             task has a workflow it uses{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claim_next_step
-            </code>
-            . Launching from a specific task skips the question and goes
+            </code>{" "}
+            (each step already records who does it, so the task isn&apos;t
+            assigned to the session); otherwise it assigns the task to you. Launching from a specific task skips the question and goes
             straight to that task.
           </p>
         </section>

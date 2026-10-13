@@ -364,6 +364,20 @@ describe("buildBoardBootstrapPrompt", () => {
     expect(p).toMatch(/Don't call get_task, assign, move or start anything before I answer/);
   });
 
+  // Stage 3 (472d5672): a workflow step records who does it, so the session
+  // must not also assign the card to itself.
+  it("board prompt does not tell the session to assign a task that has a workflow", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    });
+    expect(p).not.toMatch(/get_task, assign it to yourself/);
+    expect(p).toMatch(/don't assign it to yourself/);
+  });
+
   it("create-new mode injects mkdir and git clone when repo present", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,
