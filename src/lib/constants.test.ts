@@ -194,8 +194,14 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(new Set(roles).size).toBe(roles.length);
   });
 
-  it("starts with Planner, and Code Reviewer is the only Read-only starter", () => {
-    expect(BOT_ROLE_TEMPLATES[0].role).toBe("Planner");
+  it("offers the five platform agents in order, and Code Reviewer is the only Read-only starter", () => {
+    expect(BOT_ROLE_TEMPLATES.map((t) => t.role)).toEqual([
+      "Planner",
+      "Full Stack Engineer",
+      "Code Reviewer",
+      "QA Engineer",
+      "DevOps Engineer",
+    ]);
     const readOnly = BOT_ROLE_TEMPLATES.filter((t) => t.toolAccess === "read_only").map((t) => t.role);
     expect(readOnly).toEqual(["Code Reviewer"]);
   });
@@ -208,30 +214,12 @@ describe("BOT_ROLE_TEMPLATES", () => {
     }
   });
 
-  it("includes a Copywriter / Content template with a valid shape", () => {
-    const copywriter = BOT_ROLE_TEMPLATES.find((t) => t.role === "Copywriter / Content");
-    expect(copywriter).toBeDefined();
-    expect(copywriter!.fields.oneLine).toBeTruthy();
-    expect(copywriter!.fields.job).toBeTruthy();
-    expect(copywriter!.fields.mustNot).toBeTruthy();
-  });
-
   // Task 7d1ca3c1 (real incident, 7 Sep 2026): a spawned engineer subagent
   // reverted a prior step's approved, uncommitted work. The "don't destroy
-  // work you didn't author" sentence is appended to the 8 code-touching
-  // starter templates only — non-code roles never run git, so it would be
-  // inert noise there.
+  // work you didn't author" sentence is in all five starters: every one of
+  // them can run git in a shared checkout.
   describe("protect-prior-work sentence", () => {
-    const CODE_TOUCHING_ROLES = [
-      "Full Stack Engineer",
-      "Front End Engineer",
-      "Backend Engineer",
-      "QA Engineer",
-      "DevOps Engineer",
-      "Security Engineer",
-      "Code Reviewer",
-      "Data Engineer",
-    ];
+    const CODE_TOUCHING_ROLES = ["Planner", "Full Stack Engineer", "Code Reviewer", "QA Engineer", "DevOps Engineer"];
     const MARKER =
       "unexplained uncommitted changes in the working tree are someone else's intentional prior work";
 
@@ -254,10 +242,11 @@ describe("BOT_ROLE_TEMPLATES", () => {
 
   // Task fedbfc19: these were ~3,000-char "textbook" prompts (SOLID, Core Web
   // Vitals, RICE…) long after the platform personas were slimmed (00149), so
-  // every new agent reintroduced the bloat. The ceiling stops them regrowing:
-  // the longest slim template is ~1,650 chars; the old ones averaged ~3,000.
+  // every new agent reintroduced the bloat. The ceiling stops them regrowing.
+  // 1,800 -> 1,900 in stage 3 (472d5672): the Planner covers four jobs and is
+  // 1,887 characters; the other four are 1,263 to 1,706.
   describe("slim, stack-agnostic starter prompts", () => {
-    const PROMPT_CEILING = 1800;
+    const PROMPT_CEILING = 1900;
 
     it(`every generated starter prompt is at most ${PROMPT_CEILING} characters`, () => {
       for (const template of BOT_ROLE_TEMPLATES) {
@@ -279,19 +268,17 @@ describe("BOT_ROLE_TEMPLATES", () => {
 });
 
 describe("ROLE_TEMPLATE_CHIPS", () => {
-  it("lists Planner first and keeps seven chips in the first row", () => {
+  it("is one row of the five templates, with nothing under More", () => {
+    expect(ROLE_TEMPLATE_CHIPS.map((c) => c.role)).toEqual(BOT_ROLE_TEMPLATES.map((t) => t.role));
+    expect(ROLE_TEMPLATE_CHIPS.every((c) => c.group === "primary")).toBe(true);
     expect(ROLE_TEMPLATE_CHIPS[0].role).toBe("Planner");
-    expect(ROLE_TEMPLATE_CHIPS.filter((c) => c.group === "primary")).toHaveLength(7);
-  });
-
-  it("puts Security Engineer under More", () => {
-    expect(ROLE_TEMPLATE_CHIPS.find((c) => c.role === "Security Engineer")?.group).toBe("more");
   });
 
   it("every chip names a real template (so clicking it always fills the boxes)", () => {
     const templateRoles = new Set(BOT_ROLE_TEMPLATES.map((t) => t.role));
     for (const chip of ROLE_TEMPLATE_CHIPS) {
       expect(templateRoles.has(chip.role), chip.role).toBe(true);
+      expect(chip.icon, chip.role).toBeTruthy();
     }
   });
 });
