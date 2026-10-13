@@ -536,13 +536,16 @@ describe("checkAndApplyAutoRules with userId option", () => {
 
 function createPropagationMockSupabase(options: {
   activeRuns: { id: string; task_id: string }[] | null;
-  stepsByRun: Record<string, { id: string; status: string; step_order: number }[]>;
+  stepsByRun: Record<string, { id: string; status: string; step_order: number; agent_role?: string | null }[]>;
   updateCounts?: Record<string, number>; // stepId -> count returned by update
   rpcResult?: { data: boolean | null; error: { message: string } | null };
 }) {
   const updateResults = options.updateCounts ?? {};
 
+  const updatePatches: { stepId: string | null; patch: Record<string, unknown> }[] = [];
+
   return {
+    updatePatches,
     rpc: vi.fn().mockResolvedValue(options.rpcResult ?? { data: false, error: null }),
     from: vi.fn((table: string) => {
       if (table === "workflow_runs") {
@@ -573,7 +576,10 @@ function createPropagationMockSupabase(options: {
           }),
         });
 
-        // Build a smarter mock that tracks eq() calls
+        // Build a smarter mock that tracks eq() calls.
+        // Mirrors postgrest-js: an update returns a count only when the
+        // caller asked for one ({ count } option), and .select() after an
+        // update returns the written rows.
         let currentRunId: string | null = null;
         let currentStepId: string | null = null;
         let isUpdateChain = false;
@@ -581,11 +587,6 @@ function createPropagationMockSupabase(options: {
         const eqFn = vi.fn((_col: string, val: string) => {
           if (_col === "run_id") currentRunId = val;
           if (_col === "id") currentStepId = val;
-          if (_col === "status" && isUpdateChain) {
-            // This is the concurrency guard — return count
-            const count = currentStepId ? (updateResults[currentStepId] ?? 1) : 1;
-            return Promise.resolve({ count, error: null });
-          }
           return mockChain;
         });
 
@@ -595,13 +596,22 @@ function createPropagationMockSupabase(options: {
           return Promise.resolve({ data: steps, error: null });
         });
 
-        const updateFn = vi.fn(() => {
+        const updateFn = vi.fn((patch: Record<string, unknown>) => {
           isUpdateChain = true;
+          updatePatches.push({ stepId: null, patch });
           return mockChain;
         });
 
         const selectFn = vi.fn(() => {
-          isUpdateChain = false;
+          if (isUpdateChain) {
+            // update(...).eq(...).select("id") -> the rows actually written
+            const count = currentStepId ? (updateResults[currentStepId] ?? 1) : 1;
+            if (updatePatches.length > 0) {
+              updatePatches[updatePatches.length - 1].stepId = currentStepId;
+            }
+            const rows = Array.from({ length: count }, () => ({ id: currentStepId }));
+            return Promise.resolve({ data: rows, count: null, error: null });
+          }
           return mockChain;
         });
 
@@ -765,6 +775,47 @@ describe("propagateTemplateEdits", () => {
 
     expect(result.stepsUpdated).toBe(1);
     expect(result.runsUpdated).toBe(1);
+  });
+
+  it("counts the run and reports its task when steps are rewritten in place (same step count)", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1, agent_role: "Dev" },
+          { id: "s2", status: "pending", step_order: 2, agent_role: "QA" },
+        ],
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result.runsUpdated).toBe(1);
+    expect(result.stepsUpdated).toBe(2);
+    expect(result.affectedTaskIds).toEqual(["task-1"]);
+  });
+
+  it("clears the agent and match tier on a step whose role changed", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1, agent_role: "Planner" }, // template says Dev
+          { id: "s2", status: "pending", step_order: 2, agent_role: "  qa " }, // case/space only
+        ],
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    const s1 = supabase.updatePatches.find((u) => u.stepId === "s1")!.patch;
+    const s2 = supabase.updatePatches.find((u) => u.stepId === "s2")!.patch;
+    expect(s1).toMatchObject({ agent_role: "Dev", bot_id: null, match_tier: null });
+    expect(s2).toMatchObject({ agent_role: "QA" });
+    expect(s2).not.toHaveProperty("bot_id");
+    expect(s2).not.toHaveProperty("match_tier");
   });
 
   it("handles concurrency guard returning count 0", async () => {
@@ -1199,16 +1250,16 @@ function createTierCaptureSupabase(step: { id: string; status: string; step_orde
       let isUpdate = false;
       let payload: Record<string, unknown> | null = null;
       const chain: Record<string, unknown> = {
-        select: vi.fn(() => { isUpdate = false; return chain; }),
-        update: vi.fn((p: Record<string, unknown>) => { isUpdate = true; payload = p; return chain; }),
-        order: vi.fn(() => Promise.resolve({ data: [step], error: null })),
-        eq: vi.fn((col: string) => {
-          if (col === "status" && isUpdate) {
+        select: vi.fn(() => {
+          if (isUpdate) {
             if (payload) updates.push(payload);
-            return Promise.resolve({ count: 1, error: null });
+            return Promise.resolve({ data: [{ id: step.id }], error: null });
           }
           return chain;
         }),
+        update: vi.fn((p: Record<string, unknown>) => { isUpdate = true; payload = p; return chain; }),
+        order: vi.fn(() => Promise.resolve({ data: [step], error: null })),
+        eq: vi.fn(() => chain),
       };
       return chain;
     }),
