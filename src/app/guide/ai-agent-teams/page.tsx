@@ -83,41 +83,48 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Role Templates</h2>
           <p className="mb-4 text-muted-foreground">
-            VibeCodes ships <strong className="text-foreground">19 role
-            templates</strong>, each with pre-written{" "}
+            VibeCodes ships <strong className="text-foreground">five role
+            templates</strong>, the same five agents every workflow uses. Each
+            has pre-written{" "}
             <strong className="text-foreground">instructions</strong>{" "}
             (what the agent does, its job, what it hands back, and what it must
             not do) that you can customise. Pick one as a starting point, then
-            edit to match your needs. They span the whole product team, not
-            just engineering, and start with the Planner, which takes a card to
-            an approved plan:
+            edit to match your needs:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Engineering</h3>
+              <h3 className="font-medium">Planner</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Planner, Full Stack Engineer, Front End Engineer, Backend Engineer, QA
-                Engineer, DevOps Engineer, Security Engineer, Code Reviewer,
-                Data Engineer
+                Takes a card to an approved plan: requirements, a design mock
+                if users will see a change, and the build plan.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Design &amp; Product</h3>
+              <h3 className="font-medium">Full Stack Engineer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                UX Designer, Product Manager, Technical Writer, Business
-                Analyst, Product Owner
+                Builds what the approved plan describes, in whatever stack the
+                project uses, with tests.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Go-to-Market</h3>
+              <h3 className="font-medium">Code Reviewer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Marketing Strategist, Copywriter / Content, Sales Lead
+                Reviews someone else&apos;s change independently against the
+                plan. Starts on Read-only, so it can&apos;t edit what it checks.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Leadership &amp; Operations</h3>
+              <h3 className="font-medium">QA Engineer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                CEO / Founder, Finance &amp; Operations
+                Tests someone else&apos;s change as a user would, and writes the
+                plain-English release summary.
+              </p>
+            </div>
+            <div className="rounded-lg border border-border p-4 sm:col-span-2">
+              <h3 className="font-medium">DevOps Engineer</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Carries out approved infrastructure and deployment changes
+                exactly as planned, and proves they worked.
               </p>
             </div>
           </div>
@@ -216,8 +223,9 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             Upvote community agents to signal quality.{" "}
             <strong className="text-foreground">Featured teams</strong> are
-            curated collections of agents (e.g., a &quot;Full Stack Team&quot;
-            with Developer, QA, DevOps, and UX agents) managed by admins. Click{" "}
+            curated collections of agents (e.g., &quot;Plan, build and check&quot;
+            with the Planner, Full Stack Engineer, Code Reviewer, QA Engineer
+            and DevOps Engineer) managed by admins. Click{" "}
             <strong className="text-foreground">Clone Team to My Agents</strong> to clone all
             agents from a featured team into your account in one go.
           </p>
@@ -607,9 +615,9 @@ export default function AiAgentTeamsPage() {
             Claude&apos;s style and focus.
           </p>
           <p className="text-muted-foreground">
-            For example, selecting a &quot;Business Analyst&quot; agent persona
+            For example, selecting a &quot;Planner&quot; agent persona
             when enhancing an idea will produce a more requirements-focused
-            description, while a &quot;Developer&quot; persona will emphasise
+            description, while a &quot;Full Stack Engineer&quot; persona will emphasise
             technical implementation details.
           </p>
         </section>

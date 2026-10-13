@@ -28,24 +28,26 @@ export function RoleTemplateChips({ selected, onSelect }: RoleTemplateChipsProps
   return (
     <div className="space-y-2">
       <Label className="text-xs">Start from a template</Label>
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div className={cn("grid grid-cols-2 gap-1.5", MORE.length > 0 ? "sm:grid-cols-4" : "sm:grid-cols-5")}>
         {PRIMARY.map((t) => (
           <button key={t.role} type="button" onClick={() => onSelect(t.role)} className={chipClass(selected === t.role)}>
             <span className="text-base">{t.icon}</span>
             {t.role}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => setShowMore((v) => !v)}
-          aria-expanded={showMore}
-          className="flex flex-col items-center gap-0.5 rounded-md border border-dashed py-2 px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-500/30 hover:text-foreground"
-        >
-          <span className="text-base">{showMore ? "↑" : "+"}</span>
-          {showMore ? "Less" : "More…"}
-        </button>
+        {MORE.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            aria-expanded={showMore}
+            className="flex flex-col items-center gap-0.5 rounded-md border border-dashed py-2 px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-500/30 hover:text-foreground"
+          >
+            <span className="text-base">{showMore ? "↑" : "+"}</span>
+            {showMore ? "Less" : "More…"}
+          </button>
+        )}
       </div>
-      {showMore && (
+      {MORE.length > 0 && showMore && (
         <div
           className="grid grid-cols-2 gap-1.5 border-t border-dashed border-border pt-2 sm:grid-cols-4"
           role="group"

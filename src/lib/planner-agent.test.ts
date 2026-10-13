@@ -13,20 +13,24 @@ import { BOT_ROLE_TEMPLATES } from "./constants";
 import { generateInstructions, parseInstructions } from "./agent-instructions";
 
 const MIGRATIONS = path.join(__dirname, "../../supabase/migrations");
-const migrationFile = readdirSync(MIGRATIONS).find((f) => f.startsWith("00187_"));
+// 00187 seeded the row; 00190 (stage 3) rewrote its text and tagline. The
+// current text is pinned in platform-agents.test.ts.
+const migrationFile = readdirSync(MIGRATIONS).find((f) => f.startsWith("00190_"));
 const migration = migrationFile ? readFileSync(path.join(MIGRATIONS, migrationFile), "utf8") : "";
 
 describe("Planner as a product agent", () => {
   it("the platform migration carries exactly the same text as the code constant", () => {
-    const m = migration.match(/\$planner\$([\s\S]*?)\$planner\$/);
-    expect(m, "00187 must hold the persona between $planner$ markers").not.toBeNull();
+    const m = migration.match(
+      new RegExp(`SET system_prompt = \\$agent\\$([\\s\\S]*?)\\$agent\\$,\\s+bio = [^;]*?WHERE id = '${PLANNER_AGENT_ID}';`)
+    );
+    expect(m, "00190 must hold the Planner between $agent$ markers").not.toBeNull();
     expect(m![1]).toBe(PLANNER_PROMPT);
   });
 
   it("the migration carries the same id, role and tagline", () => {
     expect(migration).toContain(`'${PLANNER_AGENT_ID}'`);
-    expect(migration).toContain(`'${PLANNER_ROLE}'`);
     expect(migration).toContain(PLANNER_BIO);
+    expect(PLANNER_ROLE).toBe("Planner");
   });
 
   it("is the first starting template, on Full access, with the same text as the platform agent", () => {
@@ -45,6 +49,6 @@ describe("Planner as a product agent", () => {
 
   it("is board-neutral: no product name, no person, no machine-specific command", () => {
     expect(PLANNER_PROMPT).not.toMatch(/VibeCodes|\bNick\b|\bopen <path|on his Mac/);
-    expect(PLANNER_PROMPT).toContain("whoever approves the plan");
+    expect(PLANNER_PROMPT).toContain("whoever approves it");
   });
 });
