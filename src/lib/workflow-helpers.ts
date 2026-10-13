@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { sameRole } from "@/lib/role-matching";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkflowTemplateStep } from "@/types/database";
 import {
@@ -482,8 +483,10 @@ export async function checkAndCompleteRun(
  * Only updates steps with status = 'pending'. When the step count differs, the
  * run is swapped to the new steps by replace_unstarted_workflow_run (atomic) if
  * nothing has started on it; otherwise it is skipped (structural mismatch).
- * Does NOT re-match bot_id — replaced runs are returned in affectedTaskIds so
- * callers rematch them (swapped steps start with no agent).
+ * Does NOT re-match bot_id — every task whose steps were rewritten or swapped is
+ * returned in affectedTaskIds so callers rematch it. A step whose role changed
+ * has its agent cleared here (it was matched to the old role); a step whose
+ * role is unchanged keeps its agent.
  */
 export async function propagateTemplateEdits(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -511,7 +514,7 @@ export async function propagateTemplateEdits(
   for (const run of activeRuns) {
     const { data: steps } = await supabase
       .from("task_workflow_steps")
-      .select("id, status, step_order")
+      .select("id, status, step_order, agent_role")
       .eq("run_id", run.id)
       .order("step_order", { ascending: true });
 
@@ -553,20 +556,30 @@ export async function propagateTemplateEdits(
       if (step.status !== "pending") continue;
 
       const templateStep = newSteps[i];
-      const { count } = await supabase
-        .from("task_workflow_steps")
-        .update({
-          title: templateStep.title,
-          description: templateStep.description ?? null,
-          agent_role: templateStep.role,
-          human_check_required: templateStep.requires_approval ?? false,
-          expected_deliverables: templateStep.deliverables ?? [],
-          model_tier: templateStep.model_tier ?? null,
-        })
-        .eq("id", step.id)
-        .eq("status", "pending");
+      const patch: Record<string, unknown> = {
+        title: templateStep.title,
+        description: templateStep.description ?? null,
+        agent_role: templateStep.role,
+        human_check_required: templateStep.requires_approval ?? false,
+        expected_deliverables: templateStep.deliverables ?? [],
+        model_tier: templateStep.model_tier ?? null,
+      };
+      // The stored agent was matched to the OLD role. Drop it so the rematch
+      // picks one for the new role (a tied "exact" would otherwise keep it).
+      if (!sameRole(step.agent_role, templateStep.role)) {
+        patch.bot_id = null;
+        patch.match_tier = null;
+      }
 
-      if (count && count > 0) {
+      // No count option is requested by default, so read the written rows back.
+      const { data: written } = await supabase
+        .from("task_workflow_steps")
+        .update(patch)
+        .eq("id", step.id)
+        .eq("status", "pending")
+        .select("id");
+
+      if (written && written.length > 0) {
         stepsUpdated++;
         runHadUpdates = true;
       }
