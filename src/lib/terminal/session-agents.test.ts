@@ -208,6 +208,39 @@ describe("sessionAgentClaimHint", () => {
     expect(instruction).toContain("follow the steps above");
   });
 
+  describe("when the session wasn't launched by VibeCodes (card 7939ee17)", () => {
+    const IDEA = "62e57071-3645-422f-96c0-b2042e39e6dd";
+    const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
+
+    it("tells the orchestrator to sync the board's agents once if the subagent isn't offered", () => {
+      const { instruction } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
+      expect(instruction).toContain(`sync_board_agents (idea_id "${IDEA}")`);
+      expect(instruction).toContain("once");
+      expect(instruction).toContain("run the command it returns");
+    });
+
+    it("only trusts the subagent after the sync if its tag matches", () => {
+      const { instruction, tag } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
+      expect(instruction).toContain(`ends with ${tag}`);
+      expect(instruction).toMatch(/still isn't offered|doesn't match/);
+    });
+
+    it("keeps the general-path fallback as the last word", () => {
+      const { instruction } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
+      expect(instruction.trim().endsWith("follow the steps above.")).toBe(true);
+    });
+
+    it("is one paragraph, so the pinned instruction hashes in workflows.test.ts hold", () => {
+      expect(sessionAgentClaimHint({ ...base, ideaId: IDEA }).instruction).not.toContain("\n");
+    });
+
+    it("is unchanged without an idea id, and for Codex", () => {
+      expect(sessionAgentClaimHint(base).instruction).not.toContain("sync_board_agents");
+      const codex = sessionAgentClaimHint({ ...base, ideaId: IDEA, agent: "codex" });
+      expect(codex.instruction).not.toContain("sync_board_agents");
+    });
+  });
+
   it("asks for no model report on an Auto step", () => {
     const { instruction } = sessionAgentClaimHint({ bot: ATLAS, tier: null, model: null, effort: null });
     expect(instruction).not.toContain("model_used");

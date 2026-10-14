@@ -164,6 +164,7 @@ A new control must match the existing controls of the same kind on the same scre
 - Claude Code orchestrates: `claim_next_step` → spawn persona subagent (hand it the `work_token`) → execute → `complete_step` with `claim_token` → loop
 - `claim_next_step` returns `claim_token` (single-use, completion), `work_token` (multi-use, agent-voiced comments), `bot_id`, `available_agents`, `context` (prior step outputs), `rework_instructions`
 - Comments posted with `work_token` are authored as the step's agent; without it, as the human; invalid/retired tokens are rejected with an actionable error
+- Real subagents outside VibeCodes-launched sessions (own terminal, cloud): `claim_next_step` tells the session to call `sync_board_agents` once when the named `vc-…` subagent isn't offered; it downloads untracked `.claude/agents/vc-*.md` via `/api/terminal/agent-files` (5-minute token, `src/lib/agent-files-token.ts`). Only `.claude/agents/.gitignore` is committed — never agent prompts.
 - `human_check_required` routes to `awaiting_approval` instead of `completed`
 - `fail_step` with `reset_to_step_id` enables cascade rejection back to any earlier step
 - Completion is attributed to the step's `bot_id` via the claim token; both token hashes are cleared together on complete/fail/reset/approve

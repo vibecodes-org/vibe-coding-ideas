@@ -1349,6 +1349,7 @@ describe("claimNextStep — persona embedding", () => {
         tier: "frontier",
         model: "opus",
         effort: "high",
+        ideaId: IDEA_ID,
       });
       expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
       expect(result.instruction).toContain(expected.instruction);

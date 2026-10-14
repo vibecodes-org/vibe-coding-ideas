@@ -334,6 +334,70 @@ export default function AiAgentTeamsPage() {
             claim starts the cycle again for whichever agent is assigned to
             it. There&apos;s no separate identity to set or reset.
           </p>
+
+          <h3 className="mb-2 mt-6 text-lg font-semibold">
+            Agents as real subagents, in every kind of session
+          </h3>
+          <p className="text-muted-foreground">
+            When an agent runs as a real Claude Code subagent, its persona is
+            the subagent&apos;s own system prompt and the step&apos;s model and
+            effort are built in, rather than pasted into a message. How the
+            agents get there depends on how you started Claude Code:
+          </p>
+          <ul className="mt-2 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Launched from VibeCodes</strong>{" "}
+              (the in-app terminal or the launch button): the board&apos;s
+              agents are loaded at launch. Nothing to do.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                A terminal, IDE or desktop session you started yourself
+              </strong>
+              : the first time a claimed step names an agent your session
+              doesn&apos;t have, Claude Code runs{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                sync_board_agents
+              </code>{" "}
+              once. It saves the agents as{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                .claude/agents/vc-*.md
+              </code>{" "}
+              files in your project folder and picks them up straight away. If
+              that folder didn&apos;t exist when the session started, they load
+              from the next session.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                A Claude Code cloud session
+              </strong>{" "}
+              (claude.ai/code, the phone app, desktop &quot;Cloud&quot;): the same
+              sync, with one extra step. Cloud sessions can only reach
+              approved websites, so in your environment&apos;s settings choose
+              a Custom network, keep the default list and add{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                vibecodes.co.uk
+              </code>
+              . Connect VibeCodes to cloud sessions with the claude.ai
+              connector.
+            </li>
+          </ul>
+          <p className="mt-3 text-muted-foreground">
+            The files are never committed: this repository ignores them, and in
+            any other repository the sync adds a local-only ignore line. Your
+            agents are re-synced on the next claim whenever you edit an
+            agent&apos;s instructions, skills or model. If a sync fails, for
+            example because the network blocks vibecodes.co.uk, the step simply
+            runs as before with the instructions passed along in the message.
+          </p>
+          <p className="mt-3 text-muted-foreground">
+            Cloud sessions don&apos;t read your personal{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              ~/.claude/CLAUDE.md
+            </code>
+            . To carry personal instructions into them, have the environment&apos;s
+            setup script write that file.
+          </p>
         </section>
 
         <section>

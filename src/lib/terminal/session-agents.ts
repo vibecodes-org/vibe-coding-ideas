@@ -221,6 +221,11 @@ export function sessionAgentClaimHint(input: {
   /** The Skills section the claim sends (buildSkillsSection(...).text); "" for an agent without skills. */
   skillsText?: string;
   agent?: "claude" | "codex";
+  /**
+   * The board's idea id. When given, a Claude claim also says how to fetch the
+   * agents if the session wasn't launched by VibeCodes (sync_board_agents).
+   */
+  ideaId?: string;
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier);
   const tag = sessionAgentTag(
@@ -247,12 +252,18 @@ export function sessionAgentClaimHint(input: {
       `name and tag is available, ignore this note and follow the steps above.`;
     return { name, tag, instruction };
   }
+  const syncStep = input.ideaId
+    ? `If your Agent tool doesn't offer that exact name and tag, this session wasn't launched by VibeCodes: ` +
+      `call sync_board_agents (idea_id "${input.ideaId}") once, run the command it returns, then spawn the ` +
+      `subagent only if its description ends with ${tag} (a new subagent can take a turn to appear). ` +
+      `If the sync fails or it still isn't offered with that tag, `
+    : `If no subagent with that exact name and tag is available, `;
   const instruction =
     `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +
     `${tag}, spawn that subagent type for this step instead of a general-purpose one. Its system prompt already ` +
     `is this step's persona and its definition already sets this step's model and effort, so don't paste ` +
     `persona_prompt into its message or pass a model parameter: give it the step brief (description, context, ` +
-    `expected deliverables, work_token). When completing, report persona_used "verbatim"${reportTier}. If no ` +
-    `subagent with that exact name and tag is available, ignore this note and follow the steps above.`;
+    `expected deliverables, work_token). When completing, report persona_used "verbatim"${reportTier}. ` +
+    `${syncStep}ignore this note and follow the steps above.`;
   return { name, tag, instruction };
 }

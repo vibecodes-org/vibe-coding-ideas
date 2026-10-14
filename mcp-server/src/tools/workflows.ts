@@ -1278,6 +1278,7 @@ export async function claimNextStep(
             // since launch no longer matches this claim.
             skillsText: skillsSection.text,
             agent: claimingAgent,
+            ideaId: step.idea_id,
           });
         })()
       : null;
