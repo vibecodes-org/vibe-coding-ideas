@@ -238,15 +238,20 @@ function isAgentSafe(v) {
   return v === "codex";
 }
 
-/** FR-4 (agent-aware model tiers) — the Codex reasoning-effort a fresh Codex
- *  launch opens on (`-c model_reasoning_effort=<effort>`). Hard whitelist of
- *  Codex's ladder (CODEX_EFFORT_LEVELS in src/lib/platform-model-defaults.ts).
- *  Only meaningful alongside `model` on a Codex launch; a Claude launch ignores
- *  it. Rechecked on both build and parse.
+/** The reasoning effort a launch opens on. Hard whitelist per agent: Codex's
+ *  ladder (minimal...xhigh, `-c model_reasoning_effort=<effort>`) or Claude's
+ *  (low...max, `--effort <level>`); see CODEX_EFFORT_LEVELS /
+ *  CLAUDE_EFFORT_LEVELS in src/lib/platform-model-defaults.ts. Rechecked on
+ *  build (per agent) and on parse (the union; the bridge re-whitelists per
+ *  agent again before it builds a command).
  *  @param {unknown} v
+ *  @param {string | undefined} [agent] when given, only that agent's ladder passes
  *  @returns {boolean} */
-function isEffortSafe(v) {
-  return v === "minimal" || v === "low" || v === "medium" || v === "high" || v === "xhigh";
+function isEffortSafe(v, agent) {
+  const codex = v === "minimal" || v === "low" || v === "medium" || v === "high" || v === "xhigh";
+  const claude = v === "low" || v === "medium" || v === "high" || v === "xhigh" || v === "max";
+  if (agent === undefined) return codex || claude;
+  return agent === "codex" ? codex : claude;
 }
 
 /**
@@ -289,9 +294,9 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // header comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
-  // FR-4: the Codex reasoning effort, alongside `model` — same insertion point,
-  // whitelist-checked here too so a malformed value is never fired.
-  if (effort && isEffortSafe(effort)) parts.push(`effort=${encodeURIComponent(effort)}`);
+  // The reasoning effort, alongside `model` — same insertion point,
+  // whitelist-checked here too (per agent) so a malformed value is never fired.
+  if (effort && isEffortSafe(effort, agent === "codex" ? "codex" : "claude")) parts.push(`effort=${encodeURIComponent(effort)}`);
   // Task d3de150c: same insertion point as `model` — before `prompt`.
   // Whitelist-checked here too (not just at parse time), so a malformed or
   // forbidden value can never even be fired in a link.
@@ -417,9 +422,10 @@ export function parseLaunchDeepLink(url) {
   // this parser simply never reads "agent" at all — no version-skew risk.
   const rawAgent = parsed.searchParams.get("agent");
   const agent = rawAgent && isAgentSafe(rawAgent) ? rawAgent : undefined;
-  // FR-4: re-validated here exactly like permissionMode above — a hard
-  // whitelist (Codex's ladder, minimal…xhigh); anything else is dropped silently. An old
-  // helper's bundled copy of this parser simply never reads "effort" — no
+  // Re-validated here exactly like permissionMode above — a hard whitelist (the
+  // union of both ladders; the bridge narrows it per agent); anything else is
+  // dropped silently. An old helper's bundled copy of this parser keeps the
+  // Codex ladder only, and its Claude branch never reads effort — no
   // version-skew risk.
   const rawEffort = parsed.searchParams.get("effort");
   const effort = rawEffort && isEffortSafe(rawEffort) ? rawEffort : undefined;

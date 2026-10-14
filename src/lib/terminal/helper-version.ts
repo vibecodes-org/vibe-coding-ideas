@@ -117,8 +117,12 @@
  *  agent's `disallowedTools` through to Claude Code, so a Read-only agent's
  *  Edit/Write/NotebookEdit tools are really switched off in the browser
  *  terminal. An older helper drops the field: the agent is only told not to
- *  edit files (the "## Tools" note) — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.23";
+ *  edit files (the "## Tools" note) — soft nudge.
+ *  0.3.24 (task 18a37612, 14 Oct 2026): first helper whose bridge starts
+ *  Claude Code at the chosen effort (`--effort <level>`) on new and resumed
+ *  sessions. An older helper ignores the field and Claude decides — soft
+ *  nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.24";
 
 export type HelperVersionParts = readonly [number, number, number];
 

@@ -1448,6 +1448,39 @@ describe("useTerminalSession", () => {
       expect(mockSockets).toHaveLength(1);
     });
 
+    // Task 18a37612: a resumed conversation does not keep its effort, so the
+    // reattach relaunch asks for the resolved level again.
+    it("carries the resolved Claude effort on the reattach relaunch link, and none when absent", async () => {
+      for (const [effort, expected] of [["xhigh", true], [undefined, false]] as const) {
+        document.querySelectorAll("iframe").forEach((n) => n.remove());
+        const { result, unmount } = renderHook(() =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand: vi.fn(),
+            autoConnectWhenExpanded: false,
+            attachExisting: {
+              sessionId: "sid-reattach-effort",
+              browserToken: "reattach-browser-token",
+              bridgeToken: "reattach-bridge-token",
+              helperToken: "reattach-helper-token",
+              cwd: "/Users/nick/projects/vibe-coding-ideas",
+              claudeSessionId: "live-conv-id",
+              effort,
+            },
+          }),
+        );
+        mountContainer(result);
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        await flushEffects();
+        const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";
+        expect(src).toContain(`resume_id=${encodeURIComponent("live-conv-id")}`);
+        if (expected) expect(src).toContain("effort=xhigh");
+        else expect(src).not.toContain("effort=");
+        unmount();
+      }
+    });
+
     it("forces a legacy resume (--continue style) on reattach when the pair carries cwd but no claudeSessionId yet", async () => {
       const requestExpand = vi.fn();
       const { result } = renderHook(() =>

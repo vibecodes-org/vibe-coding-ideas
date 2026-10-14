@@ -43,8 +43,9 @@ const DESIGN_CODEX_BLOCK =
   "In the safe current checkout root, before work: read/follow AGENTS.md if present; else if CLAUDE.md exists, read it and create AGENTS.md without clobbering, preserving project guidance and adapting only agent-specific CLI/workflow directions; then read/follow AGENTS.md. Never overwrite/merge/sync existing guides, including races. Neither exists: create neither. Read/create errors: explain and pause.";
 
 /** Exactly what use-terminal-session.ts's fresh-launch closure fires, at the
- * largest realistic overhead: both tokens, real dims, model (+ Codex effort),
- * auto mode, Remote Control (Claude only), and the worktree flag where a
+ * largest realistic overhead: both tokens, real dims, model and effort (Codex's
+ * "medium", and Claude's "medium" too since task 18a37612 — the longest level
+ * on either ladder), auto mode, Remote Control (Claude only), and the worktree flag where a
  * known folder makes it possible. */
 function browserLink(agent: Agent, helperToken: string | undefined, worktree: boolean) {
   return (parts: { prompt: string; cwd?: string }): string =>
@@ -58,7 +59,7 @@ function browserLink(agent: Agent, helperToken: string | undefined, worktree: bo
       cols: 213,
       rows: 33,
       model: agent === "codex" ? "gpt-6-astra" : "claude-sonnet-5",
-      effort: agent === "codex" ? "medium" : undefined,
+      effort: "medium",
       permissionMode: "auto",
       worktree: worktree && !!parts.cwd,
       // Task 5c8969cc: Remote Control is Claude-only and part of the worst case.

@@ -13,6 +13,7 @@ import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
   CLAUDE_EFFORT_LEVELS,
   CODEX_EFFORT_LEVELS,
+  isEffortForAgent,
   type PlatformModelDefaults,
   type AgentAwarePlatformModelDefaults,
 } from "@/lib/platform-model-defaults";
@@ -21,6 +22,11 @@ import {
   isValidPlatformTerminalModelDefault,
   TERMINAL_MODEL_DEFAULT_KEY,
 } from "@/lib/terminal/platform-terminal-model";
+import {
+  getPlatformTerminalEffortDefault,
+  isValidPlatformTerminalEffortDefault,
+  TERMINAL_EFFORT_DEFAULT_KEY,
+} from "@/lib/terminal/platform-terminal-effort";
 import { validateTerminalModelValue } from "@/lib/terminal/model-resolution";
 import { validateCodexModelValue } from "@/lib/codex-models";
 import {
@@ -335,6 +341,78 @@ export async function updatePlatformTerminalModelDefault(model: string | null): 
   }
 
   return trimmed;
+}
+
+// ── Admin-configurable terminal starting-effort default (task 18a37612) ─────
+// Site-wide Claude starting effort. A SEPARATE platform_settings key from the
+// model default (own Save/audit; the model card's Clear must not wipe it),
+// no seed: cleared = nothing is sent. A user's own setting overrides it.
+
+export type PlatformTerminalEffortAudit = {
+  /** null = no site default: Claude Code decides. */
+  value: string | null;
+  updatedBy: { id: string; full_name: string | null } | null;
+  updatedAt: string | null;
+};
+
+/** Any authenticated user can call this (RLS read is open). */
+export async function getPlatformTerminalEffortDefaultAction(): Promise<string | null> {
+  const supabase = await createClient();
+  return getPlatformTerminalEffortDefault(supabase);
+}
+
+/** Admin "Platform" tab read, with the who/when audit line. */
+export async function getPlatformTerminalEffortDefaultForAdmin(): Promise<PlatformTerminalEffortAudit> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value, updated_at, updated_by:users!platform_settings_updated_by_fkey(id, full_name)")
+    .eq("key", TERMINAL_EFFORT_DEFAULT_KEY)
+    .maybeSingle();
+
+  if (!data) {
+    return { value: null, updatedBy: null, updatedAt: null };
+  }
+
+  const value = isValidPlatformTerminalEffortDefault(data.value) ? data.value.effort : null;
+  const updatedBy = Array.isArray(data.updated_by) ? data.updated_by[0] ?? null : data.updated_by ?? null;
+
+  return { value, updatedBy, updatedAt: data.updated_at };
+}
+
+/**
+ * Save (or clear) the site-wide Claude starting effort. Super-admin-only
+ * (here AND by the platform_settings RLS write policy). `null` DELETEs the row.
+ */
+export async function updatePlatformTerminalEffortDefault(effort: string | null): Promise<string | null> {
+  const { supabase, userId } = await requireSuperAdmin();
+
+  if (effort === null) {
+    const { error } = await supabase.from("platform_settings").delete().eq("key", TERMINAL_EFFORT_DEFAULT_KEY);
+    if (error) {
+      logger.error("Failed to clear platform terminal effort default", { error: error.message, userId });
+      throw new Error("Failed to clear the terminal starting effort — try again");
+    }
+    return null;
+  }
+
+  if (!isEffortForAgent("claude", effort)) {
+    throw new Error("Choose a valid Claude effort");
+  }
+
+  const { error } = await supabase.from("platform_settings").upsert({
+    key: TERMINAL_EFFORT_DEFAULT_KEY,
+    value: { effort },
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    logger.error("Failed to save platform terminal effort default", { error: error.message, userId });
+    throw new Error("Failed to save the terminal starting effort — try again");
+  }
+
+  return effort;
 }
 
 export type PlatformTerminalCodexModelAudit = {

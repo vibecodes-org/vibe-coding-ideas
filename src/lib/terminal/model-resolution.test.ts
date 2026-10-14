@@ -194,6 +194,31 @@ describe("terminalDialogModelLine (design §4.3, Design Review note 2 — terser
   });
 });
 
+describe("launch lines with a resolved Claude effort (task 18a37612)", () => {
+  it("chooser line appends the effort to each shape", () => {
+    expect(terminalLaunchModelLine("opus", "user", "high")).toBe("New sessions start on Opus · your setting · High effort.");
+    expect(terminalLaunchModelLine("opus", "platform", "xhigh")).toBe("New sessions start on Opus · platform default · X-High effort.");
+    expect(terminalLaunchModelLine(undefined, "machine", "max")).toBe("New sessions use your machine's default model · Max effort.");
+    expect(terminalLaunchModelLine(undefined, "platform", "low")).toBe("New sessions start at Low effort.");
+  });
+
+  it("dialog line appends the effort to each shape", () => {
+    expect(terminalDialogModelLine("opus", "user", "high")).toBe("Starts on Opus · your setting · High effort.");
+    expect(terminalDialogModelLine(undefined, "machine", "medium")).toBe("Starts on your machine's default model · Medium effort.");
+    expect(terminalDialogModelLine(undefined, "platform", "high")).toBe("Starts at High effort.");
+  });
+
+  it("is byte-identical to today with no (or an invalid) effort", () => {
+    for (const effort of [undefined, "", "minimal", "ultracode"]) {
+      expect(terminalLaunchModelLine("opus", "user", effort)).toBe("New sessions start on Opus · your setting.");
+      expect(terminalLaunchModelLine(undefined, "machine", effort)).toBe("New sessions use your machine's default model.");
+      expect(terminalLaunchModelLine(undefined, "platform", effort)).toBeNull();
+      expect(terminalDialogModelLine("opus", "platform", effort)).toBe("Starts on Opus · platform default.");
+      expect(terminalDialogModelLine(undefined, "platform", effort)).toBeNull();
+    }
+  });
+});
+
 describe("capitalizeTerminalModelName", () => {
   it("capitalises the first letter only", () => {
     expect(capitalizeTerminalModelName("sonnet")).toBe("Sonnet");

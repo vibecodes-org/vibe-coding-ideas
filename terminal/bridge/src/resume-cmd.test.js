@@ -383,3 +383,66 @@ test("resolveAgentLaunch passes remoteControl through to the Claude branch", () 
     `claude --remote-control --session-id ${MINTED}`
   );
 });
+
+// ── Task 18a37612: Claude starting effort (`--effort <level>`) ──────────────
+
+test("fresh + effort -> `--effort <level>` after --model, before --permission-mode/--worktree", () => {
+  assert.equal(
+    resolveAgentLaunch({ effort: "high", mintId: () => MINTED }).cmd,
+    `claude --session-id ${MINTED} --effort high`
+  );
+  assert.equal(
+    resolveAgentLaunch({
+      remoteControl: true,
+      model: "opus",
+      effort: "xhigh",
+      permissionMode: "auto",
+      worktree: true,
+      mintId: () => MINTED,
+    }).cmd,
+    `claude --remote-control --session-id ${MINTED} --model opus --effort xhigh --permission-mode auto --worktree ${MINTED}`
+  );
+});
+
+test("effort is applied to resume by id and to legacy --continue (a resume does not keep its effort)", () => {
+  assert.equal(
+    resolveAgentLaunch({ resumeId: RESUME_ID, effort: "max", mintId: () => MINTED }).cmd,
+    `claude --resume ${RESUME_ID} --effort max`
+  );
+  assert.equal(
+    resolveAgentLaunch({ resume: true, effort: "low", remoteControl: true, mintId: () => MINTED }).cmd,
+    "claude --remote-control --continue --effort low"
+  );
+});
+
+test("every Claude level is accepted", () => {
+  for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+    assert.ok(resolveClaudeLaunch({ effort, mintId: () => MINTED }).cmd.endsWith(` --effort ${effort}`));
+  }
+});
+
+test("absent or invalid effort -> byte-identical to today's commands", () => {
+  for (const effort of [undefined, null, "", "ultracode", "minimal", "High", "high; rm -rf /", "high --x", 1, true]) {
+    assert.equal(resolveAgentLaunch({ effort, mintId: () => MINTED }).cmd, `claude --session-id ${MINTED}`);
+    assert.equal(resolveAgentLaunch({ effort, resumeId: RESUME_ID, mintId: () => MINTED }).cmd, `claude --resume ${RESUME_ID}`);
+    assert.equal(resolveAgentLaunch({ effort, resume: true, mintId: () => MINTED }).cmd, "claude --continue");
+  }
+});
+
+test("an explicit --cmd override never gets --effort", () => {
+  assert.deepEqual(resolveAgentLaunch({ explicitCmd: "bash", effort: "high", mintId: () => MINTED }), { cmd: "bash", conv: null });
+});
+
+test("a Codex launch never carries the Claude --effort, and keeps its own pair", () => {
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", effort: "high", mintId: () => MINTED }).cmd,
+    "codex"
+  );
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", effort: "max", codexModel: "gpt-5.6-terra", codexEffort: "medium", mintId: () => MINTED }).cmd,
+    "codex -m gpt-5.6-terra -c model_reasoning_effort=medium"
+  );
+  for (const extra of [{ resume: true }, { resumeId: RESUME_ID }]) {
+    assert.ok(!resolveAgentLaunch({ agent: "codex", effort: "high", ...extra, mintId: () => MINTED }).cmd.includes("--effort"));
+  }
+});

@@ -138,6 +138,7 @@ import {
   SNAPSHOT_SAVE_INTERVAL_MS,
 } from "@/lib/terminal/session-snapshot";
 import { matchFocusMoveChord } from "@/lib/terminal/split-view";
+import { claudeEffortForLaunch } from "@/lib/terminal/claude-effort";
 import { remoteControlForLaunch, shouldShowRemoteControlEarlyExitHint } from "@/lib/terminal/remote-control-mode";
 
 // How long we wait for the helper to attach after firing the deep link before
@@ -468,6 +469,13 @@ export interface AttachExistingPair {
    * popped-out window's hand-off (nothing to relaunch) and when off.
    */
   remoteControl?: boolean;
+  /**
+   * Task 18a37612: from the reattach route — the resolved Claude starting
+   * effort (user's level, else the site default), carried into the
+   * resume-shaped relaunch. Absent when none resolves, for Codex, and for a
+   * popped-out window's hand-off.
+   */
+  effort?: string;
 }
 
 export interface PairInfo {
@@ -817,7 +825,7 @@ export function useTerminalSession(
     sessionId: string;
     bridgeToken: string;
     helperToken?: string;
-    opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean };
+    opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean; effort?: string };
   } | null>(null);
   // Ref-mirror of `fireLaunchDeepLink` (same idiom as `scheduleReconnectRef`
   // below) so the xterm-init effect above can call the LATEST callback
@@ -830,7 +838,7 @@ export function useTerminalSession(
       sessionId: string,
       bridgeToken: string,
       helperToken: string | undefined,
-      opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean },
+      opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null; remoteControl?: boolean; effort?: string },
     ) => void
   >(() => {});
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1577,9 +1585,11 @@ export function useTerminalSession(
          */
         model?: string;
         /**
-         * FR-4 (agent-aware model tiers) — the Codex reasoning effort paired
-         * with `model` for a fresh Codex launch (minimal…xhigh), from the
-         * mint response. Same fresh-launch-only threading rule as `model`.
+         * The reasoning effort from the mint response. Codex (FR-4): paired
+         * with `model` for a FRESH Codex launch (minimal...xhigh), same
+         * fresh-only rule as `model`. Claude (task 18a37612): the resolved
+         * `--effort` level, threaded into fresh AND resume links (a resume
+         * does not keep its effort) and the reattach relaunch; Codex never.
          */
         effort?: string;
         /**
@@ -1679,6 +1689,9 @@ export function useTerminalSession(
             // buildResumePayload), never the chooser's current picker value.
             agent: agent === "codex" ? "codex" : undefined,
             remoteControl: resumeRc,
+            // Task 18a37612: a resumed conversation does NOT keep its effort,
+            // so a resume asks for the resolved level again (Claude only).
+            effort: claudeEffortForLaunch({ effort: opts?.effort, agent }),
           });
         } catch (err) {
           logger.error("Terminal resume deep-link build failed", {
@@ -2822,6 +2835,7 @@ export function useTerminalSession(
           forceResumeCwd: p.cwd,
           forceResumeId: p.claudeSessionId,
           remoteControl: p.remoteControl === true,
+          effort: p.effort,
         };
         const { sessionId, bridgeToken, helperToken } = p;
         const hasResumeCwd = !!(p.cwd && p.cwd.trim());
@@ -2968,6 +2982,7 @@ export function useTerminalSession(
         claudeSessionId?: string | null;
         sessionKey?: string;
         remoteControl?: boolean;
+        effort?: string;
       } | null;
       if (isConnectSuperseded(gen, connectGenRef.current)) return;
       if (!data?.browserToken || data.sessionId !== sessionId) {
@@ -2991,6 +3006,7 @@ export function useTerminalSession(
         claudeSessionId: data.claudeSessionId,
         sessionKey: data.sessionKey,
         remoteControl: data.remoteControl === true,
+        effort: data.effort,
       });
     },
     [attachToExisting, clearReconnectTimer, openBrowserLeg, teardownSocket],

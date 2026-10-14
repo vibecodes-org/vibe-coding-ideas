@@ -211,15 +211,30 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
   // FR-4: the Codex reasoning effort rides alongside `model`.
   it("carries every Codex effort level (minimal…xhigh) and the shared parser keeps it", () => {
     for (const effort of ["minimal", "low", "medium", "high", "xhigh"]) {
-      const url = buildLaunchDeepLink({ ...SAMPLE, model: "gpt-6-astra", effort });
+      const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort });
       expect(url).toContain(`effort=${effort}`);
-      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, model: "gpt-6-astra", effort });
+      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort });
     }
   });
 
   it("never fires Claude-only \"max\" as a Codex launch effort", () => {
-    const url = buildLaunchDeepLink({ ...SAMPLE, model: "gpt-6-astra", effort: "max" });
+    const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort: "max" });
     expect(url).not.toContain("effort=");
+  });
+
+  // Task 18a37612: Claude's own ladder (low…max) rides on a Claude launch.
+  it("carries every Claude effort level (low…max) on a Claude launch and the parser keeps it", () => {
+    for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+      const url = buildLaunchDeepLink({ ...SAMPLE, effort });
+      expect(url).toContain(`effort=${effort}`);
+      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, effort });
+    }
+  });
+
+  it("never fires Codex-only \"minimal\" or \"ultracode\" on a Claude launch", () => {
+    for (const effort of ["minimal", "ultracode"]) {
+      expect(buildLaunchDeepLink({ ...SAMPLE, effort })).not.toContain("effort=");
+    }
   });
 
   it("includes a valid effort, before prompt, and round-trips", () => {

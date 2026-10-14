@@ -330,6 +330,8 @@ export interface TerminalPreferencesInput {
   terminalModel: string | null;
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
+  /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
+  terminalEffort: string | null;
   terminalAutoAccept: boolean;
   terminalRemoteControl: boolean;
 }
@@ -339,6 +341,8 @@ export interface TerminalPreferences {
   terminalModel: string | null;
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
+  /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
+  terminalEffort: string | null;
   terminalAutoAccept: boolean;
   terminalRemoteControl: boolean;
 }
@@ -433,12 +437,20 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     throw new Error("Choose a Codex model with its reasoning effort");
   }
 
+  // Task 18a37612: Claude's starting effort. Whitelisted to Claude's ladder
+  // (never Codex-only "minimal"); null = Default.
+  const terminalEffort = input.terminalEffort ?? null;
+  if (terminalEffort !== null && !isEffortForAgent("claude", terminalEffort)) {
+    throw new Error("Choose a valid Claude effort");
+  }
+
   const agentAwareModelTierMap = Object.keys(normalizedMap).length > 0 ? normalizedMap : null;
   const { error } = await supabase.from("users").update({
     model_tier_map: agentAwareModelTierMap,
     terminal_model: terminalModel,
     terminal_codex_model: terminalCodexModel,
     terminal_codex_effort: terminalCodexEffort,
+    terminal_effort: terminalEffort,
     terminal_auto_accept: input.terminalAutoAccept,
     terminal_remote_control: input.terminalRemoteControl,
   }).eq("id", user.id);
@@ -449,6 +461,7 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     terminalModel,
     terminalCodexModel,
     terminalCodexEffort,
+    terminalEffort,
     terminalAutoAccept: input.terminalAutoAccept,
     terminalRemoteControl: input.terminalRemoteControl,
   };
@@ -478,6 +491,26 @@ export async function getTerminalModel(): Promise<string | null> {
   if (error) throw new Error(error.message);
 
   return data?.terminal_model ?? null;
+}
+
+/** The viewer's own Claude starting effort (users.terminal_effort), null = Default. */
+export async function getTerminalEffort(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_effort")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_effort ?? null;
 }
 
 /**

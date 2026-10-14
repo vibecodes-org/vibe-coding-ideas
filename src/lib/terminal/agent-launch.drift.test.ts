@@ -19,8 +19,10 @@ function* combinations() {
             for (const permissionMode of [undefined, "auto", "acceptEdits", "bypassPermissions"])
               for (const worktree of [false, true])
                 for (const remoteControl of [false, true])
+                  for (const effort of [undefined, "high", "max", "minimal", "ultracode"])
                   for (const codexPair of [{}, { codexModel: "gpt-5-codex", codexEffort: "high" }])
                     yield {
+                      effort,
                       agent,
                       explicitCmd,
                       resumeId,
@@ -42,6 +44,6 @@ describe("agent-launch.ts vs terminal/bridge/src/resume-cmd.js (drift)", () => {
       expect(app, JSON.stringify(opts)).toEqual(bridge);
       checked++;
     }
-    expect(checked).toBe(3 * 2 * 2 * 2 * 2 * 4 * 2 * 2 * 2);
+    expect(checked).toBe(3 * 2 * 2 * 2 * 2 * 4 * 2 * 2 * 5 * 2);
   });
 });

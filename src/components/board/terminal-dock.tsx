@@ -86,6 +86,9 @@ import {
 } from "@/lib/terminal/model-resolution";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import { useViewerTerminalModel } from "@/hooks/use-viewer-terminal-model";
+import { usePlatformTerminalEffortDefault } from "@/hooks/use-platform-terminal-effort-default";
+import { useViewerTerminalEffort } from "@/hooks/use-viewer-terminal-effort";
+import { resolveTerminalClaudeEffort } from "@/lib/terminal/claude-effort";
 import { useViewerTerminalAutoAccept } from "@/hooks/use-viewer-terminal-auto-accept";
 import { terminalLaunchAutoAcceptChip } from "@/lib/terminal/auto-accept-mode";
 import { useViewerTerminalRemoteControl } from "@/hooks/use-viewer-terminal-remote-control";
@@ -310,6 +313,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // a beat.
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const viewerTerminalModel = useViewerTerminalModel();
+  // Task 18a37612: the resolved Claude starting effort (user's, else the
+  // site's) for the launch-surface lines. undefined while either is loading.
+  const platformTerminalEffort = usePlatformTerminalEffortDefault();
+  const viewerTerminalEffort = useViewerTerminalEffort();
   const viewerAutoAccept = useViewerTerminalAutoAccept();
   // Task 5c8969cc — the "📱 remote control on" launch label's source.
   const viewerRemoteControl = useViewerTerminalRemoteControl();
@@ -2096,6 +2103,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         /** Task 5c8969cc — the user's current Remote Control preference
          *  (omitted when off or for Codex), carried into the relaunch. */
         remoteControl?: boolean;
+        /** Task 18a37612 — the resolved Claude starting effort (user's level,
+         *  else the site default); omitted when none or for Codex. */
+        effort?: string;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2122,6 +2132,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // live session can decrypt it, not just the one that minted it.
         sessionKey: data.sessionKey,
         remoteControl: data.remoteControl === true,
+        effort: data.effort,
       };
 
       const currentSessions = sessionsRef.current;
@@ -2626,12 +2637,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   if (!enabled) return null;
 
+  const resolvedClaudeEffort = resolveTerminalClaudeEffort({
+    userValue: viewerTerminalEffort,
+    platformValue: platformTerminalEffort,
+  }).effort;
+  const effortLoading = platformTerminalEffort === undefined || viewerTerminalEffort === undefined;
   const terminalModelLine =
-    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined || effortLoading
       ? null
       : terminalLaunchModelLine(
           resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
-          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolvedClaudeEffort
         );
   // Task d3de150c — the chooser footer's auto-accept chip, appended beside
   // the model chip (design §2.1). null while loading or when the toggle is
@@ -2711,11 +2728,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // variant (chooser footer's own `terminalModelLine` is computed earlier,
   // before the `!enabled` early return, alongside the hook calls it needs).
   const terminalTaskDialogModelLine =
-    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined || effortLoading
       ? null
       : terminalDialogModelLine(
           resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
-          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolvedClaudeEffort
         );
   // Task d3de150c — same chip, terser dedupe-dialog slot (design §2.2).
   const terminalTaskDialogAutoAcceptChip =

@@ -173,11 +173,11 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 // resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
 // (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
-// FR-4 (agent-aware model tiers): the Codex reasoning effort, already
-// parse-time whitelisted (low/medium/high) by the shared module. Only ever
-// applied on a FRESH Codex launch (see resolveAgentLaunch's codex branch),
-// alongside MODEL — which, for a Codex launch, is the Codex model id the mint
-// resolved. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
+// The reasoning effort, already parse-time whitelisted by the shared module
+// (union of both ladders; each branch re-whitelists its own). Codex (FR-4):
+// only on a FRESH launch, alongside MODEL — which, for a Codex launch, is the
+// Codex model id the mint resolved. Claude (task 18a37612): `--effort <level>`
+// on fresh, --resume and --continue launches. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
 const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
 // `permissionMode` param, already parse-time whitelisted by the shared
@@ -237,6 +237,9 @@ const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
   // only one fires per AGENT, so passing MODEL to both is safe.
   codexModel: MODEL,
   codexEffort: EFFORT,
+  // Task 18a37612: Claude's `--effort` (the claude branch re-whitelists it;
+  // the codex branch never reads this one).
+  effort: EFFORT,
   permissionMode: PERMISSION_MODE,
   worktree: WORKTREE,
   remoteControl: REMOTE_CONTROL,

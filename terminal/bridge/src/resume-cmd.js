@@ -102,20 +102,30 @@
 //     needs a helper release.
 // Strict `=== true`; no user text ever. Off = byte-identical command.
 
+/** Claude Code's `--effort` ladder (CLAUDE_EFFORT_LEVELS in
+ *  src/lib/platform-model-defaults.ts). Lock-stepped by the drift test. */
+const CLAUDE_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
 /**
- * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, mintId: () => string }} opts
+ * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, effort?: string | null, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, mintId }) {
+export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, effort, mintId }) {
   // Task 5c8969cc: the fixed literal, IMMEDIATELY after `claude`, on every
   // Claude branch. `--remote-control [name]` takes an OPTIONAL name: placed
   // anywhere else, the next bare argv element (the bootstrap prompt, which
   // index.js appends after this command) would be read as the session name.
   // Strict `=== true`; no user text ever. Off = byte-identical command.
   const rc = remoteControl === true ? " --remote-control" : "";
+  // Task 18a37612: Claude's starting effort, `--effort <level>`, on every
+  // Claude branch (fresh, --resume, --continue: a resumed conversation does
+  // not keep its effort). Only the five exact literals are ever appended, so
+  // no user text can reach the command. Absent/invalid = byte-identical
+  // command. Never with an explicit --cmd.
+  const effortFlag = typeof effort === "string" && CLAUDE_EFFORT_LEVELS.has(effort) ? ` --effort ${effort}` : "";
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
-  if (resumeId) return { cmd: `claude${rc} --resume ${resumeId}`, conv: resumeId };
-  if (resume) return { cmd: `claude${rc} --continue`, conv: null };
+  if (resumeId) return { cmd: `claude${rc} --resume ${resumeId}${effortFlag}`, conv: resumeId };
+  if (resume) return { cmd: `claude${rc} --continue${effortFlag}`, conv: null };
   const conv = mintId();
   const modelFlag = model ? ` --model ${model}` : "";
   // Defense-in-depth re-check: only the exact literal is ever appended, no
@@ -125,7 +135,7 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
   // whitespace-free single argv token, same posture as the `--session-id`
   // flag it already rides alongside.
   const worktreeFlag = worktree ? ` --worktree ${conv}` : "";
-  return { cmd: `claude${rc} --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`, conv };
+  return { cmd: `claude${rc} --session-id ${conv}${modelFlag}${effortFlag}${permissionModeFlag}${worktreeFlag}`, conv };
 }
 
 // ── Codex support (docs/codex-terminal-requirements.md FR-2, AC-3) ──────────
@@ -178,14 +188,16 @@ function codexModelFlags(model, effort) {
  * {@link resolveClaudeLaunch} (Claude's own four branches, unchanged).
  *
  * `remoteControl` (task 5c8969cc) is Claude-only: passed into
- * {@link resolveClaudeLaunch} and never read on the Codex branch.
+ * {@link resolveClaudeLaunch} and never read on the Codex branch. `effort`
+ * (task 18a37612) is the same: Claude's `--effort` level, never read on the
+ * Codex branch (which has its own `codexEffort` pair).
  *
- * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, mintId: () => string }} opts
+ * @param {{ agent?: "claude"|"codex"|string|null, explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, codexModel?: string | null, codexEffort?: string | null, permissionMode?: string | null, worktree?: boolean, remoteControl?: boolean, effort?: string | null, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, remoteControl, mintId }) {
+export function resolveAgentLaunch({ agent, explicitCmd, resumeId, resume, model, codexModel, codexEffort, permissionMode, worktree, remoteControl, effort, mintId }) {
   if (agent !== "codex") {
-    return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, mintId });
+    return resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, worktree, remoteControl, effort, mintId });
   }
   // An explicit --cmd/BRIDGE_CMD override always wins (dev/test convenience),
   // identical posture to Claude's branch 1 — `conv` is null either way.
