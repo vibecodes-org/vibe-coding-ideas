@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Terminal, ChevronDown, Copy, FolderCog, FolderPlus, ExternalLink, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,14 @@ import { LaunchPathDialog } from "./launch-path-dialog";
 import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
-import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
+import {
+  defaultLaunchTarget,
+  isBrowserLaunchAvailable,
+  launchModeOptions,
+  requestBrowserLaunch,
+  type LaunchTarget,
+} from "@/lib/terminal/launch-mode";
+import { readPlatformSignals, resolveTerminalPlatform } from "@/lib/terminal/platform";
 import { buildOpenTerminalDeepLink, MAX_OPEN_TERMINAL_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { fetchHelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
@@ -48,6 +55,14 @@ const INSTALL_GUIDE_URL = "https://docs.claude.com/en/docs/claude-code";
 // slice 2) — placeholder, per the design's Q6: "confirm at implementation
 // time." OpenAI's Codex CLI install page moves; verify before shipping.
 const CODEX_INSTALL_GUIDE_URL = "https://developers.openai.com/codex/cli/";
+
+// Copy for the default-destination work (card 5a24479e). Exported for tests.
+export const BOARD_PRIMARY_TITLE_BROWSER = "Opens the browser terminal on this board";
+export const BOARD_PRIMARY_TITLE_WINDOW = "Opens a Terminal window on your computer";
+export const TASK_ICON_LABEL_BROWSER = "Launch in browser terminal";
+export const TASK_ICON_LABEL_WINDOW = "Launch in Claude Code";
+export const CLAUDE_WINDOW_SUBLINE = "Opens a Terminal window on your computer";
+
 // Visibility-race window: if the page never blurs/hides within this, assume no handler.
 const SCHEME_RACE_MS = 1200;
 
@@ -74,6 +89,12 @@ interface TaskLaunchProps extends BaseProps {
   variant: "task-icon" | "task-menu-item";
   taskId: string;
   taskTitle: string;
+  /**
+   * task-icon only: called once the default launch has been handed to the
+   * in-app terminal dock, so the host (the task detail dialog) can close and
+   * leave the dock visible (the dock sits under the dialog's overlay).
+   */
+  onLaunchedInBrowser?: () => void;
 }
 
 type LaunchClaudeCodeButtonProps = BoardLaunchProps | TaskLaunchProps;
@@ -147,6 +168,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // In-flight guard: blocks a second launch during the visibility-race window so
   // rapid double-clicks don't fire two window.location.assign + two fallback timers.
   const launchingRef = useRef(false);
+  const browserLaunchingRef = useRef(false);
 
   // The launch state used when the user hasn't pinned one (reads localStorage
   // fresh on each interaction — it may change in another tab/window). The SHARED
@@ -455,7 +477,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // (the default) produces the byte-identical payload/event this always
   // fired before `agent` existed.
   const handleLaunchInBrowser = useCallback(
-    (agent: "claude" | "codex" = "claude") => {
+    (agent: "claude" | "codex" = "claude"): Promise<boolean> => {
+      // Own in-flight guard (not launchingRef, which belongs to the claude-cli://
+      // path): the fresh read below is async, so a double-click would otherwise
+      // dispatch two launch requests. Resolves true once the request is dispatched.
+      if (browserLaunchingRef.current) return Promise.resolve(false);
+      browserLaunchingRef.current = true;
       posthog?.capture("launch_claude_code_clicked", { method: "in_browser", agent });
       // Carry the SAME compact bootstrap ESSENTIALS AND cwd the terminal-window
       // deep link would use for this state (bootstrap-prompt + folder parity).
@@ -467,7 +494,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // destination, unlike claude-cli://, is our own bridge, so it can act on
       // it). cwd rides the payload so a pinned/recorded existing folder is
       // honoured in the browser too.
-      void resolveFreshLaunch().then(({ state, cwd }) => {
+      return resolveFreshLaunch().then(({ state, cwd }) => {
         // Task b563f4da: a fresh browser session also bootstraps the agent's
         // own guide (CLAUDE.md / AGENTS.md) — see buildGuideBootstrapStep.
         const essentials = buildCompactEssentials(state, false, agent, true);
@@ -490,6 +517,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           // unchanged — only the internal choice is now preserved.
           agent,
         });
+        return true;
+      }).finally(() => {
+        browserLaunchingRef.current = false;
       });
     },
     [posthog, buildCompactEssentials, resolveFreshLaunch, props],
@@ -658,6 +688,33 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     return null;
   }, [savedState, effectiveTarget]);
 
+  // Default destination for a plain click (board primary + task icon): the
+  // in-app terminal on a supported Mac with the flag on, else a Terminal window.
+  // Initialised from the browser (this component loads client-only) and re-read
+  // at click time in handleDefaultLaunch.
+  const [platformSupported] = useState<boolean>(
+    () => resolveTerminalPlatform(readPlatformSignals()).supported
+  );
+  const launchTarget: LaunchTarget = defaultLaunchTarget({
+    terminalEnabled: browserLaunchAvailable,
+    platformSupported,
+  });
+  const orderedModes = launchModeOptions(browserLaunchAvailable, platformSupported);
+  const onLaunchedInBrowser = props.variant === "task-icon" ? props.onLaunchedInBrowser : undefined;
+  const handleDefaultLaunch = useCallback(() => {
+    const target = defaultLaunchTarget({
+      terminalEnabled: browserLaunchAvailable,
+      platformSupported: resolveTerminalPlatform(readPlatformSignals()).supported,
+    });
+    if (target === "browser") {
+      void handleLaunchInBrowser("claude").then((dispatched) => {
+        if (dispatched) onLaunchedInBrowser?.();
+      });
+      return;
+    }
+    handleLaunch();
+  }, [browserLaunchAvailable, handleLaunchInBrowser, handleLaunch, onLaunchedInBrowser]);
+
   const dialog = (
     <LaunchPathDialog
       open={dialogOpen}
@@ -739,9 +796,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={handleLaunch}
-          aria-label="Launch in Claude Code"
-          title="Launch in Claude Code"
+          onClick={handleDefaultLaunch}
+          aria-label={launchTarget === "browser" ? TASK_ICON_LABEL_BROWSER : TASK_ICON_LABEL_WINDOW}
+          title={launchTarget === "browser" ? TASK_ICON_LABEL_BROWSER : TASK_ICON_LABEL_WINDOW}
         >
           <Terminal className="h-4 w-4" />
         </Button>
@@ -761,7 +818,14 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           variant="ghost"
           size="sm"
           className="h-8 gap-1.5 rounded-r-none border border-emerald-500/25 bg-emerald-500/10 text-xs text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300"
-          onClick={handleLaunch}
+          onClick={handleDefaultLaunch}
+          title={
+            !browserLaunchAvailable
+              ? undefined
+              : launchTarget === "browser"
+                ? BOARD_PRIMARY_TITLE_BROWSER
+                : BOARD_PRIMARY_TITLE_WINDOW
+          }
         >
           <Terminal className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Launch Claude Code</span>
@@ -793,17 +857,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                 <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
                   Claude Code
                 </div>
-                <DropdownMenuItem onSelect={handleLaunch}>
-                  <Terminal className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>
-                      <span className="sr-only">Claude Code, </span>In a terminal window
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      On your computer — how it works today
-                    </span>
-                  </div>
-                </DropdownMenuItem>
+                {orderedModes.map((mode) => (
+                  <Fragment key={mode}>
+                {mode === "browser" ? (
+                  <>
                 <DropdownMenuItem onSelect={() => handleLaunchInBrowser("claude")}>
                   <Globe className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
@@ -818,6 +875,22 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                     </span>
                   </div>
                 </DropdownMenuItem>
+                  </>
+                ) : (
+                  <>
+                <DropdownMenuItem onSelect={handleLaunch}>
+                  <Terminal className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>
+                      <span className="sr-only">Claude Code, </span>In a terminal window
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">{CLAUDE_WINDOW_SUBLINE}</span>
+                  </div>
+                </DropdownMenuItem>
+                  </>
+                )}
+                  </Fragment>
+                ))}
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
                   Codex
@@ -828,17 +901,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                     handleLaunchCodexDesktop's not-yet-implemented stub
                     (status-unknown reads as enabled, per the design's own
                     fallback rule). */}
-                <DropdownMenuItem onSelect={handleLaunchCodexDesktop}>
-                  <Terminal className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>
-                      <span className="sr-only">Codex, </span>In a terminal window
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Opens Terminal on this Mac — needs the VibeCodes helper
-                    </span>
-                  </div>
-                </DropdownMenuItem>
+                {orderedModes.map((mode) => (
+                  <Fragment key={mode}>
+                {mode === "browser" ? (
+                  <>
                 <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")}>
                   <Globe className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
@@ -853,6 +919,24 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                     </span>
                   </div>
                 </DropdownMenuItem>
+                  </>
+                ) : (
+                  <>
+                <DropdownMenuItem onSelect={handleLaunchCodexDesktop}>
+                  <Terminal className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>
+                      <span className="sr-only">Codex, </span>In a terminal window
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Opens Terminal on this Mac — needs the VibeCodes helper
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                  </>
+                )}
+                  </Fragment>
+                ))}
               </>
             ) : (
               <DropdownMenuItem onSelect={handleLaunch}>
