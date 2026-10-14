@@ -136,6 +136,9 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   *recorded* another project's checkout as that board's folder (29 Aug 2026).
   The terminal-window (claude-cli://) launch keeps the default "degrade" ladder.
 
+### Mocks and new controls
+A new control must match the existing controls of the same kind on the same screen: layout, labels, help line and save behaviour. That holds for both agents' versions of a setting (Claude and Codex) and for both screens, Settings and Admin. List every difference you keep as a decision for Nick. On 14 Oct 2026 a Claude effort control was mocked after the neighbouring Claude row instead of the Codex pair; the mismatch was approved, built and shipped (card fae2ce4f).
+
 ### Logging
 - Use `logger.*` from `src/lib/logger.ts`, NOT `console.*`
 - Structured JSON output; level via `LOG_LEVEL` env var (default: `warn` prod, `debug` dev)
