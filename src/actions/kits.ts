@@ -16,7 +16,6 @@ type ProjectKit = Database["public"]["Tables"]["project_kits"]["Row"];
 type AgentRole = {
   role: string;
   name_suggestion: string;
-  skills?: string[];
   system_prompt_template?: string;
 };
 type LabelPreset = { name: string; color: string };
@@ -221,8 +220,7 @@ export async function applyKit(
 
           if (botUser) {
             newBotId = botUser;
-            const extras: { skills?: string[]; tool_access?: "read_only" } = {};
-            if (agentRole.skills && agentRole.skills.length > 0) extras.skills = agentRole.skills;
+            const extras: { tool_access?: "read_only" } = {};
             if (template?.toolAccess === "read_only") extras.tool_access = "read_only";
             if (Object.keys(extras).length > 0) {
               await supabase.from("bot_profiles").update(extras).eq("id", botUser);

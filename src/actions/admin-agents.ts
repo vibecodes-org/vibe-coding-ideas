@@ -6,7 +6,6 @@ import { VIBECODES_USER_ID } from "@/lib/constants";
 import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
 import {
   validateBio,
-  validateSkills,
   validateTeamName,
   validateTeamDescription,
 } from "@/lib/validation";
@@ -34,7 +33,6 @@ export async function createAdminAgent(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[],
   toolAccess?: ToolAccess
 ): Promise<string> {
   const { supabase } = await requireAdmin();
@@ -43,7 +41,6 @@ export async function createAdminAgent(
   if (name.length > 100) throw new Error("Agent name must be 100 characters or less");
 
   const validatedBio = validateBio(bio ?? null);
-  const validatedSkills = validateSkills(skills ?? []);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -62,7 +59,6 @@ export async function createAdminAgent(
     is_published: true,
   };
   if (validatedBio) extras.bio = validatedBio;
-  if (validatedSkills.length > 0) extras.skills = validatedSkills;
   if (normalizeToolAccess(toolAccess) !== "full") extras.tool_access = "read_only";
 
   await supabase
@@ -84,7 +80,6 @@ export async function updateAdminAgent(
     system_prompt?: string | null;
     avatar_url?: string | null;
     bio?: string | null;
-    skills?: string[];
     tool_access?: ToolAccess;
   }
 ) {
@@ -104,7 +99,6 @@ export async function updateAdminAgent(
   if (updates.avatar_url !== undefined)
     profileUpdates.avatar_url = updates.avatar_url?.trim() || null;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
-  if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
   if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
 
   if (Object.keys(profileUpdates).length > 0) {

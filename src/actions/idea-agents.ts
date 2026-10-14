@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createServerClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
+import { fetchSkillNamesByBot, normalizeBotIdList } from "@/lib/fetch-skill-names";
 import { matchRolesWithAiOrFuzzy, roleMatchSignature, type AiRoleMatchAgent, type RoleMatchWithTier } from "@/lib/ai-role-matching";
 import { decideStepRematch } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
@@ -252,6 +253,8 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
 export interface RoleCoverageResult {
   role: string;
   covered: boolean;
+  /** Id of the matched agent (manual override first, then the match), or null. */
+  matchedBotId: string | null;
   matchedAgentName: string | null;
   matchedAgentRole: string | null;
   matchTier: string | null;
@@ -354,6 +357,7 @@ export async function getRoleCoverage(
       return {
         role,
         covered: true,
+        matchedBotId: agent ? manualBotId : null,
         matchedAgentName: agent?.name ?? null,
         matchedAgentRole: agent?.role ?? null,
         matchTier: "manual",
@@ -365,6 +369,7 @@ export async function getRoleCoverage(
     return {
       role,
       covered: !!match?.botId,
+      matchedBotId: agent && match?.botId ? match.botId : null,
       matchedAgentName: agent?.name ?? null,
       matchedAgentRole: agent?.role ?? null,
       matchTier: match?.botId ? match.tier : null,
@@ -437,4 +442,21 @@ export async function clearManualRoleMatch(
 
   if (error) throw new Error(error.message);
   return { clearedCount: data?.length ?? 0 };
+}
+
+/**
+ * Names of the real skills each of the given agents carries (agent_skills,
+ * oldest first), for the "Runs here" line on the Workflows tab. Every id gets an
+ * entry. At most 50 agents at a time.
+ */
+export async function getAgentSkillNames(botIds: string[]): Promise<Record<string, string[]>> {
+  const ids = normalizeBotIdList(botIds);
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  return fetchSkillNamesByBot(supabase, ids);
 }

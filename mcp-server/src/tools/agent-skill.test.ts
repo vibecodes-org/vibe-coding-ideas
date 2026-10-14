@@ -72,7 +72,6 @@ describe("importAgentSkill", () => {
       system_prompt: "## Goal\nTest everything.",
       is_active: true,
       bio: "Break it before users do",
-      skills: ["E2E Testing", "Cross-browser"],
     };
 
     // Chain for the duplicate check (no match)
@@ -112,6 +111,8 @@ describe("importAgentSkill", () => {
       p_system_prompt: "## Goal\nTest everything.",
       p_avatar_url: null,
     });
+    // A tags line in the file is ignored: agents no longer carry tags.
+    expect(updateChain.update).toHaveBeenCalledWith({ bio: "Break it before users do" });
   });
 
   it("updates existing agent on round-trip import", async () => {

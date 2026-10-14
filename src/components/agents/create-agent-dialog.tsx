@@ -39,7 +39,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bio, setBio] = useState("");
-  const [skillsInput, setSkillsInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(false);
@@ -74,7 +73,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setRole("");
     setSystemPrompt("");
     setBio("");
-    setSkillsInput("");
     setSelectedTemplate(null);
     setToolAccess("full");
     setPromptKey((k) => k + 1);
@@ -107,15 +105,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setPreviewUrl(URL.createObjectURL(file));
   }
 
-  function parseSkills(): string[] {
-    if (!skillsInput.trim()) return [];
-    return skillsInput
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 10);
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -123,8 +112,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setShowHints(true);
     setSubmitting(true);
     try {
-      const skills = parseSkills();
-
       // Create bot first to get ID, then upload avatar
       const botId = await createBot(
         name.trim(),
@@ -132,7 +119,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
         systemPrompt.trim() || null,
         null,
         bio.trim() || null,
-        skills,
         toolAccess
       );
 
@@ -365,20 +351,11 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} />
 
-          {/* Tags (comma-separated) */}
+          {/* Skills are added from the agent's own page once it exists */}
           <div className="space-y-1">
-            <Label htmlFor="bot-skills" className="text-xs">
-              Tags <span className="font-normal text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="bot-skills"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="e.g. planning, requirements"
-              maxLength={300}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Short labels for the agent&apos;s card and for search. The agent never reads them.
+            <Label className="text-xs">Skills</Label>
+            <p className="text-[11px] text-muted-foreground">
+              Add skills from the agent&apos;s page once it&apos;s created. Most agents need none.
             </p>
           </div>
 

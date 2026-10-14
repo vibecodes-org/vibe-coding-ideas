@@ -25,7 +25,6 @@ const SOURCE_BOT = {
   system_prompt: "Ship it.",
   avatar_url: null,
   bio: "bio",
-  skills: ["ts"],
   is_published: true,
 };
 const SKILLS = [
@@ -153,6 +152,10 @@ describe("MCP create_agent tool_access", () => {
     await createBot(ctxFor(fake), createBotSchema.parse({ name: "Atlas" }));
 
     expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
+  });
+
+  it("create_agent takes no skills", () => {
+    expect(Object.keys(createBotSchema.shape)).not.toContain("skills");
   });
 
   it("rejects a value that isn't full or read_only", () => {

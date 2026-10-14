@@ -1855,7 +1855,6 @@ export type Database = {
           avatar_url: string | null;
           is_active: boolean;
           bio: string | null;
-          skills: string[];
           is_published: boolean;
           community_upvotes: number;
           times_cloned: number;
@@ -1873,7 +1872,6 @@ export type Database = {
           avatar_url?: string | null;
           is_active?: boolean;
           bio?: string | null;
-          skills?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;
@@ -1891,7 +1889,6 @@ export type Database = {
           avatar_url?: string | null;
           is_active?: boolean;
           bio?: string | null;
-          skills?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;

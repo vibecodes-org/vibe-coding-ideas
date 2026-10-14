@@ -1,6 +1,7 @@
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
+import { fetchSkillNamesByBot } from "@/lib/fetch-skill-names";
 import { AgentsHub } from "@/components/agents/agents-hub";
 import type { BotProfile, BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
 import type { Metadata } from "next";
@@ -70,6 +71,11 @@ export default async function AgentsPage() {
 
   const communityBots = (communityData ?? []) as BotProfileWithOwner[];
 
+  // Real skills (agent_skills) for the one-line summary on each card
+  const skillNamesByBot = await fetchSkillNamesByBot(supabase, [
+    ...new Set([...myBots.map((b) => b.id), ...communityBots.map((b) => b.id)]),
+  ]);
+
   // Fetch user's agent votes
   const { data: votesData } = await supabase
     .from("agent_votes")
@@ -113,6 +119,7 @@ export default async function AgentsPage() {
         userExistingRoles={userExistingRoles}
         featuredTeams={featuredTeams}
         userIdeas={userIdeas}
+        skillNamesByBot={skillNamesByBot}
       />
 
       <div className="mt-6 flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-4">

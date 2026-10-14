@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 import { Pencil, Trash2, Upload } from "lucide-react";
 import {
   Dialog,
@@ -27,14 +28,15 @@ interface EditAgentDialogProps {
   bot: BotProfile;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Names of the agent's real skills. Left out where they aren't loaded: only the link shows. */
+  skillNames?: string[];
 }
 
-export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProps) {
+export function EditAgentDialog({ bot, open, onOpenChange, skillNames }: EditAgentDialogProps) {
   const [name, setName] = useState(bot.name);
   const [role, setRole] = useState(bot.role ?? "");
   const [systemPrompt, setSystemPrompt] = useState(bot.system_prompt ?? "");
   const [bio, setBio] = useState(bot.bio ?? "");
-  const [skillsInput, setSkillsInput] = useState((bot.skills ?? []).join(", "));
   const [toolAccess, setToolAccess] = useState<ToolAccess>(normalizeToolAccess(bot.tool_access));
   const [isPublished, setIsPublished] = useState(bot.is_published);
   const [submitting, setSubmitting] = useState(false);
@@ -62,15 +64,6 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
     }
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-  }
-
-  function parseSkills(): string[] {
-    if (!skillsInput.trim()) return [];
-    return skillsInput
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 10);
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -102,7 +95,6 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
         role: role.trim() || null,
         system_prompt: systemPrompt.trim() || null,
         bio: bio.trim() || null,
-        skills: parseSkills(),
         tool_access: toolAccess,
         is_published: isPublished,
         ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
@@ -218,20 +210,26 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="edit-tool-access" />
 
-          {/* Tags (comma-separated) */}
+          {/* Skills: read-only here; they're added and removed on the agent's page */}
           <div className="space-y-1">
-            <Label htmlFor="edit-bot-skills" className="text-xs">
-              Tags <span className="font-normal text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="edit-bot-skills"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="e.g. planning, requirements"
-              maxLength={300}
-            />
+            <Label className="text-xs">Skills</Label>
+            {skillNames && (
+              <div className="font-mono text-xs">
+                {skillNames.length > 0 ? (
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden className="text-amber-400">&#9889;</span>
+                    <span className="break-all">{skillNames.join(", ")}</span>
+                  </span>
+                ) : (
+                  <span className="font-sans text-muted-foreground">None</span>
+                )}
+              </div>
+            )}
             <p className="text-[10px] text-muted-foreground">
-              Short labels for the agent&apos;s card and for search. The agent never reads them.
+              Sent in full with every step.{" "}
+              <Link href={`/agents/${bot.id}`} className="text-violet-400 hover:text-violet-300">
+                Add or remove skills on {bot.name}&apos;s page &rarr;
+              </Link>
             </p>
           </div>
 

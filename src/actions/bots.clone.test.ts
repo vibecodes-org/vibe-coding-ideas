@@ -23,7 +23,6 @@ const SOURCE = {
   system_prompt: "Ship it.",
   avatar_url: null,
   bio: "bio",
-  skills: ["ts"],
 } as unknown as BotProfile;
 const SKILLS = [
   { name: "backend", description: "d", content: "c1", source_url: null, source_type: "file", category: null, created_at: "2026-06-01T00:00:00Z" },
