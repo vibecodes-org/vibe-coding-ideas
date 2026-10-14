@@ -707,9 +707,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       platformSupported: resolveTerminalPlatform(readPlatformSignals()).supported,
     });
     if (target === "browser") {
-      void handleLaunchInBrowser("claude").then((dispatched) => {
-        if (dispatched) onLaunchedInBrowser?.();
-      });
+      void handleLaunchInBrowser("claude")
+        .then((dispatched) => {
+          if (dispatched) onLaunchedInBrowser?.();
+        })
+        .catch(() => toast.error("Couldn't start the browser terminal"));
       return;
     }
     handleLaunch();

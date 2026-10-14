@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -718,5 +719,19 @@ describe("LaunchClaudeCodeButton — task icon defaults to the in-app terminal",
     await new Promise((r) => setTimeout(r, 20));
     expect(onLaunched).toHaveBeenCalledTimes(1);
     expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed browser launch shows an error toast and leaves the dialog open", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    mockRequestBrowserLaunch.mockImplementationOnce(() => {
+      throw new Error("dispatch failed");
+    });
+    const toastError = vi.spyOn(toast, "error");
+    const onLaunched = vi.fn();
+    renderTaskIcon(onLaunched);
+    fireEvent.click(screen.getByRole("button", { name: TASK_ICON_LABEL_BROWSER }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't start the browser terminal"));
+    expect(onLaunched).not.toHaveBeenCalled();
+    toastError.mockRestore();
   });
 });
