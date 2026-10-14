@@ -54,6 +54,95 @@ import type {
 } from "@/types";
 import { PromptTemplateSelector } from "@/components/ai/prompt-template-selector";
 import { createClient } from "@/lib/supabase/client";
+import {
+  completeTasksOnly,
+  mergeContinuation,
+  type CutShortReason,
+} from "@/lib/generate-tasks-stream";
+
+/** Why the list is incomplete. "connection" is set by the dialog itself, never the server. */
+type CutShort = CutShortReason | "connection";
+
+/** What a run was started with, kept so "Generate the rest" re-sends the same thing. */
+interface RunSettings {
+  prompt: string;
+  personaPrompt: string | null;
+  agentRole: string | null;
+  agentBio: string | null;
+}
+
+interface FinalLine {
+  tasks: ImportTask[];
+  final: true;
+  cutShort?: CutShortReason;
+}
+
+/** The stream broke (error line or the reader threw); carries what had arrived. */
+class TaskStreamError extends Error {
+  latestTasks: ImportTask[];
+  constructor(message: string, latestTasks: ImportTask[]) {
+    super(message);
+    this.latestTasks = latestTasks;
+  }
+}
+
+const CONNECTION_DROPPED = "The connection dropped before it finished.";
+
+/** Reads the NDJSON task stream. Calls onPartial for every update. */
+async function readTaskStream(
+  res: Response,
+  onPartial: (tasks: ImportTask[]) => void
+): Promise<{ latest: ImportTask[]; final: FinalLine }> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response stream");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let latest: ImportTask[] = [];
+  let final: FinalLine | null = null;
+
+  function handleLine(line: string) {
+    if (!line.trim()) return;
+    let parsed: { tasks?: ImportTask[]; error?: string; final?: boolean; cutShort?: CutShortReason } | null =
+      null;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      // Incomplete JSON line — skip
+      return;
+    }
+    // Server-emitted failure sentinel — a stalled/aborted generation. Whatever
+    // finished before it is kept by the caller.
+    if (parsed?.error) throw new TaskStreamError(parsed.error, latest);
+    latest = (parsed?.tasks ?? []) as ImportTask[];
+    if (parsed?.final) final = parsed as FinalLine;
+    onPartial(latest);
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete NDJSON lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) handleLine(line);
+    }
+    // Process any remaining buffer
+    handleLine(buffer);
+  } catch (err) {
+    if (err instanceof TaskStreamError) throw err;
+    throw new TaskStreamError(CONNECTION_DROPPED, latest);
+  }
+
+  // A clean close with no final line means the last line may be half-written.
+  if (!final) throw new TaskStreamError(CONNECTION_DROPPED, latest);
+
+  return { latest, final };
+}
 
 const DEFAULT_PROMPT =
   "Create a comprehensive task board for this idea. Break it into logical columns and tasks with labels, workflow steps, and due dates where appropriate. Focus on actionable, well-scoped tasks.";
@@ -110,6 +199,9 @@ export function AiGenerateDialog({
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [generating, setGenerating] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  // Set when the list is known to be incomplete (cut short, or connection dropped)
+  const [cutShort, setCutShort] = useState<CutShort | null>(null);
+  const runSettingsRef = useRef<RunSettings | null>(null);
 
   // Inserting phase state
   const [taskStatuses, setTaskStatuses] = useState<TaskInsertStatus[]>([]);
@@ -141,12 +233,6 @@ export function AiGenerateDialog({
   const ideaAgentBots = bots.filter((b) => b.is_active && !myAgentIds.has(b.id));
   const allBots = [...myAgents, ...ideaAgentBots];
 
-  // When generation completes, select all tasks
-  useEffect(() => {
-    if (!generating && generatedTasks && generatedTasks.length > 0 && phase === "preview") {
-      setSelectedIndices(new Set(generatedTasks.map((_, i) => i)));
-    }
-  }, [generating, generatedTasks, phase]);
 
   // Auto-close when board refresh completes
   useEffect(() => {
@@ -180,10 +266,16 @@ export function AiGenerateDialog({
     }, LOADING_TIMEOUT_MS);
   }
 
+  /** Maps the merged list's column names onto the board's columns. */
+  function mapColumnsFor(tasks: ImportTask[]) {
+    setColumnMapping(autoMapColumns(getUniqueColumnNames(tasks), columns));
+  }
+
   async function handleGenerate() {
     setGenerating(true);
     setGeneratedTasks([]);
     setSelectedIndices(new Set());
+    setCutShort(null);
     setPhase("preview");
     try {
       const selectedBot =
@@ -191,16 +283,20 @@ export function AiGenerateDialog({
           ? allBots.find((b) => b.id === selectedBotId)
           : null;
 
+      // Remembered so "Generate the rest" re-sends exactly what this run used,
+      // even if the configure screen is edited in between.
+      const settings: RunSettings = {
+        prompt,
+        personaPrompt: selectedBot?.system_prompt ?? null,
+        agentRole: selectedBot?.role ?? null,
+        agentBio: selectedBot?.bio ?? null,
+      };
+      runSettingsRef.current = settings;
+
       const res = await fetch("/api/ai/generate-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ideaId,
-          prompt,
-          personaPrompt: selectedBot?.system_prompt ?? null,
-          agentRole: selectedBot?.role ?? null,
-          agentBio: selectedBot?.bio ?? null,
-        }),
+        body: JSON.stringify({ ideaId, ...settings }),
       });
 
       if (!res.ok) {
@@ -208,63 +304,34 @@ export function AiGenerateDialog({
         throw new Error(body?.error ?? `Request failed (${res.status})`);
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response stream");
+      const { final } = await readTaskStream(res, setGeneratedTasks);
+      const tasks = final.tasks;
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let lastParsed: { tasks: ImportTask[] } | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete NDJSON lines
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let parsed: { tasks?: ImportTask[]; error?: string } | null = null;
-          try {
-            parsed = JSON.parse(line);
-          } catch {
-            // Incomplete JSON line — skip
-            continue;
-          }
-          // Server-emitted failure sentinel — a stalled/aborted generation. Throw
-          // so a truncated partial isn't mistaken for a complete result; the outer
-          // catch turns it into a retryable toast.
-          if (parsed?.error) throw new Error(parsed.error);
-          lastParsed = parsed as { tasks: ImportTask[] };
-          const streamedTasks = (lastParsed.tasks ?? []) as ImportTask[];
-          setGeneratedTasks(streamedTasks);
-        }
-      }
-
-      // Process any remaining buffer
-      if (buffer.trim()) {
-        try {
-          lastParsed = JSON.parse(buffer);
-        } catch {
-          // Ignore
-        }
-      }
-
-      if (!lastParsed?.tasks?.length) {
+      if (!tasks.length) {
         throw new Error("AI did not generate any tasks. Try a more detailed prompt.");
       }
 
-      // Final update with all generated tasks
-      const tasks = lastParsed.tasks as ImportTask[];
+      // Final update with all generated tasks (a cut run has dropped its half-written last task)
       setGeneratedTasks(tasks);
-
-      const uniqueColumns = getUniqueColumnNames(tasks);
-      setColumnMapping(autoMapColumns(uniqueColumns, columns));
+      mapColumnsFor(tasks);
+      setSelectedIndices(new Set(tasks.map((_, i) => i)));
+      setCutShort(final?.cutShort ?? null);
       didGenerateRef.current = true;
     } catch (err) {
+      // Connection dropped / provider error after some tasks finished: keep them.
+      if (err instanceof TaskStreamError) {
+        const kept = completeTasksOnly(err.latestTasks);
+        if (kept.length > 0) {
+          setGeneratedTasks(kept);
+          mapColumnsFor(kept);
+          setSelectedIndices(new Set(kept.map((_, i) => i)));
+          setCutShort("connection");
+          didGenerateRef.current = true;
+          toast.error(err.message);
+          setGenerating(false);
+          return;
+        }
+      }
       toast.error(
         err instanceof Error ? err.message : "Failed to generate tasks"
       );
@@ -275,6 +342,99 @@ export function AiGenerateDialog({
       setGenerating(false);
     }
   }
+
+  /** Asks the AI for the part of the idea the current list doesn't cover, and appends it. */
+  async function handleGenerateRest() {
+    const base = generatedTasks;
+    const settings = runSettingsRef.current;
+    if (!base || base.length === 0 || !settings) return;
+
+    const previousCut = cutShort;
+    setCutShort(null);
+    setGenerating(true);
+
+    // Puts the list back as it was, with its bar and button. Never leaves the review screen.
+    function restore() {
+      setGeneratedTasks(base);
+      setCutShort(previousCut);
+    }
+
+    // Keeps the existing ticks and ticks the new rows (appended, so old indices hold).
+    function tickNewRows(merged: ImportTask[]) {
+      setSelectedIndices((prev) => {
+        const next = new Set(prev);
+        for (let i = base!.length; i < merged.length; i++) next.add(i);
+        return next;
+      });
+    }
+
+    try {
+      const res = await fetch("/api/ai/generate-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ideaId,
+          ...settings,
+          continueAfter: base.map((t) => ({
+            title: t.title,
+            columnName: t.columnName,
+            labels: t.labels,
+            dueDate: t.dueDate,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Request failed (${res.status})`);
+      }
+
+      const { final } = await readTaskStream(res, (partial) =>
+        setGeneratedTasks(mergeContinuation(base, partial))
+      );
+      const incoming = final.tasks;
+      const merged = mergeContinuation(base, incoming);
+
+      if (merged.length === base.length) {
+        // Nothing new arrived.
+        if (final?.cutShort) {
+          restore();
+          toast.error("Couldn't generate more tasks — please try again.");
+        } else {
+          setGeneratedTasks(base);
+          setCutShort(null);
+          toast.info("Nothing more to add — the list already covers the whole idea.");
+        }
+        return;
+      }
+
+      setGeneratedTasks(merged);
+      mapColumnsFor(merged);
+      tickNewRows(merged);
+      setCutShort(final?.cutShort ?? null);
+      didGenerateRef.current = true;
+    } catch (err) {
+      if (err instanceof TaskStreamError) {
+        const merged = mergeContinuation(base, completeTasksOnly(err.latestTasks));
+        if (merged.length > base.length) {
+          setGeneratedTasks(merged);
+          mapColumnsFor(merged);
+          tickNewRows(merged);
+          setCutShort("connection");
+          didGenerateRef.current = true;
+          toast.error(err.message);
+          return;
+        }
+      }
+      restore();
+      toast.error(
+        err instanceof Error ? err.message : "Failed to generate more tasks"
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
 
   const handleApply = useCallback(
     async (tasksToInsert?: ImportTask[]) => {
@@ -449,6 +609,8 @@ export function AiGenerateDialog({
     setInsertProgress({ current: 0, total: 0 });
     setInsertResult(null);
     setSelectedIndices(new Set());
+    setCutShort(null);
+    runSettingsRef.current = null;
     setWiringProgress({ current: 0, total: 0 });
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
@@ -615,6 +777,28 @@ export function AiGenerateDialog({
           {/* ── Preview Phase ──────────────────────────────────── */}
           {phase === "preview" && generatedTasks && (
             <>
+            {cutShort && !generating && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                <span>
+                  {cutShort === "connection"
+                    ? "The connection dropped before it finished."
+                    : `The list was cut short — the AI ran out of ${
+                        cutShort === "time" ? "time" : "room"
+                      } after ${generatedTasks.length} task${
+                        generatedTasks.length !== 1 ? "s" : ""
+                      }, so later parts of the idea may be missing. The unfinished last task was left out.`}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateRest}
+                  disabled={busy}
+                  className="h-6 shrink-0 border-amber-500/30 text-xs hover:bg-amber-500/10"
+                >
+                  Generate the rest
+                </Button>
+              </div>
+            )}
             <ImportPreviewTable
               tasks={generatedTasks}
               columns={columns}
