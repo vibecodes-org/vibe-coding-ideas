@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { format } from "date-fns";
 import { Markdown } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
 import { formatSkillSize } from "@/lib/format-skill-size";
@@ -24,7 +25,7 @@ interface SkillRowProps {
 /** One skill on the agent page: full name, what it is for, size, source, date, and the exact text sent. */
 export function SkillRow({ skill, onRemove, removing = false }: SkillRowProps) {
   const [open, setOpen] = useState(false);
-  const added = new Date(skill.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const added = format(new Date(skill.created_at), "d MMM");
   const label = sourceLabel(skill.source_type);
 
   return (

@@ -802,12 +802,12 @@ export function WorkflowsTab({
   }, [ideaId, agentCandidates]);
 
   // Skills of the agents that run this board's steps (steps have none of their own)
-  const [skillNamesByBot, setSkillNamesByBot] = useState<Record<string, string[]>>({});
+  const [skillNamesByBot, setSkillNamesByBot] = useState<Record<string, string[]> | null>(null);
 
   useEffect(() => {
     const ids = [...new Set(roleCoverage.map((rc) => rc.matchedBotId).filter((id): id is string => !!id))];
     if (ids.length === 0) {
-      setSkillNamesByBot({});
+      setSkillNamesByBot(null);
       return;
     }
     let cancelled = false;
@@ -816,7 +816,11 @@ export function WorkflowsTab({
         if (!cancelled) setSkillNamesByBot(names);
       })
       .catch(() => {
-        if (!cancelled) setSkillNamesByBot({});
+        // Leave the names unknown: an unknown list must never read as "no skills"
+        if (!cancelled) {
+          setSkillNamesByBot(null);
+          toast.error("Failed to load agent skills");
+        }
       });
     return () => { cancelled = true; };
   }, [roleCoverage]);
@@ -1438,7 +1442,7 @@ export function WorkflowsTab({
                     matchTier={coverageMap.get(step.role)?.covered ? coverageMap.get(step.role)?.matchTier : coverageMap.has(step.role) ? "none" : undefined}
                     coverageKnown={coverageMap.has(step.role)}
                     runner={stepRunner(step.role)}
-                    skillNames={skillNamesByBot[coverageMap.get(step.role)?.matchedBotId ?? ""] ?? []}
+                    skillNames={skillNamesByBot ? (skillNamesByBot[coverageMap.get(step.role)?.matchedBotId ?? ""] ?? []) : undefined}
                   />
                 ))}
               </div>

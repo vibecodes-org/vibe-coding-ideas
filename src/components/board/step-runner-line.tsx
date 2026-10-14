@@ -11,14 +11,14 @@ export interface StepRunner {
 interface StepRunnerLineProps {
   /** The agent that runs this step on this board; null when no agent matches the role. */
   runner: StepRunner | null;
-  /** That agent's skill names, oldest first. */
+  /** That agent's skill names, oldest first. Undefined while not known yet (or the load failed): no skills part is shown. */
   skillNames?: string[];
   /** False until role coverage has loaded (or when the board has no agents): no line at all. */
   coverageKnown: boolean;
 }
 
 /** "Runs here: (P) Planner · ⚡ skill-name" under a step on the Workflows tab. */
-export function StepRunnerLine({ runner, skillNames = [], coverageKnown }: StepRunnerLineProps) {
+export function StepRunnerLine({ runner, skillNames, coverageKnown }: StepRunnerLineProps) {
   if (!coverageKnown) return null;
 
   if (!runner) {
@@ -42,14 +42,18 @@ export function StepRunnerLine({ runner, skillNames = [], coverageKnown }: StepR
       <Link href={`/agents/${runner.botId}`} className="font-medium text-foreground hover:underline">
         {runner.name}
       </Link>
-      <span aria-hidden>&middot;</span>
-      {skillNames.length > 0 ? (
-        <span className="flex min-w-0 items-center gap-1">
-          <span aria-hidden className="text-amber-400">&#9889;</span>
-          <span className="min-w-0 break-all font-mono text-foreground">{skillNames.join(", ")}</span>
-        </span>
-      ) : (
-        <span>no skills</span>
+      {skillNames && (
+        <>
+          <span aria-hidden>&middot;</span>
+          {skillNames.length > 0 ? (
+            <span className="flex min-w-0 items-center gap-1">
+              <span aria-hidden className="text-amber-400">&#9889;</span>
+              <span className="min-w-0 break-all font-mono text-foreground">{skillNames.join(", ")}</span>
+            </span>
+          ) : (
+            <span>no skills</span>
+          )}
+        </>
       )}
     </div>
   );

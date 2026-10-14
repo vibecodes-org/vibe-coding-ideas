@@ -154,6 +154,10 @@ describe("MCP create_agent tool_access", () => {
     expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
   });
 
+  it("create_agent takes no skills", () => {
+    expect(Object.keys(createBotSchema.shape)).not.toContain("skills");
+  });
+
   it("rejects a value that isn't full or read_only", () => {
     expect(createBotSchema.safeParse({ name: "X", tool_access: "admin" }).success).toBe(false);
   });

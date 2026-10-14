@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ArrowRight,
   MessageSquare,
@@ -69,6 +70,9 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
     try {
       const result = await getAgentProfile(id);
       setData(result);
+    } catch (err) {
+      if (err instanceof Error && (err as Error & { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+      toast.error("Failed to load agent profile");
     } finally {
       setLoading(false);
     }

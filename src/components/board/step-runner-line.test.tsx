@@ -17,6 +17,12 @@ describe("StepRunnerLine", () => {
     expect(screen.getByText("no skills")).toBeTruthy();
   });
 
+  it("shows no skills part at all while the skills are not known yet", () => {
+    render(<StepRunnerLine runner={planner} coverageKnown />);
+    expect(screen.getByRole("link", { name: "Planner" })).toBeTruthy();
+    expect(screen.queryByText("no skills")).toBeNull();
+  });
+
   it("warns when no agent matches the role", () => {
     render(<StepRunnerLine runner={null} coverageKnown />);
     expect(screen.getByText("No agent on this board yet")).toBeTruthy();

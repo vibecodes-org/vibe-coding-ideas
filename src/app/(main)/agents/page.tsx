@@ -73,8 +73,7 @@ export default async function AgentsPage() {
 
   // Real skills (agent_skills) for the one-line summary on each card
   const skillNamesByBot = await fetchSkillNamesByBot(supabase, [
-    ...myBots.map((b) => b.id),
-    ...communityBots.map((b) => b.id),
+    ...new Set([...myBots.map((b) => b.id), ...communityBots.map((b) => b.id)]),
   ]);
 
   // Fetch user's agent votes

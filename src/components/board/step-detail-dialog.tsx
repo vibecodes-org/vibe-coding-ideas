@@ -364,13 +364,17 @@ export function StepDetailDialog({
       return;
     }
     const supabase = supabaseRef.current;
+    let cancelled = false;
     // What the agent will be sent with this step (shown until the step has run)
     supabase
       .from("agent_skills")
       .select("name")
       .eq("bot_id", step.bot_id)
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) toast.error("Failed to load agent skills");
         setAgentSkillNames(error || !data ? null : data.map((s) => s.name));
       });
     supabase
@@ -379,8 +383,10 @@ export function StepDetailDialog({
       .eq("id", step.bot_id)
       .maybeSingle()
       .then(({ data }) => {
+        if (cancelled) return;
         setAssignedAgent(data ? { name: data.name ?? "Unknown", avatar_url: data.avatar_url, role: data.role } : null);
       });
+    return () => { cancelled = true; };
   }, [step.bot_id]);
 
   // Fetch task attachments — used to linkify attachment filenames referenced
