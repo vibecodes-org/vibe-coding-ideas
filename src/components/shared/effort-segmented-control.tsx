@@ -77,7 +77,7 @@ export function EffortSegmentedControl({
           aria-label={defaultOption.ariaLabel}
           onClick={defaultOption.onSelect}
           className={cn(
-            "flex min-h-9 min-w-0 flex-[1.7_1_0%] flex-col items-center justify-center whitespace-nowrap border-r border-input py-[3px] text-[11px] font-medium leading-[1.15] transition-colors disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11",
+            "flex min-h-9 min-w-0 flex-[1.5_1_0%] flex-col items-center justify-center whitespace-nowrap border-r border-input py-[3px] text-[11px] font-medium leading-[1.15] transition-colors disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11",
             segmentPadding,
             !disabled && value === null ? "bg-foreground text-background" : "bg-transparent text-foreground hover:bg-accent"
           )}

@@ -755,7 +755,7 @@ export function ModelTierSettings({
           </div>
 
           <div className="space-y-1.5">
-            <Label id="terminal-claude-effort-label" className="text-sm">
+            <Label id="terminal-claude-effort-label" className="block text-sm leading-snug">
               Starting effort <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
             </Label>
             <EffortSegmentedControl
