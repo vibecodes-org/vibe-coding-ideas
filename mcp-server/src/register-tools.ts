@@ -808,7 +808,7 @@ export function registerTools(
 
   server.tool(
     "upload_attachment",
-    "Attach a file (image, PDF, document) to a task. Use this after create_task when you have screenshots or files to include. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload. For files over 3MB, use request_upload_url instead.",
+    "Attach a file (image, PDF, document) to a task. Use this after create_task when you have screenshots or files to include. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload. The file travels inside this call as text, so anything over about 30KB (most screenshots and mocks) should use request_upload_url instead.",
     uploadAttachmentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -836,7 +836,7 @@ export function registerTools(
 
   server.tool(
     "request_upload_url",
-    "Get a presigned URL for uploading a large file attachment to a task (alternative to upload_attachment for files over 3MB). Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload to finalize. Max 10MB.",
+    "Get a presigned URL for uploading a large file attachment to a task (use this instead of upload_attachment for anything over about 30KB, such as most screenshots and mocks: upload_attachment sends the file inside the call as text). Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload to finalize. Max 10MB.",
     requestUploadUrlSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1180,7 +1180,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_template",
-    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs (structural changes with different step counts are skipped).",
+    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs. When the step count changes, cards whose workflow has not started are moved onto the new steps; started workflows are left alone.",
     updateWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
