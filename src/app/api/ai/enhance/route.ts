@@ -13,10 +13,20 @@ import {
   appendAttachmentBlock,
 } from "@/lib/attachment-context";
 import { buildEnhanceSystemPrompt, buildEnhanceUserPrompt } from "@/lib/enhance-prompts";
+import {
+  ENHANCE_MAX_OUTPUT_TOKENS,
+  ENHANCE_USAGE_WAIT_MS,
+  TRUNCATION_MARKER,
+  buildContinuationInstruction,
+  createDeadlineSignal,
+  whenAborted,
+} from "@/lib/enhance-stream";
 
+// Next.js reads this statically, so it must be a literal. Keep it in step with ENHANCE_DEADLINE_MS (270 s) in src/lib/enhance-stream.ts.
 export const maxDuration = 300; // Streaming keeps the connection alive; allow generous time
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
   try {
     const supabase = await createClient();
     const {
@@ -34,13 +44,14 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { ideaId, prompt, personaPrompt, answers, previousEnhanced, refinementFeedback } = body as {
+    const { ideaId, prompt, personaPrompt, answers, previousEnhanced, refinementFeedback, continueFrom } = body as {
       ideaId: string;
       prompt: string;
       personaPrompt?: string | null;
       answers?: Record<string, { question: string; answer: string }>;
       previousEnhanced?: string;
       refinementFeedback?: string;
+      continueFrom?: string;
     };
 
     if (!ideaId || !prompt) {
@@ -83,7 +94,19 @@ export async function POST(req: Request) {
 
     let userPrompt: string;
 
-    if (isRefinement) {
+    if (continueFrom) {
+      // Continue a cut-off result: same inputs as the first run, plus the text so
+      // far, asking for ONLY the remaining part. Kept apart from refinement.
+      const qaSection =
+        answers && Object.keys(answers).length > 0
+          ? "\n\n---\n**Clarifying Q&A:**\n" +
+            Object.values(answers)
+              .map((a, i) => `${i + 1}. Q: ${a.question}\n   A: ${a.answer}`)
+              .join("\n\n")
+          : "";
+      userPrompt =
+        `${prompt}\n\n---\n**Idea Title:** ${idea.title}\n**Current Description:**\n${idea.description}${qaSection}`;
+    } else if (isRefinement) {
       userPrompt = `You previously enhanced an idea description. The user has feedback for revision.
 
 **Original Description:**
@@ -120,16 +143,23 @@ Use the answers above to inform your enhanced description. Make the enhancement 
     // Appends "" when there's no attachment context — byte parity for ideas with
     // no (eligible) attachments (AC-6).
     userPrompt = appendAttachmentBlock(userPrompt, attachmentPromptBlock);
+    // The continue instruction goes last so it is the final thing the model reads.
+    if (continueFrom) userPrompt += buildContinuationInstruction(continueFrom);
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" if the
     // serverless function is killed mid-stream. Token usage is logged after.
     await chargeAiUpfront(supabase, { userId: user.id, keyType });
 
+    // Deadline: stop ~30 s before the platform would kill the function, and end
+    // like a length cut so the user gets the Continue button, not a dead stream.
+    const deadline = createDeadlineSignal(startedAt);
+
     const result = streamText({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
       prompt: userPrompt,
-      maxOutputTokens: 16000,
+      maxOutputTokens: ENHANCE_MAX_OUTPUT_TOKENS,
+      abortSignal: deadline.signal,
     });
 
     // Stream text, then log usage before closing
@@ -137,29 +167,73 @@ Use the answers above to inform your enhanced description. Make the enhancement 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        for await (const chunk of result.textStream) {
-          controller.enqueue(encoder.encode(chunk));
+        const aborted = whenAborted(deadline.signal);
+        let hitDeadline = false;
+        try {
+          const iterator = result.textStream[Symbol.asyncIterator]();
+          while (true) {
+            // Race against the deadline so a stream that ignores the abort can't hang us.
+            const next = await Promise.race([iterator.next(), aborted]);
+            if (next === "aborted") {
+              hitDeadline = true;
+              break;
+            }
+            if (next.done) break;
+            controller.enqueue(encoder.encode(next.value));
+          }
+        } catch (err) {
+          deadline.clear();
+          if (!deadline.signal.aborted) {
+            controller.error(err);
+            return;
+          }
+          hitDeadline = true;
         }
-        const [usage, finishReason] = await Promise.all([
-          result.usage,
-          result.finishReason,
-        ]);
+        deadline.clear();
+        // A stream that closed cleanly because of the abort still counts as a deadline stop.
+        hitDeadline ||= deadline.signal.aborted;
+
         // Log only — the credit was already charged upfront (free: true here).
-        await chargeAiUsage(supabase, {
-          userId: user.id,
-          actionType: "enhance_with_context",
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-          model: AI_MODEL,
-          ideaId,
-          keyType,
-          free: true,
-          chargedUpfront: true,
-        });
-        if (finishReason === "length") {
-          logger.warn("AI enhance output truncated", { ideaId });
-          controller.enqueue(encoder.encode("\n\n__TRUNCATED__"));
+        const logUsage = async () => {
+          const usage = await result.usage;
+          await chargeAiUsage(supabase, {
+            userId: user.id,
+            actionType: "enhance_with_context",
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+            model: AI_MODEL,
+            ideaId,
+            keyType,
+            free: true,
+            chargedUpfront: true,
+          });
+        };
+
+        let cutShort = hitDeadline;
+        if (hitDeadline) {
+          // After a deadline stop the usage numbers may never arrive: log
+          // best-effort, wait only briefly, never hang the response.
+          try {
+            await Promise.race([
+              logUsage(),
+              new Promise((resolve) => setTimeout(resolve, ENHANCE_USAGE_WAIT_MS)),
+            ]);
+          } catch (err) {
+            logger.warn("AI enhance usage log failed after deadline", {
+              ideaId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          logger.warn("AI enhance stopped at deadline", { ideaId });
+        } else {
+          const finishReason = await result.finishReason;
+          await logUsage();
+          if (finishReason === "length") {
+            logger.warn("AI enhance output truncated", { ideaId });
+            cutShort = true;
+          }
         }
+        if (cutShort) controller.enqueue(encoder.encode(TRUNCATION_MARKER));
         controller.close();
       },
     });

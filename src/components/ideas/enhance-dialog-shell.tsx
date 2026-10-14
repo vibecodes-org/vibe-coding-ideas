@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -68,6 +69,8 @@ export interface EnhanceStreamBodyArgs {
   answers?: Record<string, { question: string; answer: string }>;
   previousEnhanced?: string;
   refinementFeedback?: string;
+  /** Text written so far when continuing a cut-off result — the route asks for only the rest. */
+  continueFrom?: string;
 }
 
 /** Caller-supplied args for question generation. */
@@ -165,6 +168,12 @@ export function EnhanceDialogShell({
   // Refine phase
   const [refinementInput, setRefinementInput] = useState("");
   const [truncated, setTruncated] = useState(false);
+  // True when the cut-off was a dropped connection rather than the length limit
+  const [droppedConnection, setDroppedConnection] = useState(false);
+  // Asking before a result is thrown away: which action is waiting on the answer
+  const [confirmDiscard, setConfirmDiscard] = useState<null | "regenerate" | "close">(null);
+  // Answers used by the last fresh run — re-sent when continuing a cut-off result
+  const lastAnswersRef = useRef<Record<string, { question: string; answer: string }> | undefined>(undefined);
 
   // Attachment usage receipt (from the X-Attachment-Usage response header)
   const [attachmentUsage, setAttachmentUsage] = useState<ParsedAttachmentUsage | null>(null);
@@ -252,20 +261,33 @@ export function EnhanceDialogShell({
     answers?: Record<string, { question: string; answer: string }>;
     previousEnhanced?: string;
     refinementFeedback?: string;
+    continueFrom?: string;
   }) {
+    const continueFrom = options?.continueFrom;
+    const wasTruncated = truncated;
+    const wasDropped = droppedConnection;
     setLoading(true);
-    setEnhancedText("");
+    // Continuing keeps what is already on screen and adds to it
+    setEnhancedText(continueFrom ?? "");
     setTruncated(false);
-    setAttachmentUsage(null);
-    setLastRunUsedAnswers(!!options?.answers && Object.keys(options.answers).length > 0);
+    setDroppedConnection(false);
+    if (!continueFrom) {
+      setAttachmentUsage(null);
+      lastAnswersRef.current = options?.answers;
+      setLastRunUsedAnswers(!!options?.answers && Object.keys(options.answers).length > 0);
+    }
     setPhase("result");
+    const base = continueFrom ?? "";
+    let text = base;
+    let streamStarted = false;
     try {
       const body = buildStreamBody({
         prompt,
         personaPrompt: getPersonaPrompt(),
-        answers: options?.answers,
+        answers: continueFrom ? lastAnswersRef.current : options?.answers,
         previousEnhanced: options?.previousEnhanced,
         refinementFeedback: options?.refinementFeedback,
+        continueFrom,
       });
 
       const res = await fetch(enhanceStreamUrl, {
@@ -281,13 +303,15 @@ export function EnhanceDialogShell({
 
       // Header flushes before the stream body, so the receipt renders at
       // stream start. Defensive — a bad/absent header just shows nothing.
-      setAttachmentUsage(parseAttachmentUsageHeader(res.headers.get("X-Attachment-Usage")));
+      streamStarted = true;
+      if (!continueFrom) {
+        setAttachmentUsage(parseAttachmentUsageHeader(res.headers.get("X-Attachment-Usage")));
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response stream");
 
       const decoder = new TextDecoder();
-      let text = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -307,8 +331,20 @@ export function EnhanceDialogShell({
       toast.error(
         err instanceof Error ? err.message : "Failed to enhance description"
       );
-      setPhase("configure");
-      setEnhancedText(null);
+      if (streamStarted && text.length > 0) {
+        // The connection dropped part-way: keep what arrived, offer Continue.
+        setEnhancedText(text);
+        setTruncated(true);
+        setDroppedConnection(true);
+      } else if (continueFrom) {
+        // The continue request never started: keep the earlier result as it was.
+        setEnhancedText(continueFrom);
+        setTruncated(wasTruncated);
+        setDroppedConnection(wasDropped);
+      } else {
+        setPhase("configure");
+        setEnhancedText(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -353,11 +389,7 @@ export function EnhanceDialogShell({
 
   async function handleContinue() {
     if (!enhancedText) return;
-    await runStreamingEnhance({
-      previousEnhanced: enhancedText,
-      refinementFeedback:
-        "The previous output was cut off before it could finish. Continue writing from exactly where you stopped. Do NOT repeat any content that was already written — pick up mid-sentence or mid-section if needed.",
-    });
+    await runStreamingEnhance({ continueFrom: enhancedText });
   }
 
   // ── Phase: Refine → Result ──────────────────────────────────────────
@@ -384,16 +416,41 @@ export function EnhanceDialogShell({
     setAnswers({});
     setEnhancedText(null);
     setTruncated(false);
+    setDroppedConnection(false);
+    setConfirmDiscard(null);
+    lastAnswersRef.current = undefined;
     setAttachmentUsage(null);
     setLastRunUsedAnswers(false);
     setRefinementInput("");
     setOriginalExpanded(true);
   }
 
+  // A result (finished or partial) is on screen and would be thrown away.
+  const hasResultOnScreen =
+    (phase === "result" || phase === "refine") && !!enhancedText;
+
   function handleOpenChange(value: boolean) {
     if (busy) return;
+    if (!value && hasResultOnScreen) {
+      setConfirmDiscard("close");
+      return;
+    }
     if (!value) resetState();
     onOpenChange(value);
+  }
+
+  function handleConfirmDiscard() {
+    const action = confirmDiscard;
+    setConfirmDiscard(null);
+    if (action === "regenerate") {
+      setEnhancedText(null);
+      setTruncated(false);
+      setDroppedConnection(false);
+      setPhase("configure");
+    } else if (action === "close") {
+      resetState();
+      onOpenChange(false);
+    }
   }
 
   const phaseDescriptions: Record<DialogPhase, string> = {
@@ -638,7 +695,11 @@ export function EnhanceDialogShell({
 
               {truncated && !loading && (
                 <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                  <span>The output was truncated due to length limits.</span>
+                  <span>
+                    {droppedConnection
+                      ? "The connection dropped before it finished."
+                      : "The output was truncated due to length limits."}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
@@ -828,10 +889,7 @@ export function EnhanceDialogShell({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setEnhancedText(null);
-                    setPhase("configure");
-                  }}
+                  onClick={() => setConfirmDiscard("regenerate")}
                   disabled={busy}
                   className="gap-1.5 text-muted-foreground"
                 >
@@ -881,6 +939,34 @@ export function EnhanceDialogShell({
           </div>
         )}
       </DialogContent>
+
+      {/* Ordinary Dialog (not AlertDialog) so Escape, outside click and the close
+          button all just keep the result: the user is never trapped. */}
+      <Dialog
+        open={confirmDiscard !== null}
+        onOpenChange={(value) => {
+          if (!value) setConfirmDiscard(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Discard this result?</DialogTitle>
+            <DialogDescription>
+              {confirmDiscard === "regenerate"
+                ? "The enhanced description on screen will be thrown away and you will go back to the start. This can't be undone."
+                : "The enhanced description on screen hasn't been applied and will be lost if you close this. This can't be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDiscard(null)}>
+              Keep result
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDiscard}>
+              Discard
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
