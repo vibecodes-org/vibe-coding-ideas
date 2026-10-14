@@ -262,6 +262,52 @@ describe("AiGenerateDialog — Generate the rest", () => {
   });
 });
 
+describe("AiGenerateDialog — a clean close with no final line", () => {
+  const noFinal = ndjson(
+    { tasks: [A] },
+    { tasks: [A, B] },
+    { tasks: [A, B, { title: "Task C", columnName: "Backl" }] }
+  );
+
+  it("treats it as a dropped connection: drops the last task and makes no new column", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse(noFinal));
+    setup();
+    await generate();
+
+    expect(rowTitles()).toEqual(["Task A", "Task B"]);
+    expect(screen.queryByText(/\bnew\b/)).toBeNull();
+    expect(screen.getByText("The connection dropped before it finished.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Generate the rest" })).toBeDefined();
+  });
+
+  it("does the same for Generate the rest", async () => {
+    fetchMock
+      .mockResolvedValueOnce(okResponse(cutFirstRun))
+      .mockResolvedValueOnce(
+        okResponse(ndjson({ tasks: [C] }, { tasks: [C, { title: "Task D", columnName: "Backl" }] }))
+      );
+    setup();
+    await generate();
+    fireEvent.click(screen.getByRole("button", { name: "Generate the rest" }));
+    await waitFor(() =>
+      expect(screen.getByText("The connection dropped before it finished.")).toBeDefined()
+    );
+
+    expect(rowTitles()).toEqual(["Task A", "Task B", "Task C"]);
+    expect(screen.queryByText(/\bnew\b/)).toBeNull();
+  });
+
+  it("shows the plain wording in the toast, never the browser's own text", async () => {
+    fetchMock.mockResolvedValueOnce(
+      droppedResponse(ndjson({ tasks: [A] }, { tasks: [A, B] }, { tasks: [A, B, { title: "Task C" }] }))
+    );
+    setup();
+    await generate();
+    expect(toast.error).toHaveBeenCalledWith("The connection dropped before it finished.");
+    expect(toast.error).not.toHaveBeenCalledWith("network error");
+  });
+});
+
 describe("AiGenerateDialog — dropped connection on the first run", () => {
   it("keeps the finished tasks with the connection bar and the button", async () => {
     fetchMock.mockResolvedValueOnce(

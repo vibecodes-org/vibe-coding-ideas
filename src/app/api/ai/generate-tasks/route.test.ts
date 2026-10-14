@@ -156,6 +156,66 @@ describe("POST /api/ai/generate-tasks — deadline", () => {
   });
 });
 
+describe("POST /api/ai/generate-tasks — deadline that the stream notices", () => {
+  type Opts = { abortSignal: AbortSignal; onError: (e: { error: unknown }) => void };
+  function abortAware(opts: Opts, onAbort: "end" | "error") {
+    return {
+      partialObjectStream: (async function* () {
+        yield { tasks: [A] };
+        yield { tasks: [A, B] };
+        yield { tasks: [A, B, { title: "C" }] };
+        await new Promise<void>((resolve) =>
+          opts.abortSignal.addEventListener("abort", () => resolve())
+        );
+        if (onAbort === "error") opts.onError({ error: new Error("aborted") });
+      })(),
+      usage: new Promise(() => {}),
+      finishReason: new Promise(() => {}),
+    };
+  }
+
+  for (const how of ["end", "error"] as const) {
+    it(`reports cutShort "time" (no error line) when the stream ${how === "end" ? "ends" : "calls onError"} on abort`, async () => {
+      vi.useFakeTimers();
+      streamObjectMock.mockImplementation((opts: Opts) => abortAware(opts, how));
+      const res = await POST(request());
+      const bodyPromise = res.text();
+      await vi.advanceTimersByTimeAsync(300_000);
+      const parsed = (await bodyPromise)
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
+      expect(parsed[parsed.length - 1]).toEqual({ tasks: [A, B], final: true, cutShort: "time" });
+      expect(parsed.some((l) => l.error)).toBe(false);
+    });
+  }
+});
+
+describe("POST /api/ai/generate-tasks — other finish reasons", () => {
+  for (const reason of ["content-filter", "other"]) {
+    it(`treats "${reason}" as a cut: drops the half task and sends cutShort`, async () => {
+      streamObjectMock.mockReturnValue(
+        streamOf([[A], [A, B], [A, B, { title: "C", columnName: "Backl" }]], reason)
+      );
+      const out = await lines(await POST(request()));
+      expect(out[out.length - 1]).toEqual({ tasks: [A, B], final: true, cutShort: "length" });
+    });
+  }
+
+  it("treats a finish reason that never arrives as a cut", async () => {
+    vi.useFakeTimers();
+    streamObjectMock.mockReturnValue({
+      ...streamOf([[A], [A, B], [A, B, { title: "C" }]]),
+      finishReason: new Promise(() => {}),
+    });
+    const res = await POST(request());
+    const bodyPromise = lines(res);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const out = await bodyPromise;
+    expect(out[out.length - 1]).toEqual({ tasks: [A, B], final: true, cutShort: "length" });
+  });
+});
+
 describe("POST /api/ai/generate-tasks — normal finish", () => {
   it("keeps every task and sends a final line without a cut flag", async () => {
     streamObjectMock.mockReturnValue(streamOf([[A], [A, B]], "stop"));

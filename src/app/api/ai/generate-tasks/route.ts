@@ -148,8 +148,8 @@ export async function POST(req: Request) {
     // and fills the token budget before making a second — confirmed by telemetry).
     // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
     // only large ideas get an added decomposition nudge. Threshold in characters:
-    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below YCS
-    // TEST's ~20000-char programme spec.
+    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below a
+    // ~20,000-char programme spec.
     const LARGE_IDEA_CHARS = 12000;
     const isLargeIdea = (idea.description?.length ?? 0) > LARGE_IDEA_CHARS;
 
@@ -304,7 +304,9 @@ export async function POST(req: Request) {
 
         let cutShort: CutShortReason | undefined;
         if (hitDeadline) cutShort = "time";
-        else if (finishReason === "length") cutShort = "length";
+        // Anything but a clean stop (length, content-filter, other, or no answer
+        // within the wait) may leave the last task half-written: treat it as a cut.
+        else if (finishReason !== "stop") cutShort = "length";
 
         // On a cut the last task is the half-written one: drop it.
         const finalTasks = cutShort ? completeTasksOnly(latestTasks) : latestTasks;

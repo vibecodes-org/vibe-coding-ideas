@@ -86,11 +86,13 @@ class TaskStreamError extends Error {
   }
 }
 
+const CONNECTION_DROPPED = "The connection dropped before it finished.";
+
 /** Reads the NDJSON task stream. Calls onPartial for every update. */
 async function readTaskStream(
   res: Response,
   onPartial: (tasks: ImportTask[]) => void
-): Promise<{ latest: ImportTask[]; final: FinalLine | null }> {
+): Promise<{ latest: ImportTask[]; final: FinalLine }> {
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response stream");
 
@@ -133,11 +135,11 @@ async function readTaskStream(
     handleLine(buffer);
   } catch (err) {
     if (err instanceof TaskStreamError) throw err;
-    throw new TaskStreamError(
-      err instanceof Error ? err.message : "The connection dropped",
-      latest
-    );
+    throw new TaskStreamError(CONNECTION_DROPPED, latest);
   }
+
+  // A clean close with no final line means the last line may be half-written.
+  if (!final) throw new TaskStreamError(CONNECTION_DROPPED, latest);
 
   return { latest, final };
 }
@@ -302,8 +304,8 @@ export function AiGenerateDialog({
         throw new Error(body?.error ?? `Request failed (${res.status})`);
       }
 
-      const { latest, final } = await readTaskStream(res, setGeneratedTasks);
-      const tasks = final?.tasks ?? latest;
+      const { final } = await readTaskStream(res, setGeneratedTasks);
+      const tasks = final.tasks;
 
       if (!tasks.length) {
         throw new Error("AI did not generate any tasks. Try a more detailed prompt.");
@@ -387,10 +389,10 @@ export function AiGenerateDialog({
         throw new Error(body?.error ?? `Request failed (${res.status})`);
       }
 
-      const { latest, final } = await readTaskStream(res, (partial) =>
+      const { final } = await readTaskStream(res, (partial) =>
         setGeneratedTasks(mergeContinuation(base, partial))
       );
-      const incoming = final?.tasks ?? latest;
+      const incoming = final.tasks;
       const merged = mergeContinuation(base, incoming);
 
       if (merged.length === base.length) {
