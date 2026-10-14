@@ -7,7 +7,7 @@ import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
 
 export const listKitsSchema = z.object({});
 
-type AgentRole = { role: string; name_suggestion?: string; skills?: string[] };
+type AgentRole = { role: string; name_suggestion?: string };
 type LabelPreset = { name: string; color: string };
 
 export async function listKits(ctx: McpContext) {
@@ -206,7 +206,6 @@ export async function applyKitToIdea(
               .from("bot_profiles")
               .update({
                 bio: libraryAgent.bio,
-                skills: libraryAgent.skills,
                 tool_access: libraryAgent.tool_access,
                 cloned_from: libraryAgent.id,
               })
@@ -221,12 +220,6 @@ export async function applyKitToIdea(
           });
           if (botUser) {
             newBotId = botUser;
-            if (agentRole.skills && agentRole.skills.length > 0) {
-              await ctx.supabase
-                .from("bot_profiles")
-                .update({ skills: agentRole.skills })
-                .eq("id", botUser);
-            }
           }
         }
 

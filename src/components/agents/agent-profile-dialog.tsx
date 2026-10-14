@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkillLine } from "./skill-line";
 import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
 import { AgentInstructionsView, ReadOnlyBadge } from "@/components/agents/agent-instructions-view";
@@ -146,18 +147,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                 </div>
 
                 {/* Skills */}
-                {bot.skills && bot.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {bot.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <SkillLine names={data.skillNames} className="mt-2" />
               </div>
 
               {/* Actions */}

@@ -51,11 +51,6 @@ export const createBotSchema = z.object({
     .describe("System prompt for the agent persona"),
   avatar_url: z.string().url().optional().describe("Avatar URL for the agent"),
   bio: z.string().max(500).optional().describe("Short tagline/bio for the agent"),
-  skills: z
-    .array(z.string().max(30))
-    .max(10)
-    .optional()
-    .describe("Tags for the agent's card and search (max 10, 30 chars each). The agent never reads them."),
   tool_access: z
     .enum(["full", "read_only"])
     .optional()
@@ -126,7 +121,6 @@ export async function listBots(
       system_prompt: bot.system_prompt,
       is_active: bot.is_active,
       bio: bot.bio,
-      skills: bot.skills,
       tool_access: bot.tool_access,
       is_published: bot.is_published,
       community_upvotes: bot.community_upvotes,
@@ -202,9 +196,6 @@ export async function createBot(
   // Set extended fields via follow-up UPDATE
   const extras: Record<string, unknown> = {};
   if (args.bio) extras.bio = args.bio.trim();
-  if (args.skills && args.skills.length > 0) {
-    extras.skills = args.skills.map((s) => s.trim().toLowerCase());
-  }
   if (args.tool_access && args.tool_access !== "full") extras.tool_access = args.tool_access;
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
@@ -217,7 +208,7 @@ export async function createBot(
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published, tool_access")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, is_published, tool_access")
     .eq("id", data)
     .single();
 
@@ -292,7 +283,6 @@ export async function cloneAgent(
       .from("bot_profiles")
       .update({
         bio: source.bio,
-        skills: source.skills,
         tool_access: source.tool_access,
         cloned_from: args.bot_id,
       })
@@ -330,7 +320,7 @@ export async function listCommunityAgents(
 ) {
   let query = ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, bio, skills, community_upvotes, times_cloned, avatar_url, created_at, owner:users!bot_profiles_owner_id_fkey(id, full_name)")
+    .select("id, name, role, bio, community_upvotes, times_cloned, avatar_url, created_at, owner:users!bot_profiles_owner_id_fkey(id, full_name)")
     .eq("is_published", true);
 
   if (args.search) {

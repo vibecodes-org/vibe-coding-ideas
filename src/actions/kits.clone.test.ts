@@ -25,7 +25,6 @@ const LIBRARY_BOT = {
   system_prompt: "Ship it.",
   avatar_url: null,
   bio: null,
-  skills: [],
 };
 
 const eqValue = (c: FakeCall, col: string) =>

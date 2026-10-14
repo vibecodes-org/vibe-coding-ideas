@@ -49,12 +49,11 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { ideaId, prompt, personaPrompt, agentRole, agentSkills, agentBio } = body as {
+    const { ideaId, prompt, personaPrompt, agentRole, agentBio } = body as {
       ideaId: string;
       prompt: string;
       personaPrompt?: string | null;
       agentRole?: string | null;
-      agentSkills?: string[] | null;
       agentBio?: string | null;
     };
 
@@ -119,7 +118,7 @@ export async function POST(req: Request) {
       }))
     );
 
-    const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
+    const hasAgent = !!(personaPrompt || agentRole);
 
     // ORIGINAL prompt — unchanged behaviour for normal ideas (incl. the markdown
     // subtask-checklist feature). This is what runs for the vast majority of ideas.
@@ -145,7 +144,6 @@ export async function POST(req: Request) {
       existingLabels,
       autoRuleMappings,
       agentRole,
-      agentSkills,
       agentBio,
     });
 

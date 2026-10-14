@@ -199,7 +199,6 @@ export function AiGenerateDialog({
           prompt,
           personaPrompt: selectedBot?.system_prompt ?? null,
           agentRole: selectedBot?.role ?? null,
-          agentSkills: selectedBot?.skills ?? null,
           agentBio: selectedBot?.bio ?? null,
         }),
       });

@@ -225,13 +225,14 @@ export default function AiAgentTeamsPage() {
             curated collections of agents (e.g., &quot;Plan, build and check&quot;
             with the Planner, Full Stack Engineer, Code Reviewer, QA Engineer
             and DevOps Engineer) managed by admins. Click{" "}
-            <strong className="text-foreground">Clone Team to My Agents</strong> to clone all
+            <strong className="text-foreground">Add team to My Agents</strong> to copy all
             agents from a featured team into your account in one go.
           </p>
 
           <h3 className="mb-3 mt-6 text-lg font-medium">Agent Profiles</h3>
           <p className="text-muted-foreground">
-            Each agent has a public profile page showing its bio, skills,
+            Each agent has a public profile page showing its bio, its skills
+            (each listed in full, with the text you can open and read), its
             system prompt, stats (times cloned, upvotes), and the ideas
             it&apos;s contributing to. Unpublished agents are only visible to
             their owner.
@@ -716,7 +717,8 @@ export default function AiAgentTeamsPage() {
           <ul className="mt-3 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">Edit</strong> an agent&apos;s
-              name, role, system prompt, bio, skills, or avatar
+              name, role, system prompt, tagline, tool access, or avatar. Add
+              or remove its skills from the agent&apos;s own page
             </li>
             <li>
               <strong className="text-foreground">Publish</strong> an agent to

@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { validateBio, validateSkills } from "@/lib/validation";
+import { validateBio } from "@/lib/validation";
 import { normalizeToolAccess, toolAccessFromFrontmatter, type ToolAccess } from "@/lib/agent-tool-access";
+import { fetchSkillNamesByBot } from "@/lib/fetch-skill-names";
 import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
@@ -17,7 +18,6 @@ export async function createBot(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[],
   toolAccess?: ToolAccess
 ): Promise<string> {
   const supabase = await createClient();
@@ -31,9 +31,6 @@ export async function createBot(
   if (name.length > 100) throw new Error("Agent name must be 100 characters or less");
 
   const validatedBio = validateBio(bio ?? null);
-  // Tags are only what the owner typed: the agent never reads them, so
-  // filling them in from the role added nothing but noise.
-  const validatedSkills = validateSkills(skills ?? []);
   const validatedToolAccess = normalizeToolAccess(toolAccess);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
@@ -48,11 +45,10 @@ export async function createBot(
 
   const botId = data as string;
 
-  // Set bio/skills/tool access via follow-up UPDATE (RPC doesn't know about new columns)
-  if (validatedBio || validatedSkills.length > 0 || validatedToolAccess !== "full") {
+  // Set bio/tool access via follow-up UPDATE (RPC doesn't know about new columns)
+  if (validatedBio || validatedToolAccess !== "full") {
     const extras: Record<string, unknown> = {};
     if (validatedBio) extras.bio = validatedBio;
-    if (validatedSkills.length > 0) extras.skills = validatedSkills;
     if (validatedToolAccess !== "full") extras.tool_access = validatedToolAccess;
 
     await supabase
@@ -76,7 +72,6 @@ export async function updateBot(
     avatar_url?: string | null;
     is_active?: boolean;
     bio?: string | null;
-    skills?: string[];
     is_published?: boolean;
     tool_access?: ToolAccess;
   }
@@ -104,7 +99,6 @@ export async function updateBot(
     profileUpdates.avatar_url = updates.avatar_url?.trim() || null;
   if (updates.is_active !== undefined) profileUpdates.is_active = updates.is_active;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
-  if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
   if (updates.is_published !== undefined) profileUpdates.is_published = updates.is_published;
   if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
 
@@ -239,7 +233,6 @@ export async function cloneBotProfile(
       .from("bot_profiles")
       .update({
         bio: source.bio,
-        skills: source.skills,
         tool_access: source.tool_access,
         cloned_from: source.id,
       })
@@ -365,6 +358,8 @@ export type AgentProfileData = {
     taskTitle: string;
   }>;
   clonedFromBot: { id: string; name: string } | null;
+  /** Names of the agent's real skills, oldest first. */
+  skillNames: string[];
 };
 
 export async function getAgentProfile(
@@ -401,6 +396,7 @@ export async function getAgentProfile(
     { data: ideaAgentData },
     { data: recentActivity },
     clonedFromBot,
+    skillNamesByBot,
   ] = await Promise.all([
     // Check if current user has voted
     supabase
@@ -444,6 +440,7 @@ export async function getAgentProfile(
           .maybeSingle()
           .then(({ data }) => data)
       : Promise.resolve(null),
+    fetchSkillNamesByBot(supabase, [botId]),
   ]);
 
   const tasks = (activeTasks ?? []) as Array<{
@@ -486,6 +483,7 @@ export async function getAgentProfile(
       taskTitle: (a.board_tasks as { title: string }).title,
     })),
     clonedFromBot,
+    skillNames: skillNamesByBot[botId] ?? [],
   };
 }
 
@@ -521,7 +519,6 @@ export async function importAgentFromSkill(
     };
     if (role) updates.role = role;
     if (parsed.metadata.bio) updates.bio = validateBio(parsed.metadata.bio);
-    if (parsed.metadata.tags) updates.skills = validateSkills(parsed.metadata.tags);
     // A file that says nothing about tools leaves the agent's setting alone.
     if (
       parsed.metadata.tool_access !== undefined ||
@@ -551,7 +548,6 @@ export async function importAgentFromSkill(
     parsed.body || null,
     null,
     parsed.metadata.bio ?? null,
-    parsed.metadata.tags ?? undefined,
     toolAccess
   );
 

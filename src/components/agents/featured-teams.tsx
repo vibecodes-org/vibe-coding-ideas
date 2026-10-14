@@ -118,20 +118,24 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
         Featured Teams
       </div>
       <div className="relative">
-        <button
-          onClick={() => scroll("left")}
-          disabled={!canScrollLeft}
-          className="absolute -left-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => scroll("right")}
-          disabled={!canScrollRight}
-          className="absolute -right-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        {(canScrollLeft || canScrollRight) && (
+          <>
+            <button
+              onClick={() => scroll("left")}
+              disabled={!canScrollLeft}
+              className="absolute left-1 sm:-left-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => scroll("right")}
+              disabled={!canScrollRight}
+              className="absolute right-1 sm:-right-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
         <div
           ref={scrollRef}
           onScroll={updateScrollState}
@@ -232,7 +236,7 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
                       ? "Creating..."
                       : existingCount > 0
                         ? `Add ${remainingCount} Remaining`
-                        : "Clone Team to My Agents"}
+                        : "Add team to My Agents"}
                   </Button>
                 ) : (
                   <span className="text-[11px] font-medium text-emerald-500">

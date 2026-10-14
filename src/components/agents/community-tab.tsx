@@ -22,11 +22,12 @@ interface CommunityTabProps {
   userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
   userIdeas?: UserIdea[];
+  skillNamesByBot?: Record<string, string[]>;
 }
 
 type SortOption = "popular" | "newest" | "most-added";
 
-export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, featuredTeams, userIdeas = [] }: CommunityTabProps) {
+export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, featuredTeams, userIdeas = [], skillNamesByBot = {} }: CommunityTabProps) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [sort, setSort] = useState<SortOption>("popular");
@@ -51,8 +52,7 @@ export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, feature
         (b) =>
           b.name.toLowerCase().includes(q) ||
           b.bio?.toLowerCase().includes(q) ||
-          b.role?.toLowerCase().includes(q) ||
-          b.skills?.some((s) => s.toLowerCase().includes(q))
+          b.role?.toLowerCase().includes(q)
       );
     }
 
@@ -98,7 +98,7 @@ export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, feature
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search agents by name, role, or skill..."
+            placeholder="Search agents by name, role, or tagline..."
             className="pl-9"
           />
         </div>
@@ -146,6 +146,7 @@ export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, feature
               variant="community"
               ownerName={bot.owner?.full_name}
               hasVoted={userVotedBotIds.includes(bot.id)}
+              skillNames={skillNamesByBot[bot.id] ?? []}
               onClick={() => setSelectedBotId(bot.id)}
             />
           ))}

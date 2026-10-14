@@ -43,7 +43,6 @@ export function CreateAdminAgentDialog({
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bio, setBio] = useState("");
-  const [skillsInput, setSkillsInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [toolAccess, setToolAccess] = useState<ToolAccess>("full");
@@ -61,7 +60,6 @@ export function CreateAdminAgentDialog({
       setRole(editAgent.role ?? "");
       setSystemPrompt(editAgent.system_prompt ?? "");
       setBio(editAgent.bio ?? "");
-      setSkillsInput((editAgent.skills ?? []).join(", "));
       setSelectedTemplate(null);
       setToolAccess(normalizeToolAccess(editAgent.tool_access));
       setPromptKey((k) => k + 1);
@@ -86,7 +84,6 @@ export function CreateAdminAgentDialog({
     setRole("");
     setSystemPrompt("");
     setBio("");
-    setSkillsInput("");
     setSelectedTemplate(null);
     setToolAccess("full");
     setPromptKey((k) => k + 1);
@@ -116,15 +113,6 @@ export function CreateAdminAgentDialog({
     setPreviewUrl(URL.createObjectURL(file));
   }
 
-  function parseSkills(): string[] {
-    if (!skillsInput.trim()) return [];
-    return skillsInput
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 10);
-  }
-
   async function uploadAvatar(botId: string): Promise<string | undefined> {
     if (!selectedFile) return undefined;
 
@@ -148,8 +136,6 @@ export function CreateAdminAgentDialog({
 
     setSubmitting(true);
     try {
-      const skills = parseSkills();
-
       if (isEdit) {
         // Upload avatar first if selected
         let avatarUrl: string | undefined = undefined;
@@ -162,7 +148,6 @@ export function CreateAdminAgentDialog({
           role: role.trim() || null,
           system_prompt: systemPrompt.trim() || null,
           bio: bio.trim() || null,
-          skills,
           tool_access: toolAccess,
           ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
         });
@@ -175,7 +160,6 @@ export function CreateAdminAgentDialog({
           systemPrompt.trim() || null,
           null,
           bio.trim() || null,
-          skills,
           toolAccess
         );
 
@@ -307,26 +291,9 @@ export function CreateAdminAgentDialog({
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="admin-tool-access" />
 
-          {/* Tags (comma-separated) */}
-          <div className="space-y-1">
-            <Label htmlFor="admin-bot-skills" className="text-xs">
-              Tags{" "}
-              <span className="font-normal text-muted-foreground">
-                (optional)
-              </span>
-            </Label>
-            <Input
-              id="admin-bot-skills"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="e.g. planning, requirements"
-              maxLength={300}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Short labels for the agent&apos;s card and for search. The agent never reads them. Admin agents are
-              auto-published to the community.
-            </p>
-          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Admin agents are auto-published to the community. Skills are added from the agent&apos;s own page.
+          </p>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">

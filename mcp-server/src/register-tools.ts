@@ -1487,7 +1487,7 @@ export function registerTools(
 
   server.tool(
     "import_agent_skill",
-    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio/tags either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Tool access is read from `metadata.tool_access` (full | read_only) or a Claude Code style `tools:` / `disallowedTools:` line (a deny list naming Edit or Write, or a tools list with no file-writing tool, means read_only). Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
+    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Tool access is read from `metadata.tool_access` (full | read_only) or a Claude Code style `tools:` / `disallowedTools:` line (a deny list naming Edit or Write, or a tools list with no file-writing tool, means read_only). Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
     importAgentSkillSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

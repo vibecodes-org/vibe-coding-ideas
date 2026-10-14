@@ -11,7 +11,6 @@ import {
   Lightbulb,
   Zap,
   Plus,
-  X,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +19,12 @@ import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
 import { EditAgentDialog } from "./edit-agent-dialog";
 import { AddSkillDialog } from "./add-skill-dialog";
+import { SkillRow } from "./skill-row";
 import { AgentInstructionsView, ReadOnlyBadge } from "@/components/agents/agent-instructions-view";
 import { cn, getInitials } from "@/lib/utils";
 import { getRoleColor } from "@/lib/agent-colors";
 import { removeSkillFromAgent } from "@/actions/bots";
+import type { CloneSourceDisplay } from "@/lib/clone-source-display";
 import type { BotProfile, AgentSkill } from "@/types";
 
 interface ActivityItem {
@@ -49,7 +50,7 @@ interface AgentProfileProps {
   completedTaskCount: number;
   contributingIdeas: Array<{ id: string; title: string; assignedCount: number }>;
   recentActivity: ActivityItem[];
-  clonedFromBot: { id: string; name: string } | null;
+  cloneSource: CloneSourceDisplay | null;
   agentSkills: AgentSkill[];
 }
 
@@ -82,7 +83,7 @@ export function AgentProfile({
   completedTaskCount,
   contributingIdeas,
   recentActivity,
-  clonedFromBot,
+  cloneSource,
   agentSkills,
 }: AgentProfileProps) {
   const [editOpen, setEditOpen] = useState(false);
@@ -183,30 +184,19 @@ export function AgentProfile({
             )}
           </div>
 
-          {clonedFromBot && (
+          {cloneSource && (
             <p className="text-xs text-muted-foreground mb-2">
-              Cloned from{" "}
-              <Link
-                href={`/agents/${clonedFromBot.id}`}
-                className="text-primary hover:underline"
-              >
-                {clonedFromBot.name}
-              </Link>
+              {cloneSource.kind === "link" ? (
+                <>
+                  Cloned from{" "}
+                  <Link href={`/agents/${cloneSource.id}`} className="text-primary hover:underline">
+                    {cloneSource.name}
+                  </Link>
+                </>
+              ) : (
+                cloneSource.text
+              )}
             </p>
-          )}
-
-          {/* Skills */}
-          {bot.skills && bot.skills.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {bot.skills.map((skill) => (
-                <span
-                  key={skill}
-                  className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
           )}
         </div>
 
@@ -254,21 +244,28 @@ export function AgentProfile({
         </div>
       </div>
 
-      {/* Skills & Capabilities */}
+      {/* Skills */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold flex items-center gap-2">
-            <Zap className="h-4 w-4 text-amber-400" /> Skills & Capabilities
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-400" /> Skills
+              {agentSkills.length > 0 && (
+                <span className="rounded-full bg-violet-500/15 px-1.5 py-px text-[10px] font-semibold text-violet-400">
+                  {agentSkills.length}
+                </span>
+              )}
+            </h2>
             {agentSkills.length > 0 && (
-              <span className="rounded-full bg-violet-500/15 px-1.5 py-px text-[10px] font-semibold text-violet-400">
-                {agentSkills.length}
-              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Sent in full with every step {bot.name} runs, on every board it&apos;s on.
+              </p>
             )}
-          </h2>
+          </div>
           {isOwner && agentSkills.length > 0 && (
             <Button
               size="sm"
-              className="h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-500"
+              className="h-8 shrink-0 text-xs bg-emerald-600 text-white hover:bg-emerald-500"
               onClick={() => setAddSkillOpen(true)}
             >
               <Plus className="h-3.5 w-3.5 mr-1" />
@@ -278,12 +275,14 @@ export function AgentProfile({
         </div>
 
         {agentSkills.length === 0 ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
             <span aria-hidden="true" className="text-amber-400">
               &#x26A1;
             </span>
             <p className="flex-1 min-w-[12rem] text-xs text-muted-foreground">
-              Skills are reusable capabilities your agent can use on tasks.
+              No skills. {bot.name} works from its instructions alone. Most agents need none: add one only
+              for know-how it can&apos;t have on its own, such as your formats, your machine or your
+              app&apos;s traps.
             </p>
             {isOwner && (
               <Button
@@ -297,67 +296,30 @@ export function AgentProfile({
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {agentSkills.map((skill) => {
-              const sourceLabel =
-                skill.source_type === "github"
-                  ? "GitHub"
-                  : skill.source_type === "file"
-                    ? "File upload"
-                    : skill.source_type === "url"
-                      ? "URL import"
-                      : skill.source_type;
-              return (
-                <span
-                  key={skill.id}
-                  title={`${skill.name} · ${skill.category ?? "Uncategorized"} · ${skill.description} (${sourceLabel})`}
-                  className="inline-flex max-w-[12rem] items-center gap-1.5 rounded-full border border-border bg-muted/40 py-1 pl-2.5 pr-1"
-                >
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 shrink-0 rounded-full",
-                      skill.category === "Development" && "bg-violet-400",
-                      skill.category === "Creative" && "bg-amber-400",
-                      skill.category === "Enterprise" && "bg-pink-400",
-                      skill.category === "Document" && "bg-cyan-400",
-                      !["Development", "Creative", "Enterprise", "Document"].includes(
-                        skill.category ?? ""
-                      ) && "bg-muted-foreground"
-                    )}
-                  />
-                  <span className="min-w-0 truncate font-mono text-[11px] font-medium">
-                    {skill.name}
-                  </span>
-                  {isOwner && (
-                    <button
-                      type="button"
-                      aria-label={`Remove skill ${skill.name}`}
-                      className={cn(
-                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-400",
-                        removingSkillId === skill.id && "opacity-50 pointer-events-none"
-                      )}
-                      disabled={removingSkillId === skill.id}
-                      onClick={async () => {
+          <div className="flex flex-col gap-2">
+            {agentSkills.map((skill) => (
+              <SkillRow
+                key={skill.id}
+                skill={skill}
+                removing={removingSkillId === skill.id}
+                onRemove={
+                  isOwner
+                    ? async () => {
                         setRemovingSkillId(skill.id);
                         try {
                           await removeSkillFromAgent(skill.id);
                           toast.success(`Removed "${skill.name}"`);
                           router.refresh();
                         } catch (e) {
-                          toast.error(
-                            e instanceof Error ? e.message : "Failed to remove skill"
-                          );
+                          toast.error(e instanceof Error ? e.message : "Failed to remove skill");
                         } finally {
                           setRemovingSkillId(null);
                         }
-                      }}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </span>
-              );
-            })}
+                      }
+                    : undefined
+                }
+              />
+            ))}
           </div>
         )}
       </div>
@@ -464,6 +426,7 @@ export function AgentProfile({
           bot={bot}
           open={editOpen}
           onOpenChange={setEditOpen}
+          skillNames={agentSkills.map((s) => s.name)}
         />
       )}
 

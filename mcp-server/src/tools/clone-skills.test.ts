@@ -25,7 +25,6 @@ const SOURCE_BOT = {
   system_prompt: "Ship it.",
   avatar_url: null,
   bio: "bio",
-  skills: ["ts"],
   is_published: true,
 };
 const SKILLS = [

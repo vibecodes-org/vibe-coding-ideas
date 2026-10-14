@@ -72,9 +72,6 @@ export async function importAgentSkill(
       };
       if (role) updates.role = role;
       if (parsed.metadata.bio) updates.bio = parsed.metadata.bio.slice(0, 500);
-      if (parsed.metadata.tags) {
-        updates.skills = parsed.metadata.tags.slice(0, 10).map((s) => s.slice(0, 30));
-      }
       if (statesToolAccess) updates.tool_access = toolAccess;
 
       const { error: updateErr } = await ctx.supabase
@@ -108,9 +105,6 @@ export async function importAgentSkill(
   // Set extended fields (with validation limits)
   const extras: Record<string, unknown> = {};
   if (parsed.metadata.bio) extras.bio = parsed.metadata.bio.slice(0, 500);
-  if (parsed.metadata.tags && parsed.metadata.tags.length > 0) {
-    extras.skills = parsed.metadata.tags.slice(0, 10).map((s) => s.slice(0, 30));
-  }
   if (toolAccess !== "full") extras.tool_access = toolAccess;
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
@@ -132,7 +126,7 @@ export async function importAgentSkill(
   // Fetch created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, bio, skills, tool_access")
+    .select("id, name, role, system_prompt, is_active, bio, tool_access")
     .eq("id", botId)
     .single();
 

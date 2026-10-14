@@ -24,7 +24,6 @@ const baseBot = (overrides: Partial<DashboardBot> = {}): DashboardBot => ({
   avatar_url: null,
   is_active: true,
   bio: null,
-  skills: [],
   is_published: false,
   community_upvotes: 0,
   times_cloned: 0,

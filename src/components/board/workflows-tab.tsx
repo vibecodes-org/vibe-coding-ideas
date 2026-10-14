@@ -76,7 +76,8 @@ import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import { approvalCount } from "@/lib/workflow-helpers";
-import { getRoleCoverage, type RoleCoverageResult } from "@/actions/idea-agents";
+import { getRoleCoverage, getAgentSkillNames, type RoleCoverageResult } from "@/actions/idea-agents";
+import { StepRunnerLine, type StepRunner } from "./step-runner-line";
 import type { WorkflowTemplate, WorkflowAutoRule, BoardLabel } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -92,7 +93,21 @@ const TIER_DOT_COLOR: Record<string, string> = {
   manual: "bg-blue-400",
 };
 
-function StepRow({ step, index, matchTier }: { step: WorkflowTemplateStep; index: number; matchTier?: string | null }) {
+function StepRow({
+  step,
+  index,
+  matchTier,
+  runner = null,
+  skillNames,
+  coverageKnown = false,
+}: {
+  step: WorkflowTemplateStep;
+  index: number;
+  matchTier?: string | null;
+  runner?: StepRunner | null;
+  skillNames?: string[];
+  coverageKnown?: boolean;
+}) {
   const dotColor = matchTier ? TIER_DOT_COLOR[matchTier] : undefined;
 
   return (
@@ -100,7 +115,10 @@ function StepRow({ step, index, matchTier }: { step: WorkflowTemplateStep; index
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
         {index + 1}
       </span>
-      <span className="flex-1 truncate text-sm font-medium">{step.title}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{step.title}</div>
+        <StepRunnerLine runner={runner} skillNames={skillNames} coverageKnown={coverageKnown} />
+      </div>
       <ModelTierBadge tier={step.model_tier} />
       <span className="relative shrink-0">
         <Badge
@@ -783,12 +801,40 @@ export function WorkflowsTab({
     return () => { cancelled = true; };
   }, [ideaId, agentCandidates]);
 
+  // Skills of the agents that run this board's steps (steps have none of their own)
+  const [skillNamesByBot, setSkillNamesByBot] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(roleCoverage.map((rc) => rc.matchedBotId).filter((id): id is string => !!id))];
+    if (ids.length === 0) {
+      setSkillNamesByBot({});
+      return;
+    }
+    let cancelled = false;
+    getAgentSkillNames(ids)
+      .then((names) => {
+        if (!cancelled) setSkillNamesByBot(names);
+      })
+      .catch(() => {
+        if (!cancelled) setSkillNamesByBot({});
+      });
+    return () => { cancelled = true; };
+  }, [roleCoverage]);
+
   // Build a lookup map: role name → coverage result
   const coverageMap = useMemo(() => {
     const map = new Map<string, RoleCoverageResult>();
     for (const rc of roleCoverage) map.set(rc.role, rc);
     return map;
   }, [roleCoverage]);
+
+  // The agent that runs a step's role on this board (manual override first, then the match)
+  function stepRunner(role: string): StepRunner | null {
+    const botId = coverageMap.get(role)?.matchedBotId;
+    if (!botId) return null;
+    const agent = agentCandidates.find((a) => a.botId === botId);
+    return agent ? { botId, name: agent.name, role: agent.role } : null;
+  }
 
   // Derive convenience lists for the selected template
   const unmatchedRoles = useMemo(() => {
@@ -1385,7 +1431,15 @@ export function WorkflowsTab({
               </div>
               <div className="space-y-1.5">
                 {selected.steps.map((step, idx) => (
-                  <StepRow key={idx} step={step} index={idx} matchTier={coverageMap.get(step.role)?.covered ? coverageMap.get(step.role)?.matchTier : coverageMap.has(step.role) ? "none" : undefined} />
+                  <StepRow
+                    key={idx}
+                    step={step}
+                    index={idx}
+                    matchTier={coverageMap.get(step.role)?.covered ? coverageMap.get(step.role)?.matchTier : coverageMap.has(step.role) ? "none" : undefined}
+                    coverageKnown={coverageMap.has(step.role)}
+                    runner={stepRunner(step.role)}
+                    skillNames={skillNamesByBot[coverageMap.get(step.role)?.matchedBotId ?? ""] ?? []}
+                  />
                 ))}
               </div>
               {unmatchedRoles.length > 0 && (

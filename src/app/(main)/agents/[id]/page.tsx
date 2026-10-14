@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
+import { cloneSourceDisplay, type CloneSourceDisplay } from "@/lib/clone-source-display";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import type { BotProfile, AgentSkill } from "@/types";
 import type { Metadata } from "next";
@@ -122,15 +123,15 @@ export default async function AgentPage({ params }: AgentPageProps) {
     .eq("bot_id", id)
     .order("created_at");
 
-  // Cloned from info
-  let clonedFromBot: { id: string; name: string } | null = null;
+  // Cloned from info: a link only if the viewer can open the source
+  let cloneSource: CloneSourceDisplay | null = null;
   if (typedBot.cloned_from) {
     const { data: sourceBot } = await supabase
       .from("bot_profiles")
-      .select("id, name")
+      .select("id, name, is_published, owner_id")
       .eq("id", typedBot.cloned_from)
       .maybeSingle();
-    clonedFromBot = sourceBot;
+    if (sourceBot) cloneSource = cloneSourceDisplay(sourceBot, user.id);
   }
 
   return (
@@ -149,7 +150,7 @@ export default async function AgentPage({ params }: AgentPageProps) {
           created_at: a.created_at,
           taskTitle: (a.board_tasks as { title: string }).title,
         }))}
-        clonedFromBot={clonedFromBot}
+        cloneSource={cloneSource}
         agentSkills={(agentSkills ?? []) as AgentSkill[]}
       />
     </div>
