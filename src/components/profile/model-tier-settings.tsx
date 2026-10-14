@@ -34,6 +34,14 @@ import { setViewerTerminalRemoteControlCache } from "@/hooks/use-viewer-terminal
 import { usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import { usePlatformTerminalCodexModelDefault } from "@/hooks/use-platform-terminal-codex-model-default";
+import { usePlatformTerminalEffortDefault } from "@/hooks/use-platform-terminal-effort-default";
+import { setViewerTerminalEffortCache } from "@/hooks/use-viewer-terminal-effort";
+import {
+  claudeEffortDefaultAriaLabel,
+  claudeEffortDefaultSubLabel,
+  claudeEffortHelp,
+  isClaudeEffort,
+} from "@/lib/terminal/claude-effort";
 import {
   MODEL_TIER_WHEN_TO_USE,
   capitalizeModelName,
@@ -101,6 +109,8 @@ interface ModelTierSettingsProps {
   terminalModel: string | null;
   terminalCodexModel?: string | null;
   terminalCodexEffort?: string | null;
+  /** The signed-in user's terminal_effort (task 18a37612): Claude starting effort, null = Default. */
+  terminalEffort?: string | null;
   /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
   terminalAutoAccept: boolean;
   /** The signed-in user's terminal_remote_control preference (task 5c8969cc), fetched server-side. */
@@ -296,6 +306,7 @@ export function ModelTierSettings({
   terminalModel,
   terminalCodexModel = null,
   terminalCodexEffort = null,
+  terminalEffort = null,
   terminalAutoAccept,
   terminalRemoteControl = false,
   open: controlledOpen,
@@ -311,6 +322,7 @@ export function ModelTierSettings({
   const { defaults: platformDefaults, isLoading: platformLoading } = usePlatformAgentAwareModelDefaults();
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const platformTerminalCodexDefault = usePlatformTerminalCodexModelDefault();
+  const platformTerminalEffort = usePlatformTerminalEffortDefault();
 
   // Terminal sessions group state — null = platform default; the sentinel
   // string = "my machine's default"; anything else = a known alias or a
@@ -319,6 +331,8 @@ export function ModelTierSettings({
   const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
   const [terminalCodexStaged, setTerminalCodexStaged] = useState<string | null>(terminalCodexModel);
   const [terminalCodexEffortStaged, setTerminalCodexEffortStaged] = useState<string | null>(terminalCodexEffort);
+  // Claude starting effort (task 18a37612) — null = Default (site level, else Claude's own).
+  const [terminalEffortStaged, setTerminalEffortStaged] = useState<string | null>(terminalEffort);
   // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
   // escape hatch: the only two legal states are on/off (design AC-6 —
   // "no dropdown, no free text, ever").
@@ -330,6 +344,7 @@ export function ModelTierSettings({
     terminalModel,
     terminalCodexModel,
     terminalCodexEffort,
+    terminalEffort,
     terminalAutoAccept,
     terminalRemoteControl,
   });
@@ -344,6 +359,7 @@ export function ModelTierSettings({
       setTerminalCustomMode(isTerminalCustomValue(savedValues.terminalModel));
       setTerminalCodexStaged(savedValues.terminalCodexModel);
       setTerminalCodexEffortStaged(savedValues.terminalCodexEffort);
+      setTerminalEffortStaged(savedValues.terminalEffort);
       setAutoAcceptStaged(savedValues.terminalAutoAccept);
       setRemoteControlStaged(savedValues.terminalRemoteControl);
     }
@@ -355,11 +371,13 @@ export function ModelTierSettings({
   const isAutoAcceptDirty = autoAcceptStaged !== savedValues.terminalAutoAccept;
   const isRemoteControlDirty = remoteControlStaged !== savedValues.terminalRemoteControl;
   const isCodexTerminalDirty = terminalCodexStaged !== savedValues.terminalCodexModel || terminalCodexEffortStaged !== savedValues.terminalCodexEffort;
-  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty || isRemoteControlDirty;
+  const isEffortDirty = terminalEffortStaged !== savedValues.terminalEffort;
+  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty || isRemoteControlDirty || isEffortDirty;
   const hasAnyOverride =
     Object.keys(staged).length > 0 ||
     terminalStaged !== null ||
     terminalCodexStaged !== null ||
+    terminalEffortStaged !== null ||
     autoAcceptStaged ||
     remoteControlStaged;
 
@@ -463,6 +481,7 @@ export function ModelTierSettings({
     setTerminalCustomMode(false);
     setTerminalCodexStaged(null);
     setTerminalCodexEffortStaged(null);
+    setTerminalEffortStaged(null);
     setAutoAcceptStaged(false);
     setRemoteControlStaged(false);
   }
@@ -477,11 +496,13 @@ export function ModelTierSettings({
           terminalModel: terminalToSave,
           terminalCodexModel: terminalCodexStaged,
           terminalCodexEffort: terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? null : terminalCodexEffortStaged,
+          terminalEffort: terminalEffortStaged,
           terminalAutoAccept: autoAcceptStaged,
           terminalRemoteControl: remoteControlStaged,
         });
         setViewerAgentAwareModelTierMapCache(saved.agentAwareModelTierMap ?? {});
         setViewerTerminalModelCache(saved.terminalModel);
+        setViewerTerminalEffortCache(saved.terminalEffort);
         setViewerTerminalAutoAcceptCache(saved.terminalAutoAccept);
         setViewerTerminalRemoteControlCache(saved.terminalRemoteControl);
         setSavedValues({
@@ -489,6 +510,7 @@ export function ModelTierSettings({
           terminalModel: saved.terminalModel,
           terminalCodexModel: saved.terminalCodexModel,
           terminalCodexEffort: saved.terminalCodexEffort,
+          terminalEffort: saved.terminalEffort,
           terminalAutoAccept: saved.terminalAutoAccept,
           terminalRemoteControl: saved.terminalRemoteControl,
         });
@@ -730,6 +752,28 @@ export function ModelTierSettings({
                 keep their existing model; you can switch any time by typing /model in the terminal.
               </p>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label id="terminal-claude-effort-label" className="text-sm">
+              Starting effort <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
+            </Label>
+            <EffortSegmentedControl
+              agent="claude"
+              value={isClaudeEffort(terminalEffortStaged) ? terminalEffortStaged : null}
+              onChange={(effort) => setTerminalEffortStaged(effort)}
+              disabled={isPending}
+              describedById="terminal-claude-effort-help"
+              groupLabel="Claude starting effort"
+              defaultOption={{
+                onSelect: () => setTerminalEffortStaged(null),
+                subLabel: claudeEffortDefaultSubLabel(platformTerminalEffort),
+                ariaLabel: claudeEffortDefaultAriaLabel(platformTerminalEffort),
+              }}
+            />
+            <p id="terminal-claude-effort-help" className="text-[11px] text-muted-foreground">
+              {claudeEffortHelp({ userValue: terminalEffortStaged, platformValue: platformTerminalEffort })}
+            </p>
           </div>
 
           <div className="space-y-1.5">

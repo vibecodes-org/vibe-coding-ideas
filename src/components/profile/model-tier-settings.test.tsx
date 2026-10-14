@@ -37,6 +37,15 @@ vi.mock("@/hooks/use-viewer-terminal-auto-accept", () => ({
   setViewerTerminalAutoAcceptCache: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-viewer-terminal-effort", () => ({
+  setViewerTerminalEffortCache: vi.fn(),
+}));
+
+const mockUsePlatformTerminalEffortDefault = vi.fn((): string | null | undefined => null);
+vi.mock("@/hooks/use-platform-terminal-effort-default", () => ({
+  usePlatformTerminalEffortDefault: () => mockUsePlatformTerminalEffortDefault(),
+}));
+
 vi.mock("@/hooks/use-viewer-terminal-remote-control", () => ({
   setViewerTerminalRemoteControlCache: vi.fn(),
 }));
@@ -234,6 +243,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalModel: null,
       terminalCodexModel: null,
       terminalCodexEffort: null,
+      terminalEffort: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     });
@@ -255,6 +265,7 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalModel: null,
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
+      terminalEffort: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     });
@@ -385,6 +396,7 @@ describe("ModelTierSettings — Remote Control switch (task 5c8969cc)", () => {
       terminalModel: null,
       terminalCodexModel: null,
       terminalCodexEffort: null,
+      terminalEffort: null,
       terminalAutoAccept: false,
       terminalRemoteControl: true,
     });
@@ -414,5 +426,87 @@ describe("ModelTierSettings — Remote Control switch (task 5c8969cc)", () => {
     fireEvent.keyDown(rc, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
     expect(screen.getByRole("switch", { name: LABEL })).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+
+describe("ModelTierSettings — Claude starting effort (task 18a37612)", () => {
+  beforeEach(() => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
+    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
+    mockUsePlatformTerminalEffortDefault.mockReturnValue(null);
+    vi.mocked(updateTerminalPreferences).mockClear();
+  });
+
+  const savedResult = {
+    agentAwareModelTierMap: null,
+    terminalModel: null,
+    terminalCodexModel: null,
+    terminalCodexEffort: null,
+    terminalAutoAccept: false,
+    terminalRemoteControl: false,
+  };
+
+  function effortGroup() {
+    return screen.getByRole("group", { name: "Claude starting effort" });
+  }
+
+  it("renders the row with Default + six-level strip, Default pressed", () => {
+    renderDialog();
+    expect(screen.getByText("Starting effort")).toBeInTheDocument();
+    const names = within(effortGroup()).getAllByRole("button").map((b) => b.textContent);
+    expect(names).toEqual(["Default" + "Claude's own", "Low", "Medium", "High", "X-High", "Max"]);
+    expect(within(effortGroup()).getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Default says its fallback: site level when set, Claude's own when not, nothing while loading", () => {
+    mockUsePlatformTerminalEffortDefault.mockReturnValue("high");
+    const { unmount } = renderDialog();
+    expect(within(effortGroup()).getByText("site: High")).toBeInTheDocument();
+    expect(screen.getByText(/Uses the site default: new and resumed Claude Code sessions start at High/)).toBeInTheDocument();
+    unmount();
+
+    mockUsePlatformTerminalEffortDefault.mockReturnValue(null);
+    const second = renderDialog();
+    expect(within(effortGroup()).getByText("Claude's own")).toBeInTheDocument();
+    expect(screen.getByText(/Claude Code decides:/)).toBeInTheDocument();
+    second.unmount();
+
+    mockUsePlatformTerminalEffortDefault.mockReturnValue(undefined);
+    renderDialog();
+    expect(within(effortGroup()).queryByText("Claude's own")).not.toBeInTheDocument();
+    expect(within(effortGroup()).queryByText(/site:/)).not.toBeInTheDocument();
+  });
+
+  it("picking X-High then Save sends terminalEffort: 'xhigh'", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult, terminalEffort: "xhigh" });
+    renderDialog();
+    fireEvent.click(within(effortGroup()).getByRole("button", { name: "X-High" }));
+    expect(screen.getByText(/start at X-High \(your setting\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalEffort: "xhigh" }))
+    );
+  });
+
+  it("picking Default after a level sends null", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult, terminalEffort: null });
+    renderDialog({ terminalEffort: "high" });
+    expect(within(effortGroup()).getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(effortGroup()).getByRole("button", { name: /^Default/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalEffort: null }))
+    );
+  });
+
+  it("Reset to defaults clears a saved effort before Save", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult, terminalEffort: null });
+    renderDialog({ terminalEffort: "max" });
+    fireEvent.click(screen.getByRole("button", { name: /Reset to defaults/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalEffort: null }))
+    );
   });
 });

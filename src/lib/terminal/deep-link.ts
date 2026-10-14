@@ -13,10 +13,13 @@
 // redactDeepLinkToken() first.
 
 import { isValidPermissionModeValue } from "./auto-accept-mode";
-import { CODEX_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
+import { CLAUDE_EFFORT_LEVELS, CODEX_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
 
-function isValidCodexEffortValue(value: string): boolean {
-  return (CODEX_EFFORT_LEVELS as readonly string[]).includes(value);
+/** Agent-aware effort whitelist: Codex keeps its own ladder (minimal...xhigh),
+ *  anything else is Claude (low...max). Mirrors terminal/shared/deep-link.mjs. */
+function isValidEffortValue(value: string, agent: string | undefined): boolean {
+  const ladder = agent === "codex" ? CODEX_EFFORT_LEVELS : CLAUDE_EFFORT_LEVELS;
+  return (ladder as readonly string[]).includes(value);
 }
 
 /** Custom URL scheme the packaged helper registers (slice 7 OS bit). */
@@ -263,9 +266,10 @@ export function buildLaunchDeepLink({
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // class doc comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
-  // FR-4: the Codex reasoning effort, alongside `model` — same insertion point.
-  // Hard whitelist (Codex's ladder, minimal…xhigh); anything else is never fired.
-  if (effort && isValidCodexEffortValue(effort)) {
+  // The reasoning effort, alongside `model` — same insertion point. Hard
+  // whitelist per agent (Codex minimal...xhigh, Claude low...max); anything
+  // else is never fired.
+  if (effort && isValidEffortValue(effort, agent)) {
     parts.push(`effort=${encodeURIComponent(effort)}`);
   }
   // Task d3de150c: same insertion point as `model` — before `prompt`,

@@ -77,6 +77,8 @@ export type Database = {
            *  `claude --remote-control`. Default false. Never Codex; no platform-wide
            *  default — see src/lib/terminal/remote-control-mode.ts. */
           terminal_remote_control: boolean;
+          /** Task 18a37612 — Claude starting effort (low|medium|high|xhigh|max); null = site default, else none. */
+          terminal_effort: string | null;
           /** Codex support (docs/codex-terminal-requirements.md FR-4a,
            *  implementation slice 1) — the last agent the user picked,
            *  remembered per account (across devices), mirroring
@@ -133,6 +135,7 @@ export type Database = {
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
           terminal_remote_control?: boolean;
+          terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;
@@ -176,6 +179,7 @@ export type Database = {
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
           terminal_remote_control?: boolean;
+          terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
           is_admin?: boolean;
           is_super_admin?: boolean;

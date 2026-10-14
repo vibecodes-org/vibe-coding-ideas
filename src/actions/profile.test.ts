@@ -29,6 +29,7 @@ import {
   updateTerminalModel,
   updateTerminalCodexModel,
   updateTerminalPreferences,
+  getTerminalEffort,
   getTerminalAutoAccept,
   getTerminalRemoteControl,
   updateTerminalAutoAccept,
@@ -462,6 +463,7 @@ describe("updateTerminalPreferences", () => {
       terminalModel: "opus",
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
+      terminalEffort: "xhigh",
       terminalAutoAccept: true,
       terminalRemoteControl: true,
     })).resolves.toMatchObject({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high", terminalRemoteControl: true });
@@ -471,6 +473,7 @@ describe("updateTerminalPreferences", () => {
       terminal_model: "opus",
       terminal_codex_model: "gpt-6-astra",
       terminal_codex_effort: "high",
+      terminal_effort: "xhigh",
       terminal_auto_accept: true,
       terminal_remote_control: true,
     });
@@ -484,6 +487,7 @@ describe("updateTerminalPreferences", () => {
       terminalModel: null,
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: null,
+      terminalEffort: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     })).rejects.toThrow(/model and reasoning effort/i);
@@ -493,7 +497,7 @@ describe("updateTerminalPreferences", () => {
   it("rejects unauthenticated callers without writing another user's row", async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
     await expect(updateTerminalPreferences({
-      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false, terminalRemoteControl: false,
+      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoAccept: false, terminalRemoteControl: false,
     })).rejects.toThrow("Not authenticated");
     expect(mockSupabase.from).not.toHaveBeenCalled();
   });
@@ -501,11 +505,59 @@ describe("updateTerminalPreferences", () => {
   it("rejects a non-boolean terminalRemoteControl ('yes', undefined, 1) before any write (task 5c8969cc)", async () => {
     for (const terminalRemoteControl of ["yes", undefined, 1]) {
       await expect(updateTerminalPreferences({
-        agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalAutoAccept: false,
+        agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoAccept: false,
         terminalRemoteControl: terminalRemoteControl as unknown as boolean,
       })).rejects.toThrow("Invalid terminal preferences");
     }
     expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateTerminalPreferences — Claude effort (task 18a37612)", () => {
+  const base = {
+    agentAwareModelTierMap: {},
+    terminalModel: null,
+    terminalCodexModel: null,
+    terminalCodexEffort: null,
+    terminalAutoAccept: false,
+    terminalRemoteControl: false,
+  };
+
+  it("rejects unknown and Codex-only efforts before any write", async () => {
+    for (const terminalEffort of ["ultracode", "minimal", "foo", "", "High"]) {
+      await expect(updateTerminalPreferences({ ...base, terminalEffort })).rejects.toThrow("Choose a valid Claude effort");
+    }
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("stores each Claude level, and null for Default", async () => {
+    for (const terminalEffort of ["low", "medium", "high", "xhigh", "max", null]) {
+      let updatedWith: Record<string, unknown> | undefined;
+      mockSupabase.from.mockImplementation(() => ({
+        update: (data: Record<string, unknown>) => ({
+          eq: () => {
+            updatedWith = data;
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }));
+      const result = await updateTerminalPreferences({ ...base, terminalEffort });
+      expect(updatedWith?.terminal_effort).toBe(terminalEffort);
+      expect(result.terminalEffort).toBe(terminalEffort);
+    }
+  });
+});
+
+describe("getTerminalEffort (task 18a37612)", () => {
+  it("returns the stored level, or null", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { terminal_effort: "max" }, error: null }) }) }),
+    }));
+    expect(await getTerminalEffort()).toBe("max");
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+    expect(await getTerminalEffort()).toBeNull();
   });
 });
 

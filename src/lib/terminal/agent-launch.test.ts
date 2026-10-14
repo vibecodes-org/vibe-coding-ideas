@@ -256,3 +256,26 @@ describe("resolveAgentLaunch — remoteControl (task 5c8969cc)", () => {
     }
   });
 });
+
+// ── Task 18a37612: Claude starting effort ───────────────────────────────────
+describe("resolveAgentLaunch — Claude effort", () => {
+  it("adds --effort on fresh, --resume and --continue launches, in the bridge's order", () => {
+    expect(resolveAgentLaunch({ effort: "high", mintId: () => MINTED }).cmd).toBe(`claude --session-id ${MINTED} --effort high`);
+    expect(
+      resolveAgentLaunch({ remoteControl: true, model: "opus", effort: "xhigh", permissionMode: "auto", worktree: true, mintId: () => MINTED }).cmd,
+    ).toBe(`claude --remote-control --session-id ${MINTED} --model opus --effort xhigh --permission-mode auto --worktree ${MINTED}`);
+    expect(resolveAgentLaunch({ resumeId: RESUME_ID, effort: "max", mintId: () => MINTED }).cmd).toBe(`claude --resume ${RESUME_ID} --effort max`);
+    expect(resolveAgentLaunch({ resume: true, effort: "low", mintId: () => MINTED }).cmd).toBe("claude --continue --effort low");
+  });
+
+  it("drops absent or invalid values, leaving today's command", () => {
+    for (const effort of [undefined, null, "", "ultracode", "minimal", "High", "high; rm -rf /"]) {
+      expect(resolveAgentLaunch({ effort, mintId: () => MINTED }).cmd).toBe(`claude --session-id ${MINTED}`);
+    }
+  });
+
+  it("never reaches Codex or an explicit --cmd", () => {
+    expect(resolveAgentLaunch({ agent: "codex", effort: "high", mintId: () => MINTED }).cmd).toBe("codex");
+    expect(resolveAgentLaunch({ explicitCmd: "bash", effort: "high", mintId: () => MINTED }).cmd).toBe("bash");
+  });
+});

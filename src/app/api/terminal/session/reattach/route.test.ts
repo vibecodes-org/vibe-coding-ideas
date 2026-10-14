@@ -6,7 +6,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { NOW_ISO, SID, mockFrom, mockGetUser } = vi.hoisted(() => ({
+const { NOW_ISO, SID, mockFrom, mockGetUser, mockGetPlatformEffort } = vi.hoisted(() => ({
+  mockGetPlatformEffort: vi.fn(),
   NOW_ISO: "2026-08-19T12:00:00.000Z",
   SID: "sid-1",
   mockFrom: vi.fn(),
@@ -22,6 +23,10 @@ function makeChain(result: { data?: unknown; error?: unknown }) {
     Promise.resolve(result).then(resolve, reject);
   return chain;
 }
+
+vi.mock("@/lib/terminal/platform-terminal-effort", () => ({
+  getPlatformTerminalEffortDefault: (...args: unknown[]) => mockGetPlatformEffort(...args),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -63,6 +68,8 @@ beforeEach(() => {
   vi.stubEnv("TERMINAL_SESSION_SECRET", "test-secret");
   vi.setSystemTime(new Date(NOW_ISO));
   mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
+  mockGetPlatformEffort.mockReset();
+  mockGetPlatformEffort.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -210,5 +217,64 @@ describe("POST /api/terminal/session/reattach — remote control (task 5c8969cc)
     const res = await POST(req({ sid: SID }));
     expect(res.status).toBe(200);
     expect(await res.json()).not.toHaveProperty("remoteControl");
+  });
+
+  // Task 18a37612: the resume-shaped relaunch carries the resolved Claude effort.
+  describe("starting effort", () => {
+    function setup(opts: { agent?: string; user?: unknown; usersError?: boolean }) {
+      const row = {
+        sid: SID,
+        idea_id: "idea-1",
+        status: "active",
+        expires_at: new Date(Date.parse(NOW_ISO) + 60_000).toISOString(),
+        cwd: "/repo",
+        claude_session_id: null,
+        display_name: null,
+        e2ee_session_key: null,
+        agent: opts.agent ?? "claude",
+      };
+      mockFrom.mockImplementation((table: string) =>
+        table === "users"
+          ? makeChain(
+              opts.usersError
+                ? { data: null, error: { message: "boom" } }
+                : { data: { terminal_remote_control: false, terminal_effort: opts.user ?? null }, error: null },
+            )
+          : makeChain({ data: row, error: null }),
+      );
+    }
+
+    it("user level wins over the site level", async () => {
+      setup({ user: "xhigh" });
+      mockGetPlatformEffort.mockResolvedValue("high");
+      expect((await (await POST(req({ sid: SID }))).json()).effort).toBe("xhigh");
+    });
+
+    it("only the site level set -> the site level", async () => {
+      setup({});
+      mockGetPlatformEffort.mockResolvedValue("high");
+      expect((await (await POST(req({ sid: SID }))).json()).effort).toBe("high");
+    });
+
+    it("nothing set -> omitted", async () => {
+      setup({});
+      expect(await (await POST(req({ sid: SID }))).json()).not.toHaveProperty("effort");
+    });
+
+    it("a users read error still lets the site level through", async () => {
+      setup({ usersError: true });
+      mockGetPlatformEffort.mockResolvedValue("low");
+      const res = await POST(req({ sid: SID }));
+      expect(res.status).toBe(200);
+      expect((await res.json()).effort).toBe("low");
+    });
+
+    it("a Codex row never reads or carries it", async () => {
+      setup({ agent: "codex", user: "max" });
+      mockGetPlatformEffort.mockResolvedValue("high");
+      const body = await (await POST(req({ sid: SID }))).json();
+      expect(body).not.toHaveProperty("effort");
+      expect(mockGetPlatformEffort).not.toHaveBeenCalled();
+    });
   });
 });

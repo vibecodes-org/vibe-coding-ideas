@@ -27,9 +27,14 @@ import {
   getPlatformTerminalCodexModelDefaultForAdmin,
   updatePlatformTerminalCodexModelDefault,
   type PlatformTerminalCodexModelAudit,
+  getPlatformTerminalEffortDefaultForAdmin,
+  updatePlatformTerminalEffortDefault,
+  type PlatformTerminalEffortAudit,
 } from "@/actions/admin-platform";
 import { setPlatformAgentAwareModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
 import { setPlatformTerminalModelDefaultCache } from "@/hooks/use-platform-terminal-model-default";
+import { setPlatformTerminalEffortDefaultCache } from "@/hooks/use-platform-terminal-effort-default";
+import { EFFORT_LABELS, isClaudeEffort } from "@/lib/terminal/claude-effort";
 import { setPlatformTerminalCodexModelDefaultCache } from "@/hooks/use-platform-terminal-codex-model-default";
 import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
@@ -828,6 +833,157 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
           onClick={handleSave}
           disabled={saveDisabled}
           aria-describedby={!isDirty ? "platform-terminal-model-save-why" : undefined}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Admin "Claude terminal starting effort" card (task 18a37612) — the site-wide
+ * default for `claude --effort`, a sibling of the starting-model card above
+ * with its OWN platform_settings key (terminal_effort_default) and
+ * Save/audit/error boundary. No seed: Clear returns it to unset, at which
+ * point nothing is sent (Claude Code decides). A user's own setting in
+ * Settings -> Model Tiers wins over it.
+ */
+export function AdminTerminalEffortCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+  const [reloadToken, setReloadToken] = useState(0);
+  const [audit, setAudit] = useState<PlatformTerminalEffortAudit | null>(null);
+  // null = no site default (nothing pressed in the strip).
+  const [persisted, setPersisted] = useState<string | null>(null);
+  const [staged, setStaged] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    setLoadState("loading");
+    getPlatformTerminalEffortDefaultForAdmin()
+      .then((result) => {
+        if (cancelled) return;
+        setAudit(result);
+        setPersisted(result.value);
+        setStaged(result.value);
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperAdmin, reloadToken]);
+
+  if (!isSuperAdmin) return <PlatformAccessDenied />;
+
+  if (loadState === "loading") {
+    return (
+      <div className="space-y-4 rounded-lg border p-6">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-4 w-full max-w-md" />
+        <div className="max-w-[420px] space-y-1.5">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+        <p className="text-sm text-red-400">Failed to load the terminal starting effort.</p>
+        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const isDirty = staged !== persisted;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await updatePlatformTerminalEffortDefault(staged);
+      const fresh = await getPlatformTerminalEffortDefaultForAdmin();
+      setAudit(fresh);
+      setPersisted(fresh.value);
+      setStaged(fresh.value);
+      setPlatformTerminalEffortDefaultCache(fresh.value);
+      toast.success(
+        saved && isClaudeEffort(saved)
+          ? `Terminal starting effort saved · sessions now start at ${EFFORT_LABELS[saved]} unless a user picks their own`
+          : "Terminal starting effort cleared · Claude Code decides unless a user picks their own"
+      );
+    } catch (err) {
+      // Staged value is retained on error so the super-admin can retry.
+      toast.error(err instanceof Error ? err.message : "Failed to save the terminal starting effort — try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6 rounded-lg border p-6">
+      <div>
+        <h3 className="font-semibold">Claude terminal starting effort</h3>
+        <p className="text-sm text-muted-foreground">
+          How hard Claude thinks when an in-browser terminal session starts or resumes, platform-wide. Takes effect
+          on the <b>next</b> session launched, with no deploy, and running sessions untouched. Users can choose
+          their own in Settings → Model Tiers, and theirs wins.
+        </p>
+      </div>
+
+      <div className="max-w-[420px] space-y-1.5">
+        <span id="platform-terminal-effort-label" className="block text-xs font-medium">
+          Starting effort
+        </span>
+        <EffortSegmentedControl
+          agent="claude"
+          value={isClaudeEffort(staged) ? staged : undefined}
+          disabled={saving}
+          onChange={(effort) => setStaged(effort)}
+          groupLabel="Claude starting effort, site default"
+        />
+      </div>
+
+      {audit && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {audit.value === null ? (
+            <span>No site default: Claude Code decides (today&apos;s behaviour).</span>
+          ) : (
+            <span>
+              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
+              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        {!isDirty && (
+          <span id="platform-terminal-effort-save-why" className="mr-auto text-xs text-muted-foreground">
+            Save enables when you change a value.
+          </span>
+        )}
+        <Button type="button" variant="destructive" size="sm" onClick={() => setStaged(null)} disabled={saving || staged === null}>
+          Clear
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setStaged(persisted)} disabled={saving || !isDirty}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          aria-describedby={!isDirty ? "platform-terminal-effort-save-why" : undefined}
         >
           {saving ? "Saving…" : "Save"}
         </Button>
