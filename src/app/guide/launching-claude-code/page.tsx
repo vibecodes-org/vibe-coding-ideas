@@ -35,12 +35,16 @@ export default function LaunchingClaudeCodePage() {
             one-click way to start Claude Code already wired to a board. The
             primary button — labelled{" "}
             <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
-            in the board toolbar — fires a{" "}
+            in the board toolbar — starts Claude Code already connected to the
+            VibeCodes MCP server, offering you the next task on the board. On a
+            Mac with the in-app terminal enabled it opens the{" "}
+            <strong className="text-foreground">browser terminal</strong> docked
+            on the board; anywhere else it opens a Terminal window on your
+            computer through a{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claude-cli://
             </code>{" "}
-            deep link that opens Claude Code, connects the VibeCodes MCP server,
-            and offers you the next task on the board.
+            deep link.
           </p>
           <p className="text-muted-foreground">
             Instead of copying commands and explaining context by hand, one
@@ -62,7 +66,7 @@ export default function LaunchingClaudeCodePage() {
               <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
               plus a chevron that opens the{" "}
               <strong className="text-foreground">&quot;Launch options&quot;</strong>{" "}
-              dropdown
+              dropdown. Hover the button to see where it will open
             </li>
             <li>
               <strong className="text-foreground">Task card menu</strong> —{" "}
@@ -70,8 +74,12 @@ export default function LaunchingClaudeCodePage() {
             </li>
             <li>
               <strong className="text-foreground">Task detail header</strong> — a
-              terminal icon labelled{" "}
-              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>
+              terminal icon. On a Mac with the in-app terminal enabled it is labelled{" "}
+              <strong className="text-foreground">&quot;Launch in browser terminal&quot;</strong>{" "}
+              and opens the browser terminal for that task (the task window
+              closes so the terminal is visible); otherwise it is labelled{" "}
+              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>{" "}
+              and opens a Terminal window
             </li>
             <li>
               <strong className="text-foreground">MCP connection banner</strong>
@@ -88,12 +96,21 @@ export default function LaunchingClaudeCodePage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">The Launch Options Dropdown</h2>
           <p className="mb-4 text-muted-foreground">
-            The chevron next to the launch button opens a menu of options:
+            The chevron next to the launch button opens a menu of options. When
+            the in-app terminal is enabled, each agent (Claude Code, Codex) has
+            two items,{" "}
+            <strong className="text-foreground">&quot;In the browser&quot;</strong>{" "}
+            and{" "}
+            <strong className="text-foreground">&quot;In a terminal window&quot;</strong>
+            , with the one the main button uses listed first (the browser on a
+            Mac, the terminal window elsewhere):
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
+              <strong className="text-foreground">&quot;In a terminal window&quot;</strong>{" "}
+              — opens a Terminal window on your computer (shown as the single{" "}
               <strong className="text-foreground">&quot;Open in Claude Code&quot;</strong>{" "}
-              — the standard launch
+              item when the in-app terminal is off)
             </li>
             <li>
               <strong className="text-foreground">&quot;This machine&quot;</strong>{" "}
@@ -128,11 +145,13 @@ export default function LaunchingClaudeCodePage() {
             Running It In The Browser — Multiple Sessions at Once
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Picking{" "}
+            On a Mac with the in-app terminal enabled, the main{" "}
+            <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
+            button does this by default; you can also pick{" "}
             <strong className="text-foreground">
               &quot;In the browser&quot;
             </strong>{" "}
-            (Beta) from the Launch options dropdown opens a live terminal
+            (Beta) from the Launch options dropdown. It opens a live terminal
             docked to the bottom of the board, mirroring Claude Code running
             on your own machine through the VibeCodes helper — your code
             never leaves your computer.
@@ -398,11 +417,12 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Desktop Only</h2>
           <div className="mb-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              The{" "}
+              The browser terminal needs a Mac, and the Terminal-window launch
+              (the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 claude-cli://
               </code>{" "}
-              scheme only works on{" "}
+              scheme) only works on{" "}
               <strong className="text-foreground">desktop</strong> where Claude
               Code is installed. On mobile the option is disabled and shows{" "}
               <strong className="text-foreground">

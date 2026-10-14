@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   type BrowserLaunchPayload,
+  defaultLaunchTarget,
   launchModeOptions,
   isBrowserLaunchAvailable,
   requestBrowserLaunch,
@@ -20,6 +21,29 @@ describe("launchModeOptions", () => {
     // action is never moved or removed by enabling the flag.
     expect(opts[0]).toBe("terminal-window");
     expect(isBrowserLaunchAvailable(true)).toBe(true);
+  });
+});
+
+describe("defaultLaunchTarget", () => {
+  it.each([
+    [true, true, "browser"],
+    [true, false, "terminal-window"],
+    [false, true, "terminal-window"],
+    [false, false, "terminal-window"],
+  ] as const)("flag %s, supported Mac %s → %s", (terminalEnabled, platformSupported, expected) => {
+    expect(defaultLaunchTarget({ terminalEnabled, platformSupported })).toBe(expected);
+  });
+});
+
+describe("launchModeOptions ordering by platform", () => {
+  it("flag ON on a supported Mac → browser first", () => {
+    expect(launchModeOptions(true, true)).toEqual(["browser", "terminal-window"]);
+  });
+  it("flag ON, unsupported machine → terminal-window first", () => {
+    expect(launchModeOptions(true, false)).toEqual(["terminal-window", "browser"]);
+  });
+  it("flag OFF → terminal-window only, whatever the platform", () => {
+    expect(launchModeOptions(false, true)).toEqual(["terminal-window"]);
   });
 });
 
