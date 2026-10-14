@@ -19,13 +19,16 @@ Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui (New Y
 
 ### Board Task Workflow — BEFORE ANY IMPLEMENTATION
 1. **Check the VibeCodes board** for a matching task (`get_my_tasks` or `get_board`)
-2. **If task exists:** Reassign to yourself, move to "In Progress", read all comments (`get_task`), add a comment
+2. **If task exists:** move it to "In Progress", read all comments (`get_task`) and add a comment. Assign it to yourself only if it has no workflow: on a workflow task, claiming a step records who does each step.
 3. **If no task exists:** Proceed normally, consider creating one
 4. **When finished:** Move to "Verify" with summary comment
 5. **Post research/analysis as task comments** — preserve context for future sessions
 6. **NEVER use raw SQL** for board ops — always use VibeCodes MCP tools
 
 Applies even when resuming from context compaction or implementing a provided plan.
+
+### This repo is public
+It's on GitHub as vibecodes-org/vibe-coding-ideas. Never commit private board names, other accounts' data, agent prompts or a client's wording; refer to boards by id. Before a commit or push that mentions boards, list the owner's private boards live (read-only query) and check the diff names none of them.
 
 ### Push to Live = Move YOUR Task to Verify
 After pushing, move only the specific task you worked on to "Verify" (or "Done"). NEVER batch-move other tasks in the Verify column — those belong to other contributors.
@@ -39,6 +42,9 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `src/types/database.ts` is **manually maintained** — each table MUST have `Row`, `Insert`, `Update`, AND `Relationships`
 - Without `Relationships`, Supabase JS v2.95+ resolves insert/update/delete to `never`
 - Use `.maybeSingle()` instead of `.single()` when row might not exist
+- Reads stop at 1,000 rows without any error: page with `.range()` when a table can be bigger.
+- `.update()` and `.delete()` return no rows and no count unless you chain `.select()`; don't let a test mock pretend otherwise.
+- Large `.in(ids)` queries silently come back empty at scale: scope by the parent id (for example `idea_id`) instead.
 
 ### Next.js 16
 - `params`, `searchParams`, `cookies()` are all `Promise` types — must `await`
@@ -63,6 +69,8 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - AI API routes use `maxDuration = 300` for Vercel function timeout
 
 **Model update cadence**: to change the model, set `ANTHROPIC_MODEL` (or bump the default `AI_MODEL` in `src/lib/ai-helpers.ts`, which also drives `WORKFLOW_MATCHING_MODEL`). Before flipping, verify the resolved key(s) accept the new id via a real prod call that produces an `ai_usage_log` row — on the platform key AND a BYOK key (we were burned by a Haiku swap the account key rejected).
+
+When the agents' model changes, re-check the skills listed in `docs/skills/README.md` and the gotchas in this file: run one past step of each kind without them on the new model, and remove any line it no longer needs.
 
 ### In-App Terminal (largest active workstream — most current board cards)
 
@@ -184,11 +192,12 @@ Migrations live in `supabase/migrations/`, numbered `NNNNN_name.sql` — `ls` it
 
 Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separates destructive ops from general admin access.
 
-### ⚠️ A table that exists in the DB but is MISSING from `database.ts`
+**Production database:** Supabase project `irqbqxspxxzvuczhujzg`. Agents may run read-only queries through the Supabase MCP `execute_sql`; keep each request under about 5,000 characters (larger ones are rejected).
 
-`database.ts` is hand-maintained. `bot_profile_prompt_backups` (the persona-rewrite safety copies, written only by migrations) is created by migration 00148 but has no typed entry, so a query against it from app code resolves to `never` — add the full `Row`/`Insert`/`Update`/`Relationships` block before using it. (Some table blocks in `database.ts` are indented one level less than the rest; search for `<table>: {` without assuming the indentation.)
+**Prove a migration on the real schema.** Postgres checks the table and column names inside a function body only when it runs, so a migration can apply cleanly and then fail on every call (00188 read a column `workflow_runs` doesn't have, 12 Oct 2026). Stand-in tables made by hand prove nothing about names: check every table and column the migration uses against the live `information_schema` (read-only), and say in your output that the real-schema run is still owed. The release session runs it as a DO block ending in `RAISE EXCEPTION`, so nothing persists, before applying.
 
-(`board_checklist_items` also appears in migrations but was later dropped — it is correctly absent, don't re-add it.)
+### `database.ts` notes
+Some table blocks in `database.ts` are indented one level less than the rest; search for `<table>: {` without assuming the indentation. (`board_checklist_items` also appears in migrations but was later dropped — it is correctly absent, don't re-add it.)
 
 ## MCP Server
 
@@ -303,6 +312,7 @@ fix more than an hour waiting for a batch-mate — when in doubt, ship it.
 - E2E auth uses API-based login (service-role client) to bypass Turnstile CAPTCHA — not browser login
 - CI matrix: Chrome + Mobile Chrome only (Firefox dropped)
 - E2E specs live in per-area subfolders (`e2e/board/`, `e2e/auth/`, `e2e/ideas/`, …) — not flat in `e2e/`
+- The guide pages (`src/app/guide/`) describe features in detail, counts and lists included. When a change alters any of that, search every guide page for the old wording and numbers.
 - Run the full `npm run test` before pushing — the whole unit suite takes ~10s
 
 ## .vibecodes/ Config
