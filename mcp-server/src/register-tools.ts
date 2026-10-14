@@ -211,6 +211,7 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
+import { syncBoardAgents, syncBoardAgentsSchema } from "./tools/agent-sync";
 import {
   getIdeaEnhancementPrompt,
   getIdeaEnhancementPromptSchema,
@@ -1509,6 +1510,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await recordProjectPath(ctx, recordProjectPathSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "sync_board_agents",
+    "Save this board's agents as real Claude Code subagents (.claude/agents/vc-*.md, untracked) in the current project folder, for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, and at most once per claim. Returns a shell command that downloads the definitions (a 5-minute link) and installs them; run it from the project folder, then spawn the subagent. If it fails, carry on with claim_next_step's general-purpose steps. Remote connector only.",
+    syncBoardAgentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await syncBoardAgents(ctx, syncBoardAgentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

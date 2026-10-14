@@ -88,6 +88,7 @@ const EXPECTED_TOOL_NAMES = [
   "apply_auto_rule_retroactively",
   "import_agent_skill",
   "record_project_path",
+  "sync_board_agents",
   "get_agent_skill_content",
 ];
 
@@ -96,13 +97,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 85 tools", () => {
+  it("registers exactly 86 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(85);
+    expect(server.tool).toHaveBeenCalledTimes(86);
   });
 
   it("registers all expected tool names", () => {
