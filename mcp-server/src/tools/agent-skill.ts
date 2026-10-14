@@ -18,6 +18,8 @@ export const importAgentSkillSchema = z.object({
     .describe("If provided, allocate the created agent to this idea"),
 });
 
+const FULL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // --- Handlers ---
 
 export async function importAgentSkill(
@@ -47,12 +49,21 @@ export async function importAgentSkill(
 
   // Check for existing agent with same source_id (round-trip detection)
   if (parsed.metadata.source === "vibecodes" && parsed.metadata.source_id) {
-    const { data: existing } = await ctx.supabase
+    // A partial id used to match nothing and quietly create a duplicate agent.
+    if (!FULL_UUID.test(parsed.metadata.source_id)) {
+      throw new Error(
+        `source_id "${parsed.metadata.source_id}" is not a complete agent id (expected the full 36-character uuid, e.g. 8-4-4-4-12 hex digits). ` +
+          `Nothing was created or changed. Give the full id, or remove source and source_id to create a new agent.`
+      );
+    }
+    const { data: existing, error: lookupErr } = await ctx.supabase
       .from("bot_profiles")
       .select("id, name")
       .eq("id", parsed.metadata.source_id)
       .eq("owner_id", ownerId)
       .maybeSingle();
+
+    if (lookupErr) throw new Error(lookupErr.message);
 
     if (existing) {
       // Update existing agent

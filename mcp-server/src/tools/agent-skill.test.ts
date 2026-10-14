@@ -159,6 +159,85 @@ describe("importAgentSkill", () => {
 });
 
 // ---------------------------------------------------------------------------
+// import_agent_skill — source_id guard (stage 4)
+// ---------------------------------------------------------------------------
+
+describe("importAgentSkill — source_id guard", () => {
+  const NEW_BOT_ID = "00000000-0000-4000-a000-000000000099";
+
+  function mdWithSourceId(sourceId: string) {
+    return importAgentSkillSchema.parse({
+      skill_md_content: [
+        "---",
+        "name: horizon",
+        "description: Agent",
+        "metadata:",
+        "  source: vibecodes",
+        `  source_id: ${sourceId}`,
+        "---",
+        "",
+        "Prompt.",
+      ].join("\n"),
+    });
+  }
+
+  it("refuses a partial id and creates nothing", async () => {
+    const fromMock = vi.fn(() => createChain(null));
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: { from: fromMock, rpc: rpcMock } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    await expect(importAgentSkill(ctx, mdWithSourceId("d799aba2"))).rejects.toThrow(
+      /source_id.*complete/i
+    );
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("throws the lookup error instead of creating a copy", async () => {
+    const lookup = createChain(null);
+    lookup.maybeSingle = vi.fn(() =>
+      Promise.resolve({ data: null, error: { message: "lookup failed" } })
+    );
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => lookup),
+        rpc: rpcMock,
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    await expect(importAgentSkill(ctx, mdWithSourceId(BOT_ID))).rejects.toThrow("lookup failed");
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("still creates a copy for a complete id nobody here owns", async () => {
+    const lookup = createChain(null);
+    const extras = createChain(null);
+    const fetchChain = createChain({ id: NEW_BOT_ID });
+    let n = 0;
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => (++n === 1 ? lookup : n === 2 ? extras : fetchChain)),
+        rpc: rpcMock,
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    const result = await importAgentSkill(
+      ctx,
+      mdWithSourceId("11111111-2222-4333-8444-555555555555")
+    );
+    expect(result.action).toBe("created");
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // import_agent_skill — tool access (task 472d5672)
 // ---------------------------------------------------------------------------
 
