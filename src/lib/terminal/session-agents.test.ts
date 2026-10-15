@@ -222,11 +222,14 @@ describe("sessionAgentClaimHint", () => {
       expect(instruction).toContain("when you wake");
     });
 
-    it("syncs each agent at most once per session and never again after a failure or NEW_FOLDER", () => {
-      const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain(
-        "Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER.",
-      );
+    it("trusts a READY sync for the whole run, allows one retry, and never syncs again after a failure", () => {
+      const { instruction, tag, name } = sessionAgentClaimHint(full);
+      expect(instruction).toContain(`a sync this session already ended READY and printed ${tag} for "${name}", it is loaded`);
+      expect(instruction).toContain("even if the listing shows an older tag");
+      expect(instruction).toContain("run the same sync once more (at most 2 syncs per step)");
+      expect(instruction).toContain("One sync saves the whole run's agents and waits until Claude Code has loaded them");
+      expect(instruction).toContain("After NEW_FOLDER, MISMATCH, NOT_LOADED or a failed command, never sync again this session.");
+      expect(instruction).not.toContain("at most once per session");
     });
 
     it("re-syncs a stale copy that carries the sync marker and skips one that doesn't", () => {

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { buildSkillsSection } from "@/lib/skills-section";
 import { sessionAgentClaimHint } from "@/lib/terminal/session-agents";
-import { isBoardMember, loadStepSessionAgent } from "./board-session-agents";
+import { isBoardMember, loadRunSessionAgents, loadStepSessionAgent } from "./board-session-agents";
 
 vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -20,20 +20,25 @@ const ATLAS = {
   tool_access: "full" as const,
 };
 
-const tables: Record<string, { data: unknown; error?: unknown }> = {};
+const tables: Record<string, { data: unknown; list?: unknown; error?: unknown }> = {};
 const filters: { table: string; col: string; val: unknown }[] = [];
 
 function makeSupabase() {
   const from = (table: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {};
-    for (const m of ["select", "in", "not", "order", "limit", "range", "maybeSingle"]) chain[m] = vi.fn(() => chain);
+    let single = false;
+    for (const m of ["select", "in", "not", "neq", "order", "limit", "range"]) chain[m] = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(() => {
+      single = true;
+      return chain;
+    });
     chain.eq = vi.fn((col: string, val: unknown) => {
       filters.push({ table, col, val });
       return chain;
     });
     chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve({ error: null, ...(tables[table] ?? { data: null }) }).then(resolve, reject);
+      Promise.resolve({ error: null, ...(tables[table] ?? { data: null }), ...(!single && tables[table]?.list !== undefined ? { data: tables[table].list } : {}) }).then(resolve, reject);
     return chain;
   };
   return { from } as unknown as SupabaseClient<Database>;
@@ -92,6 +97,75 @@ describe("loadStepSessionAgent", () => {
     tables.task_workflow_steps = { data: { bot_id: ATLAS.id, model_tier: "frontier" } };
     tables.bot_profiles = { data: [{ ...ATLAS, system_prompt: "  " }] };
     expect(await loadStepSessionAgent(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER })).toBeNull();
+  });
+});
+
+describe("loadRunSessionAgents", () => {
+  const LENS = { ...ATLAS, id: "87e09eb1-0c3e-4f96-9ddc-986fc10a58fd", name: "Lens", role: "Code Reviewer", tool_access: "read_only" as const };
+  const NOPERSONA = { ...ATLAS, id: "11111111-1111-4111-8111-111111111111", name: "Blank", system_prompt: " " };
+  const RUN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const names = (r: Awaited<ReturnType<typeof loadRunSessionAgents>>) => r!.agents.map((a) => a.name);
+
+  beforeEach(() => {
+    tables.task_workflow_steps = {
+      data: { bot_id: ATLAS.id, model_tier: "frontier", run_id: RUN },
+      list: [
+        { id: "s2", bot_id: LENS.id, model_tier: "standard", step_order: 2 },
+        { id: "s3", bot_id: ATLAS.id, model_tier: "frontier", step_order: 3 },
+        { id: "s4", bot_id: NOPERSONA.id, model_tier: null, step_order: 4 },
+        { id: "s5", bot_id: ATLAS.id, model_tier: "standard", step_order: 5 },
+      ],
+    };
+    tables.bot_profiles = { data: [ATLAS, LENS, NOPERSONA] };
+  });
+
+  it("returns the claimed step's agent first, then the run's later steps, deduped by name", async () => {
+    const got = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(names(got)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-lens-87e09eb1-standard", "vc-atlas-37e8ffb2-standard"]);
+    expect(got!.omitted).toBe(0);
+  });
+
+  it("builds each agent exactly as loadStepSessionAgent builds it for that step", async () => {
+    const run = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    const single = await loadStepSessionAgent(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(run!.agents[0]).toEqual(single);
+  });
+
+  it("scopes the run read by idea and run, and leaves out finished steps by status", async () => {
+    await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(filters).toContainEqual({ table: "task_workflow_steps", col: "run_id", val: RUN });
+    expect(filters.filter((f) => f.table === "task_workflow_steps" && f.col === "idea_id")).toHaveLength(2);
+  });
+
+  it("stops adding agents at the byte budget but always keeps the claimed one", async () => {
+    const all = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    const first = Buffer.byteLength(JSON.stringify(all!.agents[0].def.prompt));
+    const tight = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER, maxTotalBytes: first });
+    expect(names(tight)).toEqual(["vc-atlas-37e8ffb2-frontier"]);
+    expect(tight!.omitted).toBe(2);
+    const none = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER, maxTotalBytes: 0 });
+    expect(names(none)).toEqual(["vc-atlas-37e8ffb2-frontier"]);
+  });
+
+  it("still returns the claimed agent when the run read fails", async () => {
+    tables.task_workflow_steps = { ...tables.task_workflow_steps, list: null, error: { message: "boom" } };
+    const got = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(names(got)).toEqual(["vc-atlas-37e8ffb2-frontier"]);
+  });
+
+  it("works for a step with no run", async () => {
+    tables.task_workflow_steps = { data: { bot_id: ATLAS.id, model_tier: "frontier", run_id: null } };
+    const got = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(names(got)).toEqual(["vc-atlas-37e8ffb2-frontier"]);
+  });
+
+  it("is null when the claimed step isn't on this idea, has no bot, or its bot has no persona", async () => {
+    tables.task_workflow_steps = { data: null };
+    expect(await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER })).toBeNull();
+    tables.task_workflow_steps = { data: { bot_id: null, model_tier: null, run_id: RUN } };
+    expect(await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER })).toBeNull();
+    tables.task_workflow_steps = { data: { bot_id: NOPERSONA.id, model_tier: null, run_id: RUN }, list: [] };
+    expect(await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER })).toBeNull();
   });
 });
 
