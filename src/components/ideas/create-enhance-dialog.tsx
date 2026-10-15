@@ -70,7 +70,7 @@ export function CreateEnhanceDialog({
         return "error" in result ? result : result.questions;
       }}
       enhanceStreamUrl="/api/ai/enhance-create"
-      buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback }) => ({
+      buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback, continueFrom }) => ({
         title,
         description,
         kitType,
@@ -79,6 +79,7 @@ export function CreateEnhanceDialog({
         answers,
         previousEnhanced,
         refinementFeedback,
+        continueFrom,
       })}
       applyResult={async (enhanced) => {
         onApply(enhanced);

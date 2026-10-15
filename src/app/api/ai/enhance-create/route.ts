@@ -8,6 +8,7 @@ import {
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 import { buildKitContext, buildNewIdeaSystemPrompt } from "@/lib/enhance-prompts";
+import { buildContinuationInstruction } from "@/lib/enhance-stream";
 
 export const maxDuration = 300;
 
@@ -29,13 +30,14 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { title, description, kitType, prompt, personaPrompt, answers } = body as {
+    const { title, description, kitType, prompt, personaPrompt, answers, continueFrom } = body as {
       title: string;
       description: string;
       kitType?: string;
       prompt: string;
       personaPrompt?: string | null;
       answers?: Record<string, { question: string; answer: string }>;
+      continueFrom?: string;
     };
 
     if (!title || !prompt) {
@@ -66,6 +68,11 @@ ${qaSection}
 Use the answers above to inform your enhanced description. Make the enhancement specific and tailored based on what you learned.`;
     } else {
       userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${title}\n\n**Current Description:**\n${description || title}`;
+    }
+
+    // Continue a cut-off result: ask for ONLY the remaining part.
+    if (continueFrom) {
+      userPrompt += buildContinuationInstruction(continueFrom);
     }
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" if the

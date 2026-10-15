@@ -404,3 +404,47 @@ test("redactDeepLinkToken elides helperToken and prompt on an open-terminal link
   assert.ok(!redacted.includes("secret task details"));
   assert.ok(redacted.includes(`cwd=${encodeURIComponent(OPEN_TERMINAL_SAMPLE.cwd)}`), "cwd survives — not a secret");
 });
+
+// ── Remote Control (task 5c8969cc) ──────────────────────────────────────────
+
+test("build ⇄ parse round-trips remoteControl, positioned before prompt (and after worktree)", () => {
+  const withRc = { ...SAMPLE, worktree: true, remoteControl: true, prompt: "hello" };
+  const url = buildLaunchDeepLink(withRc);
+  assert.ok(url.includes("&remoteControl=1"));
+  assert.ok(url.indexOf("worktree=") < url.indexOf("remoteControl="), "remoteControl follows worktree");
+  assert.ok(url.indexOf("remoteControl=") < url.indexOf("prompt="), "remoteControl precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withRc);
+});
+
+test("remoteControl may ride a resume link too", () => {
+  const withRc = { ...SAMPLE, resumeId: "99999999-8888-7777-6666-555555555555", remoteControl: true };
+  assert.deepEqual(parseLaunchDeepLink(buildLaunchDeepLink(withRc)), withRc);
+});
+
+test("omits remoteControl when false/absent; link byte-identical", () => {
+  const base = buildLaunchDeepLink({ ...SAMPLE, prompt: "hi" });
+  assert.ok(!base.includes("remoteControl"));
+  for (const remoteControl of [false, undefined, "1", 1]) {
+    assert.equal(buildLaunchDeepLink({ ...SAMPLE, prompt: "hi", remoteControl }), base);
+  }
+  assert.ok(!("remoteControl" in parseLaunchDeepLink(base)));
+});
+
+test("never emits remoteControl with agent=codex", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", remoteControl: true });
+  assert.ok(url.includes("agent=codex"));
+  assert.ok(!url.includes("remoteControl"));
+});
+
+test("a wire value other than '1' ('true','0','yes','') is dropped", () => {
+  for (const v of ["true", "0", "yes", ""]) {
+    const parsed = parseLaunchDeepLink(`${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&remoteControl=${v}`);
+    assert.ok(parsed !== null);
+    assert.ok(!("remoteControl" in parsed), v);
+  }
+});
+
+test("redactDeepLinkToken leaves remoteControl untouched", () => {
+  const redacted = redactDeepLinkToken(buildLaunchDeepLink({ ...SAMPLE, remoteControl: true }));
+  assert.ok(redacted.includes("remoteControl=1"));
+});

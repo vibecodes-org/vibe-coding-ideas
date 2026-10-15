@@ -73,6 +73,12 @@ export type Database = {
            *  and has no platform-wide default (per-user only, safety
            *  setting) — see src/lib/terminal/auto-accept-mode.ts. */
           terminal_auto_accept: boolean;
+          /** Task 5c8969cc — opt-in: in-app terminal Claude Code sessions launch with
+           *  `claude --remote-control`. Default false. Never Codex; no platform-wide
+           *  default — see src/lib/terminal/remote-control-mode.ts. */
+          terminal_remote_control: boolean;
+          /** Task 18a37612 — Claude starting effort (low|medium|high|xhigh|max); null = site default, else none. */
+          terminal_effort: string | null;
           /** Codex support (docs/codex-terminal-requirements.md FR-4a,
            *  implementation slice 1) — the last agent the user picked,
            *  remembered per account (across devices), mirroring
@@ -81,6 +87,11 @@ export type Database = {
            *  picker's default and "Start with Claude Code instead" flips it
            *  back to `'claude'`. See migration 00170. */
           terminal_agent: "claude" | "codex";
+          /** When the one-time "your launch button now starts X" Undo toast
+           *  was shown for this account (docs/launch-button-remembered-
+           *  agent-option-a-spec.html §3). NULL = never shown. See
+           *  migration 00193. */
+          terminal_agent_toast_seen_at: string | null;
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -128,7 +139,10 @@ export type Database = {
           terminal_codex_model?: string | null;
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_remote_control?: boolean;
+          terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
+          terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -170,7 +184,10 @@ export type Database = {
           terminal_codex_model?: string | null;
           terminal_codex_effort?: string | null;
           terminal_auto_accept?: boolean;
+          terminal_remote_control?: boolean;
+          terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
+          terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -939,7 +956,7 @@ export type Database = {
           model_tier: string | null;
           executed_model: string | null;
           /** Migration 00171 (Codex model-tier task, FR-8). Self-reported
-           *  reasoning-effort level ('low' | 'medium' | 'high' | 'unknown')
+           *  reasoning-effort level ('minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'unknown')
            *  the step actually ran with, paired with executed_model. */
           reasoning_effort_used: string | null;
           tier_honored: boolean | null;
@@ -1861,11 +1878,11 @@ export type Database = {
           avatar_url: string | null;
           is_active: boolean;
           bio: string | null;
-          skills: string[];
           is_published: boolean;
           community_upvotes: number;
           times_cloned: number;
           cloned_from: string | null;
+          tool_access: "full" | "read_only";
           created_at: string;
           updated_at: string;
         };
@@ -1878,11 +1895,11 @@ export type Database = {
           avatar_url?: string | null;
           is_active?: boolean;
           bio?: string | null;
-          skills?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;
           cloned_from?: string | null;
+          tool_access?: "full" | "read_only";
           created_at?: string;
           updated_at?: string;
         };
@@ -1895,11 +1912,11 @@ export type Database = {
           avatar_url?: string | null;
           is_active?: boolean;
           bio?: string | null;
-          skills?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;
           cloned_from?: string | null;
+          tool_access?: "full" | "read_only";
           created_at?: string;
           updated_at?: string;
         };
@@ -1921,6 +1938,44 @@ export type Database = {
           {
             foreignKeyName: "bot_profiles_cloned_from_fkey";
             columns: ["cloned_from"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      bot_profile_prompt_backups: {
+        Row: {
+          id: string;
+          bot_id: string;
+          name: string | null;
+          role: string | null;
+          system_prompt: string | null;
+          reason: string;
+          backed_up_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          name?: string | null;
+          role?: string | null;
+          system_prompt?: string | null;
+          reason: string;
+          backed_up_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          name?: string | null;
+          role?: string | null;
+          system_prompt?: string | null;
+          reason?: string;
+          backed_up_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bot_profile_prompt_backups_bot_id_fkey";
+            columns: ["bot_id"];
             isOneToOne: false;
             referencedRelation: "bot_profiles";
             referencedColumns: ["id"];
@@ -2980,6 +3035,10 @@ export type Database = {
       admin_delete_user: {
         Args: { target_user_id: string };
         Returns: undefined;
+      };
+      replace_unstarted_workflow_run: {
+        Args: { p_run_id: string; p_steps: Json };
+        Returns: boolean;
       };
       initialize_board_columns: {
         Args: { p_idea_id: string; p_columns: Json };

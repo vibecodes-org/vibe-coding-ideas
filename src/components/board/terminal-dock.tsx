@@ -86,8 +86,16 @@ import {
 } from "@/lib/terminal/model-resolution";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import { useViewerTerminalModel } from "@/hooks/use-viewer-terminal-model";
+import { usePlatformTerminalEffortDefault } from "@/hooks/use-platform-terminal-effort-default";
+import { useViewerTerminalEffort } from "@/hooks/use-viewer-terminal-effort";
+import { resolveTerminalClaudeEffort } from "@/lib/terminal/claude-effort";
 import { useViewerTerminalAutoAccept } from "@/hooks/use-viewer-terminal-auto-accept";
 import { terminalLaunchAutoAcceptChip } from "@/lib/terminal/auto-accept-mode";
+import { useViewerTerminalRemoteControl } from "@/hooks/use-viewer-terminal-remote-control";
+import {
+  terminalLaunchRemoteControlChip,
+  terminalLaunchRemoteControlReminder,
+} from "@/lib/terminal/remote-control-mode";
 import { useViewerTerminalAgent, persistViewerTerminalAgent } from "@/hooks/use-viewer-terminal-agent";
 import type { LaunchAgent } from "@/lib/terminal/agent-launch";
 import { CODEX_SETTINGS_LINE, agentDedupeToast } from "@/lib/terminal/agent-copy";
@@ -305,7 +313,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // a beat.
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const viewerTerminalModel = useViewerTerminalModel();
+  // Task 18a37612: the resolved Claude starting effort (user's, else the
+  // site's) for the launch-surface lines. undefined while either is loading.
+  const platformTerminalEffort = usePlatformTerminalEffortDefault();
+  const viewerTerminalEffort = useViewerTerminalEffort();
   const viewerAutoAccept = useViewerTerminalAutoAccept();
+  // Task 5c8969cc — the "📱 remote control on" launch label's source.
+  const viewerRemoteControl = useViewerTerminalRemoteControl();
   // Codex support (docs/codex-terminal-requirements.md FR-4a/US-8,
   // implementation slice 2) — the per-account remembered agent pick, seeded
   // into the picker's local state the first time it resolves (see the effect
@@ -2086,6 +2100,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
          *  Codex label across a reload/reconnect (bug: read as Claude Code after
          *  a hard refresh — Nick, 7 Sep 2026). */
         agent?: LaunchAgent;
+        /** Task 5c8969cc — the user's current Remote Control preference
+         *  (omitted when off or for Codex), carried into the relaunch. */
+        remoteControl?: boolean;
+        /** Task 18a37612 — the resolved Claude starting effort (user's level,
+         *  else the site default); omitted when none or for Codex. */
+        effort?: string;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -2111,6 +2131,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // session key so ANY of this owner's tabs/devices reattaching to a
         // live session can decrypt it, not just the one that minted it.
         sessionKey: data.sessionKey,
+        remoteControl: data.remoteControl === true,
+        effort: data.effort,
       };
 
       const currentSessions = sessionsRef.current;
@@ -2615,12 +2637,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   if (!enabled) return null;
 
+  const resolvedClaudeEffort = resolveTerminalClaudeEffort({
+    userValue: viewerTerminalEffort,
+    platformValue: platformTerminalEffort,
+  }).effort;
+  const effortLoading = platformTerminalEffort === undefined || viewerTerminalEffort === undefined;
   const terminalModelLine =
-    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined || effortLoading
       ? null
       : terminalLaunchModelLine(
           resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
-          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolvedClaudeEffort
         );
   // Task d3de150c — the chooser footer's auto-accept chip, appended beside
   // the model chip (design §2.1). null while loading or when the toggle is
@@ -2633,6 +2661,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // keeping the block's height stable (never hide, only replace).
   const chooserModelLine = chooserAgent === "codex" ? CODEX_SETTINGS_LINE : terminalModelLine;
   const chooserAutoAcceptChip = chooserAgent === "codex" ? null : terminalAutoAcceptChip;
+  // Task 5c8969cc — the violet label straight after the auto chip; hidden for
+  // Codex, null while loading or off. Its reminder only shows when resumes
+  // don't carry Remote Control.
+  const terminalRemoteControlChip =
+    viewerRemoteControl === undefined ? null : terminalLaunchRemoteControlChip(viewerRemoteControl);
+  const chooserRemoteControlChip = chooserAgent === "codex" ? null : terminalRemoteControlChip;
+  const chooserRemoteControlReminder = chooserRemoteControlChip ? terminalLaunchRemoteControlReminder("chooser") : null;
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
@@ -2693,11 +2728,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // variant (chooser footer's own `terminalModelLine` is computed earlier,
   // before the `!enabled` early return, alongside the hook calls it needs).
   const terminalTaskDialogModelLine =
-    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined || effortLoading
       ? null
       : terminalDialogModelLine(
           resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
-          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolvedClaudeEffort
         );
   // Task d3de150c — same chip, terser dedupe-dialog slot (design §2.2).
   const terminalTaskDialogAutoAcceptChip =
@@ -2706,6 +2742,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // scoped to "Start fresh anyway" (Reconnect/Resume never read either line).
   const taskDialogModelLine = taskDialogAgent === "codex" ? CODEX_SETTINGS_LINE : terminalTaskDialogModelLine;
   const taskDialogAutoAcceptChip = taskDialogAgent === "codex" ? null : terminalTaskDialogAutoAcceptChip;
+  // Task 5c8969cc — same label and reminder for "Start fresh anyway".
+  const taskDialogRemoteControlChip = taskDialogAgent === "codex" ? null : terminalRemoteControlChip;
+  const taskDialogRemoteControlReminder = taskDialogRemoteControlChip
+    ? terminalLaunchRemoteControlReminder("dialog")
+    : null;
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
   // status is usually mid-preemption at this exact moment and would
@@ -2949,6 +2990,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onStartNew={handleChooserStartNew}
             modelLine={chooserModelLine}
             autoAcceptChip={chooserAutoAcceptChip}
+            remoteControlChip={chooserRemoteControlChip}
+            remoteControlReminder={chooserRemoteControlReminder}
             agent={chooserAgent}
             onAgentChange={handleAgentPickerChange}
             sharesFolderWarning={otherLiveHere.length > 0}
@@ -3637,6 +3680,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onStartNew={handleChooserStartNew}
             modelLine={chooserModelLine}
             autoAcceptChip={chooserAutoAcceptChip}
+            remoteControlChip={chooserRemoteControlChip}
+            remoteControlReminder={chooserRemoteControlReminder}
             agent={chooserAgent}
             onAgentChange={handleAgentPickerChange}
             sharesFolderWarning={otherLiveHere.length > 0}
@@ -3670,6 +3715,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onCancel={handleTaskChoiceCancel}
           modelLine={taskDialogModelLine}
           autoAcceptChip={taskDialogAutoAcceptChip}
+          remoteControlChip={taskDialogRemoteControlChip}
+          remoteControlReminder={taskDialogRemoteControlReminder}
           agent={taskDialogAgent}
           onAgentChange={setTaskDialogAgent}
         />

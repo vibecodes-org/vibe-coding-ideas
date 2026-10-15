@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { validateBio, validateSkills } from "@/lib/validation";
-import { getDefaultSkillsForRole } from "@/lib/agent-skills";
+import { validateBio } from "@/lib/validation";
+import { normalizeToolAccess, toolAccessFromFrontmatter, type ToolAccess } from "@/lib/agent-tool-access";
+import { fetchSkillNamesByBot } from "@/lib/fetch-skill-names";
+import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
 import { fetchSkillsFromGitHub, withCurated } from "@/lib/skills-directory";
@@ -16,7 +18,7 @@ export async function createBot(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[]
+  toolAccess?: ToolAccess
 ): Promise<string> {
   const supabase = await createClient();
   const {
@@ -29,9 +31,7 @@ export async function createBot(
   if (name.length > 100) throw new Error("Agent name must be 100 characters or less");
 
   const validatedBio = validateBio(bio ?? null);
-  // Use provided skills, or fall back to role-based defaults
-  const rawSkills = skills && skills.length > 0 ? skills : getDefaultSkillsForRole(role);
-  const validatedSkills = validateSkills(rawSkills);
+  const validatedToolAccess = normalizeToolAccess(toolAccess);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -45,11 +45,11 @@ export async function createBot(
 
   const botId = data as string;
 
-  // Set bio/skills via follow-up UPDATE (RPC doesn't know about new columns)
-  if (validatedBio || validatedSkills.length > 0) {
+  // Set bio/tool access via follow-up UPDATE (RPC doesn't know about new columns)
+  if (validatedBio || validatedToolAccess !== "full") {
     const extras: Record<string, unknown> = {};
     if (validatedBio) extras.bio = validatedBio;
-    if (validatedSkills.length > 0) extras.skills = validatedSkills;
+    if (validatedToolAccess !== "full") extras.tool_access = validatedToolAccess;
 
     await supabase
       .from("bot_profiles")
@@ -72,8 +72,8 @@ export async function updateBot(
     avatar_url?: string | null;
     is_active?: boolean;
     bio?: string | null;
-    skills?: string[];
     is_published?: boolean;
+    tool_access?: ToolAccess;
   }
 ) {
   const supabase = await createClient();
@@ -99,8 +99,8 @@ export async function updateBot(
     profileUpdates.avatar_url = updates.avatar_url?.trim() || null;
   if (updates.is_active !== undefined) profileUpdates.is_active = updates.is_active;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
-  if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
   if (updates.is_published !== undefined) profileUpdates.is_published = updates.is_published;
+  if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase
@@ -223,13 +223,17 @@ export async function cloneBotProfile(
 
   if (createError) throw new Error(createError.message);
 
+  // Filed skills come with the copy (and a failure discards it), before the
+  // source's times_cloned counter moves.
+  await copyAgentSkills(supabase, source.id, newBotId as string, ownerId);
+
   // Set extended fields + provenance, and atomically increment source counter
   const [updateResult, rpcResult] = await Promise.all([
     supabase
       .from("bot_profiles")
       .update({
         bio: source.bio,
-        skills: source.skills,
+        tool_access: source.tool_access,
         cloned_from: source.id,
       })
       .eq("id", newBotId)
@@ -269,7 +273,12 @@ export async function cloneAgent(botId: string): Promise<string> {
 
 export async function addFeaturedTeam(
   teamId: string
-): Promise<{ created: string[]; skipped: string[]; createdBotIds: string[] }> {
+): Promise<{
+  created: string[];
+  skipped: string[];
+  createdBotIds: string[];
+  failed: { role: string; reason: string }[];
+}> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -301,6 +310,7 @@ export async function addFeaturedTeam(
   const created: string[] = [];
   const skipped: string[] = [];
   const createdBotIds: string[] = [];
+  const failed: { role: string; reason: string }[] = [];
 
   for (const entry of typedTeam.agents) {
     const bot = entry.bot;
@@ -315,13 +325,15 @@ export async function addFeaturedTeam(
       const newBotId = await cloneBotProfile(supabase, bot as unknown as BotProfile, user.id);
       created.push(role || bot.name);
       if (newBotId) createdBotIds.push(newBotId);
-    } catch {
-      // Skip individual clone failures
+    } catch (err) {
+      // One failed copy (including a failed skills copy, which discards the
+      // half-made agent) doesn't stop the rest of the team; it's reported.
+      failed.push({ role: role || bot.name, reason: err instanceof Error ? err.message : String(err) });
     }
   }
 
   revalidatePath("/agents");
-  return { created, skipped, createdBotIds };
+  return { created, skipped, createdBotIds, failed };
 }
 
 export type AgentProfileData = {
@@ -346,6 +358,8 @@ export type AgentProfileData = {
     taskTitle: string;
   }>;
   clonedFromBot: { id: string; name: string } | null;
+  /** Names of the agent's real skills, oldest first. */
+  skillNames: string[];
 };
 
 export async function getAgentProfile(
@@ -382,6 +396,7 @@ export async function getAgentProfile(
     { data: ideaAgentData },
     { data: recentActivity },
     clonedFromBot,
+    skillNamesByBot,
   ] = await Promise.all([
     // Check if current user has voted
     supabase
@@ -425,6 +440,7 @@ export async function getAgentProfile(
           .maybeSingle()
           .then(({ data }) => data)
       : Promise.resolve(null),
+    fetchSkillNamesByBot(supabase, [botId]),
   ]);
 
   const tasks = (activeTasks ?? []) as Array<{
@@ -467,6 +483,7 @@ export async function getAgentProfile(
       taskTitle: (a.board_tasks as { title: string }).title,
     })),
     clonedFromBot,
+    skillNames: skillNamesByBot[botId] ?? [],
   };
 }
 
@@ -485,6 +502,11 @@ export async function importAgentFromSkill(
   if (!user) throw new Error("Not authenticated");
 
   const role = parsed.metadata.role ?? inferRole(parsed) ?? null;
+  const toolAccess = toolAccessFromFrontmatter({
+    tools: parsed.tools,
+    disallowedTools: parsed.disallowedTools,
+    metadataToolAccess: parsed.metadata.tool_access,
+  });
   const displayName = parsed.name
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -497,7 +519,14 @@ export async function importAgentFromSkill(
     };
     if (role) updates.role = role;
     if (parsed.metadata.bio) updates.bio = validateBio(parsed.metadata.bio);
-    if (parsed.metadata.tags) updates.skills = validateSkills(parsed.metadata.tags);
+    // A file that says nothing about tools leaves the agent's setting alone.
+    if (
+      parsed.metadata.tool_access !== undefined ||
+      parsed.tools !== undefined ||
+      parsed.disallowedTools !== undefined
+    ) {
+      updates.tool_access = toolAccess;
+    }
 
     const { error: updateErr } = await supabase
       .from("bot_profiles")
@@ -519,7 +548,7 @@ export async function importAgentFromSkill(
     parsed.body || null,
     null,
     parsed.metadata.bio ?? null,
-    parsed.metadata.tags ?? undefined
+    toolAccess
   );
 
   return botId;

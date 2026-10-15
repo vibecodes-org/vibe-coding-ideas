@@ -115,3 +115,50 @@ export function buildRoleMatcher(
     return { botId: null, tier: "none" };
   };
 }
+
+/** True when two roles are equal the way exact matching sees them (trimmed, case-insensitive). */
+export function sameRole(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normalize(a ?? "") === normalize(b ?? "");
+}
+
+export interface StepRematchInput {
+  step: { agent_role: string | null; bot_id: string | null; match_tier: string | null };
+  /** Best match for the step's role from the current agent pool. */
+  newBotId: string | null;
+  newTier: string;
+  /** Current role of the agent assigned to the step; undefined when unknown (e.g. no longer in the pool). */
+  assignedAgentRole: string | undefined;
+}
+
+export type StepRematchDecision =
+  | { action: "keep" }
+  | { action: "assign"; botId: string; tier: string }
+  | { action: "clear" };
+
+/**
+ * Decide what a rematch does to one pending step.
+ * - Hand-picked ("manual") agents are never touched.
+ * - A stored "exact" tier only counts while the assigned agent's role still equals
+ *   the step's role. Otherwise it is stale: treated as no match (rank 0), replaced
+ *   by the new match, or cleared when nothing matches (a wrong agent is worse than none).
+ */
+export function decideStepRematch(input: StepRematchInput): StepRematchDecision {
+  const { step, newBotId, newTier, assignedAgentRole } = input;
+  if (step.match_tier === "manual") return { action: "keep" };
+
+  const stale =
+    step.match_tier === "exact" &&
+    step.bot_id !== null &&
+    assignedAgentRole !== undefined &&
+    !sameRole(assignedAgentRole, step.agent_role);
+
+  const hasAgent = step.bot_id !== null && !stale;
+  const currentRank = hasAgent ? tierRank(step.match_tier) : 0;
+
+  if (newBotId) {
+    return !hasAgent || tierRank(newTier) > currentRank
+      ? { action: "assign", botId: newBotId, tier: newTier }
+      : { action: "keep" };
+  }
+  return stale ? { action: "clear" } : { action: "keep" };
+}

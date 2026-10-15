@@ -12,8 +12,9 @@
 //     bridge leg only, immediately after a successful accept
 //   - the Node stand-in relay   (test/standin-relay.mjs) — same
 //   - the bridge                (bridge/src/index.js)    — WAITS on it before
-//     spawning a prompt-carrying PTY (promptless launches spawn immediately,
-//     exactly as before — version-skew safe with an old relay)
+//     spawning a prompt-carrying PTY (promptless launches don't wait for it —
+//     they spawn before the relay is dialled, a resume once the agents fetch
+//     is done — version-skew safe with an old relay)
 //
 // Wire form: a TEXT frame `{"t":"attached"}`. TEXT frames are already the
 // control channel (see bridge/src/framing.js); the browser dock ignores TEXT

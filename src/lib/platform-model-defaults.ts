@@ -136,21 +136,35 @@ export async function getPlatformModelDefaults(
 export type AgentKind = "claude" | "codex";
 
 /**
- * Shared reasoning-effort ladder for BOTH agents (Nick's approval-gate note
- * 2: effort is a separate stored field for both, not just Codex). Codex's
- * real `-c model_reasoning_effort=` values observed locally (`codex doctor` /
- * `~/.codex/config.toml` on this machine) include at least "high" — OpenAI's
- * documented ladder for the underlying reasoning API is
- * minimal/low/medium/high. This module ships the 3-level low/medium/high
- * subset as a PLACEHOLDER pending Nick's confirmation of the exact ladder
- * (and whether "minimal" should be included) for both agents; widening this
- * array is not a breaking change to any stored value.
+ * Reasoning-effort ladders — one per agent (Nick, 8 Oct 2026: "I need to be
+ * able to set ALL effort levels", replacing the earlier low/medium/high
+ * placeholder). Each agent's list is exactly what its own CLI accepts:
+ * Claude Code's effort slider is low/medium/high/xhigh/max; Codex's
+ * `-c model_reasoning_effort=` is minimal/low/medium/high/xhigh (no "max").
+ * Effort is a separate stored field for both agents (Nick's approval-gate
+ * note 2). Widening a list is never a breaking change to a stored value.
  */
-export const REASONING_EFFORT_LEVELS = ["low", "medium", "high"] as const;
+export const CLAUDE_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export const CODEX_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+
+/** Every level either agent accepts, lowest to highest — the shape of stored
+ *  and self-reported values. Use {@link isEffortForAgent} wherever the agent
+ *  is known, so Claude is never given "minimal" nor Codex "max". */
+export const REASONING_EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORT_LEVELS)[number];
+
+export const EFFORT_LEVELS_BY_AGENT: Record<AgentKind, readonly ReasoningEffort[]> = {
+  claude: CLAUDE_EFFORT_LEVELS,
+  codex: CODEX_EFFORT_LEVELS,
+};
 
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === "string" && (REASONING_EFFORT_LEVELS as readonly string[]).includes(value);
+}
+
+/** True when `value` is an effort level this agent's CLI accepts. */
+export function isEffortForAgent(agent: AgentKind, value: unknown): value is ReasoningEffort {
+  return typeof value === "string" && (EFFORT_LEVELS_BY_AGENT[agent] as readonly string[]).includes(value);
 }
 
 /** One agent's resolved model + effort for a tier. Both fields are required
@@ -208,9 +222,9 @@ export const SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS: AgentAwarePlatformModelDe
   },
 };
 
-function isValidAgentTierEntry(value: unknown): value is AgentTierEntry {
+function isValidAgentTierEntry(agent: AgentKind, value: unknown): value is AgentTierEntry {
   if (!isPlainObject(value)) return false;
-  return typeof value.model === "string" && value.model.trim().length > 0 && isReasoningEffort(value.effort);
+  return typeof value.model === "string" && value.model.trim().length > 0 && isEffortForAgent(agent, value.effort);
 }
 
 /** Structural validation of the full agent-aware shape (both agents, all 3 tiers, effort required). */
@@ -222,7 +236,7 @@ export function isValidAgentAwarePlatformModelDefaults(value: unknown): value is
   for (const tier of ["frontier", "standard", "cheap"] as const) {
     const entry = defaults[tier];
     if (!isPlainObject(entry)) return false;
-    if (!isValidAgentTierEntry(entry.claude) || !isValidAgentTierEntry(entry.codex)) return false;
+    if (!isValidAgentTierEntry("claude", entry.claude) || !isValidAgentTierEntry("codex", entry.codex)) return false;
   }
 
   const { claude: claudeFallback, codex: codexFallback } = fallback;
@@ -340,7 +354,7 @@ export function normalizeUserModelTierMap(raw: unknown): AgentAwareUserModelTier
       const agentValue = tierValue[agent];
       if (!isPlainObject(agentValue)) continue;
       const model = typeof agentValue.model === "string" && agentValue.model.trim().length > 0 ? agentValue.model : undefined;
-      const effort = isReasoningEffort(agentValue.effort) ? agentValue.effort : undefined;
+      const effort = isEffortForAgent(agent, agentValue.effort) ? agentValue.effort : undefined;
       if (model !== undefined || effort !== undefined) {
         entry[agent] = { ...(model !== undefined ? { model } : {}), ...(effort !== undefined ? { effort } : {}) };
       }
@@ -349,4 +363,62 @@ export function normalizeUserModelTierMap(raw: unknown): AgentAwareUserModelTier
   }
 
   return result;
+}
+
+export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffort; fallback: string };
+
+/**
+ * Resolves a step's tier + agent to a concrete model + its fallback + its
+ * required reasoning effort: the caller's model_tier_map override for this
+ * tier/agent if set and valid, else the platform default (from
+ * `platformDefaults`, defaulting to the agent-aware seed); fallback is
+ * `platformDefaults.fallback[agent][resolved]`, falling back to the seed
+ * fallback chain, and finally to the resolved model itself if neither knows
+ * it (never a broken/undefined directive). Returns null for an unrecognised
+ * tier (defensive — the enum already constrains stored values).
+ *
+ * `userModelTierMap` is the RAW `users.model_tier_map` value (either the
+ * legacy flat shape or the new agent-aware shape) — normalized internally
+ * via `normalizeUserModelTierMap`, so callers never need to know which shape
+ * a given row is in.
+ *
+ * Claude override validity is checked against the SEED fallback chain's keys
+ * (the fixed 4-alias set the per-user Models dialog offers) — this is
+ * deliberately independent of `platformDefaults`, so a super-admin adding a
+ * novel platform-default family never silently changes what counts as a
+ * "valid" user override (per-user override precedence is preserved exactly).
+ * Codex overrides are free text (FR-1: no fixed catalogue) — any non-empty
+ * string the user configured is honored as-is; the catalogue in
+ * src/lib/codex-models.ts drives UI advisories only, never acceptance.
+ */
+export function resolveModelTier(
+  tier: "frontier" | "standard" | "cheap",
+  agent: AgentKind = "claude",
+  userModelTierMap?: unknown,
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+): ModelTierAgentResolution | null {
+  const tierDefaults = platformDefaults.defaults[tier] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults[tier];
+  if (!tierDefaults) return null;
+  const platformAgentDefault = tierDefaults[agent];
+  if (!platformAgentDefault) return null;
+
+  const overrideEntry = normalizeUserModelTierMap(userModelTierMap)[tier]?.[agent];
+
+  let resolvedModel = platformAgentDefault.model;
+  if (overrideEntry?.model) {
+    const validOverride =
+      agent === "claude"
+        ? overrideEntry.model in SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback.claude
+        : true;
+    if (validOverride) resolvedModel = overrideEntry.model;
+  }
+  const resolvedEffort = overrideEntry?.effort ?? platformAgentDefault.effort;
+
+  const fallbackMap = platformDefaults.fallback[agent] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent];
+  const fallback =
+    fallbackMap[resolvedModel] ??
+    SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent][resolvedModel] ??
+    resolvedModel;
+
+  return { resolved: resolvedModel, effort: resolvedEffort, fallback };
 }

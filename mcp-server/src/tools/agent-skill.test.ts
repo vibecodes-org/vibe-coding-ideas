@@ -72,7 +72,6 @@ describe("importAgentSkill", () => {
       system_prompt: "## Goal\nTest everything.",
       is_active: true,
       bio: "Break it before users do",
-      skills: ["E2E Testing", "Cross-browser"],
     };
 
     // Chain for the duplicate check (no match)
@@ -112,6 +111,8 @@ describe("importAgentSkill", () => {
       p_system_prompt: "## Goal\nTest everything.",
       p_avatar_url: null,
     });
+    // A tags line in the file is ignored: agents no longer carry tags.
+    expect(updateChain.update).toHaveBeenCalledWith({ bio: "Break it before users do" });
   });
 
   it("updates existing agent on round-trip import", async () => {
@@ -155,6 +156,148 @@ describe("importAgentSkill", () => {
 
     expect(result.action).toBe("updated");
     expect(result.bot_id).toBe(BOT_ID);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// import_agent_skill — source_id guard (stage 4)
+// ---------------------------------------------------------------------------
+
+describe("importAgentSkill — source_id guard", () => {
+  const NEW_BOT_ID = "00000000-0000-4000-a000-000000000099";
+
+  function mdWithSourceId(sourceId: string) {
+    return importAgentSkillSchema.parse({
+      skill_md_content: [
+        "---",
+        "name: horizon",
+        "description: Agent",
+        "metadata:",
+        "  source: vibecodes",
+        `  source_id: ${sourceId}`,
+        "---",
+        "",
+        "Prompt.",
+      ].join("\n"),
+    });
+  }
+
+  it("refuses a partial id and creates nothing", async () => {
+    const fromMock = vi.fn(() => createChain(null));
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: { from: fromMock, rpc: rpcMock } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    await expect(importAgentSkill(ctx, mdWithSourceId("d799aba2"))).rejects.toThrow(
+      /source_id.*complete/i
+    );
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("throws the lookup error instead of creating a copy", async () => {
+    const lookup = createChain(null);
+    lookup.maybeSingle = vi.fn(() =>
+      Promise.resolve({ data: null, error: { message: "lookup failed" } })
+    );
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => lookup),
+        rpc: rpcMock,
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    await expect(importAgentSkill(ctx, mdWithSourceId(BOT_ID))).rejects.toThrow("lookup failed");
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("still creates a copy for a complete id nobody here owns", async () => {
+    const lookup = createChain(null);
+    const extras = createChain(null);
+    const fetchChain = createChain({ id: NEW_BOT_ID });
+    let n = 0;
+    const rpcMock = vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null }));
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => (++n === 1 ? lookup : n === 2 ? extras : fetchChain)),
+        rpc: rpcMock,
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    const result = await importAgentSkill(
+      ctx,
+      mdWithSourceId("11111111-2222-4333-8444-555555555555")
+    );
+    expect(result.action).toBe("created");
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// import_agent_skill — tool access (task 472d5672)
+// ---------------------------------------------------------------------------
+
+describe("importAgentSkill — tool access", () => {
+  const NEW_BOT_ID = "00000000-0000-4000-a000-000000000099";
+
+  /** Runs a create-from-file import and returns the extras written after creation. */
+  async function createFrom(frontmatter: string[]) {
+    const md = ["---", "name: lens", "description: Code Reviewer agent", ...frontmatter, "---", "", "Review it."].join("\n");
+    const updateChain = createChain(null);
+    const fetchChain = createChain({ id: NEW_BOT_ID });
+    let n = 0;
+    const ctx: McpContext = {
+      supabase: {
+        from: vi.fn(() => (++n === 1 ? updateChain : fetchChain)),
+        rpc: vi.fn(() => Promise.resolve({ data: NEW_BOT_ID, error: null })),
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+    await importAgentSkill(ctx, importAgentSkillSchema.parse({ skill_md_content: md }));
+    return (updateChain.update as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+  }
+
+  it("reads a deny list that names Edit or Write as read_only", async () => {
+    const writes = await createFrom(["disallowedTools: Edit, Write"]);
+    expect(writes).toEqual([{ tool_access: "read_only" }]);
+  });
+
+  it("reads a tools list with no file-writing tool as read_only", async () => {
+    const writes = await createFrom(["tools: Read, Grep, Bash"]);
+    expect(writes).toEqual([{ tool_access: "read_only" }]);
+  });
+
+  it("lets metadata.tool_access win over the tools lists", async () => {
+    const writes = await createFrom(["disallowedTools: Edit", "metadata:", "  tool_access: full"]);
+    expect(writes).toEqual([]);
+  });
+
+  it("writes nothing for a file that says nothing about tools", async () => {
+    expect(await createFrom([])).toEqual([]);
+  });
+
+  it("updates an existing agent's tool access only when the file states one", async () => {
+    const roundTrip = (extra: string[]) =>
+      ["---", "name: lens", "description: d", "metadata:", "  source: vibecodes", `  source_id: ${BOT_ID}`, ...extra, "---", "", "Review it."].join("\n");
+
+    async function update(md: string) {
+      const updateChain = createChain(null);
+      let n = 0;
+      const ctx: McpContext = {
+        supabase: { from: vi.fn(() => (++n === 1 ? createChain({ id: BOT_ID, name: "Lens" }) : updateChain)) } as unknown as McpContext["supabase"],
+        userId: USER_ID,
+      };
+      await importAgentSkill(ctx, importAgentSkillSchema.parse({ skill_md_content: md }));
+      return (updateChain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    }
+
+    expect(await update(roundTrip(["  tool_access: read_only"]))).toMatchObject({ tool_access: "read_only" });
+    expect(await update(roundTrip([]))).not.toHaveProperty("tool_access");
   });
 });
 

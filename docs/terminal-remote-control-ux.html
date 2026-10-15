@@ -1,0 +1,634 @@
+<!doctype html>
+<!--
+  UX Design: "Start with Remote Control on" (in-app terminal)
+  Task 5c8969cc, workflow step 2 (UX Design). Builds on the Requirements step
+  output (M2, M3, S1, S2, C1). Visual source of truth for Technical Design,
+  Implementation and QA.
+
+  Grounded in the real code (10 Oct 2026):
+    - src/components/profile/model-tier-settings.tsx  (Terminal sessions group, #terminal-auto-accept)
+    - src/lib/terminal/auto-accept-mode.ts             (help text, "⚡ auto mode on" chip)
+    - src/components/board/terminal-session-chooser.tsx (start block: model line + chip + reminder)
+    - src/components/board/terminal-task-launch-choice.tsx (per-task dialog)
+    - src/lib/terminal/agent-copy.ts / model-resolution.ts (Codex line, model line wording)
+    - src/components/ui/switch.tsx, dialog.tsx, button.tsx, label.tsx; src/app/globals.css (.dark tokens)
+
+  Width: use the toolbar toggle, or open with ?w=375 / ?w=1280 for screenshots.
+  Every mocked surface lives in a container-query "device" box, so the 375 view
+  shows the real mobile layout (dialog footer stacks, header centres) even on a
+  wide monitor.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Remote Control Setting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
+<style>
+  /* ---------- Doc chrome (outside the mocked UI) ---------- */
+  :root {
+    --page: #09090b; --doc-fg: #e4e4e7; --doc-muted: #a1a1aa; --doc-border: #27272a;
+    --new: #a78bfa; --cond: #fbbf24;
+    /* App tokens, dark theme (globals.css .dark), resolved to hex */
+    --card: #18181b;            /* oklch(0.21 0.006 285.885)  bg-card / popover */
+    --fg: #fafafa;              /* foreground */
+    --muted-fg: #a1a1aa;        /* muted-foreground oklch(0.705 …) */
+    --border-60: rgba(255,255,255,.06); /* border/60 (border = white 10%) */
+    --input: rgba(255,255,255,.15);
+    --input-30: rgba(255,255,255,.045);
+    --input-80: rgba(255,255,255,.12);
+    --primary: #e4e4e7;         /* oklch(0.92 0.004 286.32) */
+    --primary-fg: #18181b;
+    --ring-50: rgba(113,113,122,.5);
+    --ring: #71717a;
+    --accent-50: rgba(39,39,42,.5);
+    /* zinc / accent scale used by the terminal surfaces */
+    --z100:#f4f4f5; --z200:#e4e4e7; --z300:#d4d4d8; --z400:#a1a1aa; --z500:#71717a; --z600:#52525b; --z700:#3f3f46; --z800:#27272a;
+    --term-bg: #141417; --term-bg-2: #0c0c0e; --term-bg-3: #111114;
+    --emerald-500:#10b981; --emerald-400:#34d399; --emerald-950:#022c22;
+    --sky-500:#0ea5e9; --sky-400:#38bdf8; --sky-300:#7dd3fc; --sky-950:#082f49;
+    --amber-400:#fbbf24; --amber-500:#f59e0b;
+    --violet-400:#a78bfa; --violet-600:#7c3aed;
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--page); color: var(--doc-fg); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1312px; margin: 0 auto; padding: 0 16px 96px; }
+  .doc-head { padding: 28px 0 18px; border-bottom: 1px solid var(--doc-border); }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--new); font-weight: 600; }
+  h1 { font-size: 26px; line-height: 1.25; margin: 6px 0 8px; letter-spacing: -.01em; color: #fff; }
+  h2 { font-size: 20px; margin: 48px 0 6px; color: #fff; letter-spacing: -.01em; }
+  h3 { font-size: 15px; margin: 22px 0 8px; color: #fff; }
+  p, li { color: var(--doc-fg); }
+  .lede { color: var(--doc-muted); max-width: 820px; }
+  .note { color: var(--doc-muted); font-size: 13.5px; max-width: 900px; }
+  code { font-family: var(--mono); font-size: .85em; background: #1f1f23; border: 1px solid #2a2a2f; padding: 1px 5px; border-radius: 5px; color: #e4e4e7; }
+
+  /* Toolbar: width toggle + legend */
+  .toolbar { position: sticky; top: 0; z-index: 20; background: rgba(9,9,11,.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--doc-border); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid #3f3f46; border-radius: 8px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 13px; font-weight: 600; color: #a1a1aa; background: #111114; border: 0; padding: 7px 14px; min-height: 36px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid #3f3f46; }
+  .seg button[aria-pressed="true"] { color: #fff; background: rgba(167,139,250,.16); box-shadow: inset 0 -2px 0 var(--new); }
+  .seg button:focus-visible { outline: 2px solid var(--new); outline-offset: -2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--doc-muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .sw-new { width: 22px; height: 14px; border: 2px dashed var(--new); border-radius: 4px; }
+  .sw-cond { width: 22px; height: 14px; border: 2px dotted var(--cond); border-radius: 4px; }
+  .sw-old { width: 22px; height: 14px; border: 1px solid #3f3f46; border-radius: 4px; }
+
+  /* Markers on the mock */
+  .is-new { position: relative; outline: 2px dashed var(--new); outline-offset: 4px; border-radius: 4px; }
+  .is-cond { position: relative; outline: 2px dotted var(--cond); outline-offset: 3px; border-radius: 3px; }
+  .tag { position: absolute; top: -12px; right: -6px; font: 700 9.5px/1 var(--sans); letter-spacing: .06em; padding: 3px 5px; border-radius: 4px; text-transform: uppercase; pointer-events: none; z-index: 2; }
+  .tag.new { background: var(--new); color: #1e1240; }
+  .tag.cond { background: var(--cond); color: #2a1a00; }
+  .inline-tag { position: static; display: inline-block; margin-left: 6px; vertical-align: 1px; }
+
+  /* State caption above each frame */
+  .state-grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); align-items: start; }
+  .state-grid.single { grid-template-columns: minmax(0, 1fr); }
+  .state-grid.narrow { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+  body.w-375 .state-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 375px), 375px)); }
+  .state { min-width: 0; }
+  .cap { font-size: 12.5px; color: var(--doc-muted); margin: 0 0 8px; }
+  .cap b { color: #fff; font-weight: 600; }
+  .cap .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; margin-right: 6px; background: #27272a; color: #e4e4e7; }
+
+  /* Device: the box every mocked surface lives in */
+  .device { container-type: inline-size; width: 100%; margin: 0 auto; border: 1px solid #27272a; border-radius: 12px; background: #050506; overflow: hidden; }
+  body.w-375 .device { max-width: 375px; }
+  body.w-1280 .device { max-width: 1280px; }
+  .backdrop { padding: 28px 16px; background: radial-gradient(circle at 30% 0%, rgba(255,255,255,.03), transparent 60%), rgba(0,0,0,.55); display: flex; justify-content: center; }
+
+  /* ---------- App mock: shadcn Dialog (Model Tiers) ---------- */
+  .ui { font-family: var(--sans); color: var(--fg); font-size: 14px; line-height: 1.43; }
+  .dlg { position: relative; width: 100%; max-width: 672px; background: var(--card); border: 1px solid var(--border-60); border-radius: 10px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,.6); display: grid; gap: 16px; }
+  @container (max-width: 639px) { .dlg { max-width: calc(100% - 0px); } }
+  .dlg-x { position: absolute; top: 16px; right: 16px; width: 16px; height: 16px; opacity: .7; color: var(--fg); }
+  .dlg-head { display: flex; flex-direction: column; gap: 8px; text-align: left; }
+  @container (max-width: 639px) { .dlg-head { text-align: center; } }
+  .dlg-title { display: flex; align-items: center; gap: 8px; font-size: 18px; line-height: 1; font-weight: 600; }
+  .dlg-desc { color: var(--muted-fg); font-size: 14px; margin: 0; }
+  .dlg-body { display: grid; gap: 16px; padding: 8px 4px 8px 0; }
+  .elided { border: 1px dashed #3f3f46; border-radius: 8px; padding: 12px; color: var(--z500); font-size: 12px; text-align: center; }
+  .grp { padding-top: 4px; font-size: 11px; font-weight: 600; letter-spacing: .025em; text-transform: uppercase; color: var(--muted-fg); margin: 0; }
+  .field { display: grid; gap: 6px; }
+  .lbl { font-size: 14px; line-height: 1; font-weight: 500; color: var(--fg); }
+  .lbl.normal { font-weight: 400; cursor: pointer; }
+  .lbl .sub { font-weight: 400; color: var(--muted-fg); }
+  .select { height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--input); background: var(--input-30); border-radius: 6px; padding: 0 12px; font-size: 14px; color: var(--muted-fg); }
+  .select svg { opacity: .5; flex: none; }
+  .help { font-size: 11px; line-height: 1.45; color: var(--muted-fg); margin: 0; }
+  .help.amber { color: var(--amber-500); }
+  .help.violet { color: var(--violet-400); }
+  .help .strong { color: inherit; font-weight: 600; }
+  .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+
+  /* Switch (src/components/ui/switch.tsx, size default) */
+  .switch { flex: none; position: relative; display: inline-flex; align-items: center; width: 32px; height: 18.4px; border-radius: 999px; border: 1px solid transparent; background: var(--input-80); padding: 0; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.05); transition: background .15s, box-shadow .15s; outline: none; }
+  .switch .thumb { display: block; width: 16px; height: 16px; border-radius: 999px; background: var(--fg); transition: transform .15s; transform: translateX(0); }
+  .switch[aria-checked="true"] { background: var(--primary); }
+  .switch[aria-checked="true"] .thumb { background: var(--primary-fg); transform: translateX(14px); }
+  .switch:focus-visible, .switch.force-focus { border-color: var(--ring); box-shadow: 0 0 0 3px var(--ring-50); }
+  .switch:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Buttons (button.tsx) */
+  .btn { font: 500 14px/1 var(--sans); height: 32px; padding: 0 12px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; cursor: pointer; white-space: nowrap; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--fg); }
+  .btn.outline { background: var(--input-30); border-color: var(--input); color: var(--fg); }
+  .btn.primary { background: var(--primary); color: var(--primary-fg); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-50); border-color: var(--ring); }
+  .dlg-foot { display: flex; flex-direction: row; justify-content: flex-end; gap: 0; }
+  .dlg-foot .right { flex: 1; display: flex; justify-content: flex-end; gap: 8px; }
+  @container (max-width: 639px) {
+    .dlg-foot { flex-direction: column-reverse; gap: 8px; }
+  }
+  .why { margin: -8px 0 0; text-align: right; font-size: 11px; color: var(--muted-fg); }
+
+  /* ---------- App mock: terminal launch surfaces ---------- */
+  .tmodal { width: 100%; max-width: 576px; background: var(--term-bg); border: 1px solid var(--z700); border-radius: 10px; color: var(--z200); overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,.6); }
+  .tmodal.sm { max-width: 384px; }
+  .startblk { border-bottom: 1px solid var(--z800); padding: 12px 14px; }
+  .startrow { display: flex; align-items: center; gap: 10px; }
+  .startrow .startnote { min-width: 0; }
+  .tbtn { font: 500 14px/1 var(--sans); height: 36px; padding: 0 12px; border-radius: 6px; border: 0; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; max-width: 100%; }
+  .tbtn.emerald { background: var(--emerald-500); color: var(--emerald-950); }
+  .tbtn.sky { background: var(--sky-500); color: var(--sky-950); }
+  .tbtn.xs { height: 24px; font-size: 12px; padding: 0 6px; gap: 4px; border-radius: 6px; }
+  .tbtn.ghostz { background: transparent; color: var(--z200); }
+  .tbtn.ghostz.dim { color: var(--z400); }
+  .startnote { font-size: 11.5px; color: var(--z500); }
+  .picker { margin-top: 8px; }
+  .picker .plabel { margin-bottom: 4px; font-size: 11px; color: var(--z500); }
+  .picker .opts { display: inline-flex; overflow: hidden; border-radius: 6px; border: 1px solid var(--z700); background: var(--term-bg-3); }
+  .picker .opt { min-width: 104px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--z400); background: transparent; border: 0; font-family: var(--sans); }
+  .picker .opt + .opt { border-left: 1px solid var(--z700); }
+  .picker .opt.sel { background: rgba(14,165,233,.15); font-weight: 600; color: var(--z100); box-shadow: inset 0 -2px 0 0 var(--sky-500); }
+  .mline { margin: 6px 0 0; font-size: 11px; color: var(--z500); }
+  .chip { margin-left: 4px; font-weight: 600; white-space: nowrap; }
+  .chip.auto { color: var(--amber-400); }
+  .chip.rc { color: var(--violet-400); }
+  .remind { margin: 4px 0 0; font-size: 11px; color: var(--z500); }
+  .ctx { opacity: .45; padding: 8px 14px 12px; }
+  .ctx .sec { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--z500); font-weight: 600; margin: 4px 0 6px; }
+  .ctx .rowx { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--z300); padding: 6px 0; border-top: 1px solid var(--z800); }
+  .tdhead { padding: 16px 32px 12px 16px; min-width: 0; position: relative; }
+  .tdtitle { font-size: 13px; font-weight: 600; color: var(--z100); margin: 0; }
+  .tddesc { margin-top: 4px; font-size: 11.5px; color: var(--z500); }
+  .tddesc .trunc { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tddesc .mono { font-family: var(--mono); }
+  .apill { border-radius: 4px; border: 1px solid var(--z700); background: rgba(39,39,42,.6); padding: 2px 6px; font-size: 11px; color: var(--z300); }
+  .tdfoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--z800); padding: 12px 16px; min-width: 0; }
+  .tx { position: absolute; top: 14px; right: 14px; color: var(--z400); opacity: .7; }
+
+  /* ---------- Copy tables ---------- */
+  .tbl-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0 4px; }
+  th { text-align: left; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--doc-muted); padding: 8px 10px; border-bottom: 1px solid #3f3f46; }
+  td { padding: 10px; border-bottom: 1px solid var(--doc-border); vertical-align: top; }
+  td.copy { color: #fff; }
+  .rec { display: inline-block; font-size: 10.5px; font-weight: 700; color: #052e1a; background: var(--emerald-400); padding: 1px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+  .alt { display: inline-block; font-size: 10.5px; font-weight: 700; color: #e4e4e7; background: #3f3f46; padding: 1px 6px; border-radius: 99px; margin-left: 6px; vertical-align: 1px; }
+
+  .callout { border: 1px solid rgba(167,139,250,.3); border-left: 3px solid var(--new); background: rgba(167,139,250,.05); border-radius: 10px; padding: 12px 14px; margin: 14px 0; font-size: 14px; max-width: 980px; }
+  .callout.cond { border-color: rgba(251,191,36,.3); border-left-color: var(--cond); background: rgba(251,191,36,.05); }
+  .callout.grey { border-color: #3f3f46; border-left-color: #71717a; background: #111114; }
+  .callout b { color: #fff; }
+
+  /* ---------- Flow strip ---------- */
+  .flow { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; margin-top: 12px; counter-reset: f; }
+  @media (max-width: 1100px) { .flow { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  @media (max-width: 640px) { .flow { grid-template-columns: 1fr; } }
+  body.w-375 .flow { grid-template-columns: 1fr; max-width: 375px; }
+  .fstep { background: #111114; border: 1px solid #27272a; border-radius: 10px; padding: 12px; position: relative; min-width: 0; }
+  .fstep .n { font: 700 11px/1 var(--sans); color: #1e1240; background: var(--new); width: 22px; height: 22px; border-radius: 99px; display: inline-flex; align-items: center; justify-content: center; }
+  .fstep h4 { margin: 8px 0 6px; font-size: 13.5px; color: #fff; }
+  .fstep p { margin: 0; font-size: 12.5px; color: var(--doc-muted); }
+  .fstep .vis { margin: 10px 0 0; background: var(--term-bg); border: 1px solid var(--z700); border-radius: 8px; padding: 10px; font-size: 11.5px; color: var(--z300); min-height: 64px; }
+  .fstep .arrow { position: absolute; right: -11px; top: 50%; color: #52525b; font-size: 14px; }
+  .term { font-family: var(--mono); font-size: 11px; color: #d4d4d8; background: #0c0c0e; }
+  .term .dim { color: #71717a; }
+  .phone { width: 92px; margin: 0 auto; border: 2px solid #3f3f46; border-radius: 14px; padding: 8px 6px; background: #0c0c0e; }
+  .phone .bar { height: 5px; background: #27272a; border-radius: 3px; margin: 4px 0; }
+  .phone .bubble { font-size: 9.5px; background: #27272a; border-radius: 6px; padding: 4px; margin: 4px 0; color: #e4e4e7; }
+
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+  ol.decide li, ul.tight li { margin: 6px 0; }
+  .muted { color: var(--doc-muted); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body class="w-1280">
+<div class="wrap">
+
+  <header class="doc-head">
+    <div class="kicker">UX Design · task 5c8969cc · step 2 of 8</div>
+    <h1>Start in-app terminal sessions with Remote Control on</h1>
+    <p class="lede">Today's Settings screen plus <b>one new switch</b>, and today's launch screens plus <b>one new label</b>. Everything else is the existing screen, copied from the code as it is today. Built on the <b>Requirements</b> step (M2, M3, S1, S2, C1).</p>
+  </header>
+
+  <div class="toolbar" role="region" aria-label="Preview controls">
+    <div class="seg" role="group" aria-label="Preview width">
+      <button type="button" data-w="1280" aria-pressed="true">Desktop · 1280px</button>
+      <button type="button" data-w="375" aria-pressed="false">Phone · 375px</button>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <span><i class="sw-new"></i>NEW in this change</span>
+      <span><i class="sw-cond"></i>Depends on a live check during the build</span>
+      <span><i class="sw-old"></i>Everything else: unchanged, as shipped today</span>
+    </div>
+  </div>
+
+  <!-- ======================= 1. COPY ======================= -->
+  <h2 id="copy">1. The wording</h2>
+  <p class="note">All of this lives as constants next to the auto mode ones in <code>src/lib/terminal/auto-accept-mode.ts</code> (or a sibling <code>remote-control-mode.ts</code>), so every screen quotes the same sentence. <b>Recommended first.</b> Nick picks at Technical Design.</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <thead><tr><th style="width:180px">Where</th><th>Text</th><th style="width:300px">Why</th></tr></thead>
+    <tbody>
+      <tr><td>Switch label</td>
+        <td class="copy">Start with Remote Control on <span class="rec">Recommended</span></td>
+        <td class="muted">Reads as a pair with "Start in auto mode" directly above. Uses the same name Claude Code shows in the terminal and on claude.ai, so it's easy to recognise later.</td></tr>
+      <tr><td></td>
+        <td class="copy">Continue sessions from your phone <span class="alt">Alternative</span></td>
+        <td class="muted">Says the benefit outright, but doesn't match the name Claude uses, and undersells claude.ai on a computer.</td></tr>
+      <tr><td>Help text: <b>off</b></td>
+        <td class="copy" data-copy="offHelp"></td>
+        <td class="muted">Grey, like every other help line in the dialog. Says what it does, what it covers, what it doesn't, and that Codex is left alone.</td></tr>
+      <tr><td>Help text: <b>on</b></td>
+        <td class="copy" style="color:var(--violet-400)" data-copy="onHelp"></td>
+        <td class="muted">Changes colour when on, the same way auto mode's help turns amber. Violet matches the new launch label. The privacy sentence is its own sentence so it can't be skimmed past.</td></tr>
+      <tr><td>Fallback: <b>off</b><br><span class="muted">(only if resumed sessions can't get it)</span></td>
+        <td class="copy" data-copy="offHelpNewOnly"></td>
+        <td class="muted">Used automatically if the live check on resumed sessions fails (agreed in Requirements M7; no extra decision).</td></tr>
+      <tr><td>Fallback: <b>on</b></td>
+        <td class="copy" style="color:var(--violet-400)" data-copy="onHelpNewOnly"></td>
+        <td class="muted"></td></tr>
+      <tr><td>Sign-in line<br><span class="muted">(only if the sign-in check says it's needed)</span></td>
+        <td class="copy" data-copy="signIn"></td>
+        <td class="muted">Added as the last sentence of whichever help text is showing. Only ships if the live check on API-key sign-in shows it matters.</td></tr>
+      <tr><td>Launch label</td>
+        <td class="copy"><span style="color:var(--violet-400);font-weight:600">📱 remote control on</span> <span class="rec">Recommended</span></td>
+        <td class="muted">Same shape and casing as "⚡ auto mode on" (lower case, ends in "on"). The phone says where you'll pick the session up, and it looks nothing like the lightning bolt, so the two labels can't be mistaken for each other at a glance.</td></tr>
+      <tr><td></td>
+        <td class="copy"><span style="color:var(--violet-400);font-weight:600">📱 phone access on</span> <span class="alt">Alternative</span></td>
+        <td class="muted">Shorter and plainer, but doesn't match the name in the Settings switch, and claude.ai on a computer works too.</td></tr>
+      <tr><td>Fallback reminder<br><span class="muted">(only if resumed sessions can't get it)</span></td>
+        <td class="copy"><span data-copy="chooserReminderNewOnly"></span><br><span class="muted">Per-task box:</span> <span data-copy="dialogReminderNewOnly"></span></td>
+        <td class="muted">Same pattern as auto mode's existing "Only a fresh session…" line. Not shown at all if resumed sessions do get Remote Control.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ======================= 2. SETTINGS DIALOG ======================= -->
+  <h2 id="settings">2. Settings → Model Tiers dialog, "Terminal sessions" group</h2>
+  <p class="note">The workflow tier grid above this group is unchanged and left out to save space. The new row copies the auto mode row exactly: the same <code>Switch</code>, label on the left, help text underneath, <code>id="terminal-remote-control"</code>, label linked with <code>htmlFor</code>, help linked with <code>aria-describedby="terminal-remote-control-help"</code>. <b>The switches here really work</b>: click one or press Tab then Space, and you'll see the help text change and Save turn on.</p>
+
+  <div class="state-grid single" id="settings-states"></div>
+
+  <div class="callout grey">
+    <b>Loading and errors are already handled by the dialog, so nothing new is needed.</b> The tier grid shows grey placeholders while the platform defaults load; the terminal switches don't wait on that, which is how auto mode works today. If saving fails, the existing red pop-up says "Failed to save model tiers — try again" and the dialog stays open with your change still in it. If it works, the dialog closes with "Model tiers saved".
+  </div>
+
+  <h3>Fallback and sign-in variants (help text only, layout identical)</h3>
+  <div class="state-grid single" id="settings-variants"></div>
+
+  <!-- ======================= 3. LAUNCH CHOOSER ======================= -->
+  <h2 id="chooser">3. Launch chooser: the "Start new session" block</h2>
+  <p class="note">This is the block at the top of the session chooser, with the model line underneath. The new label goes on the <b>same line</b>, straight after "⚡ auto mode on" (or straight after the model line if auto mode is off). Each label keeps itself on one line (<code>whitespace-nowrap</code>), so on a phone the whole label wraps to the next line rather than breaking in the middle. The faded rows underneath are just there for context.</p>
+  <div class="state-grid" id="chooser-states"></div>
+
+  <!-- ======================= 4. PER-TASK DIALOG ======================= -->
+  <h2 id="taskdialog">4. Per-task launch dialog ("This task has a recent session")</h2>
+  <p class="note">Same rule: the label sits on the "Starts on …" line straight after "⚡ auto mode on". If resumed sessions get Remote Control too (the expected result), <b>Resume</b> also starts with it on, so no extra reminder line is needed. If they don't, the fallback reminder in section 5 appears.</p>
+  <div class="state-grid narrow" id="dialog-states"></div>
+
+  <!-- ======================= 5. FALLBACK REMINDER ======================= -->
+  <h2 id="fallback">5. Only if resumed sessions can't get Remote Control</h2>
+  <p class="note">Shown <b>only</b> if the live check on resumed sessions fails. It's a separate line under auto mode's existing reminder, so the wording you've already approved isn't touched.</p>
+  <div class="state-grid" id="fallback-states"></div>
+
+  <!-- ======================= 6. FLOW ======================= -->
+  <h2 id="flow">6. The whole journey</h2>
+  <div class="flow" role="list">
+    <div class="fstep" role="listitem"><span class="n">1</span><h4>Open Settings</h4><p>Settings → <b>Model Tiers</b>. Scroll to "Terminal sessions".</p>
+      <div class="vis ui"><div class="grp" style="font-size:10px">Terminal sessions</div><div style="margin-top:6px;font-size:12px">Start in auto mode</div><div style="margin-top:6px;font-size:12px">Start with Remote Control on</div></div><span class="arrow" aria-hidden="true">›</span></div>
+    <div class="fstep" role="listitem"><span class="n">2</span><h4>Flip the switch on</h4><p>The help text turns violet and says who can see these sessions.</p>
+      <div class="vis ui"><div class="row" style="align-items:center"><span style="font-size:12px">Start with Remote Control on</span><span class="switch" aria-hidden="true" aria-checked="true" style="pointer-events:none"><span class="thumb"></span></span></div><p class="help violet" style="margin-top:6px">📱 … can be carried on from the Claude app or claude.ai/code …</p></div><span class="arrow" aria-hidden="true">›</span></div>
+    <div class="fstep" role="listitem"><span class="n">3</span><h4>Save</h4><p>Nothing is stored until Save. Cancel or Escape throws the change away.</p>
+      <div class="vis ui" style="display:flex;gap:6px;justify-content:flex-end;align-items:flex-end"><span class="btn outline" style="height:26px;font-size:12px">Cancel</span><span class="btn primary" style="height:26px;font-size:12px">Save</span></div><span class="arrow" aria-hidden="true">›</span></div>
+    <div class="fstep" role="listitem"><span class="n">4</span><h4>Next launch shows it</h4><p>The chooser and the per-task box show the new label before you click Start.</p>
+      <div class="vis"><span class="mline" style="margin:0">New sessions start on Opus 5.5 · your setting.<span class="chip rc">· 📱 remote control on</span></span></div><span class="arrow" aria-hidden="true">›</span></div>
+    <div class="fstep" role="listitem"><span class="n">5</span><h4>Session starts with it on</h4><p>Claude Code shows its own Remote Control notice in the terminal. VibeCodes adds no badge of its own.</p>
+      <div class="vis term"><span class="dim">$ claude --remote-control --session-id …</span><br>Remote Control is on <span class="dim">(illustrative; Claude's own wording)</span></div><span class="arrow" aria-hidden="true">›</span></div>
+    <div class="fstep" role="listitem"><span class="n">6</span><h4>Carry on elsewhere</h4><p>Open the Claude app or claude.ai/code. Same session, same conversation. Replies show in the in-app terminal too.</p>
+      <div class="vis"><div class="phone" aria-hidden="true"><div class="bar"></div><div class="bubble">Carry on with the tests</div><div class="bubble" style="background:#2e1065">On it…</div></div></div></div>
+  </div>
+
+  <!-- ======================= 7. ACCESSIBILITY ======================= -->
+  <h2 id="a11y">7. Keyboard, labels and contrast</h2>
+  <div class="two">
+    <div>
+      <h3>Keyboard and screen readers</h3>
+      <ul class="tight">
+        <li>The switch is a real <code>role="switch"</code> (Radix). Tab reaches it straight after the auto mode switch; Space toggles it.</li>
+        <li>The visible label is linked with <code>&lt;Label htmlFor="terminal-remote-control"&gt;</code>, so clicking the words toggles it and a screen reader reads "Start with Remote Control on, switch, off".</li>
+        <li>The help text is linked with <code>aria-describedby</code>, so the privacy sentence is read out when the switch gets focus.</li>
+        <li>Focus ring: the shared Switch's 3px ring (shown in state B below). It's unchanged and the same as auto mode's.</li>
+        <li>On and off aren't shown by colour alone: the thumb moves, and the help text changes its words, not just its colour.</li>
+        <li>The launch label is text with an emoji. Screen readers read "mobile phone, remote control on". If Nick wants that quieter, wrap the emoji in <code>aria-hidden</code> (auto mode's ⚡ isn't wrapped today, so leave it as it is to match).</li>
+        <li>The tap area on a phone: the whole label row is clickable (the label is linked), so the target is the full row width, well over 44px wide.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Contrast (dark theme, the app default)</h3>
+      <div class="tbl-scroll"><table>
+        <thead><tr><th>Text</th><th>On</th><th>Ratio</th><th>AA</th></tr></thead>
+        <tbody>
+          <tr><td>Violet launch label <code>violet-400 #a78bfa</code></td><td><code>#141417</code></td><td>6.8 : 1</td><td>Pass</td></tr>
+          <tr><td>Violet "on" help text <code>violet-400</code></td><td>dialog <code>#18181b</code></td><td>6.5 : 1</td><td>Pass</td></tr>
+          <tr><td>Violet "on" help, light theme <code>violet-600 #7c3aed</code></td><td><code>#ffffff</code></td><td>5.7 : 1</td><td>Pass</td></tr>
+          <tr><td>Grey help text <code>muted-foreground #a1a1aa</code></td><td><code>#18181b</code></td><td>6.9 : 1</td><td>Pass</td></tr>
+          <tr><td>Switch track when on <code>#e4e4e7</code></td><td><code>#18181b</code></td><td>14 : 1</td><td>Pass (3:1)</td></tr>
+          <tr><td>Grey model line <code>zinc-500 #71717a</code> (existing)</td><td><code>#141417</code></td><td>3.8 : 1</td><td><b style="color:#fb7185">Fails</b> (existing)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">The last row is <b>not part of this change</b>. The existing grey "New sessions start on …" line on the launch screens is a little too faint for small text. I haven't touched it, because it's a screen you've already approved. It's listed as a decision below.</p>
+    </div>
+  </div>
+
+  <!-- ======================= 8. BADGE ======================= -->
+  <h2 id="badge">8. Session badge (the optional "Could" item): recommend <u>not</u> building it</h2>
+  <div class="callout grey">
+    <b>No mock, on purpose.</b> Claude Code already shows its own Remote Control notice inside the terminal, so a VibeCodes badge in the dock header would say the same thing twice. The header already carries the agent name, the auto mode badge and status. The badge would also mean extra work in the pop-out window and the reload code for little benefit. If you later find you can't tell which sessions have it on, it's a small follow-up: a violet "📱 Remote" badge beside the existing "Auto mode" badge, using the same wording constants.
+  </div>
+
+  <!-- ======================= 9. DECISIONS ======================= -->
+  <h2 id="decide">9. What Nick decides at Technical Design</h2>
+  <ol class="decide">
+    <li><b>Switch label:</b> "Start with Remote Control on" (recommended) or "Continue sessions from your phone".</li>
+    <li><b>Launch label wording and spot:</b> "📱 remote control on" (recommended) or "📱 phone access on", placed straight after "⚡ auto mode on" on the same line, in the chooser and the per-task box. This adds to a screen you've already approved.</li>
+    <li><b>Colour:</b> violet for the launch label and the "on" help text (it pairs with auto mode's amber), or plain grey if you'd rather not bring a new colour onto the terminal screens.</li>
+    <li><b>Session badge:</b> agree to leave it out (recommended)?</li>
+    <li><b>Separate small fix, not part of this card:</b> the existing grey model line on the launch screens is slightly too faint to meet the accessibility bar. Do you want a follow-up card to brighten it (zinc-500 to zinc-400)?</li>
+  </ol>
+  <p class="note">No decision needed: if resumed sessions can't get Remote Control, or if a claude.ai sign-in turns out to be required, the fallback wording above is used automatically, as agreed in Requirements.</p>
+
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   COPY: the single source for every string in this mock.
+   Implementation should lift these verbatim into constants.
+---------------------------------------------------------------- */
+const COPY = {
+  label: "Start with Remote Control on",
+  offHelp: "Lets you carry on a Claude Code session from the Claude app on your phone or at claude.ai/code. Applies to new and resumed sessions. A session that's already running isn't changed — type /remote-control in it instead. Codex isn't affected.",
+  onHelp: "📱 New and resumed Claude Code sessions can be carried on from the Claude app or claude.ai/code. Anyone signed in to your Claude account can see and continue them there. A session that's already running isn't changed. Codex isn't affected.",
+  offHelpNewOnly: "Lets you carry on a Claude Code session from the Claude app on your phone or at claude.ai/code. New sessions only — resumed or already-running sessions aren't changed (type /remote-control in one to turn it on). Codex isn't affected.",
+  onHelpNewOnly: "📱 New Claude Code sessions can be carried on from the Claude app or claude.ai/code. Anyone signed in to your Claude account can see and continue them there. Resumed and already-running sessions aren't changed. Codex isn't affected.",
+  signIn: "Needs Claude Code signed in with your claude.ai account (not an API key).",
+  chip: "📱 remote control on",
+  chooserReminderNewOnly: "Only a fresh session starts with Remote Control — resuming doesn't turn it on.",
+  dialogReminderNewOnly: "Only starting fresh applies Remote Control.",
+  /* Existing strings, copied from the code (unchanged) */
+  autoLabel: "Start in auto mode",
+  autoOffHelp: "Off = Claude Code asks before each action (recommended). Applies to fresh sessions only — resumed sessions keep asking, and you can switch any session live with Shift+Tab in the terminal.",
+  autoOnHelp: "⚡ New sessions run in auto mode — Claude Code edits files and runs routine commands on your machine without confirming each one. The session header shows an Auto mode badge whenever this is active.",
+  autoChip: "⚡ auto mode on",
+  chooserModelLine: "New sessions start on Opus 5.5 · your setting.",
+  dialogModelLine: "Starts on Opus 5.5 · your setting.",
+  codexLine: "Codex uses its own model and permission settings.",
+  codexSignin: "Codex signs in with your own ChatGPT account on this Mac — nothing to set up here.",
+  autoChooserReminder: "Only a fresh session starts in auto-accept mode — reconnecting or resuming keeps asking.",
+  autoDialogReminder: "Only starting fresh applies auto-accept.",
+};
+
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+document.querySelectorAll("[data-copy]").forEach((el) => { el.textContent = COPY[el.dataset.copy]; });
+
+const ICON_CPU = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>';
+const ICON_X = '<svg class="dlg-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const ICON_CHEV = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const ICON_TERM = (s) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6M12 19h8"/></svg>`;
+const ICON_REFRESH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>';
+
+/* ---------- Settings dialog ---------- */
+let uid = 0;
+function settingsDialog(o) {
+  // o: {savedRc, stagedRc, autoOn, pending, focus, variant: 'default'|'newOnly'|'signIn'|'newOnlySignIn'}
+  const n = ++uid;
+  const rcId = `terminal-remote-control-${n}`, rcHelp = `terminal-remote-control-help-${n}`;
+  const auId = `terminal-auto-accept-${n}`, auHelp = `terminal-auto-accept-help-${n}`;
+  const v = o.variant || "default";
+  return `
+  <div class="device"><div class="backdrop"><div class="dlg ui" role="dialog" aria-label="Model tier mapping (mock ${n})"
+      data-saved-rc="${o.savedRc ? 1 : 0}" data-saved-au="${o.autoOn ? 1 : 0}" data-variant="${v}" data-pending="${o.pending ? 1 : 0}">
+    ${ICON_X}
+    <div class="dlg-head">
+      <div class="dlg-title">${ICON_CPU}Model tier mapping</div>
+      <p class="dlg-desc">Choose which model and reasoning effort run each workflow tier — for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+    </div>
+    <div class="dlg-body">
+      <div class="elided">Workflow tier grid (Claude · Codex columns) and its footnote: unchanged, not shown</div>
+      <p class="grp">Terminal sessions</p>
+      <div class="field">
+        <div class="lbl">Starting model <span class="sub">— for new in-browser Claude Code sessions</span></div>
+        <div class="select"><span>Platform default (Opus 5.5)</span>${ICON_CHEV}</div>
+        <p class="help">Applies to new Claude Code sessions. Choose the Codex starting model below. Resumed sessions keep their existing model; you can switch any time by typing /model in the terminal.</p>
+      </div>
+      <div class="field">
+        <div class="lbl">Codex starting model <span class="sub">— for new in-browser Codex sessions</span></div>
+        <div class="select" style="color:var(--fg)"><span>Use organization default</span>${ICON_CHEV}</div>
+        <p class="help">Organization Codex terminal pair: <span style="color:var(--z500)">(sample)</span> (medium). Resumed sessions keep their existing model.</p>
+      </div>
+      <div class="field">
+        <div class="row">
+          <label class="lbl normal" for="${auId}">${COPY.autoLabel}</label>
+          <button type="button" class="switch" role="switch" id="${auId}" data-kind="au" aria-checked="${o.autoOn ? "true" : "false"}" aria-describedby="${auHelp}" ${o.pending ? "disabled" : ""}><span class="thumb"></span></button>
+        </div>
+        <p class="help ${o.autoOn ? "amber" : ""}" id="${auHelp}" data-help="au">${esc(o.autoOn ? COPY.autoOnHelp : COPY.autoOffHelp)}</p>
+      </div>
+      <div class="field is-new"><span class="tag new">New</span>
+        <div class="row">
+          <label class="lbl normal" for="${rcId}">${COPY.label}</label>
+          <button type="button" class="switch ${o.focus ? "force-focus" : ""}" role="switch" id="${rcId}" data-kind="rc" aria-checked="${o.stagedRc ? "true" : "false"}" aria-describedby="${rcHelp}" ${o.pending ? "disabled" : ""}><span class="thumb"></span></button>
+        </div>
+        <p class="help" id="${rcHelp}" data-help="rc"></p>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn ghost" data-reset ${o.pending ? "disabled" : ""}>Reset to defaults</button>
+      <div class="right">
+        <button type="button" class="btn outline" ${o.pending ? "disabled" : ""}>Cancel</button>
+        <button type="button" class="btn primary" data-save>Save</button>
+      </div>
+    </div>
+    <p class="why" data-why>Save enables when you change a setting.</p>
+  </div></div></div>`;
+}
+
+function rcHelpText(on, variant) {
+  const newOnly = variant === "newOnly" || variant === "newOnlySignIn";
+  const sign = variant === "signIn" || variant === "newOnlySignIn";
+  let t = on ? (newOnly ? COPY.onHelpNewOnly : COPY.onHelp) : (newOnly ? COPY.offHelpNewOnly : COPY.offHelp);
+  return { text: t, sign };
+}
+
+function syncDialog(dlg) {
+  const rc = dlg.querySelector('[data-kind="rc"]'), au = dlg.querySelector('[data-kind="au"]');
+  const rcOn = rc.getAttribute("aria-checked") === "true", auOn = au.getAttribute("aria-checked") === "true";
+  const variant = dlg.dataset.variant, pending = dlg.dataset.pending === "1";
+  const { text, sign } = rcHelpText(rcOn, variant);
+  const help = dlg.querySelector('[data-help="rc"]');
+  help.className = "help" + (rcOn ? " violet" : "");
+  help.innerHTML = esc(text) + (sign ? ` <span class="is-cond" style="display:inline">${esc(COPY.signIn)}</span><span class="tag cond inline-tag">If needed</span>` : "");
+  const auHelp = dlg.querySelector('[data-help="au"]');
+  auHelp.className = "help" + (auOn ? " amber" : "");
+  auHelp.textContent = auOn ? COPY.autoOnHelp : COPY.autoOffHelp;
+  const dirty = (rcOn ? 1 : 0) !== +dlg.dataset.savedRc || (auOn ? 1 : 0) !== +dlg.dataset.savedAu;
+  const anyOverride = rcOn || auOn;
+  const save = dlg.querySelector("[data-save]"), reset = dlg.querySelector("[data-reset]"), why = dlg.querySelector("[data-why]");
+  save.disabled = pending || !dirty;
+  save.textContent = pending ? "Saving…" : "Save";
+  reset.disabled = pending || !anyOverride;
+  why.style.display = dirty || pending ? "none" : "";
+  if (!dirty) save.setAttribute("aria-describedby", why.id || (why.id = "why-" + Math.random().toString(36).slice(2)));
+  else save.removeAttribute("aria-describedby");
+}
+
+const settingsStates = [
+  { pill: "A", cap: "<b>Off (default).</b> First visit. Save is off, with the existing hint underneath; Reset is off (nothing changed from the defaults).", o: { savedRc: false, stagedRc: false, autoOn: false } },
+  { pill: "B", cap: "<b>Just switched on, not saved yet.</b> The help text turns violet, Save and Reset come on, and the hint disappears. The keyboard focus ring is shown on the new switch.", o: { savedRc: false, stagedRc: true, autoOn: false, focus: true } },
+  { pill: "C", cap: "<b>Saved on, dialog reopened.</b> Shown with auto mode also on, so you can see both on together (amber, then violet). Save is off again until something changes.", o: { savedRc: true, stagedRc: true, autoOn: true } },
+  { pill: "D", cap: "<b>Saving.</b> Every control is greyed out and the button reads “Saving…”. This is the existing behaviour; the new switch just joins in.", o: { savedRc: false, stagedRc: true, autoOn: false, pending: true } },
+];
+document.getElementById("settings-states").innerHTML = settingsStates.map((s) =>
+  `<div class="state"><p class="cap"><span class="pill">${s.pill}</span>${s.cap}</p>${settingsDialog(s.o)}</div>`).join("");
+
+const variantStates = [
+  { pill: "E", cap: "<b>Fallback, off:</b> resumed sessions can't get it, so the help says \"New sessions only\".", o: { savedRc: false, stagedRc: false, variant: "newOnly" } },
+  { pill: "F", cap: "<b>Fallback, on</b>, with the optional sign-in line at the end (dotted outline = only if the live check needs it).", o: { savedRc: true, stagedRc: true, variant: "newOnlySignIn" } },
+];
+document.getElementById("settings-variants").innerHTML = variantStates.map((s) =>
+  `<div class="state"><p class="cap"><span class="pill">${s.pill}</span>${s.cap}</p>${settingsDialog(s.o)}</div>`).join("");
+
+document.querySelectorAll(".dlg").forEach((dlg) => {
+  if (dlg.dataset.pending === "1") {
+    // In the "Saving" state the switches are disabled (Radix disabled).
+  }
+  syncDialog(dlg);
+  dlg.querySelectorAll(".switch").forEach((sw) => sw.addEventListener("click", () => {
+    sw.classList.remove("force-focus");
+    sw.setAttribute("aria-checked", sw.getAttribute("aria-checked") === "true" ? "false" : "true");
+    syncDialog(dlg);
+  }));
+  dlg.querySelector("[data-reset]").addEventListener("click", () => {
+    dlg.querySelectorAll(".switch").forEach((sw) => sw.setAttribute("aria-checked", "false"));
+    syncDialog(dlg);
+  });
+});
+
+/* ---------- Launch chooser start block ---------- */
+function chips(auto, rc, newOnly) {
+  let s = "";
+  if (auto) s += `<span class="chip auto">· ${COPY.autoChip}</span>`;
+  if (rc) s += `<span class="chip rc is-new" style="outline-offset:2px">· ${COPY.chip}</span>`;
+  return s;
+}
+function chooser(o) {
+  // o: {auto, rc, codex, newOnly}
+  const codex = !!o.codex;
+  const showAuto = o.auto && !codex, showRc = o.rc && !codex;
+  return `
+  <div class="device"><div class="backdrop"><div class="tmodal ui" role="group" aria-label="Session chooser (mock)">
+    <div class="startblk">
+      <div class="startrow">
+        <button type="button" class="tbtn emerald">${ICON_TERM(16)} Start new session</button>
+        <span class="startnote">runs on your computer. Each session uses real resources. Up to 10 at once.</span>
+      </div>
+      <div class="picker"><div class="plabel">Run it with</div>
+        <div class="opts" role="radiogroup" aria-label="Which agent runs this session">
+          <button type="button" class="opt ${codex ? "" : "sel"}" role="radio" aria-checked="${!codex}">${codex ? "" : "✓ "}Claude Code</button><button type="button" class="opt ${codex ? "sel" : ""}" role="radio" aria-checked="${codex}">${codex ? "✓ " : ""}Codex</button>
+        </div>
+      </div>
+      ${codex ? `<p class="mline">${esc(COPY.codexSignin)}</p>` : ""}
+      <p class="mline">${codex ? esc(COPY.codexLine) : esc(COPY.chooserModelLine)}${chips(showAuto, showRc)}${showRc ? '<span class="tag new" style="position:relative;top:-1px;right:auto;margin-left:10px;display:inline-block">New</span>' : ""}</p>
+      ${showAuto ? `<p class="remind">${esc(COPY.autoChooserReminder)}</p>` : ""}
+      ${showRc && o.newOnly ? `<p class="remind is-cond" style="display:block">${esc(COPY.chooserReminderNewOnly)}</p><span class="tag cond inline-tag" style="margin:4px 0 0">Only if resume check fails</span>` : ""}
+    </div>
+    <div class="ctx" aria-hidden="true">
+      <div class="sec">Running now — this board</div>
+      <div class="rowx"><span>Fix the login redirect</span><span>12m</span></div>
+      <div class="rowx"><span>Tidy the changelog page</span><span>1h</span></div>
+    </div>
+  </div></div></div>`;
+}
+const chooserStates = [
+  { pill: "1", cap: "<b>Both settings off.</b> Exactly today's screen: no labels.", o: {} },
+  { pill: "2", cap: "<b>Auto mode only.</b> Today's screen when auto mode is on (unchanged).", o: { auto: true } },
+  { pill: "3", cap: "<b>Remote Control only.</b> New label straight after the model line. No reminder line, because resumed sessions get it too.", o: { rc: true } },
+  { pill: "4", cap: "<b>Both on.</b> Auto mode first (as today), then the new label. Auto mode's reminder line is unchanged.", o: { auto: true, rc: true } },
+  { pill: "5", cap: "<b>Codex picked</b> (with both settings on). Both labels are hidden; Codex's own line replaces the model line, as it does today.", o: { auto: true, rc: true, codex: true } },
+];
+document.getElementById("chooser-states").innerHTML = chooserStates.map((s) =>
+  `<div class="state"><p class="cap"><span class="pill">${s.pill}</span>${s.cap}</p>${chooser(s.o)}</div>`).join("");
+
+/* ---------- Per-task dialog ---------- */
+function taskDialog(o) {
+  const codex = !!o.codex;
+  const showAuto = o.auto && !codex, showRc = o.rc && !codex;
+  return `
+  <div class="device"><div class="backdrop"><div class="tmodal sm ui" role="dialog" aria-label="This task has a recent session (mock)">
+    <div class="tdhead">
+      <svg class="tx" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      <p class="tdtitle">This task has a recent session</p>
+      <div class="tddesc"><span class="trunc">Add a weekly summary email for board owners with a really long title</span><span class="mono">Ended 2h ago</span> · <span class="apill">Claude Code</span></div>
+      <div class="picker"><div class="plabel">Start fresh with</div>
+        <div class="opts" role="radiogroup" aria-label="Which agent runs this session">
+          <button type="button" class="opt ${codex ? "" : "sel"}" role="radio" aria-checked="${!codex}">${codex ? "" : "✓ "}Claude Code</button><button type="button" class="opt ${codex ? "sel" : ""}" role="radio" aria-checked="${codex}">${codex ? "✓ " : ""}Codex</button>
+        </div>
+      </div>
+      <p class="mline">${codex ? esc(COPY.codexLine) : esc(COPY.dialogModelLine)}${chips(showAuto, showRc)}${showRc ? '<span class="tag new" style="position:relative;top:-1px;right:auto;margin-left:10px;display:inline-block">New</span>' : ""}</p>
+      ${showAuto ? `<p class="remind">${esc(COPY.autoDialogReminder)}</p>` : ""}
+      ${showRc && o.newOnly ? `<p class="remind is-cond" style="display:block">${esc(COPY.dialogReminderNewOnly)}</p><span class="tag cond inline-tag" style="margin:4px 0 0">Only if resume check fails</span>` : ""}
+    </div>
+    <div class="tdfoot">
+      <button type="button" class="tbtn xs ghostz dim">Cancel</button>
+      <button type="button" class="tbtn xs ghostz">${ICON_TERM(12)} Start fresh anyway</button>
+      <button type="button" class="tbtn xs emerald">${ICON_REFRESH} Resume</button>
+    </div>
+  </div></div></div>`;
+}
+const dialogStates = [
+  { pill: "1", cap: "<b>Both off.</b> Today's box, unchanged.", o: {} },
+  { pill: "2", cap: "<b>Auto mode only.</b> Today's box, unchanged.", o: { auto: true } },
+  { pill: "3", cap: "<b>Remote Control only.</b>", o: { rc: true } },
+  { pill: "4", cap: "<b>Both on.</b> On a phone the new label drops to its own line as one piece.", o: { auto: true, rc: true } },
+  { pill: "5", cap: "<b>Codex picked</b> (both settings on). No labels.", o: { auto: true, rc: true, codex: true } },
+];
+document.getElementById("dialog-states").innerHTML = dialogStates.map((s) =>
+  `<div class="state"><p class="cap"><span class="pill">${s.pill}</span>${s.cap}</p>${taskDialog(s.o)}</div>`).join("");
+
+document.getElementById("fallback-states").innerHTML =
+  `<div class="state"><p class="cap"><span class="pill">F1</span><b>Chooser, both on, resume check failed.</b> The new reminder goes under auto mode's existing one.</p>${chooser({ auto: true, rc: true, newOnly: true })}</div>` +
+  `<div class="state"><p class="cap"><span class="pill">F2</span><b>Per-task box, Remote Control only, resume check failed.</b></p>${taskDialog({ rc: true, newOnly: true })}</div>`;
+
+/* ---------- Width toggle (also ?w=375 / ?w=1280) ---------- */
+function setWidth(w) {
+  document.body.classList.toggle("w-375", w === "375");
+  document.body.classList.toggle("w-1280", w !== "375");
+  document.querySelectorAll(".seg [data-w]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.w === w)));
+}
+document.querySelectorAll(".seg [data-w]").forEach((b) => b.addEventListener("click", () => setWidth(b.dataset.w)));
+const qw = new URLSearchParams(location.search).get("w");
+setWidth(qw === "375" ? "375" : "1280");
+</script>
+</body>
+</html>

@@ -17,9 +17,10 @@ interface MyAgentsGridProps {
   featuredTeams: FeaturedTeamWithAgents[];
   userExistingRoles: string[];
   userIdeas?: UserIdea[];
+  skillNamesByBot?: Record<string, string[]>;
 }
 
-export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunity, featuredTeams, userExistingRoles, userIdeas = [] }: MyAgentsGridProps) {
+export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunity, featuredTeams, userExistingRoles, userIdeas = [], skillNamesByBot = {} }: MyAgentsGridProps) {
   const [editingBot, setEditingBot] = useState<BotProfile | null>(null);
 
   if (bots.length === 0) {
@@ -42,6 +43,7 @@ export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunit
             key={bot.id}
             bot={bot}
             variant="owned"
+            skillNames={skillNamesByBot[bot.id] ?? []}
             stats={botStats[bot.id] ?? { taskCount: 0, ideaCount: 0, assignedCount: 0 }}
             onEdit={() => setEditingBot(bot)}
           />
@@ -54,7 +56,7 @@ export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunit
           <div className="flex items-center gap-3 text-sm font-semibold text-muted-foreground">
             <Star className="h-4 w-4" />
             Featured Teams
-            <span className="font-normal text-xs">&mdash; clone a complete team in one click</span>
+            <span className="font-normal text-xs">&mdash; add a complete team in one click</span>
             <div className="flex-1 h-px bg-border/50" />
           </div>
           <FeaturedTeams
@@ -68,6 +70,7 @@ export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunit
       {editingBot && (
         <EditAgentDialog
           bot={editingBot}
+          skillNames={skillNamesByBot[editingBot.id]}
           open={!!editingBot}
           onOpenChange={(open) => {
             if (!open) setEditingBot(null);

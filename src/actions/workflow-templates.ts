@@ -10,7 +10,7 @@ import {
 } from "@/lib/validation";
 import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits, resolveSuggestionOnApply } from "@/lib/workflow-helpers";
-import { tierRank } from "@/lib/role-matching";
+import { decideStepRematch } from "@/lib/role-matching";
 import { chunkIds } from "@/lib/db-helpers";
 
 // ─── Templates ───
@@ -484,6 +484,7 @@ export async function rematchWorkflowAgentsWithClient(
   // Match roles using AI (with fuzzy fallback) — returns tier info
   const roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, stepRoles, candidates);
 
+  const roleByBot = new Map(candidates.map((c) => [c.botId, c.role]));
   let matched = 0;
   let unmatched = 0;
   let upgraded = 0;
@@ -495,26 +496,39 @@ export async function rematchWorkflowAgentsWithClient(
     const newBotId = newMatch?.botId ?? null;
     const newTier = newMatch?.tier ?? "none";
 
-    if (!newBotId) {
-      if (!step.bot_id) unmatched++;
+    const decision = decideStepRematch({
+      step,
+      newBotId,
+      newTier,
+      assignedAgentRole: step.bot_id ? roleByBot.get(step.bot_id) : undefined,
+    });
+
+    if (decision.action === "keep") {
+      if (!newBotId && !step.bot_id) unmatched++;
       continue;
     }
 
-    const oldTierRank = tierRank(step.match_tier);
-    const newTierRank = tierRank(newTier);
-
-    // Only update if: no existing match, or new match is strictly better tier
-    if (!step.bot_id || newTierRank > oldTierRank) {
-      if (step.bot_id) upgraded++;
-
+    // Status guard: a step claimed since we read it must not be rewritten.
+    if (decision.action === "clear") {
       await supabase
         .from("task_workflow_steps")
-        .update({ bot_id: newBotId, match_tier: newTier })
-        .eq("id", step.id);
-
-      matches[role] = newBotId;
-      matched++;
+        .update({ bot_id: null, match_tier: null })
+        .eq("id", step.id)
+        .eq("status", "pending");
+      unmatched++;
+      continue;
     }
+
+    if (step.bot_id) upgraded++;
+
+    await supabase
+      .from("task_workflow_steps")
+      .update({ bot_id: decision.botId, match_tier: decision.tier })
+      .eq("id", step.id)
+      .eq("status", "pending");
+
+    matches[role] = decision.botId;
+    matched++;
   }
 
   return { matched, unmatched, upgraded, matches };
@@ -573,6 +587,7 @@ export async function resyncWorkflowTemplate(templateId: string) {
   return {
     runsUpdated: propagation.runsUpdated,
     stepsUpdated: propagation.stepsUpdated,
+    runsReplaced: propagation.runsReplaced,
     skippedStructuralMismatch: propagation.skippedStructuralMismatch,
     rematched,
   };

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 import { Pencil, Trash2, Upload } from "lucide-react";
 import {
   Dialog,
@@ -16,7 +17,9 @@ import { Switch } from "@/components/ui/switch";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { updateBot, deleteBot } from "@/actions/bots";
-import { PromptBuilder } from "@/components/profile/prompt-builder";
+import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
+import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
 import type { BotProfile } from "@/types";
@@ -25,14 +28,16 @@ interface EditAgentDialogProps {
   bot: BotProfile;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Names of the agent's real skills. Left out where they aren't loaded: only the link shows. */
+  skillNames?: string[];
 }
 
-export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProps) {
+export function EditAgentDialog({ bot, open, onOpenChange, skillNames }: EditAgentDialogProps) {
   const [name, setName] = useState(bot.name);
   const [role, setRole] = useState(bot.role ?? "");
   const [systemPrompt, setSystemPrompt] = useState(bot.system_prompt ?? "");
   const [bio, setBio] = useState(bot.bio ?? "");
-  const [skillsInput, setSkillsInput] = useState((bot.skills ?? []).join(", "));
+  const [toolAccess, setToolAccess] = useState<ToolAccess>(normalizeToolAccess(bot.tool_access));
   const [isPublished, setIsPublished] = useState(bot.is_published);
   const [submitting, setSubmitting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -59,15 +64,6 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
     }
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-  }
-
-  function parseSkills(): string[] {
-    if (!skillsInput.trim()) return [];
-    return skillsInput
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 10);
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -99,7 +95,7 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
         role: role.trim() || null,
         system_prompt: systemPrompt.trim() || null,
         bio: bio.trim() || null,
-        skills: parseSkills(),
+        tool_access: toolAccess,
         is_published: isPublished,
         ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
       });
@@ -137,7 +133,7 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="h-4 w-4" />
@@ -145,8 +141,8 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSave} className="space-y-4">
-          {/* Avatar + Name + Tagline row */}
-          <div className="flex gap-4">
+          {/* Avatar + Name + Tagline row (avatar above the fields on a phone) */}
+          <div className="flex flex-col gap-4 sm:flex-row">
             <div
               className="group relative cursor-pointer shrink-0"
               onClick={() => fileInputRef.current?.click()}
@@ -209,29 +205,33 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
             />
           </div>
 
-          {/* Skills (comma-separated) */}
+          {/* Instructions */}
+          <AgentInstructionsEditor role={role} value={systemPrompt} onChange={setSystemPrompt} />
+
+          <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="edit-tool-access" />
+
+          {/* Skills: read-only here; they're added and removed on the agent's page */}
           <div className="space-y-1">
-            <Label htmlFor="edit-bot-skills" className="text-xs">
-              Skills <span className="font-normal text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="edit-bot-skills"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="Comma-separated skills"
-              maxLength={300}
-            />
+            <Label className="text-xs">Skills</Label>
+            {skillNames && (
+              <div className="font-mono text-xs">
+                {skillNames.length > 0 ? (
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden className="text-amber-400">&#9889;</span>
+                    <span className="break-all">{skillNames.join(", ")}</span>
+                  </span>
+                ) : (
+                  <span className="font-sans text-muted-foreground">None</span>
+                )}
+              </div>
+            )}
             <p className="text-[10px] text-muted-foreground">
-              Shown on the agent card and profile.
+              Sent in full with every step.{" "}
+              <Link href={`/agents/${bot.id}`} className="text-violet-400 hover:text-violet-300">
+                Add or remove skills on {bot.name}&apos;s page &rarr;
+              </Link>
             </p>
           </div>
-
-          {/* Prompt Builder */}
-          <PromptBuilder
-            role={role}
-            value={systemPrompt}
-            onChange={setSystemPrompt}
-          />
 
           {/* Publishing toggles */}
           <div className="space-y-3 rounded-lg border border-border p-3">

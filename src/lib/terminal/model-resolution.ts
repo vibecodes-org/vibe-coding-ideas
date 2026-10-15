@@ -23,6 +23,8 @@
  * "asked not to." Mirrors model-tier-settings.tsx's `__platform_default__`
  * sentinel one level up (Radix Select can't hold `""` as an item value).
  */
+import { EFFORT_LABELS, isClaudeEffort } from "./claude-effort";
+
 export const MACHINE_DEFAULT_TERMINAL_MODEL = "__machine_default__";
 
 /** A complete Codex terminal override. Kept separate from the Claude string
@@ -201,13 +203,22 @@ export type TerminalModelSource = "platform" | "user" | "machine";
  */
 export function terminalLaunchModelLine(
   effectiveModel: string | undefined,
-  source: TerminalModelSource
+  source: TerminalModelSource,
+  effort?: string
 ): string | null {
-  if (source === "machine") return "New sessions use your machine's default model.";
-  if (!effectiveModel) return null;
+  // Task 18a37612: the resolved Claude effort (user's or the site's) is
+  // appended as "· High effort". Ignored unless it is a valid Claude level;
+  // with none, every string below is byte-identical to before.
+  const effortLabel = isClaudeEffort(effort) ? EFFORT_LABELS[effort] : null;
+  if (source === "machine") {
+    return effortLabel
+      ? `New sessions use your machine's default model · ${effortLabel} effort.`
+      : "New sessions use your machine's default model.";
+  }
+  if (!effectiveModel) return effortLabel ? `New sessions start at ${effortLabel} effort.` : null;
   const modelLabel = capitalizeTerminalModelName(effectiveModel);
   const sourceLabel = source === "user" ? "your setting" : "platform default";
-  return `New sessions start on ${modelLabel} · ${sourceLabel}.`;
+  return `New sessions start on ${modelLabel} · ${sourceLabel}${effortLabel ? ` · ${effortLabel} effort` : ""}.`;
 }
 
 /**
@@ -219,13 +230,20 @@ export function terminalLaunchModelLine(
  */
 export function terminalDialogModelLine(
   effectiveModel: string | undefined,
-  source: TerminalModelSource
+  source: TerminalModelSource,
+  effort?: string
 ): string | null {
-  if (source === "machine") return "Starts on your machine's default model.";
-  if (!effectiveModel) return null;
+  // Task 18a37612: same optional effort suffix as terminalLaunchModelLine.
+  const effortLabel = isClaudeEffort(effort) ? EFFORT_LABELS[effort] : null;
+  if (source === "machine") {
+    return effortLabel
+      ? `Starts on your machine's default model · ${effortLabel} effort.`
+      : "Starts on your machine's default model.";
+  }
+  if (!effectiveModel) return effortLabel ? `Starts at ${effortLabel} effort.` : null;
   const modelLabel = capitalizeTerminalModelName(effectiveModel);
   const sourceLabel = source === "user" ? "your setting" : "platform default";
-  return `Starts on ${modelLabel} · ${sourceLabel}.`;
+  return `Starts on ${modelLabel} · ${sourceLabel}${effortLabel ? ` · ${effortLabel} effort` : ""}.`;
 }
 
 /**

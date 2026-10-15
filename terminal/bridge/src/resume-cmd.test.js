@@ -241,8 +241,18 @@ test("FR-4: emits NEITHER flag when only one of codexModel/codexEffort is presen
   assert.equal(resolveAgentLaunch({ agent: "codex", codexEffort: "high", mintId: () => MINTED }).cmd, "codex");
 });
 
-test("FR-4: drops an invalid effort (not low/medium/high) -> bare codex", () => {
+test("FR-4: accepts every Codex effort level, minimal through xhigh", () => {
+  for (const effort of ["minimal", "low", "medium", "high", "xhigh"]) {
+    assert.equal(
+      resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: effort, mintId: () => MINTED }).cmd,
+      `codex -m gpt-6-astra -c model_reasoning_effort=${effort}`
+    );
+  }
+});
+
+test("FR-4: drops an invalid effort (incl. Claude-only \"max\") -> bare codex", () => {
   assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "turbo", mintId: () => MINTED }).cmd, "codex");
+  assert.equal(resolveAgentLaunch({ agent: "codex", codexModel: "gpt-6-astra", codexEffort: "max", mintId: () => MINTED }).cmd, "codex");
 });
 
 test("FR-4: drops a model with whitespace/shell metacharacters -> bare codex (never interpolated)", () => {
@@ -295,4 +305,144 @@ test("an explicit --cmd override wins for codex too, and mintId is never called"
   });
   assert.deepEqual(result, { cmd: "bash", conv: null });
   assert.equal(minted, false);
+});
+
+// ── Remote Control (task 5c8969cc) ──────────────────────────────────────────
+// `--remote-control [name]` takes an OPTIONAL name, so the flag must sit
+// IMMEDIATELY after `claude` (index.js appends the bootstrap prompt as the next
+// bare argv element; anywhere later it would become the session name).
+
+test("fresh + remoteControl -> `claude --remote-control --session-id <id>`", () => {
+  const result = resolveClaudeLaunch({ remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --remote-control --session-id ${MINTED}`, conv: MINTED });
+});
+
+test("every flag together, in order: --remote-control first, then session-id/model/permission-mode/worktree", () => {
+  const result = resolveClaudeLaunch({
+    remoteControl: true,
+    model: "opus",
+    permissionMode: "auto",
+    worktree: true,
+    mintId: () => MINTED,
+  });
+  assert.equal(
+    result.cmd,
+    `claude --remote-control --session-id ${MINTED} --model opus --permission-mode auto --worktree ${MINTED}`
+  );
+});
+
+test("resumeId + remoteControl -> `claude --remote-control --resume <id>`", () => {
+  const result = resolveClaudeLaunch({ resumeId: RESUME_ID, remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --remote-control --resume ${RESUME_ID}`, conv: RESUME_ID });
+});
+
+test("legacy resume + remoteControl -> `claude --remote-control --continue`", () => {
+  const result = resolveClaudeLaunch({ resume: true, remoteControl: true, mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "claude --remote-control --continue", conv: null });
+});
+
+test("--remote-control is token[1], immediately after `claude`, in all three Claude branches", () => {
+  for (const extra of [{}, { resumeId: RESUME_ID }, { resume: true }]) {
+    const tokens = resolveClaudeLaunch({ ...extra, remoteControl: true, model: "opus", mintId: () => MINTED }).cmd.split(" ");
+    assert.equal(tokens[0], "claude");
+    assert.equal(tokens[1], "--remote-control");
+    assert.equal(tokens.filter((t) => t === "--remote-control").length, 1);
+  }
+});
+
+test("remoteControl false/undefined/'1'/'true'/1 -> byte-identical to today's commands (strict true only)", () => {
+  for (const remoteControl of [false, undefined, "1", "true", 1]) {
+    assert.equal(resolveClaudeLaunch({ remoteControl, mintId: () => MINTED }).cmd, `claude --session-id ${MINTED}`);
+    assert.equal(resolveClaudeLaunch({ remoteControl, resumeId: RESUME_ID, mintId: () => MINTED }).cmd, `claude --resume ${RESUME_ID}`);
+    assert.equal(resolveClaudeLaunch({ remoteControl, resume: true, mintId: () => MINTED }).cmd, "claude --continue");
+  }
+});
+
+test("an explicit --cmd override is never touched by remoteControl", () => {
+  assert.deepEqual(resolveClaudeLaunch({ explicitCmd: "bash", remoteControl: true, mintId: () => MINTED }), {
+    cmd: "bash",
+    conv: null,
+  });
+  assert.deepEqual(
+    resolveAgentLaunch({ agent: "codex", explicitCmd: "bash", remoteControl: true, mintId: () => MINTED }),
+    { cmd: "bash", conv: null }
+  );
+});
+
+test("codex fresh/resume/resumeId with remoteControl:true never contains --remote-control", () => {
+  for (const extra of [{}, { resume: true }, { resumeId: RESUME_ID }]) {
+    const { cmd } = resolveAgentLaunch({ agent: "codex", ...extra, remoteControl: true, mintId: () => MINTED });
+    assert.ok(!cmd.includes("--remote-control"), cmd);
+    assert.ok(cmd.startsWith("codex"), cmd);
+  }
+});
+
+test("resolveAgentLaunch passes remoteControl through to the Claude branch", () => {
+  assert.equal(
+    resolveAgentLaunch({ remoteControl: true, mintId: () => MINTED }).cmd,
+    `claude --remote-control --session-id ${MINTED}`
+  );
+});
+
+// ── Task 18a37612: Claude starting effort (`--effort <level>`) ──────────────
+
+test("fresh + effort -> `--effort <level>` after --model, before --permission-mode/--worktree", () => {
+  assert.equal(
+    resolveAgentLaunch({ effort: "high", mintId: () => MINTED }).cmd,
+    `claude --session-id ${MINTED} --effort high`
+  );
+  assert.equal(
+    resolveAgentLaunch({
+      remoteControl: true,
+      model: "opus",
+      effort: "xhigh",
+      permissionMode: "auto",
+      worktree: true,
+      mintId: () => MINTED,
+    }).cmd,
+    `claude --remote-control --session-id ${MINTED} --model opus --effort xhigh --permission-mode auto --worktree ${MINTED}`
+  );
+});
+
+test("effort is applied to resume by id and to legacy --continue (a resume does not keep its effort)", () => {
+  assert.equal(
+    resolveAgentLaunch({ resumeId: RESUME_ID, effort: "max", mintId: () => MINTED }).cmd,
+    `claude --resume ${RESUME_ID} --effort max`
+  );
+  assert.equal(
+    resolveAgentLaunch({ resume: true, effort: "low", remoteControl: true, mintId: () => MINTED }).cmd,
+    "claude --remote-control --continue --effort low"
+  );
+});
+
+test("every Claude level is accepted", () => {
+  for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+    assert.ok(resolveClaudeLaunch({ effort, mintId: () => MINTED }).cmd.endsWith(` --effort ${effort}`));
+  }
+});
+
+test("absent or invalid effort -> byte-identical to today's commands", () => {
+  for (const effort of [undefined, null, "", "ultracode", "minimal", "High", "high; rm -rf /", "high --x", 1, true]) {
+    assert.equal(resolveAgentLaunch({ effort, mintId: () => MINTED }).cmd, `claude --session-id ${MINTED}`);
+    assert.equal(resolveAgentLaunch({ effort, resumeId: RESUME_ID, mintId: () => MINTED }).cmd, `claude --resume ${RESUME_ID}`);
+    assert.equal(resolveAgentLaunch({ effort, resume: true, mintId: () => MINTED }).cmd, "claude --continue");
+  }
+});
+
+test("an explicit --cmd override never gets --effort", () => {
+  assert.deepEqual(resolveAgentLaunch({ explicitCmd: "bash", effort: "high", mintId: () => MINTED }), { cmd: "bash", conv: null });
+});
+
+test("a Codex launch never carries the Claude --effort, and keeps its own pair", () => {
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", effort: "high", mintId: () => MINTED }).cmd,
+    "codex"
+  );
+  assert.equal(
+    resolveAgentLaunch({ agent: "codex", effort: "max", codexModel: "gpt-5.6-terra", codexEffort: "medium", mintId: () => MINTED }).cmd,
+    "codex -m gpt-5.6-terra -c model_reasoning_effort=medium"
+  );
+  for (const extra of [{ resume: true }, { resumeId: RESUME_ID }]) {
+    assert.ok(!resolveAgentLaunch({ agent: "codex", effort: "high", ...extra, mintId: () => MINTED }).cmd.includes("--effort"));
+  }
 });

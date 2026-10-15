@@ -54,13 +54,14 @@ export function EnhanceIdeaDialog({
         return "error" in result ? result : result.questions;
       }}
       enhanceStreamUrl="/api/ai/enhance"
-      buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback }) => ({
+      buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback, continueFrom }) => ({
         ideaId,
         prompt,
         personaPrompt,
         answers,
         previousEnhanced,
         refinementFeedback,
+        continueFrom,
       })}
       applyResult={async (enhanced) => {
         const result = await applyEnhancedDescription(ideaId, enhanced);

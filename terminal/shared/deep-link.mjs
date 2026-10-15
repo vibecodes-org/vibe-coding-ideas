@@ -53,10 +53,10 @@
 //   cols/rows — Bug B (card cbe60db5, Nick's field test 2026-08-15): the
 //             browser's real panel size at launch time, so the bridge can
 //             spawn the PTY at the correct size instead of a hardcoded
-//             default. A PROMPTLESS launch spawns its PTY synchronously,
-//             before the browser's own resize control frame can ever reach a
-//             not-yet-existent process — see terminal/bridge/src/index.js's
-//             `resolveSpawnDims`. Only meaningful as a pair; either missing
+//             default. A PROMPTLESS launch spawns its PTY before the relay is
+//             even dialled, so the browser's own resize control frame can
+//             never reach a not-yet-existent process — see
+//             terminal/bridge/src/index.js's `resolveSpawnDims`. Only meaningful as a pair; either missing
 //             or non-sane falls back to the bridge's pre-existing hardcoded
 //             default, exactly like before this field existed (no
 //             version-skew risk).
@@ -124,6 +124,19 @@
 //             behaviour. An old helper's bundled copy of this module simply
 //             never reads `worktree` off the URL — no version-skew risk,
 //             same as every other param here.
+//   remoteControl — task 5c8969cc ("Start with Remote Control on"): set
+//             ONLY when the launching user's terminal_remote_control
+//             preference is on (resolved server-side at mint/reattach time).
+//             The ONLY legal value on the wire is the literal "1"
+//             (isRemoteControlFlagSafe below); a false value is omitted
+//             entirely. Never sent alongside `agent=codex`. Unlike
+//             model/permissionMode/worktree it MAY ride fresh AND resume
+//             links — the bridge inserts `--remote-control` immediately
+//             after `claude` on every Claude branch
+//             (terminal/bridge/src/resume-cmd.js). Not secret, so
+//             redactDeepLinkToken leaves it alone. An old helper's bundled
+//             copy of this module simply never reads it — the session starts
+//             without Remote Control, no error surface.
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three; `model` is
@@ -207,6 +220,14 @@ function isWorktreeFlagSafe(v) {
   return v === "1";
 }
 
+/** Task 5c8969cc — Remote Control: the ONLY legal wire value is the literal
+ *  "1", same posture as isWorktreeFlagSafe above (parse-side re-check).
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isRemoteControlFlagSafe(v) {
+  return v === "1";
+}
+
 /** Codex support (FR-1) — the ONLY legal wire value is the literal "codex".
  *  "claude" (the default) is never put on the wire at all (see the header
  *  comment) — this predicate exists purely for the parse-side re-check, same
@@ -217,19 +238,24 @@ function isAgentSafe(v) {
   return v === "codex";
 }
 
-/** FR-4 (agent-aware model tiers) — the Codex reasoning-effort a fresh Codex
- *  launch opens on (`-c model_reasoning_effort=<effort>`). Hard whitelist of
- *  the shared ladder (REASONING_EFFORT_LEVELS in src/lib/platform-model-defaults.ts).
- *  Only meaningful alongside `model` on a Codex launch; a Claude launch ignores
- *  it. Rechecked on both build and parse.
+/** The reasoning effort a launch opens on. Hard whitelist per agent: Codex's
+ *  ladder (minimal...xhigh, `-c model_reasoning_effort=<effort>`) or Claude's
+ *  (low...max, `--effort <level>`); see CODEX_EFFORT_LEVELS /
+ *  CLAUDE_EFFORT_LEVELS in src/lib/platform-model-defaults.ts. Rechecked on
+ *  build (per agent) and on parse (the union; the bridge re-whitelists per
+ *  agent again before it builds a command).
  *  @param {unknown} v
+ *  @param {string | undefined} [agent] when given, only that agent's ladder passes
  *  @returns {boolean} */
-function isEffortSafe(v) {
-  return v === "low" || v === "medium" || v === "high";
+function isEffortSafe(v, agent) {
+  const codex = v === "minimal" || v === "low" || v === "medium" || v === "high" || v === "xhigh";
+  const claude = v === "low" || v === "medium" || v === "high" || v === "xhigh" || v === "max";
+  if (agent === undefined) return codex || claude;
+  return agent === "codex" ? codex : claude;
 }
 
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&agent=codex][&prompt=…]`
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&remoteControl=1][&agent=codex][&prompt=…]`
  * deep link.
  *
  * Uses encodeURIComponent so reserved characters in the relay URL / token /
@@ -238,10 +264,10 @@ function isEffortSafe(v) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, agent?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, effort, permissionMode, worktree, agent } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, effort, permissionMode, worktree, remoteControl, agent } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -268,9 +294,9 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // header comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
-  // FR-4: the Codex reasoning effort, alongside `model` — same insertion point,
-  // whitelist-checked here too so a malformed value is never fired.
-  if (effort && isEffortSafe(effort)) parts.push(`effort=${encodeURIComponent(effort)}`);
+  // The reasoning effort, alongside `model` — same insertion point,
+  // whitelist-checked here too (per agent) so a malformed value is never fired.
+  if (effort && isEffortSafe(effort, agent === "codex" ? "codex" : "claude")) parts.push(`effort=${encodeURIComponent(effort)}`);
   // Task d3de150c: same insertion point as `model` — before `prompt`.
   // Whitelist-checked here too (not just at parse time), so a malformed or
   // forbidden value can never even be fired in a link.
@@ -281,6 +307,8 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // permissionMode — before `prompt`. Only ever the literal "1"; a falsy
   // value is omitted entirely (no version-skew risk for an old bridge).
   if (worktree) parts.push(`worktree=1`);
+  // Task 5c8969cc: only ever the literal "1"; never alongside agent=codex.
+  if (remoteControl === true && !(agent && isAgentSafe(agent))) parts.push(`remoteControl=1`);
   // Codex support (FR-1): only ever the literal "codex" is put on the wire —
   // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
   // launch is byte-identical to before this field existed (AC-1).
@@ -322,7 +350,7 @@ export function encodePromptParam(prompt) {
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, agent?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -382,6 +410,11 @@ export function parseLaunchDeepLink(url) {
   // "worktree" at all — no version-skew risk.
   const rawWorktree = parsed.searchParams.get("worktree");
   const worktree = rawWorktree !== null && isWorktreeFlagSafe(rawWorktree) ? true : undefined;
+  // Task 5c8969cc: same whitelist posture as worktree — anything except the
+  // exact literal "1" ("true", "0", "yes", "") is dropped silently.
+  const rawRemoteControl = parsed.searchParams.get("remoteControl");
+  const remoteControl =
+    rawRemoteControl !== null && isRemoteControlFlagSafe(rawRemoteControl) ? true : undefined;
   // Codex support (FR-1): re-validated here exactly like worktree above —
   // anything except the exact literal "codex" is dropped silently (including
   // an explicit "claude", which is just the default and was never meant to
@@ -389,9 +422,10 @@ export function parseLaunchDeepLink(url) {
   // this parser simply never reads "agent" at all — no version-skew risk.
   const rawAgent = parsed.searchParams.get("agent");
   const agent = rawAgent && isAgentSafe(rawAgent) ? rawAgent : undefined;
-  // FR-4: re-validated here exactly like permissionMode above — a hard
-  // whitelist (low/medium/high); anything else is dropped silently. An old
-  // helper's bundled copy of this parser simply never reads "effort" — no
+  // Re-validated here exactly like permissionMode above — a hard whitelist (the
+  // union of both ladders; the bridge narrows it per agent); anything else is
+  // dropped silently. An old helper's bundled copy of this parser keeps the
+  // Codex ladder only, and its Claude branch never reads effort — no
   // version-skew risk.
   const rawEffort = parsed.searchParams.get("effort");
   const effort = rawEffort && isEffortSafe(rawEffort) ? rawEffort : undefined;
@@ -410,6 +444,7 @@ export function parseLaunchDeepLink(url) {
   if (effort) out.effort = effort;
   if (permissionMode) out.permissionMode = permissionMode;
   if (worktree) out.worktree = worktree;
+  if (remoteControl) out.remoteControl = true;
   if (agent) out.agent = agent;
   if (prompt) out.prompt = prompt;
   return out;

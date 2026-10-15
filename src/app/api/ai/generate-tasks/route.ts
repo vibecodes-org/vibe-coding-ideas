@@ -7,16 +7,23 @@ import {
   chargeAiUsage,
   chargeAiUpfront,
   resolveAiProvider,
+  ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
 } from "@/lib/ai-helpers";
 import { buildPromptContextParts, buildAutoRuleMappings } from "@/lib/ai-prompt-helpers";
+import { createDeadlineSignal, whenAborted } from "@/lib/enhance-stream";
+import {
+  GENERATE_TASKS_DEADLINE_MS,
+  GENERATE_TASKS_FINISH_WAIT_MS,
+  GENERATE_TASKS_MAX_OUTPUT_TOKENS,
+  buildContinuationTasksInstruction,
+  completeTasksOnly,
+  parseContinueAfter,
+  type CutShortReason,
+} from "@/lib/generate-tasks-stream";
 
+// Literal on purpose: Next.js reads it statically. GENERATE_TASKS_DEADLINE_MS
+// (src/lib/generate-tasks-stream.ts) stops the model 30 s before this limit.
 export const maxDuration = 300;
-
-// Hard bound on the streaming generation. Without it, a provider-side stall (the
-// stream stops emitting tokens but never sends a `finish` chunk) leaves the dock
-// spinning until Vercel's 300s function kill. 120s is generous for 15-20 tasks
-// while still failing fast enough to show a retryable error.
-const GENERATE_TIMEOUT_MS = 120_000;
 
 const GeneratedTaskSchema = z.object({
   title: z.string(),
@@ -31,6 +38,7 @@ const GeneratedBoardSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
   try {
     const supabase = await createClient();
     const {
@@ -48,18 +56,27 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { ideaId, prompt, personaPrompt, agentRole, agentSkills, agentBio } = body as {
+    const { ideaId, prompt, personaPrompt, agentRole, agentBio } = body as {
       ideaId: string;
       prompt: string;
       personaPrompt?: string | null;
       agentRole?: string | null;
-      agentSkills?: string[] | null;
       agentBio?: string | null;
     };
 
     if (!ideaId || !prompt) {
       return Response.json({ error: "Missing ideaId or prompt" }, { status: 400 });
     }
+
+    // "Generate the rest": the tasks already in the dialog's list.
+    const parsedContinue = parseContinueAfter(
+      (body as { continueAfter?: unknown }).continueAfter
+    );
+    if (!parsedContinue.ok) {
+      return Response.json({ error: "Invalid continueAfter" }, { status: 400 });
+    }
+    const continueAfter = parsedContinue.value;
+    const isContinuation = continueAfter.length > 0;
 
     const { data: idea } = await supabase
       .from("ideas")
@@ -118,7 +135,7 @@ export async function POST(req: Request) {
       }))
     );
 
-    const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
+    const hasAgent = !!(personaPrompt || agentRole);
 
     // ORIGINAL prompt — unchanged behaviour for normal ideas (incl. the markdown
     // subtask-checklist feature). This is what runs for the vast majority of ideas.
@@ -131,8 +148,8 @@ export async function POST(req: Request) {
     // and fills the token budget before making a second — confirmed by telemetry).
     // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
     // only large ideas get an added decomposition nudge. Threshold in characters:
-    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below YCS
-    // TEST's ~20000-char programme spec.
+    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below a
+    // ~20,000-char programme spec.
     const LARGE_IDEA_CHARS = 12000;
     const isLargeIdea = (idea.description?.length ?? 0) > LARGE_IDEA_CHARS;
 
@@ -144,7 +161,6 @@ export async function POST(req: Request) {
       existingLabels,
       autoRuleMappings,
       agentRole,
-      agentSkills,
       agentBio,
     });
 
@@ -165,6 +181,11 @@ export async function POST(req: Request) {
       );
     }
 
+    // Continuation ONLY: the list so far, as the very last thing the model reads.
+    if (isContinuation) {
+      contextParts.push(buildContinuationTasksInstruction(continueAfter));
+    }
+
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" when the
     // post-stream step fails due to expired auth context. Usage logged after.
     await chargeAiUpfront(supabase, { userId: user.id, keyType });
@@ -177,15 +198,17 @@ export async function POST(req: Request) {
     // `await result.usage` below would hang forever, the ReadableStream would never
     // close, and the dock would spin indefinitely (the reported bug).
     let streamError: unknown = null;
+    // Stop ~30 s before the platform kills the function, and end like a length
+    // cut so the finished tasks are kept and "Generate the rest" is offered.
+    const deadline = createDeadlineSignal(startedAt, GENERATE_TASKS_DEADLINE_MS);
     const result = streamObject({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
-      maxOutputTokens: 8000,
-      // A stall that emits no tokens (and no error) is bounded here rather than by
-      // the 300s function timeout — the abort surfaces through onError below.
-      abortSignal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+      maxOutputTokens: GENERATE_TASKS_MAX_OUTPUT_TOKENS,
+      abortSignal: deadline.signal,
       onError: ({ error }) => {
         streamError = error;
         logger.error("AI generate tasks stream error", {
@@ -195,19 +218,34 @@ export async function POST(req: Request) {
       },
     });
 
-    // Stream partial objects as newline-delimited JSON
+    // Stream partial objects as newline-delimited JSON. Every run that does not
+    // end in the error line ends with exactly one final line ({ final: true }).
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         // Progress telemetry — lets us tell a genuine stall ("stuck at 1 task")
         // apart from a slow-but-advancing generation when a run is aborted.
-        const startedAt = Date.now();
         let maxTasksSeen = 0;
         let chunksEmitted = 0;
+        let latestTasks: z.infer<typeof GeneratedTaskSchema>[] = [];
+        let hitDeadline = false;
+        const aborted = whenAborted(deadline.signal);
         try {
-          for await (const partialObject of result.partialObjectStream) {
+          const iterator = result.partialObjectStream[Symbol.asyncIterator]();
+          while (true) {
+            // Race against the deadline so a stream that ignores the abort can't hang us.
+            const next = await Promise.race([iterator.next(), aborted]);
+            if (next === "aborted") {
+              hitDeadline = true;
+              break;
+            }
+            if (next.done) break;
+            const partialObject = next.value;
             const taskCount = partialObject.tasks?.length ?? 0;
             maxTasksSeen = Math.max(maxTasksSeen, taskCount);
+            if (taskCount > 0) {
+              latestTasks = partialObject.tasks as typeof latestTasks;
+            }
             // Only emit when we have at least one task with a title
             if (taskCount > 0 && partialObject.tasks![taskCount - 1]?.title) {
               chunksEmitted += 1;
@@ -221,36 +259,90 @@ export async function POST(req: Request) {
           // chunk); treat both the same.
           streamError = streamError ?? err;
         }
+        deadline.clear();
+        // A stream that closed (or errored) because of the abort is a deadline stop.
+        hitDeadline ||= deadline.signal.aborted;
 
-        // If the stream failed, tell the client explicitly. The dock keys off this
-        // sentinel to show a retryable toast instead of treating a truncated
-        // partial (e.g. a single task) as a complete result.
-        if (streamError) {
-          logger.error("AI generate tasks stream ended in error", {
-            ideaId,
-            isLargeIdea,
-            maxTasksSeen,
-            chunksEmitted,
-            elapsedMs: Date.now() - startedAt,
-          });
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                error: "Task generation was interrupted — please try again.",
-              }) + "\n"
-            )
-          );
-          controller.close();
-          return;
-        }
-
-        logger.info("AI generate tasks stream completed", {
+        const logFields = {
           ideaId,
           isLargeIdea,
           maxTasksSeen,
           chunksEmitted,
           elapsedMs: Date.now() - startedAt,
-        });
+          continuation: isContinuation,
+          continueAfterCount: continueAfter.length,
+        };
+        const errorLine =
+          JSON.stringify({
+            error: "Task generation was interrupted — please try again.",
+          }) + "\n";
+
+        // Any other failure: tell the client explicitly. The dialog keeps whatever
+        // finished tasks it already has, or shows a retryable toast if none.
+        if (streamError && !hitDeadline) {
+          logger.error("AI generate tasks stream ended in error", logFields);
+          controller.enqueue(encoder.encode(errorLine));
+          controller.close();
+          return;
+        }
+
+        // finishReason never resolves on an errored/aborted stream: bound the wait.
+        let finishReason: string | undefined;
+        if (!hitDeadline) {
+          let waitTimer: ReturnType<typeof setTimeout> | undefined;
+          finishReason = await Promise.race([
+            Promise.resolve(result.finishReason).catch(() => undefined),
+            new Promise<undefined>((resolve) => {
+              waitTimer = setTimeout(
+                () => resolve(undefined),
+                GENERATE_TASKS_FINISH_WAIT_MS
+              );
+            }),
+          ]);
+          clearTimeout(waitTimer);
+        }
+
+        let cutShort: CutShortReason | undefined;
+        if (hitDeadline) cutShort = "time";
+        // Anything but a clean stop (length, content-filter, other, or no answer
+        // within the wait) may leave the last task half-written: treat it as a cut.
+        else if (finishReason !== "stop") cutShort = "length";
+
+        // On a cut the last task is the half-written one: drop it.
+        const finalTasks = cutShort ? completeTasksOnly(latestTasks) : latestTasks;
+
+        if (cutShort && finalTasks.length === 0 && !isContinuation) {
+          // Nothing usable on a first run: the existing retryable error.
+          logger.error("AI generate tasks cut short with no finished task", {
+            ...logFields,
+            finishReason,
+            cutShort,
+          });
+          controller.enqueue(encoder.encode(errorLine));
+          controller.close();
+          return;
+        }
+
+        const finalLine: {
+          tasks: typeof finalTasks;
+          final: true;
+          cutShort?: CutShortReason;
+        } = { tasks: finalTasks, final: true };
+        if (cutShort) finalLine.cutShort = cutShort;
+        controller.enqueue(encoder.encode(JSON.stringify(finalLine) + "\n"));
+
+        if (cutShort) {
+          logger.warn("AI generate tasks stream completed", {
+            ...logFields,
+            finishReason,
+            cutShort,
+          });
+        } else {
+          logger.info("AI generate tasks stream completed", {
+            ...logFields,
+            finishReason,
+          });
+        }
 
         // Usage is best-effort billing/telemetry only (the credit was charged
         // upfront, free: true here) — NEVER let it block closing the response.
@@ -258,7 +350,9 @@ export async function POST(req: Request) {
         try {
           const usage = await Promise.race([
             result.usage.catch(() => null),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+            new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), GENERATE_TASKS_FINISH_WAIT_MS)
+            ),
           ]);
           if (usage) {
             await chargeAiUsage(supabase, {

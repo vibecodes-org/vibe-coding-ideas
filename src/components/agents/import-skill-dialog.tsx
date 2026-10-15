@@ -392,7 +392,7 @@ export function ImportSkillDialog({ open, onOpenChange }: ImportSkillDialogProps
               {/* System prompt preview */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  System Prompt Preview
+                  Instructions preview
                 </label>
                 <div className="relative mt-1 max-h-40 overflow-hidden rounded-lg border border-border bg-muted/30 p-3">
                   <pre className="whitespace-pre-wrap text-xs font-mono text-muted-foreground leading-relaxed">

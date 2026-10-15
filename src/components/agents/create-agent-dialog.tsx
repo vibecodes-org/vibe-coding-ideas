@@ -16,36 +16,14 @@ import { Label } from "@/components/ui/label";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
+import { RoleTemplateChips } from "@/components/agents/role-template-chips";
 import { createBot } from "@/actions/bots";
-import { getDefaultSkillsForRole } from "@/lib/agent-skills";
-import { PromptBuilder } from "@/components/profile/prompt-builder";
-import { generatePromptFromFields } from "@/lib/prompt-builder";
+import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
+import { generateInstructions } from "@/lib/agent-instructions";
+import type { ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
-import { cn, getInitials } from "@/lib/utils";
-import type { StructuredPromptFields } from "@/lib/prompt-builder";
-
-const PRIMARY_CHIPS: { role: string; icon: string }[] = [
-  { role: "Full Stack Engineer", icon: "\u{1F4BB}" },
-  { role: "Front End Engineer", icon: "\u{1F310}" },
-  { role: "UX Designer", icon: "\u{1F3A8}" },
-  { role: "QA Engineer", icon: "\u{1F50D}" },
-  { role: "DevOps Engineer", icon: "\u{2699}" },
-  { role: "Security Engineer", icon: "\u{1F6E1}" },
-  { role: "Product Owner", icon: "\u{1F4CB}" },
-];
-
-const EXPANDED_CHIPS: { role: string; icon: string }[] = [
-  { role: "Backend Engineer", icon: "\u{2699}\u{FE0F}" },
-  { role: "Code Reviewer", icon: "\u{1F4DD}" },
-  { role: "Data Engineer", icon: "\u{1F4BE}" },
-  { role: "Business Analyst", icon: "\u{1F4CA}" },
-  { role: "Product Manager", icon: "\u{1F4E6}" },
-  { role: "Technical Writer", icon: "\u{1F4D6}" },
-  { role: "CEO / Founder", icon: "\u{1F680}" },
-  { role: "Marketing Strategist", icon: "\u{1F4E3}" },
-  { role: "Sales Lead", icon: "\u{1F4B0}" },
-  { role: "Finance & Operations", icon: "\u{1F4C8}" },
-];
+import { getInitials } from "@/lib/utils";
 
 import { allocateAllAgents } from "@/actions/idea-agents";
 import type { UserIdea } from "./allocate-to-idea-dialog";
@@ -61,17 +39,14 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bio, setBio] = useState("");
-  const [skillsInput, setSkillsInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [showMoreTemplates, setShowMoreTemplates] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(false);
   const [createdName, setCreatedName] = useState("");
   const [createdBotId, setCreatedBotId] = useState<string | null>(null);
   const [allocatedIdeaId, setAllocatedIdeaId] = useState<string | null>(null);
   const [allocatingToIdea, setAllocatingToIdea] = useState(false);
-  const [templateStructured, setTemplateStructured] =
-    useState<StructuredPromptFields | null>(null);
+  const [toolAccess, setToolAccess] = useState<ToolAccess>("full");
   const [promptKey, setPromptKey] = useState(0);
 
   // Avatar upload
@@ -87,17 +62,9 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     if (template) {
       setSelectedTemplate(templateRole);
       setRole(template.role);
-      if (template.structured) {
-        setSystemPrompt(generatePromptFromFields(template.role, template.structured));
-        setTemplateStructured({ ...template.structured });
-      } else {
-        setSystemPrompt(template.prompt);
-        setTemplateStructured(null);
-      }
+      setSystemPrompt(generateInstructions(template.fields));
+      setToolAccess(template.toolAccess);
       setPromptKey((k) => k + 1);
-      // Auto-populate skills based on role
-      const defaultSkills = getDefaultSkillsForRole(template.role);
-      setSkillsInput(defaultSkills.join(", "));
     }
   }
 
@@ -106,9 +73,8 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setRole("");
     setSystemPrompt("");
     setBio("");
-    setSkillsInput("");
     setSelectedTemplate(null);
-    setTemplateStructured(null);
+    setToolAccess("full");
     setPromptKey((k) => k + 1);
     setCreated(false);
     setCreatedName("");
@@ -139,15 +105,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setPreviewUrl(URL.createObjectURL(file));
   }
 
-  function parseSkills(): string[] {
-    if (!skillsInput.trim()) return [];
-    return skillsInput
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 10);
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -155,8 +112,6 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setShowHints(true);
     setSubmitting(true);
     try {
-      const skills = parseSkills();
-
       // Create bot first to get ID, then upload avatar
       const botId = await createBot(
         name.trim(),
@@ -164,7 +119,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
         systemPrompt.trim() || null,
         null,
         bio.trim() || null,
-        skills
+        toolAccess
       );
 
       // Upload avatar if selected
@@ -201,7 +156,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         {created ? (
           <div className="flex flex-col items-center gap-5 py-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
@@ -306,8 +261,8 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Avatar + Name + Tagline row */}
-          <div className="flex gap-4">
+          {/* Avatar + Name + Tagline row (avatar above the fields on a phone) */}
+          <div className="flex flex-col gap-4 sm:flex-row">
             <div
               className="group relative cursor-pointer shrink-0"
               onClick={() => fileInputRef.current?.click()}
@@ -358,57 +313,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
             </div>
           </div>
 
-          {/* Template picker chips */}
-          <div className="space-y-2">
-            <Label className="text-xs">Start from a template</Label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {PRIMARY_CHIPS.map((t) => (
-                <button
-                  key={t.role}
-                  type="button"
-                  onClick={() => handleTemplateSelect(t.role)}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 rounded-md border py-2 px-2 text-xs font-medium transition-colors",
-                    selectedTemplate === t.role
-                      ? "border-violet-500 bg-violet-500/15 text-violet-400"
-                      : "border-border text-muted-foreground hover:border-violet-500/30 hover:text-foreground"
-                  )}
-                >
-                  <span className="text-base">{t.icon}</span>
-                  {t.role}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setShowMoreTemplates((v) => !v)}
-                aria-expanded={showMoreTemplates}
-                className="flex flex-col items-center gap-0.5 rounded-md border border-dashed py-2 px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-500/30 hover:text-foreground"
-              >
-                <span className="text-base">{showMoreTemplates ? "\u2191" : "+"}</span>
-                {showMoreTemplates ? "Less" : "More\u2026"}
-              </button>
-            </div>
-            {showMoreTemplates && (
-              <div className="grid grid-cols-4 gap-1.5 border-t border-dashed border-border pt-2" role="group" aria-label="Additional role templates">
-                {EXPANDED_CHIPS.map((t) => (
-                  <button
-                    key={t.role}
-                    type="button"
-                    onClick={() => handleTemplateSelect(t.role)}
-                    className={cn(
-                      "flex flex-col items-center gap-0.5 rounded-md border py-2 px-2 text-xs font-medium transition-colors",
-                      selectedTemplate === t.role
-                        ? "border-violet-500 bg-violet-500/15 text-violet-400"
-                        : "border-border text-muted-foreground hover:border-violet-500/30 hover:text-foreground"
-                    )}
-                  >
-                    <span className="text-base">{t.icon}</span>
-                    {t.role}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <RoleTemplateChips selected={selectedTemplate} onSelect={handleTemplateSelect} />
 
           {/* Role */}
           <div className="space-y-1">
@@ -430,37 +335,29 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
             )}
           </div>
 
-          {/* Skills (comma-separated) */}
-          <div className="space-y-1">
-            <Label htmlFor="bot-skills" className="text-xs">
-              Skills <span className="font-normal text-muted-foreground">(optional)</span>
-            </Label>
-            <Input
-              id="bot-skills"
-              value={skillsInput}
-              onChange={(e) => setSkillsInput(e.target.value)}
-              placeholder="Comma-separated skills"
-              maxLength={300}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Shown on the agent card and profile. Helps the community find your agent.
-            </p>
-          </div>
-
-          {/* Prompt Builder */}
-          <PromptBuilder
+          {/* Instructions */}
+          <AgentInstructionsEditor
             key={promptKey}
             role={role}
             value={systemPrompt}
             onChange={(val) => { setSystemPrompt(val); if (val.trim()) setShowHints(false); }}
-            templateStructured={templateStructured}
           />
           {showHints && !systemPrompt.trim() && (
             <p role="alert" className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-2.5 py-1.5 text-xs text-amber-400">
               <span>&#x26A0;&#xFE0F;</span>
-              Add a system prompt so this agent knows how to approach tasks
+              Add instructions so this agent knows how to approach tasks
             </p>
           )}
+
+          <ToolAccessPicker value={toolAccess} onChange={setToolAccess} />
+
+          {/* Skills are added from the agent's own page once it exists */}
+          <div className="space-y-1">
+            <Label className="text-xs">Skills</Label>
+            <p className="text-[11px] text-muted-foreground">
+              Add skills from the agent&apos;s page once it&apos;s created. Most agents need none.
+            </p>
+          </div>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">

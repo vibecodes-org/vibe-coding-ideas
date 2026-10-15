@@ -1,90 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  generatePromptFromFields,
   parsePromptToFields,
   isStructuredPrompt,
-  type StructuredPromptFields,
 } from "./prompt-builder";
-
-describe("generatePromptFromFields", () => {
-  it("generates prompt with all fields", () => {
-    const result = generatePromptFromFields("Developer", {
-      goal: "Ship clean, tested code",
-      constraints: "Never skip tests or ignore linting errors",
-      approach: "Break tasks into small PRs. Write tests first.",
-    });
-    expect(result).toBe(
-      "You are a Developer. Ship clean, tested code\n\n" +
-        "You must not: Never skip tests or ignore linting errors\n\n" +
-        "Your approach: Break tasks into small PRs. Write tests first."
-    );
-  });
-
-  it("generates prompt with only goal", () => {
-    const result = generatePromptFromFields("QA Tester", {
-      goal: "Find edge cases and regressions",
-      constraints: "",
-      approach: "",
-    });
-    expect(result).toBe("You are a QA Tester. Find edge cases and regressions");
-  });
-
-  it("generates prompt with only constraints and approach", () => {
-    const result = generatePromptFromFields("Support", {
-      goal: "",
-      constraints: "Never close tickets without user confirmation",
-      approach: "Reproduce bugs before escalating",
-    });
-    expect(result).toBe(
-      "You are a Support.\n\n" +
-        "You must not: Never close tickets without user confirmation\n\n" +
-        "Your approach: Reproduce bugs before escalating"
-    );
-  });
-
-  it("generates prompt without role", () => {
-    const result = generatePromptFromFields("", {
-      goal: "Help the team succeed",
-      constraints: "",
-      approach: "Be proactive and communicative",
-    });
-    expect(result).toBe(
-      "Help the team succeed\n\n" +
-        "Your approach: Be proactive and communicative"
-    );
-  });
-
-  it("returns empty string when all fields are empty", () => {
-    const result = generatePromptFromFields("", {
-      goal: "",
-      constraints: "",
-      approach: "",
-    });
-    expect(result).toBe("");
-  });
-
-  it("returns only role when fields are empty but role is set", () => {
-    const result = generatePromptFromFields("DevOps", {
-      goal: "",
-      constraints: "",
-      approach: "",
-    });
-    expect(result).toBe("You are a DevOps.");
-  });
-
-  it("trims whitespace from fields", () => {
-    const result = generatePromptFromFields("  Developer  ", {
-      goal: "  Ship code  ",
-      constraints: "  Skip tests  ",
-      approach: "  Write tests  ",
-    });
-    expect(result).toBe(
-      "You are a Developer. Ship code\n\n" +
-        "You must not: Skip tests\n\n" +
-        "Your approach: Write tests"
-    );
-  });
-});
 
 describe("parsePromptToFields", () => {
   it("parses a fully structured prompt", () => {
@@ -146,30 +64,6 @@ describe("parsePromptToFields", () => {
       approach: "",
     });
   });
-
-  it("round-trips: generate then parse returns original fields", () => {
-    const original: StructuredPromptFields = {
-      goal: "Ship clean, tested, and well-documented code",
-      constraints:
-        "Skip tests, ignore linting errors, or make changes outside scope",
-      approach:
-        "Break tasks into small PRs. Follow project conventions. Write tests first.",
-    };
-    const prompt = generatePromptFromFields("Developer", original);
-    const parsed = parsePromptToFields(prompt);
-    expect(parsed).toEqual(original);
-  });
-
-  it("round-trips with only goal and approach", () => {
-    const original: StructuredPromptFields = {
-      goal: "Triage user issues quickly",
-      constraints: "",
-      approach: "Reproduce bugs before escalating",
-    };
-    const prompt = generatePromptFromFields("Support", original);
-    const parsed = parsePromptToFields(prompt);
-    expect(parsed).toEqual(original);
-  });
 });
 
 describe("parsePromptToFields — markdown headers", () => {
@@ -216,42 +110,6 @@ describe("parsePromptToFields — markdown headers", () => {
   });
 });
 
-describe("generatePromptFromFields — expertise", () => {
-  it("includes expertise section when provided", () => {
-    const result = generatePromptFromFields("Developer", {
-      goal: "Ship clean code",
-      expertise: "SOLID principles. N+1 query detection.",
-      constraints: "Skip tests",
-      approach: "Write tests first",
-    });
-    expect(result).toBe(
-      "You are a Developer. Ship clean code\n\n" +
-        "Domain expertise: SOLID principles. N+1 query detection.\n\n" +
-        "You must not: Skip tests\n\n" +
-        "Your approach: Write tests first"
-    );
-  });
-
-  it("omits expertise section when empty", () => {
-    const result = generatePromptFromFields("Developer", {
-      goal: "Ship code",
-      expertise: "",
-      constraints: "Skip tests",
-      approach: "Write tests",
-    });
-    expect(result).not.toContain("Domain expertise:");
-  });
-
-  it("omits expertise section when undefined", () => {
-    const result = generatePromptFromFields("Developer", {
-      goal: "Ship code",
-      constraints: "Skip tests",
-      approach: "Write tests",
-    });
-    expect(result).not.toContain("Domain expertise:");
-  });
-});
-
 describe("parsePromptToFields — expertise (inline)", () => {
   it("parses prompt with expertise marker", () => {
     const prompt =
@@ -275,28 +133,6 @@ describe("parsePromptToFields — expertise (inline)", () => {
     expect(result?.expertise).toBeUndefined();
   });
 
-  it("round-trips with expertise", () => {
-    const original: StructuredPromptFields = {
-      goal: "Ship clean code",
-      expertise: "SOLID principles. Contract-first API design.",
-      constraints: "Skip tests",
-      approach: "Write tests first",
-    };
-    const prompt = generatePromptFromFields("Developer", original);
-    const parsed = parsePromptToFields(prompt);
-    expect(parsed).toEqual(original);
-  });
-
-  it("round-trips without expertise", () => {
-    const original: StructuredPromptFields = {
-      goal: "Ship code",
-      constraints: "Skip tests",
-      approach: "Write tests",
-    };
-    const prompt = generatePromptFromFields("Developer", original);
-    const parsed = parsePromptToFields(prompt);
-    expect(parsed).toEqual(original);
-  });
 });
 
 describe("parsePromptToFields — expertise (markdown)", () => {
@@ -352,5 +188,24 @@ describe("isStructuredPrompt", () => {
 
   it("returns false for empty string", () => {
     expect(isStructuredPrompt("")).toBe(false);
+  });
+});
+
+describe("parsePromptToFields — converter options", () => {
+  it("keeps text before the first markdown heading as the start of the goal", () => {
+    const result = parsePromptToFields("Intro line.\n\n## Goal\nDo it.\n\n## Approach\nWell.", { role: null });
+    expect(result?.goal).toBe("Intro line.\n\nDo it.");
+  });
+
+  it("drops the preamble when no options are given (display behaviour)", () => {
+    const result = parsePromptToFields("Intro line.\n\n## Goal\nDo it.\n\n## Approach\nWell.");
+    expect(result?.goal).toBe("Do it.");
+  });
+
+  it("strips the 'You are a X.' opening only when X is the agent's role", () => {
+    const text = "You are a Developer. Ship code\n\nYou must not: Skip tests";
+    expect(parsePromptToFields(text, { role: "Developer" })?.goal).toBe("Ship code");
+    expect(parsePromptToFields(text, { role: "QA" })?.goal).toBe("You are a Developer. Ship code");
+    expect(parsePromptToFields(text, { role: null })?.goal).toBe("You are a Developer. Ship code");
   });
 });

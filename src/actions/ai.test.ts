@@ -43,6 +43,12 @@ vi.mock("@/lib/ai-helpers", () => ({
   ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS: {
     anthropic: { structuredOutputMode: "outputFormat" },
   },
+  ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS: {
+    anthropic: { structuredOutputMode: "outputFormat", effort: "low" },
+  },
+  ANTHROPIC_LOW_EFFORT_OPTIONS: {
+    anthropic: { effort: "low" },
+  },
   resolveAiProvider: vi.fn().mockResolvedValue({
     ok: true,
     anthropic: (m: string) => m,
@@ -118,6 +124,23 @@ describe("generateClarifyingQuestions — kit context injection (AC-10)", () => 
 
     const call = mockGenerateObject.mock.calls[0][0] as { system: string };
     expect(call.system).not.toMatch(/This is a \*\*.*\*\* project/);
+  });
+
+  it("asks for low effort so thinking can't use up the small 1000-token cap", async () => {
+    mockSingle.mockResolvedValue({
+      data: { id: "idea-1", title: "My idea", description: "desc", author_id: "user-1", project_kit: null },
+      error: null,
+    });
+
+    const generateClarifyingQuestions = await getAction();
+    await generateClarifyingQuestions("idea-1", "Make it better");
+
+    const call = mockGenerateObject.mock.calls[0][0] as {
+      maxOutputTokens: number;
+      providerOptions: { anthropic: Record<string, unknown> };
+    };
+    expect(call.maxOutputTokens).toBe(1000);
+    expect(call.providerOptions.anthropic).toEqual({ structuredOutputMode: "outputFormat", effort: "low" });
   });
 
   it("rejects when the caller is not the idea author (authorization preserved)", async () => {
@@ -349,5 +372,19 @@ describe("AI failure paths — structured { error } returns", () => {
     const result = await enhanceDiscussionBody("idea-1", "Title", "Body text");
 
     expect(result).toEqual({ error: "Overloaded" });
+  });
+
+  it("enhanceDiscussionBody asks for the body alone, without the title or labels", async () => {
+    mockGenerateText.mockResolvedValue({ text: "Sharper body", usage: { inputTokens: 1, outputTokens: 1 } });
+
+    const { enhanceDiscussionBody } = await import("./ai");
+    const result = await enhanceDiscussionBody("idea-1", "Dark mode emails", "emails look bad in dark mode");
+
+    expect(result).toEqual({ enhanced: "Sharper body" });
+    const call = mockGenerateText.mock.calls.at(-1)?.[0] as { system: string; prompt: string };
+    expect(call.system).toContain("return only the improved body text: no title");
+    expect(call.system).not.toMatch(/STRICT|Do NOT|ONLY/);
+    expect(call.prompt).toContain("Discussion title (context only, not part of your reply): Dark mode emails");
+    expect(call.prompt).toMatch(/Body to improve:\nemails look bad in dark mode$/);
   });
 });

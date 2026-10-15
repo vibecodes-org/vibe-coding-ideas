@@ -208,9 +208,6 @@ export function validateBio(bio: string | null): string | null {
   return trimmed;
 }
 
-export const MAX_SKILLS = 10;
-export const MAX_SKILL_LENGTH = 30;
-
 export const MAX_DELIVERABLES = 10;
 export const MAX_DELIVERABLE_LENGTH = 100;
 
@@ -299,21 +296,4 @@ export function validateWorkflowTemplateSteps(
       ...(model_tier !== undefined ? { model_tier } : {}),
     };
   });
-}
-
-export function validateSkills(skills: string[]): string[] {
-  if (!skills || skills.length === 0) return [];
-  const cleaned = skills
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  const unique = [...new Set(cleaned)];
-  if (unique.length > MAX_SKILLS) {
-    throw new ValidationError(`Maximum ${MAX_SKILLS} skills allowed`);
-  }
-  for (const skill of unique) {
-    if (skill.length > MAX_SKILL_LENGTH) {
-      throw new ValidationError(`Skill "${skill}" exceeds ${MAX_SKILL_LENGTH} characters`);
-    }
-  }
-  return unique;
 }

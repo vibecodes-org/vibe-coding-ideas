@@ -48,6 +48,19 @@ export interface TerminalTaskLaunchChoiceProps {
    */
   autoAcceptChip?: string | null;
   /**
+   * Task 5c8969cc ("Start with Remote Control on") — the violet label shown
+   * straight after the auto chip on the model line, e.g. "📱 remote control
+   * on". Omitted when null/undefined (loading, off, or Codex picked). See
+   * terminalLaunchRemoteControlChip in src/lib/terminal/remote-control-mode.ts.
+   */
+  remoteControlChip?: string | null;
+  /**
+   * Task 5c8969cc — the "new sessions only" reminder line, only when resumes
+   * don't carry Remote Control (REMOTE_CONTROL_APPLIES_TO_RESUME false).
+   * Omitted when null/undefined.
+   */
+  remoteControlReminder?: string | null;
+  /**
    * Codex support (docs/codex-terminal-ux-design.html §1c, implementation
    * slice 2) — "Start fresh with", pre-set by the caller to whichever agent
    * the triggering launch already carried (never the remembered pick — see
@@ -68,6 +81,8 @@ export function TerminalTaskLaunchChoice({
   onCancel,
   modelLine = null,
   autoAcceptChip = null,
+  remoteControlChip = null,
+  remoteControlReminder = null,
   agent,
   onAgentChange,
 }: TerminalTaskLaunchChoiceProps) {
@@ -133,6 +148,9 @@ export function TerminalTaskLaunchChoice({
             <p className="mt-1.5 text-[11px] text-zinc-500">
               {modelLine}
               {autoAcceptChip && <span className="ml-1 font-semibold text-amber-400">· {autoAcceptChip}</span>}
+              {remoteControlChip && (
+                <span className="ml-1 whitespace-nowrap font-semibold text-violet-400">· {remoteControlChip}</span>
+              )}
             </p>
           )}
           {/* Task d3de150c: fresh-launches-only reminder — Reconnect/Resume
@@ -140,6 +158,7 @@ export function TerminalTaskLaunchChoice({
           {autoAcceptChip && (
             <p className="mt-1 text-[11px] text-zinc-500">Only starting fresh applies auto-accept.</p>
           )}
+          {remoteControlReminder && <p className="mt-1 text-[11px] text-zinc-500">{remoteControlReminder}</p>}
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>

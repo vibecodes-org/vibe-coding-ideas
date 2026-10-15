@@ -18,17 +18,39 @@ import type { LaunchAgent } from "./agent-launch";
 export type LaunchTarget = "terminal-window" | "browser";
 
 /**
+ * Where a plain click on "Launch Claude Code" (board primary or task-header icon)
+ * goes: the in-app terminal ("browser") only when the terminal flag is on AND this
+ * machine is a supported Mac (the only place the helper runs); otherwise the
+ * terminal window, exactly as before.
+ */
+export function defaultLaunchTarget({
+  terminalEnabled,
+  platformSupported,
+}: {
+  terminalEnabled: boolean;
+  platformSupported: boolean;
+}): LaunchTarget {
+  return terminalEnabled && platformSupported ? "browser" : "terminal-window";
+}
+
+/**
  * The launch modes the menu should offer, in display order.
  *
  *  - flag OFF → only "terminal-window" (the in-browser item is simply NOT rendered;
  *    the control looks and behaves exactly as it does today).
- *  - flag ON  → "terminal-window" (default, first) then "browser" (Beta).
- *
- * "terminal-window" is ALWAYS present and ALWAYS first, so the existing default
- * action is never moved or removed by enabling the flag.
+ *  - flag ON  → both, the default destination (see defaultLaunchTarget) first:
+ *    "browser" first on a supported Mac, "terminal-window" first elsewhere.
+ *    `platformSupported` defaults to false so callers that don't know the platform
+ *    keep today's order.
  */
-export function launchModeOptions(terminalEnabled: boolean): LaunchTarget[] {
-  return terminalEnabled ? ["terminal-window", "browser"] : ["terminal-window"];
+export function launchModeOptions(
+  terminalEnabled: boolean,
+  platformSupported = false
+): LaunchTarget[] {
+  if (!terminalEnabled) return ["terminal-window"];
+  return defaultLaunchTarget({ terminalEnabled, platformSupported }) === "browser"
+    ? ["browser", "terminal-window"]
+    : ["terminal-window", "browser"];
 }
 
 /** Whether the in-browser destination should appear in the menu. */

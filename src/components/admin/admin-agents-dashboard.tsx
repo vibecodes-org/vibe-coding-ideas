@@ -87,7 +87,6 @@ export function AdminAgentsDashboard({ agents, onRefresh }: AdminAgentsDashboard
               <TableHead className="w-[160px]">Name</TableHead>
               <TableHead className="w-[120px]">Role</TableHead>
               <TableHead>Bio</TableHead>
-              <TableHead className="w-[200px]">Skills</TableHead>
               <TableHead className="w-[80px] text-center">Upvotes</TableHead>
               <TableHead className="w-[80px] text-center">Cloned</TableHead>
               <TableHead className="w-[50px]" />
@@ -141,28 +140,6 @@ export function AdminAgentsDashboard({ agents, onRefresh }: AdminAgentsDashboard
                     {agent.bio || "--"}
                   </p>
                 </TableCell>
-                <TableCell className="p-2">
-                  {agent.skills && agent.skills.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {agent.skills.slice(0, 3).map((skill) => (
-                        <Badge
-                          key={skill}
-                          variant="outline"
-                          className="text-[10px] font-normal"
-                        >
-                          {skill}
-                        </Badge>
-                      ))}
-                      {agent.skills.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground self-center">
-                          +{agent.skills.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">--</span>
-                  )}
-                </TableCell>
                 <TableCell className="p-2 text-center">
                   <span className="text-sm font-medium">{agent.community_upvotes}</span>
                 </TableCell>
@@ -196,7 +173,7 @@ export function AdminAgentsDashboard({ agents, onRefresh }: AdminAgentsDashboard
             })}
             {agents.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="p-8 text-center">
+                <TableCell colSpan={7} className="p-8 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Bot className="h-8 w-8" />
                     <p className="text-sm">No VibeCodes agents yet.</p>

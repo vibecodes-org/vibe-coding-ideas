@@ -145,3 +145,21 @@ describe("inferRole", () => {
   });
 });
 
+describe("parseSkillMd tool settings (task 472d5672)", () => {
+  it("exposes the raw top-level tools and disallowedTools lines", () => {
+    const parsed = parseSkillMd("---\nname: lens\ndescription: d\ntools: Read, Grep\ndisallowedTools: Edit, Write\n---\nBody.");
+    expect(parsed.tools).toBe("Read, Grep");
+    expect(parsed.disallowedTools).toBe("Edit, Write");
+  });
+
+  it("leaves them undefined when the file doesn't say", () => {
+    const parsed = parseSkillMd("---\nname: lens\ndescription: d\n---\nBody.");
+    expect(parsed.tools).toBeUndefined();
+    expect(parsed.disallowedTools).toBeUndefined();
+  });
+
+  it("keeps metadata.tool_access among the metadata keys", () => {
+    const parsed = parseSkillMd("---\nname: lens\ndescription: d\nmetadata:\n  tool_access: read_only\n---\nBody.");
+    expect(parsed.metadata.tool_access).toBe("read_only");
+  });
+});

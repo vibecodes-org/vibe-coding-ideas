@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { SkillLine } from "./skill-line";
 import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
 import { cn, getInitials } from "@/lib/utils";
@@ -15,6 +16,8 @@ interface AgentCardProps {
   variant: "owned" | "community";
   ownerName?: string | null;
   hasVoted?: boolean;
+  /** Names of the agent's real skills (agent_skills), oldest first. */
+  skillNames?: string[];
   stats?: { taskCount: number; ideaCount: number; assignedCount: number };
   onEdit?: () => void;
   onClick?: () => void;
@@ -25,6 +28,7 @@ export function AgentCard({
   variant,
   ownerName,
   hasVoted = false,
+  skillNames = [],
   stats,
   onEdit,
   onClick,
@@ -99,23 +103,7 @@ export function AgentCard({
         )}
 
         {/* Skills */}
-        {bot.skills && bot.skills.length > 0 && (
-          <div className="flex flex-wrap gap-1 px-4 mt-2">
-            {bot.skills.slice(0, 4).map((skill) => (
-              <span
-                key={skill}
-                className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-              >
-                {skill}
-              </span>
-            ))}
-            {bot.skills.length > 4 && (
-              <span className="text-[10px] text-muted-foreground self-center">
-                +{bot.skills.length - 4}
-              </span>
-            )}
-          </div>
-        )}
+        <SkillLine names={skillNames} className="px-4 mt-2" />
 
         {/* Footer */}
         <div className="flex items-center justify-between mt-auto border-t border-border/50 bg-black/5 px-4 py-2.5 mt-3">
@@ -201,23 +189,7 @@ export function AgentCard({
       )}
 
       {/* Skills */}
-      {bot.skills && bot.skills.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {bot.skills.slice(0, 4).map((skill) => (
-            <span
-              key={skill}
-              className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-            >
-              {skill}
-            </span>
-          ))}
-          {bot.skills.length > 4 && (
-            <span className="text-[10px] text-muted-foreground self-center">
-              +{bot.skills.length - 4}
-            </span>
-          )}
-        </div>
-      )}
+      <SkillLine names={skillNames} />
 
       {/* Stats row */}
       {stats && (

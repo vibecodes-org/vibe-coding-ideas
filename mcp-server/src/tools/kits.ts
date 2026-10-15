@@ -1,12 +1,13 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { VIBECODES_USER_ID } from "../constants";
+import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
 
 // --- List Kits ---
 
 export const listKitsSchema = z.object({});
 
-type AgentRole = { role: string; name_suggestion?: string; skills?: string[] };
+type AgentRole = { role: string; name_suggestion?: string };
 type LabelPreset = { name: string; color: string };
 
 export async function listKits(ctx: McpContext) {
@@ -137,6 +138,9 @@ export async function applyKitToIdea(
   const result = {
     agentsCreated: 0,
     agentsSkipped: 0,
+    // Roles whose agent couldn't be made (including a failed skills copy, which
+    // discards the half-made copy): reported rather than silently one short.
+    agentsFailed: [] as { role: string; reason: string }[],
     labelsCreated: 0,
     templatesImported: 0,
     triggersCreated: 0,
@@ -195,11 +199,14 @@ export async function applyKitToIdea(
             p_avatar_url: libraryAgent.avatar_url,
           });
           if (clonedId) {
+            // Filed skills come with the copy; a failure discards the copy and
+            // lands in the catch below, so the agent isn't counted as created.
+            await copyAgentSkills(ctx.supabase, libraryAgent.id, clonedId, ownerId);
             await ctx.supabase
               .from("bot_profiles")
               .update({
                 bio: libraryAgent.bio,
-                skills: libraryAgent.skills,
+                tool_access: libraryAgent.tool_access,
                 cloned_from: libraryAgent.id,
               })
               .eq("id", clonedId);
@@ -213,12 +220,6 @@ export async function applyKitToIdea(
           });
           if (botUser) {
             newBotId = botUser;
-            if (agentRole.skills && agentRole.skills.length > 0) {
-              await ctx.supabase
-                .from("bot_profiles")
-                .update({ skills: agentRole.skills })
-                .eq("id", botUser);
-            }
           }
         }
 
@@ -226,8 +227,11 @@ export async function applyKitToIdea(
           botIdsToAllocate.push(newBotId);
           result.agentsCreated++;
         }
-      } catch {
-        // Skip individual creation failures
+      } catch (err) {
+        result.agentsFailed.push({
+          role: agentRole.role,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

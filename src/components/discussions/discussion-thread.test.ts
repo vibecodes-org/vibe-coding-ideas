@@ -45,7 +45,10 @@ function makeReply(
       terminal_codex_model: null,
       terminal_codex_effort: null,
       terminal_auto_accept: false,
+      terminal_remote_control: false,
+      terminal_effort: null,
       terminal_agent: "claude",
+      terminal_agent_toast_seen_at: null,
       feed_preferences: {},
       notification_preferences: {
         comments: true,

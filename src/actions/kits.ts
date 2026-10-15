@@ -6,7 +6,7 @@ import { allocateAllAgents } from "./idea-agents";
 import { cloneBotProfile } from "./bots";
 import { triggerAutoRulesForTasks } from "./board";
 import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
-import { generatePromptFromFields } from "@/lib/prompt-builder";
+import { generateInstructions } from "@/lib/agent-instructions";
 import { chunkIds } from "@/lib/db-helpers";
 import { logger } from "@/lib/logger";
 import type { Database } from "@/types/database";
@@ -16,7 +16,6 @@ type ProjectKit = Database["public"]["Tables"]["project_kits"]["Row"];
 type AgentRole = {
   role: string;
   name_suggestion: string;
-  skills?: string[];
   system_prompt_template?: string;
 };
 type LabelPreset = { name: string; color: string };
@@ -119,6 +118,8 @@ export async function getActiveKitsWithSteps(): Promise<KitWithSteps[]> {
 export interface ApplyKitResult {
   agentsCreated: number;
   agentsSkipped: number;
+  /** Roles whose agent couldn't be made (a failed skills copy discards the half-made copy). */
+  agentsFailed: { role: string; reason: string }[];
   labelsCreated: number;
   templatesImported: number;
   triggersCreated: number;
@@ -153,6 +154,7 @@ export async function applyKit(
   const result: ApplyKitResult = {
     agentsCreated: 0,
     agentsSkipped: 0,
+    agentsFailed: [],
     labelsCreated: 0,
     templatesImported: 0,
     triggersCreated: 0,
@@ -207,9 +209,7 @@ export async function applyKit(
           const template = BOT_ROLE_TEMPLATES.find(
             (t) => t.role.toLowerCase() === roleLower
           );
-          const systemPrompt = template?.structured
-            ? generatePromptFromFields(template.role, template.structured)
-            : template?.prompt ?? null;
+          const systemPrompt = template ? generateInstructions(template.fields) : null;
 
           const { data: botUser } = await supabase.rpc("create_bot_user", {
             p_owner_id: user.id,
@@ -220,11 +220,10 @@ export async function applyKit(
 
           if (botUser) {
             newBotId = botUser;
-            if (agentRole.skills && agentRole.skills.length > 0) {
-              await supabase
-                .from("bot_profiles")
-                .update({ skills: agentRole.skills })
-                .eq("id", botUser);
+            const extras: { tool_access?: "read_only" } = {};
+            if (template?.toolAccess === "read_only") extras.tool_access = "read_only";
+            if (Object.keys(extras).length > 0) {
+              await supabase.from("bot_profiles").update(extras).eq("id", botUser);
             }
           }
         }
@@ -233,8 +232,11 @@ export async function applyKit(
           botIdsToAllocate.push(newBotId);
           result.agentsCreated++;
         }
-      } catch {
-        // Skip individual creation failures
+      } catch (err) {
+        result.agentsFailed.push({
+          role: agentRole.role,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

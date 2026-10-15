@@ -22,6 +22,8 @@ const mockGetForAdmin = vi.fn();
 const mockUpdate = vi.fn();
 const mockGetTerminalForAdmin = vi.fn();
 const mockUpdateTerminal = vi.fn();
+const mockGetEffortForAdmin = vi.fn();
+const mockUpdateEffort = vi.fn();
 const mockGetCodexTerminalForAdmin = vi.fn();
 const mockUpdateCodexTerminal = vi.fn();
 
@@ -30,6 +32,8 @@ vi.mock("@/actions/admin-platform", () => ({
   updateAgentAwarePlatformModelDefaults: (input: unknown) => mockUpdate(input),
   getPlatformTerminalModelDefaultForAdmin: () => mockGetTerminalForAdmin(),
   updatePlatformTerminalModelDefault: (model: string | null) => mockUpdateTerminal(model),
+  getPlatformTerminalEffortDefaultForAdmin: () => mockGetEffortForAdmin(),
+  updatePlatformTerminalEffortDefault: (effort: string | null) => mockUpdateEffort(effort),
   getPlatformTerminalCodexModelDefaultForAdmin: () => mockGetCodexTerminalForAdmin(),
   updatePlatformTerminalCodexModelDefault: (pair: unknown) => mockUpdateCodexTerminal(pair),
 }));
@@ -41,13 +45,17 @@ vi.mock("@/hooks/use-platform-model-defaults", () => ({
 vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
   setPlatformTerminalModelDefaultCache: vi.fn(),
 }));
+const mockSetEffortCache = vi.fn();
+vi.mock("@/hooks/use-platform-terminal-effort-default", () => ({
+  setPlatformTerminalEffortDefaultCache: (v: string | null) => mockSetEffortCache(v),
+}));
 vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
   setPlatformTerminalCodexModelDefaultCache: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalEffortCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
@@ -375,6 +383,102 @@ describe("AdminTerminalModelCard (task c4ca2d95 — binding: no seed)", () => {
   });
 });
 
+describe("AdminTerminalEffortCard (task 18a37612 — no seed)", () => {
+  const strip = () => screen.getByRole("group", { name: "Claude starting effort, site default" });
+
+  it("renders the denied state for a non-super-admin and never fetches", () => {
+    mockGetEffortForAdmin.mockClear();
+    render(<AdminTerminalEffortCard isSuperAdmin={false} />);
+    expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
+    expect(mockGetEffortForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("shows a skeleton while loading (heading not yet shown)", () => {
+    mockGetEffortForAdmin.mockReturnValue(new Promise(() => {}));
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    expect(screen.queryByText("Claude terminal starting effort")).not.toBeInTheDocument();
+  });
+
+  it("with nothing saved: five levels, none pressed, the no-default audit line, Save and Clear disabled", async () => {
+    mockGetEffortForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByText(/No site default: Claude Code decides/)).toBeInTheDocument());
+    const buttons = Array.from(strip().querySelectorAll("button"));
+    expect(buttons.map((b) => b.textContent)).toEqual(["Low", "Medium", "High", "X-High", "Max"]);
+    expect(buttons.every((b) => b.getAttribute("aria-pressed") === "false")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
+  });
+
+  it("shows the saved level and who changed it", async () => {
+    mockGetEffortForAdmin.mockResolvedValue({
+      value: "high",
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-10-14T00:00:00Z",
+    });
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
+    expect(screen.getByText("Nick Ball")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows an error state with Retry when the fetch fails", async () => {
+    mockGetEffortForAdmin.mockRejectedValueOnce(new Error("boom"));
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByText(/Failed to load the terminal starting effort/)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("pick High -> Save calls the action with 'high', refreshes the cache and toasts", async () => {
+    mockGetEffortForAdmin
+      .mockResolvedValueOnce({ value: null, updatedBy: null, updatedAt: null })
+      .mockResolvedValue({ value: "high", updatedBy: { id: "u1", full_name: "Nick Ball" }, updatedAt: "2026-10-14T00:00:00Z" });
+    mockUpdateEffort.mockResolvedValue("high");
+    vi.mocked(toast.success).mockClear();
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "High" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith("high"));
+    await waitFor(() => expect(mockSetEffortCache).toHaveBeenCalledWith("high"));
+    expect(toast.success).toHaveBeenCalledWith(
+      "Terminal starting effort saved · sessions now start at High unless a user picks their own"
+    );
+  });
+
+  it("Clear -> Save calls the action with null and toasts the cleared copy", async () => {
+    mockGetEffortForAdmin
+      .mockResolvedValueOnce({ value: "xhigh", updatedBy: null, updatedAt: null })
+      .mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    mockUpdateEffort.mockClear();
+    mockUpdateEffort.mockResolvedValue(null);
+    vi.mocked(toast.success).mockClear();
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(mockUpdateEffort).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith(null));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Terminal starting effort cleared · Claude Code decides unless a user picks their own"
+      )
+    );
+  });
+
+  it("keeps the staged value and toasts the error when Save fails", async () => {
+    mockGetEffortForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    mockUpdateEffort.mockRejectedValue(new Error("Choose a valid Claude effort"));
+    vi.mocked(toast.error).mockClear();
+    render(<AdminTerminalEffortCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Max" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Max" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Choose a valid Claude effort"));
+    expect(screen.getByRole("button", { name: "Max" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("AdminTerminalCodexModelCard", () => {
   it("renders and saves the independent platform model and effort pair", async () => {
     mockGetCodexTerminalForAdmin.mockResolvedValue({
@@ -386,7 +490,7 @@ describe("AdminTerminalCodexModelCard", () => {
     render(<AdminTerminalCodexModelCard isSuperAdmin />);
 
     await screen.findByText("Codex terminal starting model");
-    fireEvent.click(screen.getByRole("button", { name: "high" }));
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdateCodexTerminal).toHaveBeenCalledWith({ model: "gpt-5.6-sol", effort: "high" }));

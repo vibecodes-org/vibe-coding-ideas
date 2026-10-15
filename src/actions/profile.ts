@@ -10,7 +10,7 @@ import { MACHINE_DEFAULT_TERMINAL_MODEL, validateTerminalModelValue } from "@/li
 import { normalizeAgent, type LaunchAgent } from "@/lib/terminal/agent-launch";
 import {
   normalizeUserModelTierMap,
-  isReasoningEffort,
+  isEffortForAgent,
   type AgentAwareUserModelTierMap,
   type AgentKind,
   type AgentTierEntry,
@@ -296,7 +296,7 @@ export async function updateAgentAwareModelTierMap(
         }
       }
 
-      if (effort === undefined || !isReasoningEffort(effort)) {
+      if (effort === undefined || !isEffortForAgent(agent, effort)) {
         const modelDisplay = agent === "claude" ? capitalizeModelName(model) : model;
         throw new Error(
           `Choose a reasoning effort for ${modelDisplay} — ${modelTierLabel(tier)} (${agentLabel}).`
@@ -330,7 +330,10 @@ export interface TerminalPreferencesInput {
   terminalModel: string | null;
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
+  /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
+  terminalEffort: string | null;
   terminalAutoAccept: boolean;
+  terminalRemoteControl: boolean;
 }
 
 export interface TerminalPreferences {
@@ -338,7 +341,10 @@ export interface TerminalPreferences {
   terminalModel: string | null;
   terminalCodexModel: string | null;
   terminalCodexEffort: string | null;
+  /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
+  terminalEffort: string | null;
   terminalAutoAccept: boolean;
+  terminalRemoteControl: boolean;
 }
 
 /**
@@ -352,7 +358,12 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  if (typeof input !== "object" || input === null || typeof input.terminalAutoAccept !== "boolean") {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    typeof input.terminalAutoAccept !== "boolean" ||
+    typeof input.terminalRemoteControl !== "boolean"
+  ) {
     throw new Error("Invalid terminal preferences");
   }
 
@@ -389,7 +400,7 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
         const validation = validateCodexModelValue(model);
         if (!validation.ok) throw new Error(`Invalid model tier map — ${modelTierLabel(tier)} (Codex): ${validation.reason}`);
       }
-      if (effort === undefined || !isReasoningEffort(effort)) {
+      if (effort === undefined || !isEffortForAgent(agent, effort)) {
         const modelDisplay = agent === "claude" ? capitalizeModelName(model) : model;
         throw new Error(`Choose a reasoning effort for ${modelDisplay} — ${modelTierLabel(tier)} (${agentLabel}).`);
       }
@@ -416,7 +427,7 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
       if (input.terminalCodexEffort !== null) throw new Error("Machine default cannot include a reasoning effort");
       terminalCodexModel = model;
     } else {
-      if (input.terminalCodexEffort === null || !validateCodexModelValue(model).ok || !isReasoningEffort(input.terminalCodexEffort)) {
+      if (input.terminalCodexEffort === null || !validateCodexModelValue(model).ok || !isEffortForAgent("codex", input.terminalCodexEffort)) {
         throw new Error("Choose a valid Codex model and reasoning effort");
       }
       terminalCodexModel = model;
@@ -426,17 +437,34 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     throw new Error("Choose a Codex model with its reasoning effort");
   }
 
+  // Task 18a37612: Claude's starting effort. Whitelisted to Claude's ladder
+  // (never Codex-only "minimal"); null = Default.
+  const terminalEffort = input.terminalEffort ?? null;
+  if (terminalEffort !== null && !isEffortForAgent("claude", terminalEffort)) {
+    throw new Error("Choose a valid Claude effort");
+  }
+
   const agentAwareModelTierMap = Object.keys(normalizedMap).length > 0 ? normalizedMap : null;
   const { error } = await supabase.from("users").update({
     model_tier_map: agentAwareModelTierMap,
     terminal_model: terminalModel,
     terminal_codex_model: terminalCodexModel,
     terminal_codex_effort: terminalCodexEffort,
+    terminal_effort: terminalEffort,
     terminal_auto_accept: input.terminalAutoAccept,
+    terminal_remote_control: input.terminalRemoteControl,
   }).eq("id", user.id);
   if (error) throw new Error(error.message);
   revalidatePath(`/profile/${user.id}`);
-  return { agentAwareModelTierMap, terminalModel, terminalCodexModel, terminalCodexEffort, terminalAutoAccept: input.terminalAutoAccept };
+  return {
+    agentAwareModelTierMap,
+    terminalModel,
+    terminalCodexModel,
+    terminalCodexEffort,
+    terminalEffort,
+    terminalAutoAccept: input.terminalAutoAccept,
+    terminalRemoteControl: input.terminalRemoteControl,
+  };
 }
 
 // ── Terminal starting model (task c4ca2d95) ─────────────────────────────
@@ -463,6 +491,26 @@ export async function getTerminalModel(): Promise<string | null> {
   if (error) throw new Error(error.message);
 
   return data?.terminal_model ?? null;
+}
+
+/** The viewer's own Claude starting effort (users.terminal_effort), null = Default. */
+export async function getTerminalEffort(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_effort")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_effort ?? null;
 }
 
 /**
@@ -518,7 +566,7 @@ export async function updateTerminalCodexModel(
       if (effort !== null) throw new Error("Machine default cannot include a reasoning effort");
       modelToStore = trimmed;
     } else {
-      if (effort === null || !validateCodexModelValue(trimmed).ok || !isReasoningEffort(effort)) {
+      if (effort === null || !validateCodexModelValue(trimmed).ok || !isEffortForAgent("codex", effort)) {
         throw new Error("Choose a valid Codex model and reasoning effort");
       }
       modelToStore = trimmed;
@@ -583,6 +631,31 @@ export async function updateTerminalAutoAccept(autoAccept: boolean): Promise<boo
   return autoAccept;
 }
 
+// ── Terminal Remote Control (task 5c8969cc) ────────────────────────────────
+// Per-user opt-in: in-app terminal Claude Code sessions launch with
+// `claude --remote-control`. Saved only through updateTerminalPreferences (the
+// Model Tiers dialog's single Save); this getter feeds the launch label's
+// cached hook (use-viewer-terminal-remote-control.ts).
+
+export async function getTerminalRemoteControl(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_remote_control")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_remote_control ?? false;
+}
+
 // ── Terminal remembered agent (docs/codex-terminal-requirements.md FR-4a,
 // implementation slice 2) ───────────────────────────────────────────────────
 // Per-account remembered pick for the in-app terminal's agent picker
@@ -630,4 +703,49 @@ export async function updateTerminalAgent(agent: LaunchAgent): Promise<LaunchAge
 
   revalidatePath(`/profile/${user.id}`);
   return toStore;
+}
+
+// ── Terminal agent switch — one-time toast "seen" flag (card c4c27987,
+// docs/launch-button-remembered-agent-option-a-spec.html §3) ───────────────
+// Per-account, write-once (never cleared, including by Undo). See migration
+// 00193 for why this is its own column rather than reusing
+// notification_preferences/feed_preferences.
+
+export async function getTerminalAgentToastSeen(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_agent_toast_seen_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_agent_toast_seen_at != null;
+}
+
+export async function markTerminalAgentToastSeen(): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // `.is(..., null)` guard: never overwrite an existing timestamp — a second
+  // concurrent call (e.g. two picker writes racing) must not disturb the
+  // FIRST time it was shown.
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_agent_toast_seen_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .is("terminal_agent_toast_seen_at", null);
+
+  if (error) throw new Error(error.message);
 }

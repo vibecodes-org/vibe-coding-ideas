@@ -83,9 +83,46 @@
  *  request (he wanted better worktree *instructions*, not a UI merge
  *  mechanism); see the rewritten guidance in
  *  mcp-server/src/tools/project-paths.ts instead. 0.3.17's only helper-side
- *  change was that now-removed dispatch, so the recommended helper stays
- *  0.3.16. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.16";
+ *  change was that now-removed dispatch, so the recommended helper stayed
+ *  0.3.16.
+ *  0.3.18 (task 5511d877, 8 Oct 2026): a fresh in-browser Codex launch
+ *  accepts Codex's full effort ladder (minimal/low/medium/high/xhigh, not just
+ *  low/medium/high). An older helper drops a level it doesn't recognise and
+ *  opens Codex on its own default model — soft nudge. Also ships the removal
+ *  of the withdrawn merge-worktree code (#293).
+ *  0.3.19 (task 59889027, 10 Oct 2026): a fresh in-browser Claude launch
+ *  fetches the board's agents and passes them as `claude --agents`, so each
+ *  workflow step's persona runs as a real subagent at its tier's model and
+ *  effort. An older helper simply launches without them (steps fall back to
+ *  the pasted-persona path) — soft nudge.
+ *  0.3.20 (task 5c8969cc, 10 Oct 2026): first helper whose bridge understands
+ *  the launch link's `remoteControl=1` and starts Claude Code with
+ *  `--remote-control` (straight after `claude`; new and resumed sessions;
+ *  never Codex). An older helper ignores it and starts without Remote
+ *  Control — soft nudge.
+ *  0.3.21 (task e16d69e8, 11 Oct 2026): first helper whose bridge gives a
+ *  fresh Codex launch the board's agents too — written as temporary
+ *  agent-role files in a private temp folder (removed when the session ends)
+ *  and registered with `-c agents.<name>.config_file`. An older helper
+ *  launches Codex without them (steps fall back to the pasted-persona path)
+ *  — soft nudge.
+ *  0.3.22 (task f4bbd75c, 11 Oct 2026): first helper whose bridge hands a
+ *  RESUMED session the board's agents too (Claude `--resume`/`--continue`,
+ *  Codex `resume <id>`/`resume --last`) — neither CLI keeps them across a
+ *  resume, so after any pick-up (chooser Resume, a refresh, wake or
+ *  reconnect) every workflow step silently fell back to a general helper.
+ *  The resume now waits (≤5s) for the agents before starting the CLI. An
+ *  older helper resumes without them — soft nudge.
+ *  0.3.23 (task 472d5672, 12 Oct 2026): first helper whose bridge passes an
+ *  agent's `disallowedTools` through to Claude Code, so a Read-only agent's
+ *  Edit/Write/NotebookEdit tools are really switched off in the browser
+ *  terminal. An older helper drops the field: the agent is only told not to
+ *  edit files (the "## Tools" note) — soft nudge.
+ *  0.3.24 (task 18a37612, 14 Oct 2026): first helper whose bridge starts
+ *  Claude Code at the chosen effort (`--effort <level>`) on new and resumed
+ *  sessions. An older helper ignores the field and Claude decides — soft
+ *  nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.24";
 
 export type HelperVersionParts = readonly [number, number, number];
 

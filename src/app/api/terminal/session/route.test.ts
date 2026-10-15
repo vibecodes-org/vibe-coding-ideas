@@ -33,17 +33,22 @@ function makeChain(result: { data?: unknown; error?: unknown; count?: number | n
   return chain;
 }
 
-const { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault } = vi.hoisted(() => {
+const { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault, mockGetPlatformEffort } = vi.hoisted(() => {
   const mockFrom = vi.fn();
   const mockGetUser = vi.fn();
   const tableResults: Record<string, { data?: unknown; error?: unknown; count?: number | null }> = {};
   const insertSpy = vi.fn();
   const mockGetPlatformTerminalCodexDefault = vi.fn();
-  return { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault };
+  const mockGetPlatformEffort = vi.fn();
+  return { mockFrom, mockGetUser, tableResults, insertSpy, mockGetPlatformTerminalCodexDefault, mockGetPlatformEffort };
 });
 
 vi.mock("@/lib/terminal/platform-terminal-codex-model", () => ({
   getPlatformTerminalCodexModelDefault: (...args: unknown[]) => mockGetPlatformTerminalCodexDefault(...args),
+}));
+
+vi.mock("@/lib/terminal/platform-terminal-effort", () => ({
+  getPlatformTerminalEffortDefault: (...args: unknown[]) => mockGetPlatformEffort(...args),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -91,6 +96,8 @@ beforeEach(() => {
   vi.setSystemTime(new Date(NOW_ISO));
   mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
   mockGetPlatformTerminalCodexDefault.mockResolvedValue(null);
+  mockGetPlatformEffort.mockReset();
+  mockGetPlatformEffort.mockResolvedValue(null);
   for (const key of Object.keys(tableResults)) delete tableResults[key];
   tableResults.ideas = { data: { id: IDEA_1, author_id: "user-1" }, error: null };
   tableResults.collaborators = { data: null, error: null };
@@ -262,6 +269,110 @@ describe("POST /api/terminal/session — effective auto-accept resolution (task 
 
     expect(res.status).toBe(200);
     expect(body).not.toHaveProperty("permissionMode");
+  });
+});
+
+describe("POST /api/terminal/session — remote control (task 5c8969cc)", () => {
+  it("omits remoteControl when the preference is off/absent (byte-identical response)", async () => {
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty("remoteControl");
+
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: false }, error: null };
+    const offBody = await (await POST(req({ ideaId: IDEA_1 }))).json();
+    expect(offBody).not.toHaveProperty("remoteControl");
+  });
+
+  it("returns true when the user's own preference is on", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const body = await (await POST(req({ ideaId: IDEA_1 }))).json();
+    expect(body.remoteControl).toBe(true);
+  });
+
+  it("reads the column in the same single users query as the other terminal settings", async () => {
+    await POST(req({ ideaId: IDEA_1 }));
+    const selects = mockFrom.mock.results
+      .map((r) => r.value)
+      .filter((chain) => chain?.select)
+      .flatMap((chain) => chain.select.mock.calls.map((c: unknown[]) => c[0]));
+    expect(selects).toContain(
+      "terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept, terminal_remote_control, terminal_effort",
+    );
+  });
+
+  it("returns true on a resumeId mint too", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const res = await POST(req({ ideaId: IDEA_1, resumeId: "5a22fd93-0aad-4872-a28f-61c90ff7f25b" }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).remoteControl).toBe(true);
+  });
+
+  it("omits it for a Codex launch even when the preference is on", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_remote_control: true }, error: null };
+    const body = await (await POST(req({ ideaId: IDEA_1, agent: "codex" }))).json();
+    expect(body).not.toHaveProperty("remoteControl");
+  });
+
+  it("a users read error -> omitted, and the mint still succeeds (AC11)", async () => {
+    tableResults.users = { data: null, error: { message: "connection reset" } };
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty("remoteControl");
+  });
+});
+
+describe("POST /api/terminal/session — Claude starting effort (task 18a37612)", () => {
+  const RESUME = "5a22fd93-0aad-4872-a28f-61c90ff7f25b";
+
+  it("omits effort when neither the user nor the site set one (byte-identical response)", async () => {
+    const body = await (await POST(req({ ideaId: IDEA_1 }))).json();
+    expect(body).not.toHaveProperty("effort");
+  });
+
+  it("user level wins over the site level", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: "xhigh" }, error: null };
+    mockGetPlatformEffort.mockResolvedValue("high");
+    expect((await (await POST(req({ ideaId: IDEA_1 }))).json()).effort).toBe("xhigh");
+  });
+
+  it("falls to the site level when the user is on Default", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: null }, error: null };
+    mockGetPlatformEffort.mockResolvedValue("high");
+    expect((await (await POST(req({ ideaId: IDEA_1 }))).json()).effort).toBe("high");
+  });
+
+  it("user level with no site level", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: "high" }, error: null };
+    expect((await (await POST(req({ ideaId: IDEA_1 }))).json()).effort).toBe("high");
+  });
+
+  it("applies to resume mints too", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: "max" }, error: null };
+    expect((await (await POST(req({ ideaId: IDEA_1, resumeId: RESUME }))).json()).effort).toBe("max");
+  });
+
+  it("ignores an invalid stored user value and uses the site level", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: "ultracode" }, error: null };
+    mockGetPlatformEffort.mockResolvedValue("low");
+    expect((await (await POST(req({ ideaId: IDEA_1 }))).json()).effort).toBe("low");
+  });
+
+  it("never lets a Claude effort reach a Codex launch, and skips the site read", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_effort: "max" }, error: null };
+    mockGetPlatformEffort.mockResolvedValue("high");
+    const body = await (await POST(req({ ideaId: IDEA_1, agent: "codex" }))).json();
+    expect(body.effort).not.toBe("max");
+    expect(body.effort).not.toBe("high");
+    expect(mockGetPlatformEffort).not.toHaveBeenCalled();
+  });
+
+  it("a users read error still lets the site level through, and the mint succeeds", async () => {
+    tableResults.users = { data: null, error: { message: "connection reset" } };
+    mockGetPlatformEffort.mockResolvedValue("high");
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).effort).toBe("high");
   });
 });
 

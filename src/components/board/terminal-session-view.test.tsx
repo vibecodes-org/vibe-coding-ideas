@@ -86,6 +86,7 @@ function installMockSession() {
       claudeSessionId: null,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -133,6 +134,7 @@ function installMockSessionWithE2eeState(notEncryptedYet: boolean) {
       claudeSessionId: null,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -169,6 +171,7 @@ function installMockWaitingSession(pairingTimedOut: boolean) {
       claudeSessionId: null,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -215,6 +218,7 @@ function installMockErrorSession(
       claudeSessionId,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -233,9 +237,13 @@ function installMockErrorSession(
 // reducer/socket, it only checks TerminalSessionView renders the right
 // Resume-vs-Launch-again branch for a given state.
 function installMockEndedSession(
-  overrides: Partial<TerminalConnectionState> & { cwd?: string | null; claudeSessionId?: string | null } = {},
+  overrides: Partial<TerminalConnectionState> & {
+    cwd?: string | null;
+    claudeSessionId?: string | null;
+    remoteControlEarlyExit?: boolean;
+  } = {},
 ) {
-  const { cwd = null, claudeSessionId = null, ...stateOverrides } = overrides;
+  const { cwd = null, claudeSessionId = null, remoteControlEarlyExit = false, ...stateOverrides } = overrides;
   mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     lastContainerRef = containerRef;
@@ -260,6 +268,7 @@ function installMockEndedSession(
       claudeSessionId,
       readOnly: false,
       autoAccept: false,
+      remoteControlEarlyExit,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -589,6 +598,40 @@ describe("TerminalSessionView — same-owner takeover state", () => {
 // conversation" primary action for the non-user endings we know a
 // cwd/claudeSessionId for, its graceful fallback when we don't, and that a
 // deliberate user End never offers it.
+describe("TerminalSessionView — Remote Control early-exit line (task 5c8969cc §4)", () => {
+  const HINT =
+    'Claude Code stopped straight away — if it\'s out of date, run "claude update", or turn off Remote Control in Settings.';
+
+  it("renders the hint directly under the existing ended message", () => {
+    installMockEndedSession({ endedReason: "remote", remoteControlEarlyExit: true });
+    renderEndedView();
+    const hint = screen.getByTestId("remote-control-early-exit");
+    expect(hint).toHaveTextContent(HINT);
+    expect(hint).toHaveClass("max-w-md", "text-[13px]", "text-zinc-400");
+    expect(hint.previousElementSibling).toHaveTextContent("Claude Code on your machine stopped. The scrollback above is kept.");
+  });
+
+  it("leaves the existing title and message unchanged", () => {
+    installMockEndedSession({ endedReason: "remote", remoteControlEarlyExit: true });
+    renderEndedView();
+    // The title also appears in the status pill, so check the panel's own copy.
+    const message = screen.getByText("Claude Code on your machine stopped. The scrollback above is kept.");
+    expect(message.previousElementSibling).toHaveTextContent(/^Session ended$/);
+  });
+
+  it("shows no hint when the flag is false", () => {
+    installMockEndedSession({ endedReason: "remote", remoteControlEarlyExit: false });
+    renderEndedView();
+    expect(screen.queryByTestId("remote-control-early-exit")).not.toBeInTheDocument();
+  });
+
+  it("shows no hint while popped out", () => {
+    installMockEndedSession({ endedReason: "remote", remoteControlEarlyExit: true });
+    renderView(true);
+    expect(screen.queryByTestId("remote-control-early-exit")).not.toBeInTheDocument();
+  });
+});
+
 describe("TerminalSessionView — session-ended resume (Bug A)", () => {
   it("offers Resume as the primary action for an idle ending with a known cwd + claudeSessionId, wired with the exact-conversation payload shape", () => {
     const onResumeEndedSession = vi.fn();
@@ -964,6 +1007,7 @@ function installMockSessionWithStatus(status: TerminalConnectionState["status"],
       claudeSessionId: null,
       readOnly: false,
       autoAccept,
+      remoteControlEarlyExit: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -1027,6 +1071,7 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
         claudeSessionId: null,
         readOnly: false,
         autoAccept: false,
+        remoteControlEarlyExit: false,
         inputEnabled: false,
         platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
         paired: true,
@@ -1137,6 +1182,7 @@ describe("TerminalSessionView — helper download affordances run the Update-now
         claudeSessionId: null,
         readOnly: false,
         autoAccept: false,
+        remoteControlEarlyExit: false,
         inputEnabled: false,
         platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download for Mac", downloadUrl: null },
         paired: false,

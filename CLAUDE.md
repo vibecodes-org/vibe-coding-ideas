@@ -11,19 +11,24 @@
 
 ## Tech Stack
 
-Next.js 16.1.6 (App Router), React 19.2, TypeScript, Tailwind CSS v4, shadcn/ui (New York, Zinc), Supabase (Auth, Postgres, Realtime, RLS), Vercel AI SDK v6 (`ai` + `@ai-sdk/anthropic` v3), mcp-handler (remote MCP + OAuth 2.1), xterm.js + node-pty (in-app terminal), Sentry, Resend, PostHog, Vitest v4 + Playwright, zod v4, @dnd-kit, sonner, vaul, next-themes (dark default), cmdk (command palette), react-markdown + rehype-highlight + remark-gfm, date-fns, lucide-react, @marsidev/react-turnstile
+Exact versions live in `package.json`; the majors below are what this guide's patterns assume.
+
+Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui (New York, Zinc), Supabase (Auth, Postgres, Realtime, RLS), Vercel AI SDK v6 (`ai` + `@ai-sdk/anthropic` v3), mcp-handler (remote MCP + OAuth 2.1), xterm.js + node-pty (in-app terminal), Sentry, Resend, PostHog, Vitest v4 + Playwright, zod v4, @dnd-kit, sonner, vaul, next-themes (dark default), cmdk (command palette), react-markdown + rehype-highlight + remark-gfm, date-fns, lucide-react, @marsidev/react-turnstile
 
 ## Workflow Rules (MANDATORY)
 
 ### Board Task Workflow — BEFORE ANY IMPLEMENTATION
 1. **Check the VibeCodes board** for a matching task (`get_my_tasks` or `get_board`)
-2. **If task exists:** Reassign to yourself, move to "In Progress", read all comments (`get_task`), add a comment
+2. **If task exists:** move it to "In Progress", read all comments (`get_task`) and add a comment. Assign it to yourself only if it has no workflow: on a workflow task, claiming a step records who does each step.
 3. **If no task exists:** Proceed normally, consider creating one
 4. **When finished:** Move to "Verify" with summary comment
 5. **Post research/analysis as task comments** — preserve context for future sessions
 6. **NEVER use raw SQL** for board ops — always use VibeCodes MCP tools
 
 Applies even when resuming from context compaction or implementing a provided plan.
+
+### This repo is public
+It's on GitHub as vibecodes-org/vibe-coding-ideas. Never commit private board names, other accounts' data, agent prompts or a client's wording; refer to boards by id. Before a commit or push that mentions boards, list the owner's private boards live (read-only query) and check the diff names none of them.
 
 ### Push to Live = Move YOUR Task to Verify
 After pushing, move only the specific task you worked on to "Verify" (or "Done"). NEVER batch-move other tasks in the Verify column — those belong to other contributors.
@@ -37,6 +42,9 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `src/types/database.ts` is **manually maintained** — each table MUST have `Row`, `Insert`, `Update`, AND `Relationships`
 - Without `Relationships`, Supabase JS v2.95+ resolves insert/update/delete to `never`
 - Use `.maybeSingle()` instead of `.single()` when row might not exist
+- Reads stop at 1,000 rows without any error: page with `.range()` when a table can be bigger.
+- `.update()` and `.delete()` return no rows and no count unless you chain `.select()`; don't let a test mock pretend otherwise.
+- Large `.in(ids)` queries silently come back empty at scale: scope by the parent id (for example `idea_id`) instead.
 
 ### Next.js 16
 - `params`, `searchParams`, `cookies()` are all `Promise` types — must `await`
@@ -60,7 +68,9 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `requireAiAccess()` for server actions (throws on failure), `getAiAccess()` for UI gating
 - AI API routes use `maxDuration = 300` for Vercel function timeout
 
-**Model update cadence**: to change the model, set `ANTHROPIC_MODEL` (or bump the default `AI_MODEL` in `src/lib/ai-helpers.ts:12` — currently `claude-sonnet-5` — which also drives `WORKFLOW_MATCHING_MODEL`). Before flipping, verify the resolved key(s) accept the new id via a real prod call that produces an `ai_usage_log` row — on the platform key AND a BYOK key (we were burned by a Haiku swap the account key rejected).
+**Model update cadence**: to change the model, set `ANTHROPIC_MODEL` (or bump the default `AI_MODEL` in `src/lib/ai-helpers.ts`, which also drives `WORKFLOW_MATCHING_MODEL`). Before flipping, verify the resolved key(s) accept the new id via a real prod call that produces an `ai_usage_log` row — on the platform key AND a BYOK key (we were burned by a Haiku swap the account key rejected).
+
+When the agents' model changes, re-check the skills listed in `docs/skills/README.md` and the gotchas in this file: run one past step of each kind without them on the new model, and remove any line it no longer needs.
 
 ### In-App Terminal (largest active workstream — most current board cards)
 
@@ -77,12 +87,12 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   leg to one browser leg, enforces single-attach, never parses stream content),
   `helper/` (the installable Mac app users download), `shared/`, `test/`, and
   `RUN.md` — read RUN.md before touching any of it.
-- **`src/lib/terminal/`** — 26 modules. The pure logic lives here and is where
+- **`src/lib/terminal/`** — the pure logic lives here and is where
   tests go: `entry-decision.ts` (reconnect vs chooser vs mint), `chooser-data.ts`
   (dedupe, 48h recent window, per-task matching), `session-registry.ts`,
   `session-cap.ts`, `session-reap.ts`, `helper-version.ts` / `helper-update-flow.ts`,
   `relay-budget.ts`, `machine-identity.ts`, `deep-link.ts`.
-- **`src/components/board/terminal-*.tsx`** — 8 components. `terminal-dock.tsx`
+- **`src/components/board/terminal-*.tsx`** — `terminal-dock.tsx`
   is the orchestrator (tabs, chooser, overlays, pop-out) and is by far the most
   intricate; `terminal-session-view.tsx` owns one xterm instance.
 - **API**: `src/app/api/terminal/` — `session` (mint), `session/[sid]`,
@@ -112,8 +122,10 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   session is already live on the board (`isolate: true`) — the first/only
   session works in the main folder. Never tell a session to `cd` between the
   two. Don't add words to the compact prompt's protected head: with the agent-guide
-  step, the tightest realistic browser launch keeps the optional helper token
-  with ~15 chars to spare under its 2700 cap (launch-claude-code.guide-bootstrap.test.ts).
+  step, the tightest realistic browser launch has almost no room left under
+  `MAX_LAUNCH_URL_LENGTH` (`src/lib/terminal/deep-link.ts`). The budget is
+  pinned by `launch-claude-code.guide-bootstrap.test.ts` — run it after any
+  wording change.
 - **The browser launch link never drops the folder to make the prompt fit.**
   `buildBoundedDeepLink` is called with `cwdPolicy: "keep"` from
   `use-terminal-session.ts`: the prompt degrades around `cwd=` (directory echo
@@ -123,6 +135,9 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   process's cwd), the prompt said "cd in first", and the agent cd'd into and
   *recorded* another project's checkout as that board's folder (29 Aug 2026).
   The terminal-window (claude-cli://) launch keeps the default "degrade" ladder.
+
+### Mocks and new controls
+A new control must match the existing controls of the same kind on the same screen: layout, labels, help line and save behaviour. That holds for both agents' versions of a setting (Claude and Codex) and for both screens, Settings and Admin. List every difference you keep as a decision for Nick. On 14 Oct 2026 a Claude effort control was mocked after the neighbouring Claude row instead of the Codex pair; the mismatch was approved, built and shipped (card fae2ce4f).
 
 ### Logging
 - Use `logger.*` from `src/lib/logger.ts`, NOT `console.*`
@@ -149,6 +164,7 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
 - Claude Code orchestrates: `claim_next_step` → spawn persona subagent (hand it the `work_token`) → execute → `complete_step` with `claim_token` → loop
 - `claim_next_step` returns `claim_token` (single-use, completion), `work_token` (multi-use, agent-voiced comments), `bot_id`, `available_agents`, `context` (prior step outputs), `rework_instructions`
 - Comments posted with `work_token` are authored as the step's agent; without it, as the human; invalid/retired tokens are rejected with an actionable error
+- Real subagents outside VibeCodes-launched sessions (own terminal, cloud): `claim_next_step` tells the session to call `sync_board_agents` (`idea_id`, `step_id`) when the named `vc-…` subagent isn't offered. The reply carries a self-checking shell command with the files of the claimed step's agent AND the rest of its run (claimed first, then step order, deduped, persona only, ≤ 60,000 bytes in all) inside it (sha256 fingerprints; no network, so any cloud network level works, and stdio works too). The session runs it with `run_in_background` and ends its turn. Claude Code's watcher polls (every 30 s once the session is idle) and can lose a file written just before it switches rate, so the command doesn't sleep: it sets each file's atime to 2000 and waits until Claude Code has read every file, re-touching once if none is read after 5 s, then prints READY (or NOT_LOADED after ~75 s; without atime support a fixed 38 s wait). After READY every listed agent is loaded for the session even if the Agent tool's listing still shows an older tag (listing deltas are keyed by name), so later steps spawn natively with no further sync (card 0b5656a5). It writes to `.claude/agents/` if that exists, else `~/.claude/agents/`; if neither existed at session start it creates `.claude/agents/` + `.gitignore` (`vc-*.md`) and the user-level folder (so every later session on that machine, any repo, is covered with no setup) and reports NEW_FOLDER — Claude Code never loads a folder created mid-session, so that step uses the general path and the `.gitignore` is committed. Synced files start their description with "Saved by sync_board_agents."; an offered agent with a stale tag and that marker is re-synced, one without it is a `--agents` launch copy and is skipped. Code: `src/lib/terminal/session-agent-files.ts`, `mcp-server/src/tools/agent-sync.ts`. Only `.claude/agents/.gitignore` is committed — never agent prompts.
 - `human_check_required` routes to `awaiting_approval` instead of `completed`
 - `fail_step` with `reset_to_step_id` enables cascade rejection back to any earlier step
 - Completion is attributed to the step's `bot_id` via the claim token; both token hashes are cleared together on complete/fail/reset/approve
@@ -164,14 +180,15 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
 
 ## Database
 
-**159 migrations** in `supabase/migrations/`. `src/types/database.ts` types **48** tables:
+Migrations live in `supabase/migrations/`, numbered `NNNNN_name.sql` — `ls` it for the latest number. `src/types/database.ts` types these tables:
 
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates, user_workflow_templates, workflow_suggestions
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, agent_skills, featured_teams, featured_team_agents
-- **Terminal**: idea_project_paths (recorded project folder per idea + machine)
+- **Terminal**: idea_project_paths (recorded project folder per idea + machine), terminal_sessions (the in-app terminal's session registry)
+- **Kits**: project_kits, kit_workflow_mappings
 - **AI**: ai_usage_log, ai_prompt_templates, idea_role_match_cache, platform_settings
 - **MCP**: mcp_oauth_clients, mcp_oauth_codes, mcp_tool_log, mcp_tool_stats, mcp_agent_sessions (retired with `set_agent_identity`; dropped in the pending Phase B task ec2bde45)
 - **User/integration**: user_api_keys, user_github_connections, github_oauth_states, pending_uploads
@@ -179,17 +196,16 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
 
 Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separates destructive ops from general admin access.
 
-### ⚠️ Tables that exist in the DB but are MISSING from `database.ts`
+**Production database:** Supabase project `irqbqxspxxzvuczhujzg`. Agents may run read-only queries through the Supabase MCP `execute_sql`; keep each request under about 5,000 characters (larger ones are rejected).
 
-`database.ts` is hand-maintained, and it has drifted. These are created by migrations but have no typed entry, so any query against them resolves to `never` — add the full `Row`/`Insert`/`Update`/`Relationships` block before using them:
+**Prove a migration on the real schema.** Postgres checks the table and column names inside a function body only when it runs, so a migration can apply cleanly and then fail on every call (00188 read a column `workflow_runs` doesn't have, 12 Oct 2026). Stand-in tables made by hand prove nothing about names: check every table and column the migration uses against the live `information_schema` (read-only), and say in your output that the real-schema run is still owed. The release session runs it as a DO block ending in `RAISE EXCEPTION`, so nothing persists, before applying.
 
-`terminal_sessions` (migrations 00141, 00157 — the in-app terminal's own session store), `project_kits`, `kit_workflow_mappings`, `bot_profile_prompt_backups`.
-
-(`board_checklist_items` also appears in migrations but was later dropped — it is correctly absent, don't re-add it.)
+### `database.ts` notes
+Some table blocks in `database.ts` are indented one level less than the rest; search for `<table>: {` without assuming the indentation. (`board_checklist_items` also appears in migrations but was later dropped — it is correctly absent, don't re-add it.)
 
 ## MCP Server
 
-Two modes sharing **85 tools** via `mcp-server/src/register-tools.ts` (21 tool files in `mcp-server/src/tools/`):
+Two modes sharing one tool set, registered in `mcp-server/src/register-tools.ts` (implementations in `mcp-server/src/tools/`). The exact tool count is pinned by `register-tools.test.ts` — update it there when adding or removing a tool.
 
 Usage steering (shipped Aug 2026, task b3b9be67): `mcp-server/src/steering-copy.ts` single-sources the "board data is live — call the tool again, never re-parse earlier output" copy; both transports pass it as the MCP server-level `instructions`, the three board read tools (`get_board`/`get_task`/`get_my_tasks`) carry it in their descriptions, and their responses are stamped via `jsonResult(data, { live: true })` with `generated_at` (first key) + `_reminder` (last key). Tool calls are logged to `mcp_tool_log` with `session_id` (migration 00160; admin queries documented in the migration comments).
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
@@ -233,7 +249,7 @@ SUPABASE_URL, VIBECODES_BOT_ID, VIBECODES_BOT_USER_ID, VIBECODES_OWNER_ID
 
 **⚠️ Blank-env hazard**: Vercel "sensitive" env vars can silently store blank via
 the CLI — this caused a full AI outage. Any `process.env.X ?? default` passes `""`
-straight through; use `.trim() || default`. See `AI_MODEL` in `ai-helpers.ts:12`
+straight through; use `.trim() || default`. See `AI_MODEL` in `src/lib/ai-helpers.ts`
 for the correct pattern.
 
 ## Deployment
@@ -248,7 +264,7 @@ See `docs/release-process.md` for full details.
 **Branch from `master`, PR to `master`. There is no intermediate branch.**
 
 `develop` IS DEAD — do not target it, do not merge to it, do not "promote" through
-it. Its last commit was 18 March 2026; it now sits 751 commits behind `master`
+it. Its last commit was 18 March 2026; it sits hundreds of commits behind `master`
 with 4 orphaned commits of its own. Every PR since March has gone feature branch
 → `master` directly. `docs/release-process.md` still documents the old two-branch
 flow and is stale on this point (it half-admits it: "features are tested via PRs
@@ -299,8 +315,9 @@ fix more than an hour waiting for a batch-mate — when in doubt, ship it.
 - Scope locators to `page.getByRole("main")` to avoid strict mode violations
 - E2E auth uses API-based login (service-role client) to bypass Turnstile CAPTCHA — not browser login
 - CI matrix: Chrome + Mobile Chrome only (Firefox dropped)
-- **22 E2E spec files**, in per-area subfolders (`e2e/board/`, `e2e/auth/`, `e2e/ideas/`, …) — not flat in `e2e/`
-- Current unit suite: **3,137 tests across 189 files** — run the full `npm run test` before pushing; it takes ~10s
+- E2E specs live in per-area subfolders (`e2e/board/`, `e2e/auth/`, `e2e/ideas/`, …) — not flat in `e2e/`
+- The guide pages (`src/app/guide/`) describe features in detail, counts and lists included. When a change alters any of that, search every guide page for the old wording and numbers.
+- Run the full `npm run test` before pushing — the whole unit suite takes ~10s
 
 ## .vibecodes/ Config
 
@@ -316,29 +333,27 @@ two above. This project's `ideaId` is `62e57071-3645-422f-96c0-b2042e39e6dd`.
 
 ```
 src/
-├── actions/       # 30 server action files ("use server")
+├── actions/       # Server actions ("use server"), one file per area
 ├── app/           # Next.js App Router
 │   ├── (auth)/    # Login, signup, password reset, callback
 │   ├── (main)/    # Admin, agents, dashboard, feed, ideas, members, profile
-│   ├── api/       # AI, health, MCP, notifications, OAuth
-│   ├── guide/     # 12 help/guide pages (incl. launching-claude-code, project-kits)
+│   ├── api/       # AI, health, MCP, notifications, OAuth, terminal
+│   ├── guide/     # Help/guide pages (incl. launching-claude-code, project-kits)
 │   ├── changelog/ # Public changelog
 │   └── ...        # Privacy, terms, feed.xml, .well-known
-├── components/    # 20 directories, ~228 component files (board/ alone has 56)
+├── components/    # One directory per area; board/ is by far the largest
 │   ├── ui/        # shadcn/ui primitives (don't edit except markdown.tsx)
 │   └── ...        # admin, agents, ai, auth, board, comments, dashboard,
 │                  # discussions, guide, ideas, kits, landing, layout,
 │                  # members, onboarding, posthog, profile, pwa, shared
 ├── data/          # Static data (changelog entries)
-├── hooks/         # 11 hooks (use-media-query, use-mentions, use-realtime,
-│                  # use-scroll-to-hash, use-user, use-debounced-save,
-│                  # use-keyboard-shortcut, use-now, use-platform-model-defaults,
-│                  # use-viewer-model-tier-map, use-launch-path-pin-migration)
-├── lib/           # 47 top-level modules + supabase/ client setup
-│                  # + terminal/ (26 modules — see In-App Terminal above)
+├── hooks/         # Client hooks (use-user, use-realtime, use-mentions,
+│                  # use-viewer-* / use-platform-* model + terminal defaults, …)
+├── lib/           # Shared modules + supabase/ client setup
+│                  # + terminal/ (see In-App Terminal above)
 ├── test/          # Test utilities
 └── types/         # database.ts (manual), index.ts
-mcp-server/src/    # MCP server (85 tools across 21 tool files)
+mcp-server/src/    # MCP server (tools in tools/, registered in register-tools.ts)
 terminal/          # bridge / relay / helper / shared / test — see In-App Terminal
 middleware.ts      # at the REPO ROOT, not in src/
 ```
