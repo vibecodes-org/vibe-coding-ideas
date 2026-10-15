@@ -135,6 +135,8 @@ describe("sync_board_agents", () => {
     expect(instruction).toMatch(/without syncing again/);
     expect(instruction).toMatch(/names the same tag/);
     expect(instruction).toMatch(/older description or tag/);
+    expect(instruction).toMatch(/not offered at all or its listed description starts with "Saved by sync_board_agents\."/);
+    expect(instruction).toMatch(/offered without that marker is a copy the session was launched with/);
     expect(instruction).toMatch(/once more \(at most 2 syncs per step\)/);
     expect(instruction).not.toMatch(/at most once per session/);
   });

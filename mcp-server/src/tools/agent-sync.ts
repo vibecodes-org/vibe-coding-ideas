@@ -41,8 +41,10 @@ const INSTRUCTION =
   "files on a later turn). On the wake, read the command's last output line. READY: every agent in `agents` is " +
   "loaded for this session. Spawn each by name at its own step without syncing again, provided that step's claim " +
   "names the same tag as listed here, even if your Agent tool's listing still shows an older description or tag " +
-  "for that name (the listing is not refreshed). If one is not offered at all after READY, run the same command " +
-  "once more (at most 2 syncs per step). NEW_FOLDER: the agents folder didn't exist when this session started, so " +
+  "for that name (the listing is not refreshed), but only when the name is not offered at all or its listed " +
+  "description starts with \"Saved by sync_board_agents.\": a name offered without that marker is a copy the " +
+  "session was launched with, which a sync can't replace, so use the general-purpose steps for it instead. If " +
+  "one is not offered at all after READY, run the same command once more (at most 2 syncs per step). NEW_FOLDER: the agents folder didn't exist when this session started, so " +
   "Claude Code won't load it until the next session; use the general-purpose steps, don't sync again this " +
   "session, include the new .claude/agents/.gitignore in your next commit, and tell the user. MISMATCH: a file " +
   "did not match its fingerprint and none were saved; don't retry, use the general-purpose steps. NOT_LOADED: " +

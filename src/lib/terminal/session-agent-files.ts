@@ -216,8 +216,8 @@ vc_sum() {
   fi
 }
 vc_atime() { stat -c %X "$1" 2>/dev/null || stat -f %a "$1" 2>/dev/null || echo 0; }
-${files.map((f, i) => `t${i + 1}=$(mktemp "$dir/.${f.name}.XXXXXX") || exit 1`).join("\n")}
 trap 'rm -f ${tmpVars}' EXIT
+${files.map((f, i) => `t${i + 1}=$(mktemp "$dir/.${f.name}.XXXXXX") || exit 1`).join("\n")}
 ${files.map((_, i) => `cat > "$t${i + 1}" <<'${delimiters[i]}'\n${bodies[i]}${delimiters[i]}`).join("\n")}
 ${files
   .map(

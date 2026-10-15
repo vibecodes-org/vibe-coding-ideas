@@ -369,9 +369,10 @@ export default function AiAgentTeamsPage() {
               VibeCodes connection, so it works on any network, cloud sessions
               included: there is nothing to allow-list. Claude Code runs the
               save in the background and waits until it has loaded every
-              agent, so each step of the run, the first one included, runs on
-              its own agent with no wait for another message and no second
-              sync.
+              agent, so each step of the run runs on its own agent without
+              another sync (one retry is allowed if a spawn is not found). When
+              background tasks are available, the first step needs no wait for
+              another message either.
               Connect VibeCodes to cloud sessions with the claude.ai
               connector.
             </li>

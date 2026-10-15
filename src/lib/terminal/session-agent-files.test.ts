@@ -134,6 +134,12 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
     expect(cmd()).not.toMatch(/curl|wget|http/i);
   });
 
+  it("sets the cleanup trap before the first temp file is made", () => {
+    const c = cmd();
+    expect(c.indexOf("trap 'rm -f")).toBeGreaterThan(-1);
+    expect(c.indexOf("trap 'rm -f")).toBeLessThan(c.indexOf("mktemp"));
+  });
+
   it("rejects an unsafe name or a bad fingerprint", () => {
     expect(() => cmd({ name: "../evil" })).toThrow();
     expect(() => cmd({ sha256: "nope" })).toThrow();
