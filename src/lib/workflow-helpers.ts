@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { sameRole } from "@/lib/role-matching";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkflowTemplateStep } from "@/types/database";
 import {
@@ -479,16 +480,20 @@ export async function checkAndCompleteRun(
 
 /**
  * Propagate template step edits to pending steps in active workflow runs.
- * Only updates steps with status = 'pending'. Skips runs where the step
- * count differs (structural changes are too risky to propagate).
- * Does NOT re-match bot_id — use rematch_workflow_agents separately.
+ * Only updates steps with status = 'pending'. When the step count differs, the
+ * run is swapped to the new steps by replace_unstarted_workflow_run (atomic) if
+ * nothing has started on it; otherwise it is skipped (structural mismatch).
+ * Does NOT re-match bot_id — every task whose steps were rewritten or swapped is
+ * returned in affectedTaskIds so callers rematch it. A step whose role changed
+ * has its agent cleared here (it was matched to the old role); a step whose
+ * role is unchanged keeps its agent.
  */
 export async function propagateTemplateEdits(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   templateId: string,
   newSteps: WorkflowTemplateStep[]
-): Promise<{ runsUpdated: number; stepsUpdated: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
+): Promise<{ runsUpdated: number; stepsUpdated: number; runsReplaced: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
   // Find active runs for this template
   const { data: activeRuns } = await supabase
     .from("workflow_runs")
@@ -497,23 +502,50 @@ export async function propagateTemplateEdits(
     .not("status", "in", '("completed","failed")');
 
   if (!activeRuns || activeRuns.length === 0) {
-    return { runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
+    return { runsUpdated: 0, stepsUpdated: 0, runsReplaced: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
   }
 
   let runsUpdated = 0;
   let stepsUpdated = 0;
+  let runsReplaced = 0;
   let skippedStructuralMismatch = 0;
   const affectedTaskIds: string[] = [];
 
   for (const run of activeRuns) {
     const { data: steps } = await supabase
       .from("task_workflow_steps")
-      .select("id, status, step_order")
+      .select("id, status, step_order, agent_role")
       .eq("run_id", run.id)
       .order("step_order", { ascending: true });
 
     if (!steps || steps.length !== newSteps.length) {
-      skippedStructuralMismatch++;
+      const { data: replaced, error: replaceError } = steps
+        ? await supabase.rpc("replace_unstarted_workflow_run", {
+            p_run_id: run.id,
+            p_steps: newSteps.map((s) => ({
+              title: s.title,
+              description: s.description ?? null,
+              agent_role: s.role,
+              human_check_required: s.requires_approval ?? false,
+              expected_deliverables: s.deliverables ?? [],
+              model_tier: s.model_tier ?? null,
+            })),
+          })
+        : { data: false, error: null };
+
+      if (replaceError) {
+        logger.error("Failed to replace unstarted workflow run", {
+          error: replaceError.message,
+          runId: run.id,
+        });
+      }
+
+      if (replaced === true) {
+        runsReplaced++;
+        affectedTaskIds.push(run.task_id);
+      } else {
+        skippedStructuralMismatch++;
+      }
       continue;
     }
 
@@ -524,20 +556,30 @@ export async function propagateTemplateEdits(
       if (step.status !== "pending") continue;
 
       const templateStep = newSteps[i];
-      const { count } = await supabase
-        .from("task_workflow_steps")
-        .update({
-          title: templateStep.title,
-          description: templateStep.description ?? null,
-          agent_role: templateStep.role,
-          human_check_required: templateStep.requires_approval ?? false,
-          expected_deliverables: templateStep.deliverables ?? [],
-          model_tier: templateStep.model_tier ?? null,
-        })
-        .eq("id", step.id)
-        .eq("status", "pending");
+      const patch: Record<string, unknown> = {
+        title: templateStep.title,
+        description: templateStep.description ?? null,
+        agent_role: templateStep.role,
+        human_check_required: templateStep.requires_approval ?? false,
+        expected_deliverables: templateStep.deliverables ?? [],
+        model_tier: templateStep.model_tier ?? null,
+      };
+      // The stored agent was matched to the OLD role. Drop it so the rematch
+      // picks one for the new role (a tied "exact" would otherwise keep it).
+      if (!sameRole(step.agent_role, templateStep.role)) {
+        patch.bot_id = null;
+        patch.match_tier = null;
+      }
 
-      if (count && count > 0) {
+      // No count option is requested by default, so read the written rows back.
+      const { data: written } = await supabase
+        .from("task_workflow_steps")
+        .update(patch)
+        .eq("id", step.id)
+        .eq("status", "pending")
+        .select("id");
+
+      if (written && written.length > 0) {
         stepsUpdated++;
         runHadUpdates = true;
       }
@@ -549,5 +591,5 @@ export async function propagateTemplateEdits(
     }
   }
 
-  return { runsUpdated, stepsUpdated, skippedStructuralMismatch, affectedTaskIds };
+  return { runsUpdated, stepsUpdated, runsReplaced, skippedStructuralMismatch, affectedTaskIds };
 }

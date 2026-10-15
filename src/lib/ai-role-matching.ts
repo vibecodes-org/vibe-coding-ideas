@@ -10,7 +10,12 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { AI_MODEL, ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS, resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
+import {
+  AI_MODEL,
+  ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
+  resolveAiProvider,
+  chargeAiUsage,
+} from "@/lib/ai-helpers";
 import { buildRoleMatcher, type MatchTier } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
 
@@ -101,7 +106,7 @@ export async function matchRolesWithAi(
         "Only use bot IDs from the provided agent list.",
       prompt: `Match each workflow step role to the most appropriate agent.\n\nAvailable agents:\n${agentList}\n\nStep roles to match:\n${roleList}`,
       schema: roleMatchSchema,
-      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });

@@ -196,3 +196,143 @@ describe("EnhanceDialogShell — wrapper compatibility", () => {
     expect(screen.getByText(/AI Persona/i)).toBeDefined();
   });
 });
+
+// ── Long-result handling (card 4b371198) ─────────────────────────────
+
+function streamResponse(chunks: string[], opts: { failAfter?: boolean } = {}) {
+  const encoder = new TextEncoder();
+  // Pull-based so each chunk is delivered before a failure (error() would drop queued chunks).
+  let i = 0;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (i < chunks.length) {
+        controller.enqueue(encoder.encode(chunks[i++]));
+      } else if (opts.failAfter) {
+        controller.error(new Error("network error"));
+      } else {
+        controller.close();
+      }
+    },
+  });
+  return new Response(body, { status: 200 });
+}
+
+/** Runs the dialog to a finished/partial result using a stubbed fetch. */
+async function runToResult(responses: Response[]) {
+  const fetchMock = vi.fn();
+  for (const r of responses) fetchMock.mockResolvedValueOnce(r);
+  vi.stubGlobal("fetch", fetchMock);
+  const buildStreamBody = vi.fn().mockImplementation((args) => args);
+  const utils = setup({ buildStreamBody });
+  fireEvent.click(screen.getByRole("checkbox")); // skip the questions round
+  fireEvent.click(screen.getByRole("button", { name: /^Enhance$/ }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  return { fetchMock, buildStreamBody, ...utils };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("EnhanceDialogShell — Continue after a length cut", () => {
+  it("appends the new text to the existing text and sends continueFrom", async () => {
+    const { fetchMock, buildStreamBody } = await runToResult([
+      streamResponse(["Part one", "\n\n__TRUNCATED__"]),
+      streamResponse([" part two"]),
+    ]);
+
+    const continueBtn = await screen.findByRole("button", { name: "Continue" });
+    fireEvent.click(continueBtn);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(screen.getAllByTestId("md").some((el) => el.textContent === "Part one part two")).toBe(true);
+    });
+    expect(buildStreamBody.mock.calls[1][0]).toMatchObject({ continueFrom: "Part one" });
+    expect(buildStreamBody.mock.calls[1][0].previousEnhanced).toBeUndefined();
+  });
+});
+
+describe("EnhanceDialogShell — dropped connection", () => {
+  it("keeps the text on the result screen with the amber bar and Continue, and still toasts", async () => {
+    await runToResult([streamResponse(["Part one"], { failAfter: true })]);
+
+    expect(await screen.findByText("The connection dropped before it finished.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDefined();
+    expect(screen.getAllByTestId("md").some((el) => el.textContent === "Part one")).toBe(true);
+    expect(toast.error).toHaveBeenCalled();
+    // Not back on the first screen
+    expect(screen.queryByRole("button", { name: /^Enhance$/ })).toBeNull();
+  });
+
+  it("goes back to the first screen when no text had arrived", async () => {
+    await runToResult([streamResponse([], { failAfter: true })]);
+
+    expect(await screen.findByRole("button", { name: /^Enhance$/ })).toBeDefined();
+    expect(toast.error).toHaveBeenCalled();
+  });
+});
+
+describe("EnhanceDialogShell — ask before discarding a result", () => {
+  it("Regenerate asks first; keeping leaves the result, discarding goes back", async () => {
+    await runToResult([streamResponse(["Finished text"])]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Regenerate/ }));
+    expect(await screen.findByText("Discard this result?")).toBeDefined();
+
+    // Keep: result stays
+    fireEvent.click(screen.getByRole("button", { name: "Keep result" }));
+    await waitFor(() => expect(screen.queryByText("Discard this result?")).toBeNull());
+    expect(screen.getAllByTestId("md").some((el) => el.textContent === "Finished text")).toBe(true);
+
+    // Discard: back to the first screen
+    fireEvent.click(screen.getByRole("button", { name: /Regenerate/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(await screen.findByRole("button", { name: /^Enhance$/ })).toBeDefined();
+  });
+
+  it("closing the dialog asks first; Keep leaves it open, Discard closes it", async () => {
+    const { props } = await runToResult([streamResponse(["Finished text"])]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Discard this result?")).toBeDefined();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep result" }));
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("an outside click on the confirm keeps the result and leaves the main dialog open", async () => {
+    const { props } = await runToResult([streamResponse(["Finished text"])]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(await screen.findByText("Discard this result?")).toBeDefined();
+
+    const overlays = document.querySelectorAll('[data-slot="dialog-overlay"]');
+    const topOverlay = overlays[overlays.length - 1] as HTMLElement;
+    fireEvent.pointerDown(topOverlay);
+    fireEvent.pointerUp(topOverlay);
+    fireEvent.click(topOverlay);
+
+    await waitFor(() => expect(screen.queryByText("Discard this result?")).toBeNull());
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("md").some((el) => el.textContent === "Finished text")).toBe(true);
+  });
+
+  it("Escape on the confirm keeps the result and leaves the main dialog open", async () => {
+    const { props } = await runToResult([streamResponse(["Finished text"])]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    const title = await screen.findByText("Discard this result?");
+
+    fireEvent.keyDown(title, { key: "Escape", code: "Escape" });
+
+    await waitFor(() => expect(screen.queryByText("Discard this result?")).toBeNull());
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("md").some((el) => el.textContent === "Finished text")).toBe(true);
+  });
+});

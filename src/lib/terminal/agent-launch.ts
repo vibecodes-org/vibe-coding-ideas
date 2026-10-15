@@ -15,7 +15,7 @@
 // identical mechanism to Claude's, which is why the bridge's existing
 // "prompt as one argv element" / "cwd via PTY spawn opts" plumbing needs no
 // change. What does NOT carry over: pre-assigned session ids, worktree
-// isolation, and the auto-accept flag — none of those are ever safe to forward
+// isolation, the auto-accept flag and Remote Control — none of those are ever safe to forward
 // to Codex (they're either meaningless or actively wrong), so this resolver
 // refuses to emit them regardless of what the caller passes in (AC-3).
 //
@@ -32,6 +32,7 @@
 // Claude's `--model` (AC-8: one element per value, fixed `codex` binary).
 
 import { validateCodexModelValue, validateReasoningEffort } from "@/lib/codex-models";
+import { CLAUDE_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
 
 /** The two agents VibeCodes can launch. */
 export type LaunchAgent = "claude" | "codex";
@@ -95,6 +96,22 @@ export interface AgentLaunchOptions {
    */
   worktree?: boolean;
   /**
+   * Claude-only; never emitted for Codex (task 5c8969cc). Inserts the fixed
+   * literal `--remote-control` immediately after `claude` on the fresh,
+   * `--resume` and `--continue` branches — the flag's name argument is
+   * optional, so anywhere later the bootstrap prompt would be read as the
+   * session name. Strict `=== true`.
+   */
+  remoteControl?: boolean;
+  /**
+   * Claude-only (task 18a37612): the starting effort, `--effort <level>`, on
+   * the fresh, `--resume` and `--continue` branches (a resumed conversation
+   * does not keep its effort). Whitelisted to Claude's ladder (low...max);
+   * anything else is dropped. Never emitted for Codex (its pair is
+   * `codexEffort`) or with `explicitCmd`.
+   */
+  effort?: string | null;
+  /**
    * Mints a fresh conversation id for a brand-new CLAUDE session (branch 4 of
    * resolveClaudeLaunch). Codex never calls this: it has no pre-assignable
    * session id (§2.2), so a fresh Codex launch's `conv` is always null.
@@ -149,7 +166,7 @@ export function resolveAgentLaunch(opts: AgentLaunchOptions): ResolvedAgentLaunc
 
   if (agent === "codex") {
     // Never emit the Claude-only --model / --permission-mode / --session-id /
-    // --worktree for Codex, no matter what the caller passed in — AC-3. They
+    // --worktree / --remote-control for Codex, no matter what the caller passed in — AC-3. They
     // aren't read past this point. (The Codex-native model rides codexModel.)
     if (resumeId) return { cmd: `codex resume ${resumeId}`, conv: resumeId };
     if (resume) return { cmd: "codex resume --last", conv: null };
@@ -162,8 +179,13 @@ export function resolveAgentLaunch(opts: AgentLaunchOptions): ResolvedAgentLaunc
   }
 
   // Claude — unchanged from resolveClaudeLaunch's four branches.
-  if (resumeId) return { cmd: `claude --resume ${resumeId}`, conv: resumeId };
-  if (resume) return { cmd: "claude --continue", conv: null };
+  const rc = opts.remoteControl === true ? " --remote-control" : "";
+  const effortFlag =
+    typeof opts.effort === "string" && (CLAUDE_EFFORT_LEVELS as readonly string[]).includes(opts.effort)
+      ? ` --effort ${opts.effort}`
+      : "";
+  if (resumeId) return { cmd: `claude${rc} --resume ${resumeId}${effortFlag}`, conv: resumeId };
+  if (resume) return { cmd: `claude${rc} --continue${effortFlag}`, conv: null };
   const conv = mintId();
   const modelFlag = model ? ` --model ${model}` : "";
   const permissionModeFlag =
@@ -172,7 +194,7 @@ export function resolveAgentLaunch(opts: AgentLaunchOptions): ResolvedAgentLaunc
       : "";
   const worktreeFlag = worktree ? ` --worktree ${conv}` : "";
   return {
-    cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}${worktreeFlag}`,
+    cmd: `claude${rc} --session-id ${conv}${modelFlag}${effortFlag}${permissionModeFlag}${worktreeFlag}`,
     conv,
   };
 }

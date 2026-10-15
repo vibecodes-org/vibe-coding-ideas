@@ -616,9 +616,14 @@ export default function WorkflowsPage() {
             propagate to any <strong className="text-foreground">pending</strong>{" "}
             steps in active workflow runs that were created from that template.
             Steps that are already in progress, completed, or failed are not
-            affected. If the number of steps has changed (structural edit),
-            propagation is skipped for safety — you should remove and re-apply
-            the workflow in that case.
+            affected. If the number of steps has changed (structural edit), a
+            workflow that has not started yet (every step pending, nothing
+            claimed or commented on) is switched to the new steps, which also
+            drops any hand-made tweaks on it, such as a hand-picked agent or a
+            flipped approval; one that has started is left alone, so remove and re-apply it in that case.
+            When a step&apos;s role changes, its agent is re-picked for the
+            new role; a step whose role is unchanged keeps its agent,
+            including a hand-picked one.
           </p>
         </section>
 

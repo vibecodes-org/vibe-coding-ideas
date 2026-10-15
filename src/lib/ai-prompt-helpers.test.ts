@@ -93,12 +93,11 @@ describe("buildPromptContextParts", () => {
     const parts = buildPromptContextParts({
       ...baseCtx,
       agentRole: "QA Engineer",
-      agentSkills: ["testing", "automation"],
       agentBio: "Expert in quality assurance",
     });
     const joined = parts.join("\n\n");
     expect(joined).toContain("**Agent Role:** QA Engineer");
-    expect(joined).toContain("**Agent Skills:** testing, automation");
+    expect(joined).not.toContain("Agent Skills");
     expect(joined).toContain("**Agent Bio:** Expert in quality assurance");
   });
 

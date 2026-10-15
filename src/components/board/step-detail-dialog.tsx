@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RoleCombobox } from "@/components/ui/role-combobox";
+import { StepSkillsLine } from "./step-skills-line";
 import { ModelTierSelect, ModelTierBadge } from "@/components/shared/model-tier-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
@@ -197,9 +198,11 @@ function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
 }
 
 /**
- * Persona-attestation design §C — the self-reported sibling of
- * StepExecutionLine: whether this step's subagent actually ran on the
- * persona_prompt embedded by claim_next_step. Gated purely on
+ * Persona-attestation design §C — the sibling of StepExecutionLine: whether
+ * this step's subagent actually ran on the persona_prompt embedded by
+ * claim_next_step (self-reported by the orchestrator). The "Skills sent" line
+ * is not self-reported: claim_next_step records the skills it sent (task
+ * d04408b0); steps from before that hold the agent's own report. Gated purely on
  * `persona_honored` — that column is set ONLY by complete_step/fail_step, so
  * this one null-check alone hides in-flight steps, unreported completions,
  * AND every legacy row (no model_tier equivalent to check, unlike
@@ -211,7 +214,7 @@ function StepPersonaLine({ step }: { step: TaskWorkflowStep }) {
   const skillsLine =
     step.skills_used != null ? (
       <span className="block text-[11px] text-muted-foreground">
-        Skills: {step.skills_used.length > 0 ? step.skills_used.join(", ") : "none"}
+        Skills sent: {step.skills_used.length > 0 ? step.skills_used.join(", ") : "none"}
       </span>
     ) : null;
 
@@ -348,6 +351,7 @@ export function StepDetailDialog({
   const [editHumanCheck, setEditHumanCheck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [assignedAgent, setAssignedAgent] = useState<{ name: string; avatar_url: string | null; role: string | null } | null>(null);
+  const [agentSkillNames, setAgentSkillNames] = useState<string[] | null>(null);
   const [attachments, setAttachments] = useState<MarkdownAttachment[]>([]);
   const supabaseRef = useRef(createClient());
   const commentsEndRef = useRef<HTMLDivElement>(null);
@@ -356,17 +360,33 @@ export function StepDetailDialog({
   useEffect(() => {
     if (!step.bot_id) {
       setAssignedAgent(null);
+      setAgentSkillNames(null);
       return;
     }
     const supabase = supabaseRef.current;
+    let cancelled = false;
+    // What the agent will be sent with this step (shown until the step has run)
+    supabase
+      .from("agent_skills")
+      .select("name")
+      .eq("bot_id", step.bot_id)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) toast.error("Failed to load agent skills");
+        setAgentSkillNames(error || !data ? null : data.map((s) => s.name));
+      });
     supabase
       .from("bot_profiles")
       .select("name, avatar_url, role")
       .eq("id", step.bot_id)
       .maybeSingle()
       .then(({ data }) => {
+        if (cancelled) return;
         setAssignedAgent(data ? { name: data.name ?? "Unknown", avatar_url: data.avatar_url, role: data.role } : null);
       });
+    return () => { cancelled = true; };
   }, [step.bot_id]);
 
   // Fetch task attachments — used to linkify attachment filenames referenced
@@ -661,6 +681,11 @@ export function StepDetailDialog({
                 ) : null}
                 {step.human_check_required && <ApprovalLockIcon className="h-3 w-3" />}
               </div>
+              {step.bot_id &&
+                agentSkillNames &&
+                (step.status === "pending" || step.status === "in_progress" || step.status === "failed") && (
+                  <StepSkillsLine names={agentSkillNames} />
+                )}
             </div>
             {step.status === "pending" && !isReadOnly && !isEditing && (
               <Button

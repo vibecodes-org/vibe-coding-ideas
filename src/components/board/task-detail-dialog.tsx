@@ -81,6 +81,9 @@ export function TaskDetailDialog({
       recordedProjectPaths={launch.recordedProjectPaths}
       taskId={task.id}
       taskTitle={task.title}
+      // The in-app terminal dock sits under this dialog's overlay: close the
+      // dialog (flushing pending saves) once the launch is handed to the dock.
+      onLaunchedInBrowser={() => handleOpenChange(false)}
     />
   ) : null;
 
@@ -533,22 +536,21 @@ export function TaskDetailDialog({
     }
   }
 
+  function handleOpenChange(v: boolean) {
+    if (!v && coverPreviewOpen) {
+      setCoverPreviewOpen(false);
+      return;
+    }
+    if (!v) {
+      // Flush any pending auto-saves before the dialog unmounts
+      void titleSave.flush();
+      void descSave.flush();
+    }
+    onOpenChange(v);
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v && coverPreviewOpen) {
-          setCoverPreviewOpen(false);
-          return;
-        }
-        if (!v) {
-          // Flush any pending auto-saves before the dialog unmounts
-          void titleSave.flush();
-          void descSave.flush();
-        }
-        onOpenChange(v);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         // Widen on desktop (was sm:max-w-lg / 512px — too narrow, truncated the
         // workflow step titles and cramped the description). tailwind-merge lets

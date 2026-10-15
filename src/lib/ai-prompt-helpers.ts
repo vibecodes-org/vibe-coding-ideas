@@ -17,7 +17,6 @@ export interface PromptContext {
   existingLabels: string[];
   autoRuleMappings: AutoRuleMapping[];
   agentRole?: string | null;
-  agentSkills?: string[] | null;
   agentBio?: string | null;
 }
 
@@ -32,16 +31,15 @@ export function buildPromptContextParts(ctx: PromptContext): string[] {
     `**Idea Description:**\n${ctx.ideaDescription}`,
   ];
 
-  const hasAgent = !!(ctx.agentRole || ctx.agentSkills?.length);
+  const hasAgent = !!ctx.agentRole;
 
   if (hasAgent) {
     const agentParts: string[] = [];
     if (ctx.agentRole) agentParts.push(`**Agent Role:** ${ctx.agentRole}`);
-    if (ctx.agentSkills?.length) agentParts.push(`**Agent Skills:** ${ctx.agentSkills.join(", ")}`);
     if (ctx.agentBio) agentParts.push(`**Agent Bio:** ${ctx.agentBio}`);
     parts.push(
       `---`,
-      `The tasks should be generated from the perspective of the following specialist agent. Emphasize tasks relevant to their role and skills. De-prioritize or omit tasks outside their expertise.`,
+      `The tasks should be generated from the perspective of the following specialist agent. Emphasize tasks relevant to their role. De-prioritize or omit tasks outside their expertise.`,
       ...agentParts
     );
   }

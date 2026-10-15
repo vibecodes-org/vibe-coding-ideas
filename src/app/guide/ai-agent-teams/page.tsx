@@ -58,12 +58,11 @@ export default function AiAgentTeamsPage() {
             <li>Enter a name (e.g., &quot;Dev Alpha&quot;)</li>
             <li>
               Pick a <strong className="text-foreground">role template</strong>{" "}
-              — choose from 18 pre-built roles spanning engineering, design,
-              product, go-to-market, and operations (see the list below) — or
+              — choose one of the five starters (see the list below) — or
               leave it blank for a general-purpose agent
             </li>
             <li>
-              Customize the <strong className="text-foreground">system prompt
+              Customize the <strong className="text-foreground">instructions
               </strong> if you want. This prompt is stored on the agent and
               available to Claude Code via the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
@@ -83,80 +82,98 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Role Templates</h2>
           <p className="mb-4 text-muted-foreground">
-            VibeCodes ships <strong className="text-foreground">18 role
-            templates</strong>, each with a pre-written{" "}
-            <strong className="text-foreground">structured prompt</strong>{" "}
-            (goal, expertise, constraints, and approach) that you can customise.
-            Pick one as a starting point, then edit to match your needs. They
-            span the whole product team, not just engineering:
+            VibeCodes ships <strong className="text-foreground">five role
+            templates</strong>, the same five agents every workflow uses. Each
+            has pre-written{" "}
+            <strong className="text-foreground">instructions</strong>{" "}
+            (what the agent does, its job, what it hands back, and what it must
+            not do) that you can customise. Pick one as a starting point, then
+            edit to match your needs:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Engineering</h3>
+              <h3 className="font-medium">Planner</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Full Stack Engineer, Front End Engineer, Backend Engineer, QA
-                Engineer, DevOps Engineer, Security Engineer, Code Reviewer,
-                Data Engineer
+                Takes a card to an approved plan: requirements, a design mock
+                if users will see a change, and the build plan.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Design &amp; Product</h3>
+              <h3 className="font-medium">Full Stack Engineer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                UX Designer, Product Manager, Technical Writer, Business
-                Analyst, Product Owner
+                Builds what the approved plan describes, in whatever stack the
+                project uses, with tests.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Go-to-Market</h3>
+              <h3 className="font-medium">Code Reviewer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Marketing Strategist, Copywriter / Content, Sales Lead
+                Reviews someone else&apos;s change independently against the
+                plan. Starts on Read-only, so it can&apos;t edit what it checks.
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Leadership &amp; Operations</h3>
+              <h3 className="font-medium">QA Engineer</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                CEO / Founder, Finance &amp; Operations
+                Tests someone else&apos;s change as a user would, and writes the
+                plain-English release summary.
+              </p>
+            </div>
+            <div className="rounded-lg border border-border p-4 sm:col-span-2">
+              <h3 className="font-medium">DevOps Engineer</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Carries out approved infrastructure and deployment changes
+                exactly as planned, and proves they worked.
               </p>
             </div>
           </div>
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">
-            Structured Prompt Builder
-          </h2>
+          <h2 className="mb-4 text-2xl font-semibold">Writing Instructions</h2>
           <p className="mb-4 text-muted-foreground">
             When creating or editing an agent, the{" "}
-            <strong className="text-foreground">prompt builder</strong> helps
-            you craft effective system prompts using four structured fields:
+            <strong className="text-foreground">Instructions</strong> editor
+            asks for what a good agent definition needs, in four boxes:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">Goal</strong> — what the agent
-              should achieve (e.g., &quot;Deliver production-ready code that
-              follows project conventions&quot;)
+              <strong className="text-foreground">What it does, in one line</strong>{" "}
+              — the agent&apos;s role in a sentence (e.g., &quot;You review code
+              changes for correctness and consistency&quot;)
             </li>
             <li>
-              <strong className="text-foreground">Expertise</strong> — the
-              domain knowledge, principles, and frameworks the agent should
-              bring (e.g., &quot;Modern React, accessibility, and testing best
-              practices&quot;)
+              <strong className="text-foreground">Its job</strong> — the
+              specific work it does in your workflows: what it reads, what it
+              checks, the steps it follows
             </li>
             <li>
-              <strong className="text-foreground">Constraints</strong> — what
-              the agent must never do (e.g., &quot;Ship code without tests&quot;)
+              <strong className="text-foreground">What it hands back</strong> —
+              what the next step, or you, get from it
             </li>
             <li>
-              <strong className="text-foreground">Approach</strong> — how the
-              agent should work (e.g., &quot;Read existing code before writing
-              new code&quot;)
+              <strong className="text-foreground">What it must not do</strong>{" "}
+              — the things it should never touch or do
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            Role templates pre-fill these fields. You can edit them or switch
-            to a freeform text prompt at any time. The builder combines the
-            fields into a single system prompt that Claude follows when acting
-            as that agent.
+            Leave out general know-how a strong model already has; skills hold
+            what only your project knows. Role templates pre-fill the boxes.
+            You can edit them or switch to{" "}
+            <strong className="text-foreground">Write it yourself</strong> for
+            free-form text at any time. The boxes are saved as one block of
+            text with plain headings, which Claude follows when acting as that
+            agent.
+          </p>
+          <p className="mt-3 text-muted-foreground">
+            Each agent also has a{" "}
+            <strong className="text-foreground">What it can do</strong>{" "}
+            setting: <strong className="text-foreground">Full access</strong>{" "}
+            (the default) can read and change code and files;{" "}
+            <strong className="text-foreground">Read-only</strong> is for
+            reviewers and checkers. A read-only agent is told not to create,
+            edit or delete files, and in the in-app browser terminal its
+            file-editing tools are switched off.
           </p>
         </section>
 
@@ -205,15 +222,17 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             Upvote community agents to signal quality.{" "}
             <strong className="text-foreground">Featured teams</strong> are
-            curated collections of agents (e.g., a &quot;Full Stack Team&quot;
-            with Developer, QA, DevOps, and UX agents) managed by admins. Click{" "}
-            <strong className="text-foreground">Clone Team to My Agents</strong> to clone all
+            curated collections of agents (e.g., &quot;Plan, build and check&quot;
+            with the Planner, Full Stack Engineer, Code Reviewer, QA Engineer
+            and DevOps Engineer) managed by admins. Click{" "}
+            <strong className="text-foreground">Add team to My Agents</strong> to copy all
             agents from a featured team into your account in one go.
           </p>
 
           <h3 className="mb-3 mt-6 text-lg font-medium">Agent Profiles</h3>
           <p className="text-muted-foreground">
-            Each agent has a public profile page showing its bio, skills,
+            Each agent has a public profile page showing its bio, its skills
+            (each listed in full, with the text you can open and read), its
             system prompt, stats (times cloned, upvotes), and the ideas
             it&apos;s contributing to. Unpublished agents are only visible to
             their owner.
@@ -314,6 +333,70 @@ export default function AiAgentTeamsPage() {
             resetting the step retires the token, and the next step&apos;s
             claim starts the cycle again for whichever agent is assigned to
             it. There&apos;s no separate identity to set or reset.
+          </p>
+
+          <h3 className="mb-2 mt-6 text-lg font-semibold">
+            Agents as real subagents, in every kind of session
+          </h3>
+          <p className="text-muted-foreground">
+            When an agent runs as a real Claude Code subagent, its persona is
+            the subagent&apos;s own system prompt and the step&apos;s model and
+            effort are built in, rather than pasted into a message. How the
+            agents get there depends on how you started Claude Code:
+          </p>
+          <ul className="mt-2 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Launched from VibeCodes</strong>{" "}
+              (the in-app terminal or the launch button): the board&apos;s
+              agents are loaded at launch. Nothing to do.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                A terminal, IDE or desktop session you started yourself
+              </strong>
+              : the first time a claimed step names an agent your session
+              doesn&apos;t have, Claude Code runs{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                sync_board_agents
+              </code>{" "}
+              once. It saves the agents as{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                .claude/agents/vc-*.md
+              </code>{" "}
+              files in your project folder and picks them up straight away. If
+              that folder didn&apos;t exist when the session started, they load
+              from the next session.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                A Claude Code cloud session
+              </strong>{" "}
+              (claude.ai/code, the phone app, desktop &quot;Cloud&quot;): the same
+              sync, with one extra step. Cloud sessions can only reach
+              approved websites, so in your environment&apos;s settings choose
+              a Custom network, keep the default list and add{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                vibecodes.co.uk
+              </code>
+              . Connect VibeCodes to cloud sessions with the claude.ai
+              connector.
+            </li>
+          </ul>
+          <p className="mt-3 text-muted-foreground">
+            The files are never committed: this repository ignores them, and in
+            any other repository the sync adds a local-only ignore line. Your
+            agents are re-synced on the next claim whenever you edit an
+            agent&apos;s instructions, skills or model. If a sync fails, for
+            example because the network blocks vibecodes.co.uk, the step simply
+            runs as before with the instructions passed along in the message.
+          </p>
+          <p className="mt-3 text-muted-foreground">
+            Cloud sessions don&apos;t read your personal{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              ~/.claude/CLAUDE.md
+            </code>
+            . To carry personal instructions into them, have the environment&apos;s
+            setup script write that file.
           </p>
         </section>
 
@@ -529,8 +612,9 @@ export default function AiAgentTeamsPage() {
             </li>
             <li>
               <strong className="text-foreground">Use via Claude Code</strong>{" "}
-              — connected agents load their skill instructions on demand with
-              the{" "}
+              — when an agent works on a workflow step, VibeCodes sends its
+              skills in full along with the step, so they always arrive. Agents
+              can also re-read a skill with the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 get_agent_skill_content
               </code>{" "}
@@ -595,9 +679,9 @@ export default function AiAgentTeamsPage() {
             Claude&apos;s style and focus.
           </p>
           <p className="text-muted-foreground">
-            For example, selecting a &quot;Business Analyst&quot; agent persona
+            For example, selecting a &quot;Planner&quot; agent persona
             when enhancing an idea will produce a more requirements-focused
-            description, while a &quot;Developer&quot; persona will emphasise
+            description, while a &quot;Full Stack Engineer&quot; persona will emphasise
             technical implementation details.
           </p>
         </section>
@@ -697,7 +781,8 @@ export default function AiAgentTeamsPage() {
           <ul className="mt-3 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">Edit</strong> an agent&apos;s
-              name, role, system prompt, bio, skills, or avatar
+              name, role, system prompt, tagline, tool access, or avatar. Add
+              or remove its skills from the agent&apos;s own page
             </li>
             <li>
               <strong className="text-foreground">Publish</strong> an agent to

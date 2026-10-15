@@ -8,6 +8,7 @@ import {
   POSITION_GAP,
   SORT_OPTIONS,
   BOT_ROLE_TEMPLATES,
+  ROLE_TEMPLATE_CHIPS,
   SUGGESTED_TAGS,
   defaultTierForRole,
   modelTierGloss,
@@ -18,6 +19,7 @@ import {
   tierResolutionLine,
   capitalizeModelName,
 } from "./constants";
+import { generateInstructions, parseInstructions } from "./agent-instructions";
 import type { IdeaStatus, CommentType } from "@/types";
 
 // ── STATUS_CONFIG completeness ────────────────────────────────────────
@@ -171,20 +173,19 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(BOT_ROLE_TEMPLATES.length).toBeGreaterThan(0);
   });
 
-  it("each template has role, prompt, and structured fields", () => {
+  it("each template has a role, a one line, a job and a tool setting", () => {
     for (const template of BOT_ROLE_TEMPLATES) {
       expect(template.role).toBeTruthy();
-      expect(typeof template.prompt).toBe("string");
-      expect(template.structured).toBeDefined();
-      expect(template.structured.goal).toBeTruthy();
-      expect(template.structured.constraints).toBeTruthy();
-      expect(template.structured.approach).toBeTruthy();
+      expect(template.fields.oneLine, template.role).toBeTruthy();
+      expect(template.fields.job, template.role).toBeTruthy();
+      expect(["full", "read_only"]).toContain(template.toolAccess);
     }
   });
 
-  it("each template has expertise in structured fields", () => {
+  it("no template carries old Expertise", () => {
     for (const template of BOT_ROLE_TEMPLATES) {
-      expect(template.structured.expertise).toBeTruthy();
+      expect(template.fields.leftover, template.role).toBe("");
+      expect(generateInstructions(template.fields), template.role).not.toContain("Notes from the old format");
     }
   });
 
@@ -193,55 +194,92 @@ describe("BOT_ROLE_TEMPLATES", () => {
     expect(new Set(roles).size).toBe(roles.length);
   });
 
-  it("includes a Copywriter / Content template with a valid structured shape", () => {
-    const copywriter = BOT_ROLE_TEMPLATES.find(
-      (t) => t.role === "Copywriter / Content"
-    );
-    expect(copywriter).toBeDefined();
-    expect(typeof copywriter!.prompt).toBe("string");
-    expect(copywriter!.structured.goal).toBeTruthy();
-    expect(copywriter!.structured.expertise).toBeTruthy();
-    expect(copywriter!.structured.constraints).toBeTruthy();
-    expect(copywriter!.structured.approach).toBeTruthy();
+  it("offers the five platform agents in order, and Code Reviewer is the only Read-only starter", () => {
+    expect(BOT_ROLE_TEMPLATES.map((t) => t.role)).toEqual([
+      "Planner",
+      "Full Stack Engineer",
+      "Code Reviewer",
+      "QA Engineer",
+      "DevOps Engineer",
+    ]);
+    const readOnly = BOT_ROLE_TEMPLATES.filter((t) => t.toolAccess === "read_only").map((t) => t.role);
+    expect(readOnly).toEqual(["Code Reviewer"]);
+  });
+
+  it("every template reads back from its generated text into the same boxes", () => {
+    for (const template of BOT_ROLE_TEMPLATES) {
+      const parsed = parseInstructions(generateInstructions(template.fields), template.role);
+      expect(parsed?.source, template.role).toBe("new");
+      expect(parsed?.fields, template.role).toEqual(template.fields);
+    }
   });
 
   // Task 7d1ca3c1 (real incident, 7 Sep 2026): a spawned engineer subagent
   // reverted a prior step's approved, uncommitted work. The "don't destroy
-  // work you didn't author" sentence is appended to the 8 code-touching
-  // starter templates only — non-code roles never run git, so it would be
-  // inert noise there.
+  // work you didn't author" sentence is in all five starters: every one of
+  // them can run git in a shared checkout.
   describe("protect-prior-work sentence", () => {
-    const CODE_TOUCHING_ROLES = [
-      "Full Stack Engineer",
-      "Front End Engineer",
-      "Backend Engineer",
-      "QA Engineer",
-      "DevOps Engineer",
-      "Security Engineer",
-      "Code Reviewer",
-      "Data Engineer",
-    ];
+    const CODE_TOUCHING_ROLES = ["Planner", "Full Stack Engineer", "Code Reviewer", "QA Engineer", "DevOps Engineer"];
     const MARKER =
       "unexplained uncommitted changes in the working tree are someone else's intentional prior work";
 
-    it("appends the sentence to structured.constraints for every code-touching role", () => {
+    it("appends the sentence to what-not-to-do for every code-touching role", () => {
       for (const role of CODE_TOUCHING_ROLES) {
         const template = BOT_ROLE_TEMPLATES.find((t) => t.role === role);
         expect(template, `missing template for ${role}`).toBeDefined();
-        expect(template!.structured.constraints).toContain(MARKER);
-        expect(template!.structured.constraints).toContain("fail_step");
+        expect(template!.fields.mustNot).toContain(MARKER);
+        expect(template!.fields.mustNot).toContain("fail_step");
       }
     });
 
     it("does not add the sentence to non-code-touching roles", () => {
       for (const template of BOT_ROLE_TEMPLATES) {
         if (CODE_TOUCHING_ROLES.includes(template.role)) continue;
-        expect(
-          template.structured.constraints,
-          `unexpected sentence on ${template.role}`
-        ).not.toContain(MARKER);
+        expect(template.fields.mustNot, `unexpected sentence on ${template.role}`).not.toContain(MARKER);
       }
     });
+  });
+
+  // Task fedbfc19: these were ~3,000-char "textbook" prompts (SOLID, Core Web
+  // Vitals, RICE…) long after the platform personas were slimmed (00149), so
+  // every new agent reintroduced the bloat. The ceiling stops them regrowing.
+  // 1,800 -> 1,900 in stage 3 (472d5672): the Planner covers four jobs and is
+  // 1,887 characters; the other four are 1,263 to 1,706.
+  describe("slim, stack-agnostic starter prompts", () => {
+    const PROMPT_CEILING = 1900;
+
+    it(`every generated starter prompt is at most ${PROMPT_CEILING} characters`, () => {
+      for (const template of BOT_ROLE_TEMPLATES) {
+        const prompt = generateInstructions(template.fields);
+        expect(prompt.length, `${template.role} is ${prompt.length} chars`).toBeLessThanOrEqual(PROMPT_CEILING);
+      }
+    });
+
+    // These seed agents on any user's project, whatever its stack — the
+    // VibeCodes house stack and people don't belong in them.
+    it("names no particular stack, product or person", () => {
+      const STACK_SPECIFIC =
+        /Next\.js|React|Supabase|shadcn|Tailwind|maybeSingle|\bRLS\b|Vercel|VibeCodes|\bNick\b/;
+      for (const template of BOT_ROLE_TEMPLATES) {
+        expect(generateInstructions(template.fields), template.role).not.toMatch(STACK_SPECIFIC);
+      }
+    });
+  });
+});
+
+describe("ROLE_TEMPLATE_CHIPS", () => {
+  it("is one row of the five templates, with nothing under More", () => {
+    expect(ROLE_TEMPLATE_CHIPS.map((c) => c.role)).toEqual(BOT_ROLE_TEMPLATES.map((t) => t.role));
+    expect(ROLE_TEMPLATE_CHIPS.every((c) => c.group === "primary")).toBe(true);
+    expect(ROLE_TEMPLATE_CHIPS[0].role).toBe("Planner");
+  });
+
+  it("every chip names a real template (so clicking it always fills the boxes)", () => {
+    const templateRoles = new Set(BOT_ROLE_TEMPLATES.map((t) => t.role));
+    for (const chip of ROLE_TEMPLATE_CHIPS) {
+      expect(templateRoles.has(chip.role), chip.role).toBe(true);
+      expect(chip.icon, chip.role).toBeTruthy();
+    }
   });
 });
 

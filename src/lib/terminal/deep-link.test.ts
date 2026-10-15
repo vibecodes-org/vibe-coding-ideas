@@ -13,7 +13,11 @@ import {
 // The bridge/helper PARSES with the shared .mjs. Importing it here pins the two
 // implementations together: a link this (TS) module builds MUST parse back to the
 // same fields with the shared parser, or this test fails — catching any drift.
-import { parseLaunchDeepLink, parseOpenTerminalDeepLink } from "../../../terminal/shared/deep-link.mjs";
+import {
+  buildLaunchDeepLink as buildSharedLaunchDeepLink,
+  parseLaunchDeepLink,
+  parseOpenTerminalDeepLink,
+} from "../../../terminal/shared/deep-link.mjs";
 import {
   buildCompactBootstrapPromptParts,
   enforcePromptLength,
@@ -205,7 +209,35 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
   });
 
   // FR-4: the Codex reasoning effort rides alongside `model`.
-  it("includes a valid effort (low/medium/high), before prompt, and round-trips", () => {
+  it("carries every Codex effort level (minimal…xhigh) and the shared parser keeps it", () => {
+    for (const effort of ["minimal", "low", "medium", "high", "xhigh"]) {
+      const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort });
+      expect(url).toContain(`effort=${effort}`);
+      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort });
+    }
+  });
+
+  it("never fires Claude-only \"max\" as a Codex launch effort", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", model: "gpt-6-astra", effort: "max" });
+    expect(url).not.toContain("effort=");
+  });
+
+  // Task 18a37612: Claude's own ladder (low…max) rides on a Claude launch.
+  it("carries every Claude effort level (low…max) on a Claude launch and the parser keeps it", () => {
+    for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+      const url = buildLaunchDeepLink({ ...SAMPLE, effort });
+      expect(url).toContain(`effort=${effort}`);
+      expect(parseLaunchDeepLink(url)).toEqual({ ...SAMPLE, effort });
+    }
+  });
+
+  it("never fires Codex-only \"minimal\" or \"ultracode\" on a Claude launch", () => {
+    for (const effort of ["minimal", "ultracode"]) {
+      expect(buildLaunchDeepLink({ ...SAMPLE, effort })).not.toContain("effort=");
+    }
+  });
+
+  it("includes a valid effort, before prompt, and round-trips", () => {
     const withEffort = { ...SAMPLE, model: "gpt-6-astra", effort: "high", prompt: "hi" };
     const url = buildLaunchDeepLink(withEffort);
     expect(url).toContain("effort=high");
@@ -305,6 +337,51 @@ describe("buildLaunchDeepLink with worktree (concurrent-terminal isolation, nati
     const url = buildLaunchDeepLink({ ...SAMPLE, worktree: true });
     const redacted = redactDeepLinkToken(url);
     expect(redacted).toContain("worktree=1");
+  });
+});
+
+describe("buildLaunchDeepLink with remoteControl (task 5c8969cc)", () => {
+  it("includes remoteControl=1 after worktree and before prompt, and round-trips through the shared parser", () => {
+    const withRc = { ...SAMPLE, worktree: true, remoteControl: true, prompt: "hello" };
+    const url = buildLaunchDeepLink(withRc);
+    expect(url).toContain("&remoteControl=1");
+    expect(url.indexOf("worktree=")).toBeLessThan(url.indexOf("remoteControl="));
+    expect(url.indexOf("remoteControl=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withRc);
+  });
+
+  it("off -> identical string to a build without the field", () => {
+    const base = buildLaunchDeepLink({ ...SAMPLE, prompt: "hi" });
+    expect(buildLaunchDeepLink({ ...SAMPLE, prompt: "hi", remoteControl: false })).toBe(base);
+    expect(buildLaunchDeepLink({ ...SAMPLE, prompt: "hi", remoteControl: undefined })).toBe(base);
+    expect(base).not.toContain("remoteControl");
+  });
+
+  it("is never emitted alongside agent=codex", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, agent: "codex", remoteControl: true });
+    expect(url).toContain("agent=codex");
+    expect(url).not.toContain("remoteControl");
+  });
+
+  it("TS and shared builders produce the identical string (claude/codex x on/off, every param set)", () => {
+    for (const agent of ["claude", "codex"] as const) {
+      for (const remoteControl of [true, false]) {
+        const params = {
+          ...SAMPLE,
+          helperToken: "helper.tok",
+          resumeId: "99999999-8888-7777-6666-555555555555",
+          cols: 120,
+          rows: 40,
+          model: "opus",
+          permissionMode: "auto",
+          worktree: true,
+          remoteControl,
+          agent,
+          prompt: "do the thing",
+        };
+        expect(buildLaunchDeepLink(params)).toBe(buildSharedLaunchDeepLink(params));
+      }
+    }
   });
 });
 

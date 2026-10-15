@@ -56,7 +56,13 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
   async function handleAddTeam(teamId: string, teamName: string) {
     setLoadingTeamId(teamId);
     try {
-      const { created, skipped, createdBotIds } = await addFeaturedTeam(teamId);
+      const { created, skipped, createdBotIds, failed } = await addFeaturedTeam(teamId);
+      if (failed.length > 0) {
+        toast.error(
+          `Couldn't add ${failed.map((f) => f.role).join(", ")}. ${created.length > 0 ? "The rest of the team was added." : "Try again."}`,
+          { description: failed[0].reason }
+        );
+      }
       if (created.length === 0 && skipped.length > 0) {
         toast.info("All agents from this team already exist");
         return;
@@ -112,20 +118,24 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
         Featured Teams
       </div>
       <div className="relative">
-        <button
-          onClick={() => scroll("left")}
-          disabled={!canScrollLeft}
-          className="absolute -left-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => scroll("right")}
-          disabled={!canScrollRight}
-          className="absolute -right-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        {(canScrollLeft || canScrollRight) && (
+          <>
+            <button
+              onClick={() => scroll("left")}
+              disabled={!canScrollLeft}
+              className="absolute left-1 sm:-left-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => scroll("right")}
+              disabled={!canScrollRight}
+              className="absolute right-1 sm:-right-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </>
+        )}
         <div
           ref={scrollRef}
           onScroll={updateScrollState}
@@ -226,7 +236,7 @@ export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: Feat
                       ? "Creating..."
                       : existingCount > 0
                         ? `Add ${remainingCount} Remaining`
-                        : "Clone Team to My Agents"}
+                        : "Add team to My Agents"}
                   </Button>
                 ) : (
                   <span className="text-[11px] font-medium text-emerald-500">

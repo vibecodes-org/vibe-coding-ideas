@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch Opens In-App</title>
+<style>
+  /* Tokens copied from docs/launch-button-agent-choice-proposals.html (PR #309's mocks)
+     so this mock matches the board toolbar's existing look. */
+  :root {
+    --bg: #0c0c0e; --panel: #141417; --pop: #09090b; --line: #27272a; --line-2: #3f3f46;
+    --z100: #f4f4f5; --z200: #e4e4e7; --z300: #d4d4d8; --z400: #a1a1aa; --z500: #71717a;
+    --emerald: #10b981; --emerald-300: #6ee7b7; --emerald-400: #34d399;
+    --sky: #0ea5e9; --sky-300: #7dd3fc; --sky-400: #38bdf8; --amber-500: #f59e0b; --rose-400: #fb7185;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { overflow-x: hidden; }
+  body { margin: 0; background: var(--bg); color: var(--z300); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 90px; }
+  h1 { color: var(--z100); font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { color: var(--z100); font-size: 19px; margin: 44px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+  p, li { max-width: 80ch; }
+  code { font-family: var(--mono); font-size: 12.5px; color: var(--z200); background: #1c1c21; padding: 1px 5px; border-radius: 4px; }
+  .meta { color: var(--z500); font-size: 13px; margin-bottom: 20px; }
+  .callout { border-left: 3px solid var(--sky); background: rgba(14,165,233,.06); padding: 10px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; }
+  .callout.amber { border-color: var(--amber-500); background: rgba(245,158,11,.06); }
+  .mock { margin: 14px 0 6px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; background: var(--panel); font-size: 12.5px; }
+  .mock-title { background: #1c1c21; color: var(--z500); font-size: 11px; padding: 5px 12px; border-bottom: 1px solid var(--line); }
+  .mock-title b { color: var(--z300); font-weight: 600; }
+  .mock-body { padding: 16px; }
+  .states { display: flex; flex-wrap: wrap; gap: 22px 32px; align-items: flex-start; }
+  .state { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-width: 100%; }
+  .state .lbl { color: var(--z500); font-size: 11px; }
+  .split { display: inline-flex; align-items: center; }
+  .split .primary, .split .chev { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; font-weight: 500; color: var(--emerald-400); background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.25); border-radius: 6px; white-space: nowrap; }
+  .split .primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .split .chev { width: 28px; padding: 0; justify-content: center; border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .split.open .chev { background: rgba(16,185,129,.20); }
+  .anchor { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
+  .tip { background: #18181b; border: 1px solid var(--line-2); color: var(--z200); font-size: 12px; border-radius: 4px; padding: 3px 8px; }
+  .ico { width: 14px; height: 14px; flex: none; }
+  .ico16 { width: 16px; height: 16px; flex: none; color: var(--z400); margin-right: 2px; }
+  .pill { display: inline-block; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; line-height: 1.3; background: rgba(14,165,233,.15); color: var(--sky-400); }
+  .menu { width: 288px; max-width: 100%; background: var(--pop); border: 1px solid var(--line); border-radius: 6px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 14px; color: var(--z200); }
+  .menu .hd { padding: 6px 8px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: rgba(161,161,170,.7); }
+  .menu .it { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; }
+  .menu .it.focus { background: #18181b; }
+  .menu .it .t { display: flex; flex-direction: column; min-width: 0; }
+  .menu .it .t .l { display: inline-flex; align-items: center; gap: 6px; }
+  .menu .it .t .s { font-size: 11px; color: var(--z400); }
+  .menu .sep { height: 1px; background: var(--line); margin: 4px -4px; }
+  .menu .rest { padding: 6px 8px; font-size: 12px; color: var(--z500); font-style: italic; }
+  .chg { outline: 1px dashed var(--amber-500); outline-offset: 1px; }
+  .hdr { display: inline-flex; align-items: center; gap: 4px; background: var(--pop); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--z200); font-size: 14px; }
+  .icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--z400); }
+  .icon-btn.hover { background: #18181b; color: var(--z100); }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--z400); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .tablewrap { overflow-x: auto; }
+  @media (max-width: 480px) { .menu { width: 100%; } .anchor { align-items: stretch; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Launch opens the in-app terminal by default</h1>
+  <div class="meta">Card 5a24479e · Plan step, rework of 14 Oct 2026 · built on master (before PR #309). Dashed amber outlines mark what changes.</div>
+
+  <div class="callout">
+    <p><b>Nothing new is added.</b> The green split button, its menu and the task-header <code>&gt;_</code> icon keep their size, colour, icon and label.
+    Three things change: where the click goes, the hover text, and the order of the two items inside each agent group.
+    The item that does what the green button does is always listed first, so pressing ↓ then Enter still repeats the button's action.</p>
+  </div>
+
+  <h2>1. Board toolbar, on a Mac with the in-app terminal on (the new default)</h2>
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b>, 1280px, chevron menu open</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Hover on the green button</span>
+          <div class="anchor">
+            <span class="split">
+              <span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch Claude Code</span><span class="chev">▾</span>
+            </span>
+            <span class="tip chg">Opens the browser terminal on this board</span>
+          </div>
+          <span class="lbl">Click: the dock at the bottom of the board opens and starts Claude Code<br>(or shows the session chooser if you already have sessions running).</span>
+        </div>
+        <div class="state">
+          <span class="lbl">Chevron menu ("Launch options")</span>
+          <div class="anchor">
+            <span class="split open"><span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch Claude Code</span><span class="chev">▾</span></span>
+            <div class="menu">
+              <div class="hd">Claude Code</div>
+              <div class="it focus chg"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg><div class="t"><span class="l">In the browser <span class="pill">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+              <div class="it chg"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">Opens a Terminal window on your computer</span></div></div>
+              <div class="sep"></div>
+              <div class="hd">Codex</div>
+              <div class="it chg"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg><div class="t"><span class="l">In the browser <span class="pill">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+              <div class="it chg"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s">Opens Terminal on this Mac — needs the VibeCodes helper</span></div></div>
+              <div class="sep"></div>
+              <div class="rest">Folder line, Start a new project…, Copy launch command, Set exact folder (advanced)…, Install guide: unchanged</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p>The Claude "In a terminal window" sub-line changes from <i>"On your computer — how it works today"</i>, which is no longer true, to <i>"Opens a Terminal window on your computer"</i>. The Codex sub-line is unchanged.</p>
+
+  <h2>2. Board toolbar, falling back to a terminal window</h2>
+  <div class="mock">
+    <div class="mock-title"><b>Board toolbar</b>: in-app terminal switched on, but this machine isn't a Mac (Windows, Linux, iPad)</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Hover</span>
+          <div class="anchor">
+            <span class="split"><span class="primary"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch Claude Code</span><span class="chev">▾</span></span>
+            <span class="tip chg">Opens a Terminal window on your computer</span>
+          </div>
+          <span class="lbl">Click: the claude-cli:// launch, exactly as today.</span>
+        </div>
+        <div class="state">
+          <span class="lbl">Menu: today's order (terminal window first)</span>
+          <div class="menu">
+            <div class="hd">Claude Code</div>
+            <div class="it focus"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><div class="t"><span class="l">In a terminal window</span><span class="s chg">Opens a Terminal window on your computer</span></div></div>
+            <div class="it"><svg class="ico16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg><div class="t"><span class="l">In the browser <span class="pill">Beta</span></span><span class="s">A live terminal docked on this board</span></div></div>
+            <div class="sep"></div>
+            <div class="rest">Codex group in the same order, then the rest unchanged</div>
+          </div>
+        </div>
+      </div>
+      <p class="lbl" style="margin-top:14px">With the in-app terminal switched off (<code>NEXT_PUBLIC_TERMINAL_ENABLED</code> not "true"), nothing changes at all: no tooltip, and the one-item menu stays as it is.</p>
+    </div>
+  </div>
+
+  <h2>3. Task detail header <code>&gt;_</code> icon</h2>
+  <div class="mock">
+    <div class="mock-title"><b>Task detail dialog header</b>: the icon looks the same; only the hover text and the destination change</div>
+    <div class="mock-body">
+      <div class="states">
+        <div class="state">
+          <span class="lbl">Mac + in-app terminal on</span>
+          <div class="anchor" style="align-items:flex-start">
+            <span class="hdr">Fix login redirect <span class="icon-btn hover"><svg class="ico16" style="color:inherit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span></span>
+            <span class="tip chg">Launch in browser terminal</span>
+          </div>
+          <span class="lbl">Click: the task dialog closes and the dock opens this task<br>(or asks Reconnect / Start fresh if it already has a session).</span>
+        </div>
+        <div class="state">
+          <span class="lbl">Fallback (not a Mac, or terminal off)</span>
+          <div class="anchor" style="align-items:flex-start">
+            <span class="hdr">Fix login redirect <span class="icon-btn hover"><svg class="ico16" style="color:inherit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span></span>
+            <span class="tip">Launch in Claude Code</span>
+          </div>
+          <span class="lbl">Click: claude-cli:// as today; the dialog stays open.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>4. Summary of what shows where</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Situation</th><th>Green button click</th><th>Green button hover</th><th>Menu order in each group</th><th><code>&gt;_</code> icon</th></tr>
+    <tr><td>Mac, in-app terminal on (paired or not)</td><td>Browser terminal dock</td><td>Opens the browser terminal on this board</td><td>Browser, then terminal window</td><td>Dock; "Launch in browser terminal"</td></tr>
+    <tr><td>Not a Mac, in-app terminal on</td><td>claude-cli:// (today)</td><td>Opens a Terminal window on your computer</td><td>Terminal window, then browser (today)</td><td>claude-cli://; "Launch in Claude Code"</td></tr>
+    <tr><td>In-app terminal off</td><td>claude-cli:// (today)</td><td>none (today)</td><td>single item (today)</td><td>claude-cli://; "Launch in Claude Code"</td></tr>
+    <tr><td>Phone (&lt;768px)</td><td colspan="4">Hidden, as today</td></tr>
+  </table></div>
+
+  <div class="callout amber">
+    <p><b>After PR #309 lands</b>, the label becomes "Launch &lt;remembered agent&gt;" and the remembered agent's group moves to the top with its "Your default" chip. This card's rule still decides where the click goes: a Mac with the in-app terminal on opens the remembered agent <i>in the browser</i>. #309's hover text "Opens a Terminal window on this Mac" is replaced by the two hover texts above. Inside each group, the browser item comes first.</p>
+  </div>
+</main>
+</body>
+</html>

@@ -27,6 +27,9 @@ import {
   getPlatformTerminalModelDefaultAction,
   getPlatformTerminalModelDefaultForAdmin,
   updatePlatformTerminalModelDefault,
+  getPlatformTerminalEffortDefaultAction,
+  getPlatformTerminalEffortDefaultForAdmin,
+  updatePlatformTerminalEffortDefault,
   getPlatformTerminalCodexModelDefaultAction,
   updatePlatformTerminalCodexModelDefault,
   getAgentAwarePlatformModelDefaultsAction,
@@ -562,5 +565,92 @@ describe("updateAgentAwarePlatformModelDefaults — super-admin gate", () => {
     };
 
     await expect(updateAgentAwarePlatformModelDefaults(bad as never)).rejects.toThrow();
+  });
+});
+
+// ── Site-wide Claude starting effort (task 18a37612) ───────────────────────
+
+function asSuperAdmin(extra: Record<string, unknown>) {
+  mockSupabase.auth.getUser.mockReset();
+  mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+  mockSupabase.from.mockImplementation((table: string) => {
+    if (table === "users") {
+      return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: true }, error: null }) }) }) };
+    }
+    return extra;
+  });
+}
+
+describe("getPlatformTerminalEffortDefaultAction / ForAdmin", () => {
+  it("reads null when no row, the level when valid", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+    expect(await getPlatformTerminalEffortDefaultAction()).toBeNull();
+    expect(await getPlatformTerminalEffortDefaultForAdmin()).toEqual({ value: null, updatedBy: null, updatedAt: null });
+
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () =>
+            Promise.resolve({
+              data: { value: { effort: "high" }, updated_at: "2026-10-14T00:00:00Z", updated_by: { id: SUPER_ADMIN_ID, full_name: "Nick Ball" } },
+              error: null,
+            }),
+        }),
+      }),
+    }));
+    expect(await getPlatformTerminalEffortDefaultAction()).toBe("high");
+    expect(await getPlatformTerminalEffortDefaultForAdmin()).toEqual({
+      value: "high",
+      updatedBy: { id: SUPER_ADMIN_ID, full_name: "Nick Ball" },
+      updatedAt: "2026-10-14T00:00:00Z",
+    });
+  });
+
+  it("admin read falls back to null for a malformed row", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { value: { effort: "minimal" }, updated_at: null, updated_by: null }, error: null }) }) }),
+    }));
+    expect((await getPlatformTerminalEffortDefaultForAdmin()).value).toBeNull();
+  });
+});
+
+describe("updatePlatformTerminalEffortDefault", () => {
+  it("throws for a non-super-admin", async () => {
+    mockSupabase.auth.getUser.mockReset();
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: REGULAR_USER_ID } }, error: null });
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: false }, error: null }) }) }),
+    }));
+    await expect(updatePlatformTerminalEffortDefault("high")).rejects.toThrow("Super admin access required");
+  });
+
+  it("rejects ultracode, minimal and garbage without writing", async () => {
+    const upsert = vi.fn(() => Promise.resolve({ error: null }));
+    asSuperAdmin({ upsert });
+    for (const v of ["ultracode", "minimal", "foo", ""]) {
+      await expect(updatePlatformTerminalEffortDefault(v)).rejects.toThrow("Choose a valid Claude effort");
+    }
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("upserts the level with updated_by", async () => {
+    let row: unknown;
+    asSuperAdmin({ upsert: (r: unknown) => { row = r; return Promise.resolve({ error: null }); } });
+    expect(await updatePlatformTerminalEffortDefault("max")).toBe("max");
+    expect(row).toMatchObject({ key: "terminal_effort_default", value: { effort: "max" }, updated_by: SUPER_ADMIN_ID });
+  });
+
+  it("null deletes the row", async () => {
+    let deletedKey: string | undefined;
+    asSuperAdmin({ delete: () => ({ eq: (col: string, val: string) => { deletedKey = col === "key" ? val : undefined; return Promise.resolve({ error: null }); } }) });
+    expect(await updatePlatformTerminalEffortDefault(null)).toBeNull();
+    expect(deletedKey).toBe("terminal_effort_default");
+  });
+
+  it("throws a safe message when the upsert fails", async () => {
+    asSuperAdmin({ upsert: () => Promise.resolve({ error: { message: "internal_column_xyz" } }) });
+    await expect(updatePlatformTerminalEffortDefault("high")).rejects.toThrow("Failed to save the terminal starting effort — try again");
   });
 });

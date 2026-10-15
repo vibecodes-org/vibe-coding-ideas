@@ -1,0 +1,1954 @@
+{
+  "version": "472d5672 stage 2, 12 Oct 2026",
+  "tier_effort": {
+    "frontier": "Opus, high effort",
+    "standard": "Sonnet, medium effort",
+    "cheap": "Sonnet, low effort"
+  },
+  "agents_this_board": {
+    "Planner": "Planner",
+    "Full Stack Engineer": "Atlas",
+    "Code Reviewer": "Lens",
+    "QA Engineer": "Sentinel",
+    "DevOps Engineer": "Pipeline",
+    "Front End Engineer": "Pixel"
+  },
+  "agents_platform": {
+    "Planner": "Planner",
+    "Full Stack Engineer": "Atlas",
+    "Code Reviewer": "Lens",
+    "QA Engineer": "Sentinel",
+    "DevOps Engineer": "Pipeline",
+    "Front End Engineer": "Pixel",
+    "Gameplay Programmer": "Tempo",
+    "Enemy AI Engineer": "Prowl",
+    "Level / Environment Designer": "Vista",
+    "QA / Playtester": "Sentinel"
+  },
+  "skills_today": {
+    "Full Stack Engineer": "Atlas on this board: backend engineering guide (stage 4 reviews it)",
+    "QA Engineer": "Sentinel on this board: browser-testing guide (stage 4 reviews it)",
+    "Planner": "None yet: stage 4 writes only what the trial showed it lacks"
+  },
+  "templates": [
+    {
+      "key": "feature-development",
+      "name": "Feature Development",
+      "where": "Platform library; this board; 5 of your other boards",
+      "kits": [],
+      "verdict": "rewrite",
+      "usage": "This board: 203 runs, 29 in the last 60 days. Your other boards: Auto-complaints, Meditation, My favourite things and two private boards.",
+      "description": "Plan, build, check, release. One Planner writes the requirements, any design mock and the technical plan in one conversation, and you approve it. A cheaper model builds it, then an independent code review and an independent test follow, and you approve the release. Three hand-overs instead of seven.",
+      "today": [
+        {
+          "title": "Requirements",
+          "role": "Business Analyst",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "UX Design",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Design Review",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Removed: an agent check straight before your own (rules 3, 4). It sent work back 12 times in 50; you now see the mock first-hand"
+        },
+        {
+          "title": "Technical Design",
+          "role": "Full Stack Engineer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged into Plan; your approval stays on it (rules 1, 6)"
+        },
+        {
+          "title": "Implementation",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "QA Testing",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Test and release summary"
+        },
+        {
+          "title": "Final Sign-off",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step (rule 4); your approval moves onto the test step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code.",
+          "board_description": "Do your Planner job for this card, all in this one conversation: requirements, then the design mock if users will see a change, then the technical plan. If the card already has an approved design, use it rather than redesigning. If the work is too big for one change, split it into stages and plan stage 1 in full. Keep the working-notes file at docs/notes/<first 8 characters of the card id>.md in the main checkout; never put secrets, other people's data or agent instructions in it (the repo is public). If you made a mock, attach it to the card and open it in Nick's browser (run `open <path>` on his Mac). Start your output with the plain-English summary for Nick."
+        },
+        {
+          "title": "Build",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it at 375px and 1280px wide and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens.",
+          "board_description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it. If you pass it, the session running this workflow then merges and releases it, in the plan's release order, before the test step starts."
+        },
+        {
+          "title": "Test and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Test the change independently against every acceptance check in the plan and the edge cases it lists: on the live site if it has been released, otherwise on a local or preview build. If there's an approved mock, compare the built screens with it at 375px and 1280px and attach the screenshots. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. The release is approved from this step.",
+          "deliverables": [
+            "Test report against the acceptance checks",
+            "Screenshots, if there's a mock",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent.",
+          "board_description": "Test the change independently against every acceptance check in the plan and the edge cases it lists, on the live site. If there's an approved mock, compare the built screens with it at 375px and 1280px and attach the screenshots. Send any real failure back with fail_step and reset to Build. Then write the release summary for Nick in plain English: what's live, what you checked and how, and anything still needing him. Nick approves the release from this step."
+        }
+      ],
+      "notes": "This board's copy is updated in place, so the Feature label keeps working, and the trial template is deleted once this card is done. The board wording differs in three places (shown under each step)."
+    },
+    {
+      "key": "web-application-feature",
+      "name": "Web Application Feature",
+      "where": "Platform library; Web Application kit (Feature, Enhancement labels); 5 of your other boards",
+      "kits": [
+        "Web Application"
+      ],
+      "verdict": "rewrite",
+      "usage": "Your boards: 58 runs in 90 days (SCoT, Betfair, Cat's Kitchen and others). Other sign-ups: 27.",
+      "description": "Plan, build, check, release for a web app: one Planner writes the requirements, any design mock and the technical plan, and you approve it; a cheaper model builds it; an independent code review and an independent test follow; you approve the release.",
+      "today": [
+        {
+          "title": "Requirements & Acceptance Criteria",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "UX Design & Prototyping",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Design Check",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Removed: agent check straight before yours (rules 3, 4)"
+        },
+        {
+          "title": "Technical Design",
+          "role": "Full Stack Engineer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged into Plan; approval stays (rules 1, 6)"
+        },
+        {
+          "title": "Implementation & Unit Tests",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "QA & Security Review",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Test and release summary (sent back 13 times in 39 on your boards)"
+        },
+        {
+          "title": "Release Sign-off",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step (rule 4); approval moves onto the test step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code."
+        },
+        {
+          "title": "Build",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it at 375px and 1280px wide and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Test and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Test the change independently against every acceptance check in the plan and the edge cases it lists: on the live site if it has been released, otherwise on a local or preview build. If there's an approved mock, compare the built screens with it at 375px and 1280px and attach the screenshots. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. The release is approved from this step.",
+          "deliverables": [
+            "Test report against the acceptance checks",
+            "Screenshots, if there's a mock",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent."
+        }
+      ],
+      "notes": "Same steps and wording as Feature Development; kept as its own template because the Web Application kit's labels point at it."
+    },
+    {
+      "key": "mobile-app-feature",
+      "name": "Mobile App Feature",
+      "where": "Platform library; Mobile App kit (Feature, UI/UX labels); Meditation app",
+      "kits": [
+        "Mobile App"
+      ],
+      "verdict": "rewrite",
+      "usage": "Your boards: 3 runs in 90 days. Other sign-ups: 9.",
+      "description": "Plan, build, check, release for a mobile app: one Planner writes the requirements (including platform scope), any design mock and the technical plan, and you approve it; a cheaper model builds it; an independent code review and device test follow; you approve the release.",
+      "today": [
+        {
+          "title": "Requirements & Platform Scoping",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "UX Design & Interaction Patterns",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Design Check",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Removed (rules 3, 4)"
+        },
+        {
+          "title": "Technical Design",
+          "role": "Full Stack Engineer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged into Plan; approval stays"
+        },
+        {
+          "title": "Implementation",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Device Testing & Performance",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Device test and release summary"
+        },
+        {
+          "title": "Release Approval",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step (rule 4); approval moves onto the test step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. Say which platforms it targets (iOS, Android or both) and anything that must behave differently on each. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code."
+        },
+        {
+          "title": "Build",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it on a phone-sized simulator for each platform and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Device test and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Test the change independently on a simulator or device for each platform in the plan, against every acceptance check and edge case it lists, including touch, rotation, slow or no network, and app store rules where the plan names them. If there's an approved mock, compare with it and attach the screenshots. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. The release is approved from this step.",
+          "deliverables": [
+            "Test report per platform",
+            "Screenshots, if there's a mock",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent."
+        }
+      ]
+    },
+    {
+      "key": "api-backend-feature",
+      "name": "API / Backend Feature",
+      "where": "Platform library; API / Backend kit (Feature, Endpoint labels); Supabase Cost-Reduction board",
+      "kits": [
+        "API / Backend"
+      ],
+      "verdict": "rewrite",
+      "usage": "0 runs on your boards in 90 days; none by others.",
+      "description": "Contract first: one Planner writes the requirements, the API contract and the technical plan, and you approve them; a cheaper model builds against the contract; an independent code review and contract test follow; you approve the release.",
+      "today": [
+        {
+          "title": "API Contract & Technical Design",
+          "role": "Full Stack Engineer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (contract first)"
+        },
+        {
+          "title": "Contract & Plan Approval",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed as an agent step: an extra pass before your own (rule 4). Your approval moves onto Plan (6c63def7)"
+        },
+        {
+          "title": "Implementation & Contract Tests",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Load Testing & Security Audit",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Contract test and release summary; load testing only where the plan sets a target"
+        },
+        {
+          "title": "Release Sign-off",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step; approval moves onto the test step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. Contract first: put every endpoint in the plan before anything is built, with its request and response shapes, error codes and auth rules. A backend change usually has no screens, so there's normally no mock. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code."
+        },
+        {
+          "title": "Build",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Write contract tests for every endpoint in the plan before the code that serves them. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it at 375px and 1280px wide and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Pay particular attention to auth, input validation and anything that could leak data. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Contract test and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Call every endpoint in the contract independently, including the error cases and auth failures, and check every response matches the contract exactly. Run a load test only where the plan sets a performance target. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. The release is approved from this step.",
+          "deliverables": [
+            "Contract test report",
+            "Load test results, if the plan set a target",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent."
+        }
+      ]
+    },
+    {
+      "key": "ai-ml-feature",
+      "name": "AI / ML Feature",
+      "where": "Platform library; AI App / Agent kit (Feature, Integration, Prompt labels); 5 of your other boards",
+      "kits": [
+        "AI App / Agent"
+      ],
+      "verdict": "rewrite",
+      "usage": "Your boards: 2 runs in 90 days. Other sign-ups: 11.",
+      "description": "Plan, build and evaluate, check, release: one Planner sets the success metric, the data and the evaluation along with the technical plan, and you approve it; a cheaper model builds and evaluates it; an independent code review and an independent evaluation follow; you approve the release.",
+      "today": [
+        {
+          "title": "Problem Definition & Data Assessment",
+          "role": "Business Analyst",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Technical Design",
+          "role": "Full Stack Engineer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged into Plan; approval stays"
+        },
+        {
+          "title": "Data Preparation & Feature Engineering",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Build and evaluate (same agent back to back)"
+        },
+        {
+          "title": "Experiment & Model Training",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Build and evaluate"
+        },
+        {
+          "title": "Model Evaluation & Bias Review",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Becomes the independent evaluation at the end; its mid-way approval is removed (rule 6)"
+        },
+        {
+          "title": "Integration & API Deployment",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Build and evaluate"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Release & Monitoring Sign-off",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step; approval moves onto the evaluation step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. For an AI feature the plan also states the problem and a measurable success metric with the baseline to beat; the data it needs, with its quality, consent and privacy risks; and the evaluation: the test cases, including likely failure and bias cases, and how they're scored. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code."
+        },
+        {
+          "title": "Build and evaluate",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Prepare the data, build or prompt the model, and integrate it; then run the plan's evaluation and report the scores against the baseline. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it at 375px and 1280px wide and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Include how prompts, keys and user data are handled. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Independent evaluation and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Re-run the plan's evaluation yourself, adding held-out cases the builder didn't see, including the failure and bias cases the plan lists, and check the feature end to end where users meet it. If it misses the success metric or fails a case that matters, that counts as a real failure. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. Include the scores against the baseline. The release is approved from this step.",
+          "deliverables": [
+            "Independent evaluation scores against the baseline",
+            "End-to-end check",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent."
+        }
+      ]
+    },
+    {
+      "key": "design-system-component",
+      "name": "Design System Component",
+      "where": "Platform library; Design System kit (inactive)",
+      "kits": [
+        "Design System"
+      ],
+      "verdict": "rewrite",
+      "usage": "Never used.",
+      "description": "Plan, build and document, check, release for one component: one Planner audits what exists and writes the component's spec and mock, and you approve it; a cheaper model builds and documents it; an independent code review and a visual and accessibility test follow; you approve the release.",
+      "today": [
+        {
+          "title": "Component Proposal & Audit",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Design Specification",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged into Plan; approval stays (same agent back to back)"
+        },
+        {
+          "title": "Implementation & Documentation",
+          "role": "Front End Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build and document"
+        },
+        {
+          "title": "Visual QA & Cross-browser Testing",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as the test step"
+        },
+        {
+          "title": "Release Approval & Changelog",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step; changelog and approval move onto the test step"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Read the card, its comments and the code and data it touches, and check facts rather than planning from assumptions. Write the requirements: what changes and why, testable acceptance checks, and on its own line 'User-facing change: YES' or 'User-facing change: NO'. If YES, design the change as an HTML mock that matches the app's existing look and components, and attach it to the card; if the card already has an approved design, use it rather than redesigning. For a component the plan also covers what already exists that overlaps (reuse before adding), its API (props and variants), every state, accessibility (keyboard, screen reader, contrast), and a mock of every variant and state. Then write the technical plan the Build step will follow: the files to change and why, any data or interface changes, the tests to write, the risks, and the release order. If the work is too big for one change, split it into stages that each ship on their own and plan stage 1 in full. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary for whoever approves the plan: what will change, and each decision they need to make, with your recommendation.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Requirements with acceptance checks and the User-facing change line",
+            "Design mock attached to the card, if user-facing",
+            "Technical plan (stage 1 in full if staged)",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: requirements, design and plan build on each other, so one agent does them in one conversation (the trial: about 30 min and 300k tokens, against 17.5 min and 368k for Requirements plus Design Review alone the old way). Rule 6: the approval sits here, before any code."
+        },
+        {
+          "title": "Build and document",
+          "role": "Front End Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan (stage 1 only, if it's staged), working from the Plan step's output and the working-notes file. Write its documentation and usage examples alongside the code. Write failing tests first where practical. If the plan turns out to be wrong or incomplete, don't improvise: call fail_step with what you found and reset to Plan. If there's an approved mock, it's the source of truth for everything visual: compare what you built with it at 375px and 1280px wide and fix every difference. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, the test and type-check results, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code and tests",
+            "PR link",
+            "Test and type-check results",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Visual and accessibility test, and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Test every variant and state independently against the mock at 375px and 1280px, with the keyboard only and with a screen reader, in the browsers the plan names, and attach the screenshots. Send any real failure back with fail_step and reset to Build. Then write the release summary in plain English: what's live, what you checked and how, and anything still needing a person. Write the changelog entry too. The release is approved from this step.",
+          "deliverables": [
+            "Test report per variant and state",
+            "Screenshots",
+            "Changelog entry",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: testing caught real problems in 16-23% of runs (QA Testing 8 of 48, Verify Fix 12 of 77 on this board), so it stays, run by someone who didn't build it. Your release approval moves onto it, replacing the separate sign-off agent."
+        }
+      ],
+      "notes": "Builder role stays Front End Engineer (Pixel). Stage 3 decides whether Pixel stays; if not, this role is matched to the Full Stack Engineer."
+    },
+    {
+      "key": "landing-page",
+      "name": "Landing Page",
+      "where": "Platform library; Marketing Site kit (inactive)",
+      "kits": [
+        "Marketing Site"
+      ],
+      "verdict": "rewrite",
+      "usage": "Never used.",
+      "description": "Brief, copy and layout planned and approved together, then built, then tested: three steps, one approval for the plan and one for launch.",
+      "today": [
+        {
+          "title": "Brief & Goals",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Write Copy",
+          "role": "Copywriter / Content",
+          "tier": "auto",
+          "approve": false,
+          "fate": "Merged into Plan: copy and layout depend on each other (rule 1)"
+        },
+        {
+          "title": "Copy Approval",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Your approval moves onto Plan, covering copy and layout together (rule 6)"
+        },
+        {
+          "title": "Design Layout",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan"
+        },
+        {
+          "title": "Build Page",
+          "role": "Front End Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "QA & Launch Sign-off",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Kept as Test and launch summary"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan: brief, copy and layout",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this page, all in this one conversation: the brief (who it's for, the one action we want them to take, and how we'll measure it); the page copy in full; and an HTML mock of the layout at phone and desktop width that matches the site's look, attached to the card. Then the build plan. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary and the decisions for whoever approves it: they approve the copy and the layout together here.",
+          "deliverables": [
+            "Brief",
+            "Page copy in full",
+            "Layout mock attached to the card",
+            "Build plan",
+            "Working-notes file"
+          ],
+          "why": "Rule 1: brief, copy and layout shape each other, so one conversation; one approval instead of two (rule 6)."
+        },
+        {
+          "title": "Build the page",
+          "role": "Front End Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the page from the approved copy and mock: the copy word for word, and the mock as the source of truth for everything visual. Compare at 375px and 1280px wide and fix every difference. If the copy or layout can't work as approved, call fail_step and reset to Plan. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR or preview link.",
+          "deliverables": [
+            "Page",
+            "PR or preview link",
+            "Deviations, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Test and launch summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Test the page independently: against the mock at 375px and 1280px (attach the screenshots), every link and form, basic accessibility, page speed, and a proofread against the approved copy. Send failures back with fail_step and reset to Build the page. Then write the launch summary in plain English. The launch is approved from this step.",
+          "deliverables": [
+            "Test report",
+            "Screenshots",
+            "Plain-English launch summary"
+          ],
+          "why": "Rule 4: independent test of the built page; launch approval stays here."
+        }
+      ],
+      "notes": "No code review step: a static page with no data or logic. The Copywriter role is no longer used by any step; stage 3 decides whether it stays."
+    },
+    {
+      "key": "game-feature-mechanic",
+      "name": "Game Feature / Mechanic",
+      "where": "Platform library; Game kit (Gameplay, UI/HUD labels); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "21 cards on the game board carry it; none has started.",
+      "description": "Ship one mechanic: one Planner writes the brief, the playtest question, the cut line and the technical plan, and you approve it; a cheaper model builds to the cut line; an independent code review and playtest follow; you approve shipping. Tuning goes back to Build.",
+      "today": [
+        {
+          "title": "Mechanic brief",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Technical Design",
+          "role": "Gameplay Programmer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Scope & plan check",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Approval moves onto Plan; the Producer checking its own brief is removed (rule 4)"
+        },
+        {
+          "title": "Implement",
+          "role": "Gameplay Programmer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Playtest",
+          "role": "QA / Playtester",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Playtest and ship summary"
+        },
+        {
+          "title": "Tune & polish",
+          "role": "Gameplay Programmer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Becomes a send-back from the playtest to Build"
+        },
+        {
+          "title": "Ship approval",
+          "role": "Producer / Scope Guard",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step; approval moves onto the playtest"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Write the mechanic brief: what the player does, what the game does back, and what 'feels right' means in one sentence. Name the single question the playtest must answer, and a cut line: the smallest version that answers it. Then write the technical plan the Build step will follow: the scripts and scenes to change, the tunable numbers and their starting values, and how it will be tested. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary and the decisions for whoever approves the plan.",
+          "deliverables": [
+            "Brief with the playtest question and cut line",
+            "Technical plan",
+            "Working-notes file",
+            "Plain-English summary and decisions"
+          ],
+          "why": "Rules 1 and 6: the brief, the scope check and the technical design are one line of thought, done once and approved once. The Producer's planning job moves to the Planner; stage 3 decides whether the Producer agent stays."
+        },
+        {
+          "title": "Build",
+          "role": "Gameplay Programmer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan up to the cut line and no further, working from the Plan step's output and the working-notes file. Expose the tunable numbers the plan lists so they can be changed without code edits. If the plan turns out to be wrong, don't improvise: call fail_step with what you found and reset to Plan. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, what you tested, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code",
+            "PR link",
+            "What was tested",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: an independent checker on a stronger model than the builder. Fresh context is the point (Anthropic: fresh-context verifiers beat self-critique). Trial: about 7.5 min, 215k tokens."
+        },
+        {
+          "title": "Playtest and ship summary",
+          "role": "QA / Playtester",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Play it independently and answer the plan's playtest question with evidence: clips or screenshots, and what you did. If it needs tuning or fixing, send it back with fail_step and reset to Build, as a numbered list of specific changes (numbers, not adjectives). Then write the ship summary in plain English. Shipping is approved from this step.",
+          "deliverables": [
+            "Playtest answer with evidence",
+            "Tuning list, if sent back",
+            "Plain-English ship summary"
+          ],
+          "why": "Rule 4: an independent playtest is the only real test of game feel. Tuning becomes a send-back to Build instead of a separate same-agent step, and your ship approval moves here from the Producer."
+        }
+      ]
+    },
+    {
+      "key": "enemy-ai-behaviour",
+      "name": "Enemy AI Behaviour",
+      "where": "Platform library; Game kit (Enemy AI label); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "7 cards on the game board carry it; none has started.",
+      "description": "One enemy behaviour: one Planner writes the behaviour brief and the technical plan, and you approve it; a cheaper model builds it; an independent code review and playtest follow; you approve shipping.",
+      "today": [
+        {
+          "title": "Mechanic brief",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan"
+        },
+        {
+          "title": "Scope check",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed: the Producer checking its own brief (rule 4, 6c63def7); approval moves onto Plan"
+        },
+        {
+          "title": "Implement",
+          "role": "Enemy AI Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Build"
+        },
+        {
+          "title": "Playtest",
+          "role": "QA / Playtester",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Playtest and ship summary"
+        },
+        {
+          "title": "Tune & polish",
+          "role": "Enemy AI Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Becomes a send-back to Build"
+        },
+        {
+          "title": "Ship approval",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed as a step; approval moves onto the playtest"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Write the behaviour brief: what the enemy wants, what it can sense, its states and what moves it between them, and how the player can tell what it's about to do. Name the single question the playtest must answer, and a cut line: the smallest version that answers it. Then write the technical plan the Build step will follow: the scripts and scenes to change, the tunable numbers and their starting values, and how it will be tested. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary and the decisions for whoever approves the plan.",
+          "deliverables": [
+            "Brief with the playtest question and cut line",
+            "Technical plan",
+            "Working-notes file",
+            "Plain-English summary and decisions"
+          ],
+          "why": "Rules 1 and 6: the brief, the scope check and the technical design are one line of thought, done once and approved once. The Producer's planning job moves to the Planner; stage 3 decides whether the Producer agent stays."
+        },
+        {
+          "title": "Build",
+          "role": "Enemy AI Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan up to the cut line and no further, working from the Plan step's output and the working-notes file. Expose the tunable numbers the plan lists so they can be changed without code edits. If the plan turns out to be wrong, don't improvise: call fail_step with what you found and reset to Plan. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, what you tested, and any deviations from the plan, with reasons.",
+          "deliverables": [
+            "Code",
+            "PR link",
+            "What was tested",
+            "Deviations from the plan, with reasons"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the PR independently against the approved plan and the working-notes file. You didn't build it, and you don't edit code. Check that it does what the plan says and nothing it doesn't. Look for bugs, security issues, whether the tests would catch a regression, and the project's conventions. Send blocking issues back with fail_step as a numbered list: reset to Build for code problems, or to Plan if the plan itself was wrong. Start your output with 'Pass' or 'Blocked'; put non-blocking notes after it.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "New here (rules 3, 4): it's code built by a cheaper model, like every other build template. The game kit already ships a Code Reviewer."
+        },
+        {
+          "title": "Playtest and ship summary",
+          "role": "QA / Playtester",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Play it independently and answer the plan's playtest question with evidence: clips or screenshots, and what you did, including whether a player can read and counter the behaviour. If it needs tuning or fixing, send it back with fail_step and reset to Build, as a numbered list of specific changes (numbers, not adjectives). Then write the ship summary in plain English. Shipping is approved from this step.",
+          "deliverables": [
+            "Playtest answer with evidence",
+            "Tuning list, if sent back",
+            "Plain-English ship summary"
+          ],
+          "why": "Rule 4: an independent playtest is the only real test of game feel. Tuning becomes a send-back to Build instead of a separate same-agent step, and your ship approval moves here from the Producer."
+        }
+      ]
+    },
+    {
+      "key": "level-content",
+      "name": "Level / Content",
+      "where": "Platform library; Game kit (Level/Content, Art/Assets, Audio labels); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "9 cards on the game board carry it; none has started.",
+      "description": "One level or piece of content: one Planner writes the content brief and build plan, and you approve it; the level designer builds it (block-out, then the art and audio passes); an independent playtest follows; you sign it off.",
+      "today": [
+        {
+          "title": "Content brief",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan"
+        },
+        {
+          "title": "Block-out",
+          "role": "Level / Environment Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept as Build the level, on the standard tier (2dbcaa55)"
+        },
+        {
+          "title": "Art pass",
+          "role": "Technical Artist",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Build the level (rules 1, 3: sequential, same tier, no checker)"
+        },
+        {
+          "title": "Audio pass",
+          "role": "Audio Designer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Build the level"
+        },
+        {
+          "title": "Playtest",
+          "role": "QA / Playtester",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Playtest and sign-off summary"
+        },
+        {
+          "title": "Sign-off",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed as a step; approval moves onto the playtest"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan: content brief",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this card, all in this one conversation. Write the content brief: what this level or content is for, its pacing and how the player finds their way, the art and audio direction, and the performance budget. Then the build plan: block-out first, then the art and audio passes. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary and the decisions for whoever approves the plan.",
+          "deliverables": [
+            "Content brief",
+            "Build plan",
+            "Working-notes file",
+            "Plain-English summary and decisions"
+          ],
+          "why": "Rules 1 and 6: brief and plan in one conversation, approved before building."
+        },
+        {
+          "title": "Build the level",
+          "role": "Level / Environment Designer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Build the approved plan. Block out the space and play it yourself before any art; then do the art and audio passes the plan lists, staying within the performance budget. If the plan doesn't work once it's playable, call fail_step and reset to Plan. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link, before-and-after screenshots, and the frame-time figures.",
+          "deliverables": [
+            "Level built to the plan",
+            "PR link",
+            "Screenshots",
+            "Frame-time figures"
+          ],
+          "why": "Rule 1: block-out, art and audio are one sequential job on one tier with no check between them, so one builder. Stage 3 decides whether the Technical Artist and Audio Designer agents stay."
+        },
+        {
+          "title": "Playtest and sign-off summary",
+          "role": "QA / Playtester",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Play it independently: can a new player find their way, does the pacing match the brief, do the art and audio read clearly, and does it stay within the budget? Send problems back with fail_step and reset to Build the level, as a numbered list of specific changes. Then write the sign-off summary in plain English. It's approved from this step.",
+          "deliverables": [
+            "Playtest report with evidence",
+            "Plain-English sign-off summary"
+          ],
+          "why": "Rule 4: independent playtest; approval moves here from the Producer."
+        }
+      ],
+      "notes": "Decision 8: the art and audio specialists drop out of this template."
+    },
+    {
+      "key": "game-bug-fix",
+      "name": "Game Bug Fix",
+      "where": "Platform library; Game kit (Bug, Performance labels); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "2 cards on the game board carry it; none has started.",
+      "description": "Diagnose, fix, check, verify: the Planner finds the root cause, a cheaper model fixes it, an independent code review and regression playtest follow, and you approve the fix.",
+      "today": [
+        {
+          "title": "Reproduce",
+          "role": "QA / Playtester",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Investigate and plan the fix, by the Planner on the frontier tier (2dbcaa55)"
+        },
+        {
+          "title": "Fix",
+          "role": "Gameplay Programmer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Regression playtest",
+          "role": "QA / Playtester",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Regression playtest and summary"
+        },
+        {
+          "title": "Verify",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed as a step (rule 4); approval moves onto the playtest"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Investigate and plan the fix",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Reproduce the bug and write down the exact steps. Find the root cause, not just where the symptom shows: explain why it happens, and name the scripts or scenes involved and the fix you recommend. If you can't reproduce it, say so plainly with the evidence you do have; don't present a guess as confirmed. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it.",
+          "deliverables": [
+            "Reproduction steps",
+            "Root cause",
+            "Fix plan",
+            "Working-notes file"
+          ],
+          "why": "Same as Bug Fix: the diagnosis is the plan, and it keeps the final check independent."
+        },
+        {
+          "title": "Fix",
+          "role": "Gameplay Programmer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Fix the root cause from the investigation. Test first where the engine allows: a test or a repeatable reproduction that fails before the fix and passes after. If the cause turns out to be different, don't patch the symptom: call fail_step and reset to Investigate and plan the fix. Keep the change to the bug. Add what you decided and why to the working-notes file, and commit it with your work. Return the PR link and the before-and-after evidence.",
+          "deliverables": [
+            "Fix",
+            "PR link",
+            "Before-and-after evidence"
+          ],
+          "why": "Rule 3: a cheaper model builds from an approved plan. A fresh agent is right here: the plan and the notes file carry everything it needs."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the fix independently against the root cause in the investigation and the working-notes file. You don't edit code. Check that it fixes the cause rather than the symptom, that the regression test really fails without the fix, and look for security issues, test quality, project conventions and scope creep. Send blocking issues back with fail_step as a numbered list: reset to Fix, or to Investigate and plan the fix if the diagnosis is wrong. Start your output with 'Pass' or 'Blocked'.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "New here (rules 3, 4), matching Bug Fix."
+        },
+        {
+          "title": "Regression playtest and summary",
+          "role": "QA / Playtester",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Follow the original reproduction and confirm the bug is gone, then play the areas around the change for anything it broke. Send failures back with fail_step and reset to Fix. Then write the summary in plain English. The fix is approved from this step.",
+          "deliverables": [
+            "Regression playtest report",
+            "Plain-English summary"
+          ],
+          "why": "Rule 4: independent check; approval moves here."
+        }
+      ]
+    },
+    {
+      "key": "milestone-gate",
+      "name": "Milestone Gate",
+      "where": "Platform library; Game kit (Milestone label); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "4 cards on the game board carry it; none has started.",
+      "description": "Checklist, playable build, review: you make the go or no-go decision once, at the end.",
+      "today": [
+        {
+          "title": "Build checklist",
+          "role": "Producer / Scope Guard",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Milestone checklist, by the Planner on the frontier tier"
+        },
+        {
+          "title": "Playable build",
+          "role": "Gameplay Programmer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Review",
+          "role": "QA / Playtester",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Kept as Milestone review and go/no-go; its approval is the only one now"
+        },
+        {
+          "title": "Go / no-go",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed: two approvals back to back (6c63def7); you decide once"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Milestone checklist",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Write what must be in this milestone's playable build, how each item will be checked, and what would make it a no-go. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it.",
+          "deliverables": [
+            "Milestone checklist with how each item is checked",
+            "No-go conditions",
+            "Working-notes file"
+          ],
+          "why": "It's the plan for the milestone, so the Planner writes it. No approval here: you decide once, at the end."
+        },
+        {
+          "title": "Playable build",
+          "role": "Gameplay Programmer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Make a playable build that meets the checklist. Fix only what blocks a checklist item and list everything else as known issues. Add what you decided and why to the working-notes file, and commit it with your work. Return where the build is, what's in it, and the known issues.",
+          "deliverables": [
+            "Playable build",
+            "What's in it",
+            "Known issues"
+          ],
+          "why": "Kept."
+        },
+        {
+          "title": "Milestone review and go/no-go",
+          "role": "QA / Playtester",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Play the build against every checklist item and record the evidence for each. Recommend go or no-go, with the reasons and the known issues that matter. The go or no-go decision is made from this step.",
+          "deliverables": [
+            "Evidence per checklist item",
+            "Go or no-go recommendation"
+          ],
+          "why": "Rule 4: independent review; the single human decision sits here."
+        }
+      ]
+    },
+    {
+      "key": "game-technical-spike",
+      "name": "Game Technical Spike",
+      "where": "Platform library; Game kit (Spike label); the game board",
+      "kits": [
+        "Game"
+      ],
+      "verdict": "rewrite",
+      "usage": "3 cards on the game board carry it; none has started.",
+      "description": "One research step that ends in a recommendation you approve, then the decision is written onto the card.",
+      "today": [
+        {
+          "title": "Question",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Research and recommend"
+        },
+        {
+          "title": "Prototype",
+          "role": "Gameplay Programmer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Research and recommend (a throwaway prototype)"
+        },
+        {
+          "title": "Recommendation",
+          "role": "Producer / Scope Guard",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged; approval stays on it"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Research and recommend",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Answer the card's question, all in this one conversation. First write down the question, what 'good enough' looks like, and a time limit. Then investigate: read the code, read the docs and cite the links, and build a throwaway prototype in a scratch scene if that's the quickest way to find out. End with the options, their trade-offs, your pick and why, and what would change your mind. Draft the follow-up cards it would need (a title and one line each), but don't create them. Begin your output with a plain-English summary and the decision for whoever approves it.",
+          "deliverables": [
+            "Question, good-enough bar and time limit",
+            "Findings with links",
+            "Options, trade-offs and recommendation",
+            "Draft follow-up cards"
+          ],
+          "why": "Rule 1: questions, research and recommendation are one line of thought, so one agent (6c63def7). Data: none of the four producer steps ever sent anything back (0 of 9). Rule 6: you approve the recommendation."
+        },
+        {
+          "title": "Record the decision",
+          "role": "Planner",
+          "model_tier": "cheap",
+          "requires_approval": false,
+          "description": "Read the approval note and the research output. Fold the decision and the reasons into the card's description, and create the follow-up cards the approver chose, each linking back to this card. Don't reopen the research.",
+          "deliverables": [
+            "Card description updated with the decision",
+            "Follow-up cards created"
+          ],
+          "why": "Rule 3: it has to happen after your approval, so it's a separate step; it's admin, so it runs on the cheapest tier (2dbcaa55)."
+        }
+      ]
+    },
+    {
+      "key": "technical-spike",
+      "name": "Technical Spike",
+      "where": "Platform library; Web, Mobile, API and AI kits (Research, Performance, Schema, Dataset, Eval labels); this board; 13 of your other boards",
+      "kits": [
+        "Web Application",
+        "Mobile App",
+        "API / Backend",
+        "AI App / Agent"
+      ],
+      "verdict": "rewrite",
+      "usage": "This board: 42 runs, 6 in the last 60 days. Your boards: 40 runs in 90 days.",
+      "description": "One research step that ends in a recommendation you approve, then the decision is written onto the card and the follow-up cards are made.",
+      "today": [
+        {
+          "title": "Define Research Questions",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Research and recommend (rule 1)"
+        },
+        {
+          "title": "Research & Prototype",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Research and recommend (rule 1)"
+        },
+        {
+          "title": "Write Recommendation",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged (same agent back to back, rule 1)"
+        },
+        {
+          "title": "Review & Decide",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed as an agent step: it rewrote the recommendation before you saw it (rule 4). Your approval moves onto Research and recommend"
+        },
+        {
+          "title": "Update Board with Findings",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Record the decision, on the cheap tier"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Research and recommend",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Answer the card's question, all in this one conversation. First write down the question, what 'good enough' looks like, and a time limit. Then investigate: read the code, read the docs and cite the links, and build a throwaway prototype in a scratch folder if that's the quickest way to find out. End with the options, their trade-offs, your pick and why, and what would change your mind. Draft the follow-up cards it would need (a title and one line each), but don't create them. Begin your output with a plain-English summary and the decision for whoever approves it.",
+          "deliverables": [
+            "Question, good-enough bar and time limit",
+            "Findings with links",
+            "Options, trade-offs and recommendation",
+            "Draft follow-up cards"
+          ],
+          "why": "Rule 1: questions, research and recommendation are one line of thought, so one agent (6c63def7). Data: none of the four producer steps ever sent anything back (0 of 9). Rule 6: you approve the recommendation."
+        },
+        {
+          "title": "Record the decision",
+          "role": "Planner",
+          "model_tier": "cheap",
+          "requires_approval": false,
+          "description": "Read the approval note and the research output. Fold the decision and the reasons into the card's description, and create the follow-up cards the approver chose, each linking back to this card. Don't reopen the research.",
+          "deliverables": [
+            "Card description updated with the decision",
+            "Follow-up cards created"
+          ],
+          "why": "Rule 3: it has to happen after your approval, so it's a separate step; it's admin, so it runs on the cheapest tier (2dbcaa55)."
+        }
+      ]
+    },
+    {
+      "key": "bug-fix",
+      "name": "Bug Fix",
+      "where": "Platform library; Web, Mobile, API and AI kits (Bug labels); this board; 14 of your other boards",
+      "kits": [
+        "Web Application",
+        "Mobile App",
+        "API / Backend",
+        "AI App / Agent"
+      ],
+      "verdict": "rewrite",
+      "usage": "Your busiest template: 442 runs in 90 days on your boards (80 here in 60 days).",
+      "description": "Diagnose, fix, check, verify: the Planner finds the root cause and plans the fix, a cheaper model fixes it test-first, an independent code review and an independent verification follow, and you approve the release.",
+      "today": [
+        {
+          "title": "Reproduce & Investigate",
+          "role": "QA Engineer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept as Investigate and plan the fix, now by the Planner"
+        },
+        {
+          "title": "Implement Fix",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Fix"
+        },
+        {
+          "title": "Code Review",
+          "role": "Code Reviewer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept"
+        },
+        {
+          "title": "Verify Fix",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept as Verify and release summary"
+        },
+        {
+          "title": "Release Approval",
+          "role": "Product Owner",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Removed as a step (rule 4): an agent re-checking before you do. Your approval moves onto Verify"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Investigate and plan the fix",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Reproduce the bug and write down the exact steps. Find the root cause, not just where the symptom shows: trace it through the code, explain why it happens, and say when it started if the data shows it. Name the files and functions involved, the fix you recommend, the regression test that will prove it, and anything else that shares the same cause. If you can't reproduce it, say so plainly with the evidence you do have; don't present a guess as confirmed. If the fix would change what users see, or touches stored data, auth or payments, say so at the top. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it.",
+          "deliverables": [
+            "Reproduction steps",
+            "Root cause",
+            "Fix plan and the regression test that proves it",
+            "Working-notes file"
+          ],
+          "why": "Rule 1 and §7: the diagnosis is the fix's plan, so it goes to the Planner. It also makes the verify step independent: today the same QA agent diagnoses and then verifies against its own diagnosis. No approval here (see decision 4)."
+        },
+        {
+          "title": "Fix",
+          "role": "Full Stack Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Fix the root cause from the investigation and the working-notes file. Test first: write a test that reproduces the bug and fails before you change any code, then make it pass. If the root cause turns out to be different, don't patch the symptom: call fail_step with what you found and reset to Investigate and plan the fix. Keep the change to the bug. Add what you decided and why to the working-notes file, and commit it with your work. Your output names the test that failed and then passed, and confirms the full test suite and type checker pass.",
+          "deliverables": [
+            "Fix and regression test (failed before, passes after)",
+            "PR link",
+            "Test suite and type checker passing"
+          ],
+          "why": "Rule 3: a cheaper model builds from the diagnosis. Unchanged apart from the notes file."
+        },
+        {
+          "title": "Code review",
+          "role": "Code Reviewer",
+          "model_tier": "frontier",
+          "requires_approval": false,
+          "description": "Review the fix independently against the root cause in the investigation and the working-notes file. You don't edit code. Check that it fixes the cause rather than the symptom, that the regression test really fails without the fix, and look for security issues, test quality, project conventions and scope creep. Send blocking issues back with fail_step as a numbered list: reset to Fix, or to Investigate and plan the fix if the diagnosis is wrong. Start your output with 'Pass' or 'Blocked'.",
+          "deliverables": [
+            "Review report: Pass or numbered blocking issues"
+          ],
+          "why": "Rules 3 and 4: independent check on a stronger model than the builder. Added 6 Oct (00178); kept.",
+          "board_description": "Review the fix independently against the root cause in the investigation and the working-notes file. You don't edit code. Check that it fixes the cause rather than the symptom, that the regression test really fails without the fix, and look for security issues, test quality, project conventions and scope creep. Send blocking issues back with fail_step as a numbered list: reset to Fix, or to Investigate and plan the fix if the diagnosis is wrong. Start your output with 'Pass' or 'Blocked'. If you pass it, the session running this workflow then merges and releases it before the verify step starts."
+        },
+        {
+          "title": "Verify and release summary",
+          "role": "QA Engineer",
+          "model_tier": "standard",
+          "requires_approval": true,
+          "description": "Check the fix independently of the builder. Follow the original reproduction, on the live site if it has been released, otherwise on a local or preview build, and confirm the bug is gone. Read the regression test and confirm it would fail if the bug came back. Check the behaviour around the change. Send failures back with fail_step: reset to Fix, or to Investigate and plan the fix if the diagnosis was wrong. Then write the release summary in plain English: what's fixed, how you checked, and anything still needing a person. The release is approved from this step.",
+          "deliverables": [
+            "Verification against the original reproduction",
+            "Nearby behaviour checked",
+            "Plain-English release summary"
+          ],
+          "why": "Rule 4: Verify Fix caught a real problem in 12 of 77 runs here and 4 of 28 elsewhere, so it stays. Your approval moves onto it from the separate Product Owner step.",
+          "board_description": "Check the fix independently of the builder. Follow the original reproduction on the live site and confirm the bug is gone. Read the regression test and confirm it would fail if the bug came back. Check the behaviour around the change. Send failures back with fail_step: reset to Fix, or to Investigate and plan the fix if the diagnosis was wrong. Then write the release summary for Nick in plain English: what's fixed, how you checked, and anything still needing him. Nick approves the release from this step."
+        }
+      ]
+    },
+    {
+      "key": "infrastructure-change",
+      "name": "Infrastructure Change",
+      "where": "Platform library; Web, Mobile and API kits (Infrastructure label); this board; all 14 of your other boards",
+      "kits": [
+        "Web Application",
+        "Mobile App",
+        "API / Backend"
+      ],
+      "verdict": "rewrite",
+      "usage": "This board: 35 runs. Your boards: 72 runs in 90 days. Not one step sent anything back, apart from 1 failed deploy.",
+      "description": "Plan, then do: the Planner writes the change, its risks, the health checks and the rollback, and you approve it, which approves deploying it as written; the DevOps agent then implements, deploys and checks it, rolling back by the plan if a check fails.",
+      "today": [
+        {
+          "title": "Requirements & Impact Assessment",
+          "role": "DevOps Engineer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Plan (rule 1)"
+        },
+        {
+          "title": "Implementation Plan",
+          "role": "DevOps Engineer",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Merged into Plan, now frontier (the approved plan was on the cheaper tier, 6c63def7); approval stays"
+        },
+        {
+          "title": "Implement & Test",
+          "role": "DevOps Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Merged into Implement, deploy and check"
+        },
+        {
+          "title": "Deploy to Target Environment",
+          "role": "DevOps Engineer",
+          "tier": "standard",
+          "approve": true,
+          "fate": "Merged; its approval fired after the deploy (13c01b60), so it's removed. Approving the plan approves the deploy"
+        },
+        {
+          "title": "Post-Deploy Verification",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Removed (rule 4): 0 problems caught in 34 runs. The plan's health checks run in the deploy step instead (decision 5)"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Plan",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Do your Planner job for this change, all in this one conversation: what changes and why; what it affects and the risks; the step-by-step plan; the health checks that will prove it worked; and how to roll it back. Say where each part runs (local, preview, production) and in what order. Approving this plan approves deploying it exactly as written. Start the working-notes file for this card at docs/notes/<first 8 characters of the card id>.md: what you decided, why, what you ruled out, and where things are. The next step reads it. Begin your output with a plain-English summary and the decisions for whoever approves the plan.",
+          "deliverables": [
+            "Plain-English summary and decisions",
+            "Impact and risks",
+            "Step-by-step plan with health checks",
+            "Rollback steps",
+            "Working-notes file"
+          ],
+          "why": "Rules 1 and 6: assessment and plan in one conversation on the stronger model; the one approval sits before anything is touched, which fixes 13c01b60."
+        },
+        {
+          "title": "Implement, deploy and check",
+          "role": "DevOps Engineer",
+          "model_tier": "standard",
+          "requires_approval": false,
+          "description": "Carry out the approved plan exactly. Implement and test it; where a test or local copy allows, rehearse the rollback first (apply, roll back, re-apply). Then deploy as the plan says and run every health check in it, reporting the evidence for each. If a check fails, roll back by the plan and call fail_step with what happened. If anything comes up that the plan doesn't cover, stop and call fail_step with reset to Plan: don't improvise on a live system. Add what you decided and why to the working-notes file, and commit it with your work.",
+          "deliverables": [
+            "Change implemented and deployed",
+            "Evidence for every health check",
+            "Rollback rehearsal result, where possible"
+          ],
+          "why": "Rule 3: a cheaper model carries out an approved plan. The health checks were written by the Planner before the work, so this isn't the agent marking its own homework."
+        }
+      ]
+    },
+    {
+      "key": "idea-validation",
+      "name": "Idea Validation",
+      "where": "Platform library; this board (Research label); two private boards",
+      "kits": [],
+      "verdict": "rewrite",
+      "usage": "This board: 5 runs; 2 on your boards in 90 days.",
+      "description": "One research step, with sources, that ends in a go, no-go or 'test first' recommendation you approve.",
+      "today": [
+        {
+          "title": "Market Research",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged (rule 1; same agent back to back)"
+        },
+        {
+          "title": "Competitor Analysis",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged"
+        },
+        {
+          "title": "User Interview Synthesis",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Removed: it invented interviews (586e9159). Replaced by a list of questions only real users can answer"
+        },
+        {
+          "title": "Go/No-Go Decision",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged; approval stays"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Research and recommend: go or no-go",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Research this idea, all in this one conversation. Look at the market and the competitors: search the web and cite a link for every claim, and label anything that comes from your own knowledge as 'unverified'. Don't invent users, interviews or quotes. If interview notes are attached to the card, work only from them and cite them; otherwise list the assumptions only real users can confirm, with the question to ask for each. End with go, no-go, or 'test first' with the cheapest test that would decide it, and why. Begin with a plain-English summary for whoever decides.",
+          "deliverables": [
+            "Market and competitor findings, each with a link",
+            "Assumptions to test with real users",
+            "Go, no-go or test-first recommendation"
+          ],
+          "why": "Rule 1: one line of research, one conversation. Fixes 586e9159 (no invented interviews; sources required)."
+        }
+      ]
+    },
+    {
+      "key": "ux-ui-spike",
+      "name": "UX/UI Spike",
+      "where": "This board only (UX Redesign label; UX Review moves here too)",
+      "kits": [],
+      "verdict": "rewrite",
+      "usage": "This board: 18 runs, 1 in the last 60 days.",
+      "description": "Audit and propose design options as mocks, you choose, then the build cards are made.",
+      "today": [
+        {
+          "title": "Audit Current UX",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Merged into Audit and propose (rule 1)"
+        },
+        {
+          "title": "Create Design Proposals",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Merged; approval stays"
+        },
+        {
+          "title": "Create tasks",
+          "role": "UX Designer",
+          "tier": "frontier",
+          "approve": false,
+          "fate": "Kept as Create the approved cards, on the cheap tier"
+        },
+        {
+          "title": "Review tasks",
+          "role": "Product Owner",
+          "tier": "frontier",
+          "approve": true,
+          "fate": "Removed: a second approval of cards you already chose (rule 4)"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Audit and propose",
+          "role": "Planner",
+          "model_tier": "frontier",
+          "requires_approval": true,
+          "description": "Audit the screens the card names as they are today, with screenshots at 375px and 1280px, and list the problems in order of how much they hurt. Propose two or three options as HTML mocks in docs/ that match the app's look, with your recommendation. List the build cards your recommendation would need (a title and one line each), but don't create them. Attach the mocks to the card and open them in Nick's browser (run `open <path>` on his Mac). Begin your output with a plain-English summary for Nick and the decision he needs to make.",
+          "deliverables": [
+            "Audit with screenshots",
+            "Two or three mocks attached and opened",
+            "Recommendation",
+            "Draft build cards"
+          ],
+          "why": "Rule 1: audit and proposals are one conversation; approval on the proposal (rule 6)."
+        },
+        {
+          "title": "Create the approved cards",
+          "role": "Planner",
+          "model_tier": "cheap",
+          "requires_approval": false,
+          "description": "Read Nick's approval note. Fold his choice and the reasons into this card's description. Create the build cards he chose, each with the chosen mock attached and the Feature label (so it gets the feature workflow), and link each back to this card.",
+          "deliverables": [
+            "Card description updated",
+            "Build cards created with the mock attached"
+          ],
+          "why": "Has to follow your approval; admin work, so cheap tier."
+        }
+      ]
+    },
+    {
+      "key": "quick-fix",
+      "name": "Quick Fix",
+      "where": "This board only (Quick Fix label)",
+      "kits": [],
+      "verdict": "unchanged",
+      "usage": "4 runs since 10 Oct.",
+      "description": "(unchanged)",
+      "today": [
+        {
+          "title": "Fix + Regression Test",
+          "role": "Full Stack Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept, unchanged"
+        },
+        {
+          "title": "Verify",
+          "role": "QA Engineer",
+          "tier": "standard",
+          "approve": false,
+          "fate": "Kept, unchanged"
+        }
+      ],
+      "steps": [],
+      "notes": "Already meets the yardstick: a builder and one independent check, no approval, and a clear rule for when to switch to Bug Fix. No change."
+    }
+  ],
+  "retired": [
+    {
+      "name": "Design Review",
+      "where": "Platform library; this board (UX Review label); Auto-complaints; My favourite things",
+      "why": "0 runs anywhere in 90 days. It overlaps UX/UI Spike and Feature Development (d7af1f79): its audit and proposal become the Plan step, and its build is a feature build. Platform copy is switched off; board copies are deleted; this board's UX Review label moves to UX/UI Spike."
+    },
+    {
+      "name": "Product Launch",
+      "where": "Platform library; this board; Auto-complaints",
+      "why": "Never used anywhere. Its last step reviews launch metrics the moment the launch is approved, before any exist (d7af1f79). Switched off on the platform, deleted from both boards."
+    },
+    {
+      "name": "Client Project",
+      "where": "Platform library only",
+      "why": "Never copied to any board, never run. Switched off."
+    },
+    {
+      "name": "Build from Approved Design",
+      "where": "This board only (Approved Design label)",
+      "why": "1 run. The new Feature Development already uses an approved design when the card has one, so the Approved Design label moves to Feature Development and this template is deleted."
+    },
+    {
+      "name": "Feature — new way (trial)",
+      "where": "This board only",
+      "why": "Becomes Feature Development. Deleted once this card's own run is finished."
+    }
+  ],
+  "unchanged": [
+    {
+      "name": "Codex tier smoke test (3 tiers)",
+      "why": "A test fixture for model tiers, not a way of working. Moving it to a test board stays with d7af1f79."
+    },
+    {
+      "name": "PR 283 live handoff regression — synthetic",
+      "why": "Same: a test fixture. Stays with d7af1f79."
+    },
+    {
+      "name": "Quick Fix",
+      "why": "Already meets the yardstick."
+    }
+  ],
+  "input_cards": [
+    {
+      "id": "6c63def7",
+      "title": "Merge back-to-back steps done by the same agent",
+      "verdict": "Absorbed",
+      "why": "Every merge it proposed is in the table, most go further (Spike 5 to 2 as it suggested). It's already closed into this card."
+    },
+    {
+      "id": "d57374b8",
+      "title": "Approvals on plans, not outputs",
+      "verdict": "Absorbed",
+      "why": "Not on the board any more (probably deleted). Rule 6 covers it: every approval in the table sits on a plan, or on the final test you do on live."
+    },
+    {
+      "id": "2dbcaa55",
+      "title": "Rebalance model tiers",
+      "verdict": "Absorbed",
+      "why": "Every step's tier is set in the table: frontier for plans, diagnosis, code review and the milestone review; standard for building and testing; cheap for writing decisions onto cards. Game bug diagnosis goes up, block-out goes down, as it proposed."
+    },
+    {
+      "id": "b559bff6",
+      "title": "Can steps think less hard",
+      "verdict": "Kept separate",
+      "why": "It's a test of the platform-wide effort setting, not template content, and effort is still self-reported. The table runs each step at its tier's effort (decision 7)."
+    },
+    {
+      "id": "13c01b60",
+      "title": "Infrastructure deploy approval fires after the deploy",
+      "verdict": "Absorbed",
+      "why": "The approval moves onto the plan, which includes the rollback and health checks; the deploy step rehearses the rollback where it can. Simpler than its 5-step version, because the after-deploy check never caught anything (decision 5)."
+    },
+    {
+      "id": "586e9159",
+      "title": "User Interview Synthesis invents interviews",
+      "verdict": "Absorbed",
+      "why": "The step is removed; the new Idea Validation step must cite sources and may not invent users. Its audit of past outputs was already done."
+    },
+    {
+      "id": "d7af1f79",
+      "title": "Template housekeeping",
+      "verdict": "Partly absorbed",
+      "why": "Product Launch and Design Review are retired here. Moving the two test templates to a test board stays on that card."
+    },
+    {
+      "id": "ba37039b",
+      "title": "Measure what each step contributes",
+      "verdict": "Kept separate",
+      "why": "The dashboard is a product feature. Its numbers are the evidence used in this table."
+    },
+    {
+      "id": "8cb87060",
+      "title": "Server-assembled step briefs",
+      "verdict": "Kept separate",
+      "why": "Platform code. The notes file covers the main need (the next step reads the facts, not the last agent's framing)."
+    },
+    {
+      "id": "e9a2cc88",
+      "title": "Typed step deliverables",
+      "verdict": "Kept separate",
+      "why": "Platform code."
+    },
+    {
+      "id": "24936814",
+      "title": "Verify each step ran as its own agent",
+      "verdict": "Kept separate",
+      "why": "Platform code. No conflict: the Planner is still its own agent for its own step, just one step instead of three."
+    },
+    {
+      "id": "ac2b2e47",
+      "title": "Composable workflow stages",
+      "verdict": "Kept separate",
+      "why": "Platform code. With one Planner deciding whether a mock is needed, its main reason (forcing a UX agent to run) is gone; worth reconsidering whether it's still wanted."
+    },
+    {
+      "id": "8cadf99d",
+      "title": "Skippable workflow stages",
+      "verdict": "Kept separate",
+      "why": "Same as ac2b2e47, which absorbs it."
+    },
+    {
+      "id": "c1a3ca51",
+      "title": "The 'skills' tag list on agents",
+      "verdict": "Kept separate",
+      "why": "Agent pages: stage 5."
+    }
+  ]
+}

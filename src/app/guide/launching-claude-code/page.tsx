@@ -38,14 +38,17 @@ export default function LaunchingClaudeCodePage() {
             — it reads{" "}
             <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
             or <strong className="text-foreground">&quot;Launch Codex&quot;</strong>,
-            whichever you last picked (new accounts default to Claude Code). It
-            fires either a{" "}
+            whichever you last picked (new accounts default to Claude Code). On
+            a Mac with the in-app terminal enabled it opens the{" "}
+            <strong className="text-foreground">browser terminal</strong> docked
+            on the board, running that agent; anywhere else it opens a Terminal
+            window on your computer (Claude Code through a{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claude-cli://
             </code>{" "}
-            deep link or, for Codex, a helper-opened Terminal window — either
-            way it connects the VibeCodes MCP server and offers you the next
-            task on the board.
+            deep link, Codex through the VibeCodes helper). Either way it
+            connects the VibeCodes MCP server and offers you the next task on
+            the board.
           </p>
           <p className="text-muted-foreground">
             Instead of copying commands and explaining context by hand, one
@@ -66,7 +69,8 @@ export default function LaunchingClaudeCodePage() {
               split button: &quot;Launch &lt;your agent&gt;&quot; plus a
               chevron (labelled{" "}
               <strong className="text-foreground">&quot;More ways to launch&quot;</strong>
-              ) that opens the launch menu
+              ) that opens the launch menu. Hover the button to see where it
+              will open
             </li>
             <li>
               <strong className="text-foreground">Task card menu</strong> —{" "}
@@ -74,8 +78,12 @@ export default function LaunchingClaudeCodePage() {
             </li>
             <li>
               <strong className="text-foreground">Task detail header</strong> — a
-              terminal icon labelled{" "}
-              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>
+              terminal icon. On a Mac with the in-app terminal enabled it is labelled{" "}
+              <strong className="text-foreground">&quot;Launch in browser terminal&quot;</strong>{" "}
+              and opens the browser terminal for that task (the task window
+              closes so the terminal is visible); otherwise it is labelled{" "}
+              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>{" "}
+              and opens a Terminal window
             </li>
             <li>
               <strong className="text-foreground">MCP connection banner</strong>
@@ -95,10 +103,14 @@ export default function LaunchingClaudeCodePage() {
             The chevron next to the launch button opens a menu with two
             agent groups — your remembered agent&apos;s group listed first
             with a <strong className="text-foreground">&quot;Your default&quot;</strong>{" "}
-            tag on its heading, then the other agent&apos;s group. Each item
-            launches exactly the agent and destination it names — a
-            &quot;terminal window&quot; item and an &quot;in the browser&quot;
-            item per agent — and never changes your default:
+            tag on its heading, then the other agent&apos;s group. Each group
+            has an <strong className="text-foreground">&quot;In the browser&quot;</strong>{" "}
+            item and an <strong className="text-foreground">&quot;In a terminal window&quot;</strong>{" "}
+            item (the one the main button uses is listed first: the browser on
+            a Mac, the terminal window elsewhere). Each item launches exactly
+            the agent and destination it names and never changes your default.
+            With the in-app terminal off, only the terminal-window launch is
+            offered. The rest of the menu:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -177,11 +189,13 @@ export default function LaunchingClaudeCodePage() {
             Running It In The Browser — Multiple Sessions at Once
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Picking{" "}
+            On a Mac with the in-app terminal enabled, the main{" "}
+            <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
+            button does this by default; you can also pick{" "}
             <strong className="text-foreground">
               &quot;In the browser&quot;
             </strong>{" "}
-            (Beta) from the Launch options dropdown opens a live terminal
+            (Beta) from the launch menu. It opens a live terminal
             docked to the bottom of the board, mirroring Claude Code running
             on your own machine through the VibeCodes helper — your code
             never leaves your computer.
@@ -311,14 +325,14 @@ export default function LaunchingClaudeCodePage() {
             A board launch reads the board, tells you which unstarted task is
             next up, and asks whether you want it — so you can say yes, or point
             the session at something else entirely (a bug you just spotted, work
-            you left half-finished). Say yes and it assigns the task to you,
-            moves it to{" "}
-            <strong className="text-foreground">In Progress</strong>, and if the
+            you left half-finished). Say yes and it moves the task to{" "}
+            <strong className="text-foreground">In Progress</strong>. If the
             task has a workflow it uses{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claim_next_step
-            </code>
-            . Launching from a specific task skips the question and goes
+            </code>{" "}
+            (each step already records who does it, so the task isn&apos;t
+            assigned to the session); otherwise it assigns the task to you. Launching from a specific task skips the question and goes
             straight to that task.
           </p>
         </section>
@@ -447,12 +461,13 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Desktop Only</h2>
           <div className="mb-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              Launching only works on <strong className="text-foreground">desktop</strong>,
-              since it opens a program on your own Mac (Claude Code via the{" "}
+              The browser terminal needs a Mac, and the Terminal-window launch
+              (Claude Code via the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 claude-cli://
               </code>{" "}
-              scheme, or Codex through the VibeCodes helper). On a phone, the
+              scheme, or Codex through the VibeCodes helper) only works on{" "}
+              <strong className="text-foreground">desktop</strong>. On a phone, the
               task card menu instead shows{" "}
               <strong className="text-foreground">
                 &quot;Launching runs on your Mac, so it isn&apos;t available here.&quot;

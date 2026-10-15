@@ -30,9 +30,18 @@ import { updateTerminalPreferences } from "@/actions/profile";
 import { setViewerAgentAwareModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
 import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
 import { setViewerTerminalAutoAcceptCache } from "@/hooks/use-viewer-terminal-auto-accept";
+import { setViewerTerminalRemoteControlCache } from "@/hooks/use-viewer-terminal-remote-control";
 import { usePlatformAgentAwareModelDefaults } from "@/hooks/use-platform-model-defaults";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import { usePlatformTerminalCodexModelDefault } from "@/hooks/use-platform-terminal-codex-model-default";
+import { usePlatformTerminalEffortDefault } from "@/hooks/use-platform-terminal-effort-default";
+import { setViewerTerminalEffortCache } from "@/hooks/use-viewer-terminal-effort";
+import {
+  claudeEffortDefaultAriaLabel,
+  claudeEffortDefaultSubLabel,
+  claudeEffortHelp,
+  isClaudeEffort,
+} from "@/lib/terminal/claude-effort";
 import {
   MODEL_TIER_WHEN_TO_USE,
   capitalizeModelName,
@@ -49,6 +58,7 @@ import {
   capitalizeTerminalModelName,
 } from "@/lib/terminal/model-resolution";
 import { AUTO_ACCEPT_FRESH_ONLY_HELP, AUTO_ACCEPT_ON_CONSEQUENCE } from "@/lib/terminal/auto-accept-mode";
+import { REMOTE_CONTROL_SWITCH_LABEL, terminalRemoteControlHelp } from "@/lib/terminal/remote-control-mode";
 import {
   KNOWN_CODEX_MODELS,
   isKnownCodexModel,
@@ -99,8 +109,12 @@ interface ModelTierSettingsProps {
   terminalModel: string | null;
   terminalCodexModel?: string | null;
   terminalCodexEffort?: string | null;
+  /** The signed-in user's terminal_effort (task 18a37612): Claude starting effort, null = Default. */
+  terminalEffort?: string | null;
   /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
   terminalAutoAccept: boolean;
+  /** The signed-in user's terminal_remote_control preference (task 5c8969cc), fetched server-side. */
+  terminalRemoteControl?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -292,7 +306,9 @@ export function ModelTierSettings({
   terminalModel,
   terminalCodexModel = null,
   terminalCodexEffort = null,
+  terminalEffort = null,
   terminalAutoAccept,
+  terminalRemoteControl = false,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ModelTierSettingsProps) {
@@ -306,6 +322,7 @@ export function ModelTierSettings({
   const { defaults: platformDefaults, isLoading: platformLoading } = usePlatformAgentAwareModelDefaults();
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const platformTerminalCodexDefault = usePlatformTerminalCodexModelDefault();
+  const platformTerminalEffort = usePlatformTerminalEffortDefault();
 
   // Terminal sessions group state — null = platform default; the sentinel
   // string = "my machine's default"; anything else = a known alias or a
@@ -314,16 +331,22 @@ export function ModelTierSettings({
   const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
   const [terminalCodexStaged, setTerminalCodexStaged] = useState<string | null>(terminalCodexModel);
   const [terminalCodexEffortStaged, setTerminalCodexEffortStaged] = useState<string | null>(terminalCodexEffort);
+  // Claude starting effort (task 18a37612) — null = Default (site level, else Claude's own).
+  const [terminalEffortStaged, setTerminalEffortStaged] = useState<string | null>(terminalEffort);
   // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
   // escape hatch: the only two legal states are on/off (design AC-6 —
   // "no dropdown, no free text, ever").
   const [autoAcceptStaged, setAutoAcceptStaged] = useState(terminalAutoAccept);
+  // Remote Control toggle (task 5c8969cc) — same two-state posture.
+  const [remoteControlStaged, setRemoteControlStaged] = useState(terminalRemoteControl);
   const [savedValues, setSavedValues] = useState({
     agentAwareMap,
     terminalModel,
     terminalCodexModel,
     terminalCodexEffort,
+    terminalEffort,
     terminalAutoAccept,
+    terminalRemoteControl,
   });
 
   // Re-stage from the persisted values on every open so a prior Cancel never
@@ -336,7 +359,9 @@ export function ModelTierSettings({
       setTerminalCustomMode(isTerminalCustomValue(savedValues.terminalModel));
       setTerminalCodexStaged(savedValues.terminalCodexModel);
       setTerminalCodexEffortStaged(savedValues.terminalCodexEffort);
+      setTerminalEffortStaged(savedValues.terminalEffort);
       setAutoAcceptStaged(savedValues.terminalAutoAccept);
+      setRemoteControlStaged(savedValues.terminalRemoteControl);
     }
     setOpen(next);
   }
@@ -344,10 +369,17 @@ export function ModelTierSettings({
   const isTierDirty = JSON.stringify(staged) !== JSON.stringify(savedValues.agentAwareMap);
   const isTerminalDirty = terminalStaged !== savedValues.terminalModel;
   const isAutoAcceptDirty = autoAcceptStaged !== savedValues.terminalAutoAccept;
+  const isRemoteControlDirty = remoteControlStaged !== savedValues.terminalRemoteControl;
   const isCodexTerminalDirty = terminalCodexStaged !== savedValues.terminalCodexModel || terminalCodexEffortStaged !== savedValues.terminalCodexEffort;
-  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty;
+  const isEffortDirty = terminalEffortStaged !== savedValues.terminalEffort;
+  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty || isRemoteControlDirty || isEffortDirty;
   const hasAnyOverride =
-    Object.keys(staged).length > 0 || terminalStaged !== null || terminalCodexStaged !== null || autoAcceptStaged;
+    Object.keys(staged).length > 0 ||
+    terminalStaged !== null ||
+    terminalCodexStaged !== null ||
+    terminalEffortStaged !== null ||
+    autoAcceptStaged ||
+    remoteControlStaged;
 
   const terminalValidation = terminalCustomMode ? validateTerminalModelValue(terminalStaged ?? "") : { ok: true as const };
   const terminalIsNovel =
@@ -449,7 +481,9 @@ export function ModelTierSettings({
     setTerminalCustomMode(false);
     setTerminalCodexStaged(null);
     setTerminalCodexEffortStaged(null);
+    setTerminalEffortStaged(null);
     setAutoAcceptStaged(false);
+    setRemoteControlStaged(false);
   }
 
   function handleSave() {
@@ -462,17 +496,23 @@ export function ModelTierSettings({
           terminalModel: terminalToSave,
           terminalCodexModel: terminalCodexStaged,
           terminalCodexEffort: terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? null : terminalCodexEffortStaged,
+          terminalEffort: terminalEffortStaged,
           terminalAutoAccept: autoAcceptStaged,
+          terminalRemoteControl: remoteControlStaged,
         });
         setViewerAgentAwareModelTierMapCache(saved.agentAwareModelTierMap ?? {});
         setViewerTerminalModelCache(saved.terminalModel);
+        setViewerTerminalEffortCache(saved.terminalEffort);
         setViewerTerminalAutoAcceptCache(saved.terminalAutoAccept);
+        setViewerTerminalRemoteControlCache(saved.terminalRemoteControl);
         setSavedValues({
           agentAwareMap: saved.agentAwareModelTierMap ?? {},
           terminalModel: saved.terminalModel,
           terminalCodexModel: saved.terminalCodexModel,
           terminalCodexEffort: saved.terminalCodexEffort,
+          terminalEffort: saved.terminalEffort,
           terminalAutoAccept: saved.terminalAutoAccept,
+          terminalRemoteControl: saved.terminalRemoteControl,
         });
         toast.success("Model tiers saved");
         setOpen(false);
@@ -715,6 +755,28 @@ export function ModelTierSettings({
           </div>
 
           <div className="space-y-1.5">
+            <Label id="terminal-claude-effort-label" className="block text-sm leading-snug">
+              Starting effort <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
+            </Label>
+            <EffortSegmentedControl
+              agent="claude"
+              value={isClaudeEffort(terminalEffortStaged) ? terminalEffortStaged : null}
+              onChange={(effort) => setTerminalEffortStaged(effort)}
+              disabled={isPending}
+              describedById="terminal-claude-effort-help"
+              groupLabel="Claude starting effort"
+              defaultOption={{
+                onSelect: () => setTerminalEffortStaged(null),
+                subLabel: claudeEffortDefaultSubLabel(platformTerminalEffort),
+                ariaLabel: claudeEffortDefaultAriaLabel(platformTerminalEffort),
+              }}
+            />
+            <p id="terminal-claude-effort-help" className="text-[11px] text-muted-foreground">
+              {claudeEffortHelp({ userValue: terminalEffortStaged, platformValue: platformTerminalEffort })}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="terminal-codex-starting-model" className="text-sm">
               Codex starting model <span className="font-normal text-muted-foreground">— for new in-browser Codex sessions</span>
             </Label>
@@ -774,6 +836,29 @@ export function ModelTierSettings({
               className={cn("text-[11px]", autoAcceptStaged ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}
             >
               {autoAcceptStaged ? AUTO_ACCEPT_ON_CONSEQUENCE : AUTO_ACCEPT_FRESH_ONLY_HELP}
+            </p>
+          </div>
+
+          {/* Task 5c8969cc — Remote Control toggle. Two-state Switch only: it can
+              only ever produce the fixed `--remote-control` flag or nothing. */}
+          <div className="space-y-1.5">
+            <div className="flex items-start justify-between gap-3">
+              <Label htmlFor="terminal-remote-control" className="text-sm font-normal">
+                {REMOTE_CONTROL_SWITCH_LABEL}
+              </Label>
+              <Switch
+                id="terminal-remote-control"
+                checked={remoteControlStaged}
+                onCheckedChange={setRemoteControlStaged}
+                disabled={isPending}
+                aria-describedby="terminal-remote-control-help"
+              />
+            </div>
+            <p
+              id="terminal-remote-control-help"
+              className={cn("text-[11px]", remoteControlStaged ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground")}
+            >
+              {terminalRemoteControlHelp(remoteControlStaged)}
             </p>
           </div>
         </div>

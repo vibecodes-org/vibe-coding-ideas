@@ -10,6 +10,9 @@ import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
   normalizeUserModelTierMap,
   isReasoningEffort,
+  isEffortForAgent,
+  CLAUDE_EFFORT_LEVELS,
+  CODEX_EFFORT_LEVELS,
 } from "./platform-model-defaults";
 
 /** Minimal Supabase-shaped mock: `.from(table).select().eq().maybeSingle()`. */
@@ -177,6 +180,59 @@ describe("isReasoningEffort", () => {
     expect(isReasoningEffort("")).toBe(false);
     expect(isReasoningEffort(undefined)).toBe(false);
     expect(isReasoningEffort(5)).toBe(false);
+  });
+});
+
+describe("per-agent effort ladders (Nick, 8 Oct 2026: all levels, not 3)", () => {
+  it("Claude offers low through max — Claude Code's own slider", () => {
+    expect(CLAUDE_EFFORT_LEVELS).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it("Codex offers minimal through xhigh — no max", () => {
+    expect(CODEX_EFFORT_LEVELS).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+  });
+
+  it("isReasoningEffort accepts every level either agent accepts", () => {
+    for (const level of [...CLAUDE_EFFORT_LEVELS, ...CODEX_EFFORT_LEVELS]) {
+      expect(isReasoningEffort(level)).toBe(true);
+    }
+  });
+
+  it("isEffortForAgent never gives Claude \"minimal\" nor Codex \"max\"", () => {
+    expect(isEffortForAgent("claude", "max")).toBe(true);
+    expect(isEffortForAgent("claude", "xhigh")).toBe(true);
+    expect(isEffortForAgent("claude", "minimal")).toBe(false);
+    expect(isEffortForAgent("codex", "minimal")).toBe(true);
+    expect(isEffortForAgent("codex", "xhigh")).toBe(true);
+    expect(isEffortForAgent("codex", "max")).toBe(false);
+    expect(isEffortForAgent("codex", undefined)).toBe(false);
+  });
+
+  it("platform defaults validation rejects a level the agent doesn't accept", () => {
+    const withLevels = (claude: string, codex: string) => ({
+      ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+      defaults: {
+        ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults,
+        frontier: {
+          claude: { ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier.claude, effort: claude },
+          codex: { ...SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier.codex, effort: codex },
+        },
+      },
+    });
+    expect(isValidAgentAwarePlatformModelDefaults(withLevels("max", "xhigh"))).toBe(true);
+    expect(isValidAgentAwarePlatformModelDefaults(withLevels("minimal", "high"))).toBe(false);
+    expect(isValidAgentAwarePlatformModelDefaults(withLevels("high", "max"))).toBe(false);
+  });
+
+  it("a user's override keeps a valid new level and drops one the agent doesn't accept", () => {
+    const map = normalizeUserModelTierMap({
+      frontier: { claude: { model: "opus", effort: "max" }, codex: { model: "gpt-6-astra", effort: "max" } },
+      cheap: { claude: { model: "haiku", effort: "minimal" }, codex: { model: "gpt-5.6-luna", effort: "minimal" } },
+    });
+    expect(map.frontier?.claude).toEqual({ model: "opus", effort: "max" });
+    expect(map.frontier?.codex).toEqual({ model: "gpt-6-astra" });
+    expect(map.cheap?.claude).toEqual({ model: "haiku" });
+    expect(map.cheap?.codex).toEqual({ model: "gpt-5.6-luna", effort: "minimal" });
   });
 });
 

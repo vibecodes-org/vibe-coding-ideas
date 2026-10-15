@@ -211,6 +211,7 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
+import { syncBoardAgents, syncBoardAgentsSchema } from "./tools/agent-sync";
 import {
   getIdeaEnhancementPrompt,
   getIdeaEnhancementPromptSchema,
@@ -808,7 +809,7 @@ export function registerTools(
 
   server.tool(
     "upload_attachment",
-    "Attach a file (image, PDF, document) to a task. Use this after create_task when you have screenshots or files to include. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload. For files over 3MB, use request_upload_url instead.",
+    "Attach a file (image, PDF, document) to a task. Use this after create_task when you have screenshots or files to include. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload. The file travels inside this call as text, so anything over about 30KB (most screenshots and mocks) should use request_upload_url instead.",
     uploadAttachmentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -836,7 +837,7 @@ export function registerTools(
 
   server.tool(
     "request_upload_url",
-    "Get a presigned URL for uploading a large file attachment to a task (alternative to upload_attachment for files over 3MB). Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload to finalize. Max 10MB.",
+    "Get a presigned URL for uploading a large file attachment to a task (use this instead of upload_attachment for anything over about 30KB, such as most screenshots and mocks: upload_attachment sends the file inside the call as text). Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload to finalize. Max 10MB.",
     requestUploadUrlSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -961,7 +962,7 @@ export function registerTools(
 
   server.tool(
     "list_agents",
-    "List agents owned by the current user (or a specific owner). Returns agent profiles with name, role, system prompt, and active status.",
+    "List agents owned by the current user (or a specific owner). Returns agent profiles with name, role, system prompt, tool access (full or read_only), and active status.",
     listBotsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -975,7 +976,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
+    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1006,7 +1007,7 @@ export function registerTools(
 
   server.tool(
     "create_agent",
-    "Create a new agent profile with a name, role, and system prompt. The agent gets its own user identity for assignments and activity logs.",
+    "Create a new agent profile with a name, role, and system prompt (tool_access: full by default, or read_only for reviewers and checkers). The agent gets its own user identity for assignments and activity logs.",
     createBotSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1180,7 +1181,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_template",
-    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs (structural changes with different step counts are skipped).",
+    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs. When the step count changes, cards whose workflow has not started are moved onto the new steps; started workflows are left alone.",
     updateWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1487,7 +1488,7 @@ export function registerTools(
 
   server.tool(
     "import_agent_skill",
-    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio/tags either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
+    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Tool access is read from `metadata.tool_access` (full | read_only) or a Claude Code style `tools:` / `disallowedTools:` line (a deny list naming Edit or Write, or a tools list with no file-writing tool, means read_only). Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
     importAgentSkillSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1516,8 +1517,22 @@ export function registerTools(
   );
 
   server.tool(
+    "sync_board_agents",
+    "Save this board's agents as real Claude Code subagents (.claude/agents/vc-*.md, untracked) in the current project folder, for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, and at most once per claim. Returns a shell command that downloads the definitions (a 5-minute link) and installs them; run it from the project folder, then spawn the subagent. If it fails, carry on with claim_next_step's general-purpose steps. Remote connector only.",
+    syncBoardAgentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await syncBoardAgents(ctx, syncBoardAgentsSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
     "get_agent_skill_content",
-    "Load the full SKILL.md instructions for a specific skill attached to an agent. Use this when a task matches a skill's description from an available_skills list (returned by claim_next_step). Pass the optional agent_id (a bot_id) — the preferred path for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Progressive disclosure: only call this when you need the skill's detailed instructions.",
+    "Re-read the full SKILL.md instructions for a specific skill attached to an agent. A workflow step already includes its agent's skills in full inside the claim_next_step persona_prompt, so you don't need this to start a step; use it to re-read a skill on demand, or to load a skill that persona_prompt names as too large to include. Pass the optional agent_id (a bot_id) of the agent that owns the skill. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getAgentSkillContentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

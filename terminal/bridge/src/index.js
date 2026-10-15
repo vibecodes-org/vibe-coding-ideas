@@ -44,6 +44,7 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
+import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -127,8 +128,8 @@ const RELAY = launched?.relay || args.relay || process.env.RELAY_URL || "ws://lo
 // whatever host it named — an attacker relay then verifies its OWN token, passes
 // the R1 `{"t":"attached"}` gate, and streams keystrokes into the spawned `claude`
 // PTY (see the Reproduce & Investigate step). Pin the dial target HERE, before
-// `new WebSocket()` and before ANY pty.spawn on every path (promptless spawn-first
-// AND prompt-deferred). Loopback is allowed only when NOT packaged (dev/tests dial
+// `new WebSocket()` and before ANY pty.spawn on every path (spawn-first, resume
+// after the agents fetch, AND prompt-deferred). Loopback is allowed only when NOT packaged (dev/tests dial
 // the Node stand-in on ws://127.0.0.1:<port>); the packaged helper sets
 // VIBECODES_PACKAGED=1, so loopback + any non-prod host are rejected in production.
 // On reject: log the HOST ONLY (never the token) and exit cleanly, zero spawn.
@@ -172,11 +173,11 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 // resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
 // (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
-// FR-4 (agent-aware model tiers): the Codex reasoning effort, already
-// parse-time whitelisted (low/medium/high) by the shared module. Only ever
-// applied on a FRESH Codex launch (see resolveAgentLaunch's codex branch),
-// alongside MODEL — which, for a Codex launch, is the Codex model id the mint
-// resolved. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
+// The reasoning effort, already parse-time whitelisted by the shared module
+// (union of both ladders; each branch re-whitelists its own). Codex (FR-4):
+// only on a FRESH launch, alongside MODEL — which, for a Codex launch, is the
+// Codex model id the mint resolved. Claude (task 18a37612): `--effort <level>`
+// on fresh, --resume and --continue launches. `BRIDGE_EFFORT` env mirrors BRIDGE_MODEL's dev/test fallback.
 const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
 // `permissionMode` param, already parse-time whitelisted by the shared
@@ -187,6 +188,11 @@ const EFFORT = launched?.effort || process.env.BRIDGE_EFFORT || null;
 // `BRIDGE_PERMISSION_MODE` env mirrors BRIDGE_MODEL's own dev/test
 // convenience fallback.
 const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSION_MODE || null;
+// Task 5c8969cc: the deep link's `remoteControl` flag (parse-time whitelisted
+// to "1" by the shared module). resolveClaudeLaunch puts `--remote-control`
+// straight after `claude` on every Claude branch; Codex and --cmd never read
+// it. `BRIDGE_REMOTE_CONTROL=1` mirrors BRIDGE_WORKTREE's dev/test fallback.
+const REMOTE_CONTROL = launched?.remoteControl === true || process.env.BRIDGE_REMOTE_CONTROL === "1";
 // Concurrent-terminal isolation (QA-flagged fix): the deep link's `worktree`
 // boolean (see shared/deep-link.mjs), set by the app whenever this launch
 // needs isolation (existing-mode with a known/possibly-shared folder — see
@@ -231,8 +237,12 @@ const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
   // only one fires per AGENT, so passing MODEL to both is safe.
   codexModel: MODEL,
   codexEffort: EFFORT,
+  // Task 18a37612: Claude's `--effort` (the claude branch re-whitelists it;
+  // the codex branch never reads this one).
+  effort: EFFORT,
   permissionMode: PERMISSION_MODE,
   worktree: WORKTREE,
+  remoteControl: REMOTE_CONTROL,
   mintId: () => crypto.randomUUID(),
 });
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
@@ -334,6 +344,79 @@ async function fetchE2eeSessionKey() {
   }
 }
 
+// ── The board's agents as real subagents (task 59889027) ────────────────────
+// Same off-relay channel and token as the E2EE key above. The definitions can
+// be tens of KB, far past the launch link's length cap, so they never travel
+// in it. Never throws: any failure launches the session exactly as before.
+const SESSION_AGENTS_FETCH_TIMEOUT_MS = 5000;
+// Fresh AND resumed launches (a resumed conversation loses its agents).
+const WANTS_AGENTS = wantsSessionAgents({ agent: AGENT, explicitCmd });
+
+/** @returns {Promise<unknown>} the endpoint's body, or null */
+async function fetchSessionAgents() {
+  if (!TOKEN || !SESSION) return null;
+  if (!WANTS_AGENTS) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SESSION_AGENTS_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/agents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // `agent` picks the tier models/efforts: Claude's or Codex's.
+      body: JSON.stringify({ sid: SESSION, token: TOKEN, agent: AGENT }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    log("warn", "session agents fetch failed — launching without them", { err: String(e?.message || e) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Codex reads custom agents only from role files (see session-agents.js), so
+// a Codex launch writes them to a private temp folder — outside the project
+// and ~/.codex — that is removed when this bridge exits, on every exit path
+// that runs code. (A SIGKILLed bridge leaves it to the OS temp cleaner.)
+let agentFilesDir = null;
+function removeAgentFiles() {
+  if (!agentFilesDir) return;
+  try { fs.rmSync(agentFilesDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  agentFilesDir = null;
+}
+process.on("exit", removeAgentFiles);
+
+/**
+ * The launch flags that hand the CLI the board's agents, or [] (launch as
+ * before). Claude Code takes them inline; Codex gets role files.
+ * @param {unknown} body
+ * @returns {string[]}
+ */
+function sessionAgentArgs(body) {
+  if (!body) return [];
+  if (AGENT === "codex") {
+    const files = codexAgentFiles(body);
+    if (!files) return [];
+    try {
+      agentFilesDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibecodes-agents-"));
+      const written = files.map(({ name, fileName, toml }) => {
+        const filePath = path.join(agentFilesDir, fileName);
+        fs.writeFileSync(filePath, toml, { mode: 0o600 });
+        return { name, path: filePath };
+      });
+      return codexAgentConfigArgs(written);
+    } catch (e) {
+      log("warn", "couldn't write codex agent files — launching without them", { err: String(e?.message || e) });
+      removeAgentFiles();
+      return [];
+    }
+  }
+  const json = serializeSessionAgents(body);
+  return json ? ["--agents", json] : [];
+}
+
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
@@ -385,7 +468,11 @@ const TERMINAL_CLOSE_CODES = new Set([
 const NORMAL_CLOSURE = 1000;
 
 const [file, ...cmdArgs] = shellSplit(CMD);
-const spawnArgs = PROMPT ? [...cmdArgs, PROMPT] : cmdArgs;
+// `--agents` (task 59889027) is added once fetchSessionAgents() resolves —
+// always before the child spawns: a prompt-carrying launch waits for the
+// relay's `attached` frame (which comes after the fetch), and a promptless
+// resume waits for the fetch itself; see buildSpawnArgs.
+let spawnArgs = buildSpawnArgs(cmdArgs, [], PROMPT);
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
 // node-pty ships a `spawn-helper` binary under prebuilds/<platform>-<arch>/.
@@ -483,7 +570,7 @@ async function main() {
   // PTY spawn still reaps.
   shutdownRef = shutdown;
 
-  let term = null; // spawned lazily for prompt-carrying launches (R1 gate below)
+  let term = null; // spawned lazily: after the relay's `attached` frame (prompt launches) or the agents fetch (resumes) — R1 gate below
   let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
@@ -563,6 +650,7 @@ async function main() {
   function shutdown(code, why) {
     if (shuttingDown) return;
     shuttingDown = true;
+    removeAgentFiles();
     clearTimeout(connectTimer);
     clearTimeout(maxTimer);
     clearTimeout(attachTimer);
@@ -646,9 +734,10 @@ async function main() {
   }
 
   /**
-   * Spawn the PTY and wire its handlers. Called immediately for promptless
-   * launches (today's behaviour, unchanged) and ONLY after the relay's
-   * `attached` confirmation for prompt-carrying launches (R1 — see below).
+   * Spawn the PTY and wire its handlers. Called immediately only for a
+   * promptless launch that wants no board agents (an explicit command); a
+   * resume waits for the agents fetch, and a prompt-carrying launch spawns ONLY
+   * after the relay's `attached` confirmation (R1 — see below).
    * The prompt is one argv element in `spawnArgs`; it is deliberately NOT
    * logged (only its length is).
    */
@@ -660,7 +749,7 @@ async function main() {
       // `attached` frame, so the socket is already open and the banner (just
       // queued above) can be flushed and the session ended right away. For a
       // PROMPTLESS launch this runs BEFORE the relay socket ever opens (see
-      // the top-level `if (!PROMPT) spawnPty()` call) — the banner is queued
+      // the top-level promptless spawnPty() calls) — the banner is queued
       // into preOpenBuffer instead, `open` is still false here, so we simply
       // return and let the normal flow continue to openRelay(); the ws
       // "open" handler below flushes the banner and ends the session once
@@ -756,22 +845,51 @@ async function main() {
     });
   }
 
-  // R1 SEQUENCING. Promptless launches spawn FIRST, exactly as before — nothing
-  // in their flow changes. A URL-carried prompt is different: it must NEVER
-  // reach a child process unless the relay has accepted the owner-bound token,
-  // and the relay REJECTS bad legs by accept()ing then immediately closing
-  // (4005/4006/…) — so `open` alone proves nothing. The spawn is therefore
-  // gated on the relay's explicit `attached` control frame, sent only after
-  // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
-  if (!PROMPT) spawnPty();
+  // Clean teardown on Ctrl-C / kill. Registered BEFORE the first await below:
+  // with no handler a SIGTERM kills the process outright (no exit handlers), so
+  // the Codex role-file folder written right after the agents fetch would be
+  // left behind if it landed during the login-shell PATH lookup that follows.
+  // shutdown() is safe this early: every binding it reads is declared above, and
+  // with no PTY yet it just closes up and exits.
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => {
+      log("info", "received signal", { sig });
+      shutdown(0, sig);
+    });
+  }
+
+  // R1 SEQUENCING. A promptless launch spawns first only when it wants no board
+  // agents (an explicit command). A resume wants them on its command line, so it
+  // waits for the fetch below. A URL-carried prompt is different again: it must
+  // NEVER reach a child process unless the relay has accepted the owner-bound
+  // token, and the relay REJECTS bad legs by accept()ing then immediately
+  // closing (4005/4006/…) — so `open` alone proves nothing. The spawn is
+  // therefore gated on the relay's explicit `attached` control frame, sent only
+  // after authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
+  if (!PROMPT && !WANTS_AGENTS) spawnPty();
   // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
   // relay connect URL is built, so a successful fetch can announce `e2ee=1`
   // on THIS attach (and every reconnect reuses the SAME key — see
   // E2EE_KEY/E2EE_ENC/E2EE_DEC below, refreshed per attach in openRelay()).
-  // Never blocks/gates the PTY spawn above — only delays this bridge's OWN
-  // relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
+  // Never blocks/gates the PTY spawn above (a resume spawns after, below) — only
+  // delays this bridge's OWN relay connect by at most E2EE_KEY_FETCH_TIMEOUT_MS, and any output
   // produced meanwhile is safely queued in preOpenBuffer, not lost.
-  const E2EE_KEY = await fetchE2eeSessionKey();
+  // Fetched in parallel; the agents must land before the child spawns. A
+  // prompt-carrying launch hasn't spawned yet (it waits for the relay's
+  // `attached` frame); a resume is held until the fetch finishes (bounded by
+  // SESSION_AGENTS_FETCH_TIMEOUT_MS, no agents on any failure).
+  const [E2EE_KEY, SESSION_AGENTS_BODY] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
+  // A signal or helper-gone shutdown landed during the fetch: write no role
+  // files, spawn nothing and don't dial the relay.
+  if (shuttingDown) return;
+  if (SESSION_AGENTS_BODY && !term) {
+    const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
+    if (agentArgs.length > 0) {
+      spawnArgs = buildSpawnArgs(cmdArgs, agentArgs, PROMPT);
+      log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
+    }
+  }
+  if (!PROMPT && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
@@ -1080,13 +1198,6 @@ async function main() {
 
   openRelay();
 
-  // Clean teardown on Ctrl-C / kill.
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.on(sig, () => {
-      log("info", "received signal", { sig });
-      shutdown(0, sig);
-    });
-  }
 }
 
 let shutdownRef = null; // set by main() once its shutdown() closure exists

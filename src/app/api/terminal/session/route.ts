@@ -56,6 +56,8 @@ import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
 import { normalizeAgent } from "@/lib/terminal/agent-launch";
 import { validateCodexModelValue, validateReasoningEffort } from "@/lib/codex-models";
+import { getPlatformTerminalEffortDefault } from "@/lib/terminal/platform-terminal-effort";
+import { resolveTerminalClaudeEffort } from "@/lib/terminal/claude-effort";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -379,13 +381,18 @@ export async function POST(req: Request) {
     // to "off" (AC-2 equivalent: never block a launch over this), never
     // throws, never blocks the mint.
     let userAutoAccept = false;
+    // Task 5c8969cc ("Start with Remote Control on") — same single row fetch,
+    // same fail-soft rule: a read error means off.
+    let userRemoteControl = false;
     // Read independent Codex terminal preferences in the same user-row fetch.
     let userTerminalCodexModel: string | null = null;
     let userTerminalCodexEffort: string | null = null;
+    // Task 18a37612 ("Starting effort") — same row fetch, same fail-soft rule.
+    let userTerminalEffort: string | null = null;
     try {
       const { data: userRow, error: userRowErr } = await supabase
         .from("users")
-        .select("terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept")
+        .select("terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept, terminal_remote_control, terminal_effort")
         .eq("id", user.id)
         .maybeSingle();
       if (userRowErr) {
@@ -398,6 +405,8 @@ export async function POST(req: Request) {
         userTerminalCodexModel = userRow?.terminal_codex_model ?? null;
         userTerminalCodexEffort = userRow?.terminal_codex_effort ?? null;
         userAutoAccept = userRow?.terminal_auto_accept ?? false;
+        userRemoteControl = userRow?.terminal_remote_control ?? false;
+        userTerminalEffort = userRow?.terminal_effort ?? null;
       }
     } catch (err) {
       logger.warn("Terminal session mint: unexpected error reading terminal_model/terminal_auto_accept — omitting user overrides", {
@@ -437,11 +446,24 @@ export async function POST(req: Request) {
         effectiveEffort = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.standard.codex.effort;
       }
     }
+    // Task 18a37612: Claude's starting effort, user -> site default -> none, for
+    // fresh AND resumed mints. The site read is skipped for Codex (it has its
+    // own pair above) and never throws, so it can't block a launch.
+    if (effectiveAgent !== "codex") {
+      const platformEffort = await getPlatformTerminalEffortDefault(supabase);
+      effectiveEffort = resolveTerminalClaudeEffort({
+        userValue: userTerminalEffort,
+        platformValue: platformEffort,
+      }).effort;
+    }
     // Task d3de150c: no platform-wide default exists for this by design —
     // the ONLY input is the user's own row. Resolves to the literal
     // "auto" or undefined (never any other string) so the deep link
     // and the mint response can never carry a forbidden value.
     const effectivePermissionMode = userAutoAccept ? AUTO_PERMISSION_MODE : undefined;
+    // Task 5c8969cc: only the user's own row decides; never Codex. `true` or
+    // undefined (dropped by JSON.stringify) — off = byte-identical response.
+    const effectiveRemoteControl = userRemoteControl === true && effectiveAgent !== "codex" ? true : undefined;
 
     // ── (c.7) CONCURRENT-SESSION ISOLATION ──────────────────────────────────
     // Does this user ALREADY have a live in-app session on this board? If so
@@ -566,9 +588,11 @@ export async function POST(req: Request) {
       // passed at all — the fresh-launch call site treats absence the same
       // as an explicit undefined.
       model: effectiveModel,
-      // FR-4: the Codex reasoning effort paired with `model` for a fresh Codex
-      // launch (low/medium/high), resolved above. Undefined (and dropped by
-      // JSON.stringify) for Claude launches — byte-identical response shape.
+      // The resolved reasoning effort. Codex (FR-4): the effort paired with
+      // `model` for a fresh launch (minimal...xhigh). Claude (task 18a37612):
+      // the user's level, else the site default (low...max), for fresh AND
+      // resumed launches. Undefined (dropped by JSON.stringify) when nothing
+      // resolves — byte-identical response shape.
       effort: effectiveEffort,
       // Task d3de150c ("Terminal mode") — set ONLY when this user's own
       // terminal_auto_accept preference is on, for a FRESH launch only; the
@@ -576,6 +600,12 @@ export async function POST(req: Request) {
       // (mirrors AC-8 for `model` above). Omitted (undefined, dropped by
       // JSON.stringify) when off — byte-identical to today's response shape.
       permissionMode: effectivePermissionMode,
+      // Task 5c8969cc ("Start with Remote Control on") — set ONLY when this
+      // user's terminal_remote_control preference is on and the agent isn't
+      // Codex. Unlike permissionMode it applies to fresh AND resume mints:
+      // the client decides per link via remoteControlForLaunch
+      // (src/lib/terminal/remote-control-mode.ts). Omitted when off.
+      remoteControl: effectiveRemoteControl,
       // Concurrent-session isolation (see (c.7) above): true when another of
       // this user's sessions is already live on this board, so the client
       // fires this FRESH launch with `claude --worktree`. Always present (a

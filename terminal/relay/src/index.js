@@ -86,6 +86,19 @@ import {
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
 
+/**
+ * Whether this DO has already told `ws` to close (see TerminalRelay#retire).
+ * An unreadable attachment reads as live — the pre-retire behaviour.
+ * @param {WebSocket} ws
+ */
+function isRetired(ws) {
+  try {
+    return ws.deserializeAttachment()?.retired === true;
+  } catch {
+    return false;
+  }
+}
+
 /** @param {unknown} body @param {number} status @returns {Response} */
 function jsonResponse(body, status) {
   return new Response(JSON.stringify(body), {
@@ -231,9 +244,38 @@ export class TerminalRelay {
     return resolveMs(this.env.TERMINAL_ACTIVITY_THROTTLE_MS, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS);
   }
 
+  /**
+   * RETIRED legs (board task b829d62d — "Reconnect often doesn't work"). A
+   * socket this DO has told to close — preempted by a newer same-role attach,
+   * or closed by an end/grace teardown — stays in getWebSockets() until its
+   * close handshake completes. When that leg's network path died silently
+   * (the laptop slept, Wi-Fi changed) or its tab is frozen in the background,
+   * that is never; and getWebSockets(tag)[0] is the OLDEST socket, so every
+   * forward went to the dead leg. The reconnected view read "Connected" while
+   * its keystrokes and the agent's output went nowhere, permanently — only a
+   * fresh sid (Resume) escaped. The mark lives on the socket's own attachment
+   * so it survives hibernation, and every routing / attach-state read below
+   * skips a retired socket.
+   * @param {WebSocket} ws @param {number} code @param {string} reason
+   */
+  retire(ws, code, reason) {
+    try {
+      ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), retired: true });
+    } catch { /* attachment already gone (socket closing) */ }
+    try {
+      ws.close(code, reason);
+    } catch { /* already closing */ }
+  }
+
+  /** Sockets not yet retired — all of them, or one tag's. @param {string} [tag] */
+  liveSockets(tag) {
+    const all = tag === undefined ? this.state.getWebSockets() : this.state.getWebSockets(tag);
+    return all.filter((ws) => !isRetired(ws));
+  }
+
   /** Send a control frame to EVERY live leg (used for peer-reattached). */
   broadcast(frame) {
-    for (const ws of this.state.getWebSockets()) {
+    for (const ws of this.liveSockets()) {
       try {
         ws.send(frame);
       } catch { /* leg already closing */ }
@@ -243,7 +285,7 @@ export class TerminalRelay {
   /** The live peer socket for the opposite role, or null. Tag-driven so it works post-hibernation. */
   findPeer(role) {
     const peerTag = role === "bridge" ? "role:browser" : "role:bridge";
-    return this.state.getWebSockets(peerTag)[0] ?? null;
+    return this.liveSockets(peerTag)[0] ?? null;
   }
 
   /**
@@ -253,8 +295,8 @@ export class TerminalRelay {
    * @returns {Promise<import("./pairing.js").AttachState>}
    */
   async computeAttachState() {
-    const bridge = this.state.getWebSockets("role:bridge").length > 0;
-    const browser = this.state.getWebSockets("role:browser").length > 0;
+    const bridge = this.liveSockets("role:bridge").length > 0;
+    const browser = this.liveSockets("role:browser").length > 0;
     const owner = (await this.state.storage.get("owner")) ?? null;
     return { bridge, browser, owner };
   }
@@ -318,7 +360,7 @@ export class TerminalRelay {
       return jsonResponse({ error: "unauthorized" }, 401);
     }
 
-    const connected = this.state.getWebSockets("role:helper").length > 0;
+    const connected = this.liveSockets("role:helper").length > 0;
     const [version, machineLabel, alwaysOn, uncleanAt, codexInstalled, claudeInstalled] = await Promise.all([
       this.state.storage.get("helperVersion"),
       this.state.storage.get("helperMachineLabel"),
@@ -373,7 +415,7 @@ export class TerminalRelay {
       return jsonResponse({ error: "bad-value" }, 400);
     }
 
-    const helper = this.state.getWebSockets("role:helper")[0] ?? null;
+    const helper = this.liveSockets("role:helper")[0] ?? null;
     if (!helper) {
       this.log("helper command: no live helper leg", { session, cmd });
       return jsonResponse({ delivered: false }, 200);
@@ -429,10 +471,8 @@ export class TerminalRelay {
     // waiver only accepts a token whose `sub` already matches, and the sid
     // itself is derived from `sub` (helperSessionId), so cross-owner attach
     // would already fail at the token/sid level.
-    for (const stale of this.state.getWebSockets("role:helper")) {
-      try {
-        stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
-      } catch { /* already closing */ }
+    for (const stale of this.liveSockets("role:helper")) {
+      this.retire(stale, CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
     }
 
     this.state.acceptWebSocket(server, ["role:helper", `sub:${auth.sub}`]);
@@ -498,6 +538,12 @@ export class TerminalRelay {
    * @param {WebSocket} ws
    */
   async handleHelperDetach(ws) {
+    // A replaced helper leg finally closing says nothing about the live one
+    // that replaced it — never stamp that one "stopped unexpectedly".
+    if (isRetired(ws)) {
+      this.log("helper detached (retired leg — already replaced)");
+      return;
+    }
     let goodbye = false;
     try {
       goodbye = !!ws.deserializeAttachment()?.goodbye;
@@ -578,11 +624,12 @@ export class TerminalRelay {
     //     the stale leg(s) BEFORE accepting the new one so single-attach holds
     //     post-swap; handleDetach sees the pair still whole and skips the grace
     //     hold. Foreign owners never reach here (owner check above).
+    //     Retired, not just closed: a stale leg whose network died silently
+    //     never completes the close, and must stop receiving forwards NOW
+    //     (see retire()).
     if (decision.preempt) {
-      for (const stale of this.state.getWebSockets(`role:${role}`)) {
-        try {
-          stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
-        } catch { /* already closing */ }
+      for (const stale of this.liveSockets(`role:${role}`)) {
+        this.retire(stale, CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
       }
       this.log("stale leg preempted", { session, role });
     }
@@ -771,6 +818,10 @@ export class TerminalRelay {
     const att = ws.deserializeAttachment() || {};
     const role = att.role;
 
+    // A replaced leg that wakes up late speaks for nobody: its frames must not
+    // reach the live peer (or move the helper's state) — see retire().
+    if (att.retired === true) return;
+
     // A helper leg has no peer to forward to — it only ever sends its own
     // small control frames (goodbye, always-on). Branch off BEFORE the
     // bridge/browser forwarding logic below, which a helper never reaches.
@@ -893,10 +944,18 @@ export class TerminalRelay {
     } catch { /* attachment may be gone */ }
     this.log("detached", { role, why, ...extra });
 
+    // A retired leg finally closing (late, or never — see retire()) was
+    // already replaced or ended; whatever is live now was handled when that
+    // happened. Nothing to hold, nobody to warn.
+    if (isRetired(ws)) {
+      this.log("detach of a retired leg — nothing to hold", { role, why });
+      return;
+    }
+
     // Survivors, excluding the closing socket (it may still appear in the list).
     const surviving = { bridge: false, browser: false };
     const survivorSockets = [];
-    for (const peer of this.state.getWebSockets()) {
+    for (const peer of this.liveSockets()) {
       if (peer === ws) continue;
       survivorSockets.push(peer);
       try {
@@ -1047,9 +1106,7 @@ export class TerminalRelay {
    */
   async endSession(reason, opts = {}) {
     for (const ws of this.state.getWebSockets()) {
-      try {
-        ws.close(NORMAL_CLOSURE, reason);
-      } catch { /* already closing */ }
+      this.retire(ws, NORMAL_CLOSURE, reason);
     }
     if (opts.notifyApp) {
       await this.notifyAppSessionClosed(opts.sid, opts.reasonCode);
@@ -1116,9 +1173,7 @@ export class TerminalRelay {
    */
   async endGrace(sid) {
     for (const ws of this.state.getWebSockets()) {
-      try {
-        ws.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
-      } catch { /* already closing */ }
+      this.retire(ws, CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
     }
     await this.notifyAppSessionClosed(sid, "peer_gone");
     await this.clearSessionState();

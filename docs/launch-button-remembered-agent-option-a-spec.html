@@ -90,6 +90,8 @@
 <main>
   <div class="eyebrow">UX design · build spec · card c4c27987</div>
   <h1>Option A build spec: the green Launch button follows your remembered agent</h1>
+  <p style="margin:12px 0;padding:10px 14px;border:1px solid #d4a017;border-radius:6px;background:rgba(212,160,23,.12)"><strong>Update 15 Oct 2026 (card 5a24479e, PR #361):</strong> the primary button's <em>destination</em> is now set by that card. On a supported Mac with the in-app terminal enabled, the primary opens the browser terminal for your remembered agent; elsewhere (or with the flag off) it opens a Terminal window. The label still names the remembered agent, and the task-detail icon stays Claude-only. Where this page describes the primary as always opening a Terminal window, this note overrides it.</p>
+
   <p class="meta">Companion to the approved design. Compass, 25 Sep 2026. Implementation and QA use this page for <em>what to build and check</em>; the approved mock stays the <em>visual</em> source of truth.</p>
 
   <div class="callout green">
@@ -273,7 +275,7 @@
       <tr><td>Copy</td><td><span class="copy">Your launch button now starts {AGENT_LABEL[agent]}. Change it any time from the button's menu.</span> — the agent name is bold in the mock (pass a ReactNode message to sonner, or plain text if the toast component can't render markup; bold is a nicety, the words are the contract).</td></tr>
       <tr><td>Action</td><td>One action, label <span class="copy">Undo</span>. Clicking it reverts the remembered agent to the previous value via the same save path (<code>source: "undo"</code>) and shows <b>no</b> further toast. Sonner's standard action button styling — no custom look.</td></tr>
       <tr><td>Trigger</td><td>Only a <b>picker</b> write (browser chooser "Run it with", or per-task "Start fresh with") that <b>changes</b> the stored value, while the account's seen-flag is unset. Footer "Switch to …" never triggers it. Same-value writes never trigger it. Picker writes never block or delay a launch.</td></tr>
-      <tr><td>Once per account</td><td>The seen-flag is stored against the account (Requirements: new column <code>users.terminal_agent_toast_seen_at</code>, migration 00176), so a new browser or Mac does not show it again. It is set as soon as the toast is shown, regardless of whether Undo is clicked.</td></tr>
+      <tr><td>Once per account</td><td>The seen-flag is stored against the account (Requirements: new column <code>users.terminal_agent_toast_seen_at</code>, migration 00193), so a new browser or Mac does not show it again. It is set as soon as the toast is shown, regardless of whether Undo is clicked.</td></tr>
       <tr><td>Where / when</td><td>Standard sonner position (as every other toast in the app). Use the regular <code>toast()</code> (not error/success). Suggest a slightly longer duration than the default (e.g. 8 s) because it carries an action — a behaviour tweak, not a visual one.</td></tr>
       <tr><td>Accessibility</td><td><code>role="status"</code> as the mock shows; sonner supplies this. Undo is a real button, keyboard-focusable.</td></tr>
     </tbody>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ArrowRight,
   MessageSquare,
@@ -18,9 +19,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkillLine } from "./skill-line";
 import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
-import { parsePromptToFields } from "@/lib/prompt-builder";
+import { AgentInstructionsView, ReadOnlyBadge } from "@/components/agents/agent-instructions-view";
 import { cn, formatRelativeTime, getInitials } from "@/lib/utils";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getAgentProfile, type AgentProfileData } from "@/actions/bots";
@@ -68,6 +70,9 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
     try {
       const result = await getAgentProfile(id);
       setData(result);
+    } catch (err) {
+      if (err instanceof Error && (err as Error & { digest?: string }).digest?.startsWith("NEXT_REDIRECT")) throw err;
+      toast.error("Failed to load agent profile");
     } finally {
       setLoading(false);
     }
@@ -84,11 +89,6 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
   const bot = data?.bot;
   const colors = bot ? getRoleColor(bot.role) : null;
   const initials = bot ? getInitials(bot.name) : "";
-
-  const promptFields =
-    bot && (bot.is_published || data?.isOwner)
-      ? parsePromptToFields(bot.system_prompt ?? "")
-      : null;
 
   const createdDate = bot
     ? new Date(bot.created_at).toLocaleDateString("en-GB", {
@@ -130,6 +130,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                       {bot.role}
                     </Badge>
                   )}
+                  <ReadOnlyBadge toolAccess={bot.tool_access} />
                 </div>
 
                 {bot.bio && (
@@ -150,18 +151,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                 </div>
 
                 {/* Skills */}
-                {bot.skills && bot.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {bot.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <SkillLine names={data.skillNames} className="mt-2" />
               </div>
 
               {/* Actions */}
@@ -177,87 +167,10 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
               )}
             </div>
 
-            {/* Personality & Instructions */}
-            {promptFields && (promptFields.goal || promptFields.expertise || promptFields.constraints || promptFields.approach) && (
-              <>
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  &#x1F9E0; Personality & Instructions
-                </h3>
-                <div className="flex flex-col gap-3">
-                  {/* Goal — full width */}
-                  {promptFields.goal && (
-                    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-emerald-500">
-                        &#x1F3AF; Goal
-                      </div>
-                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                        {promptFields.goal}
-                      </div>
-                    </div>
-                  )}
-                  {/* Expertise — full width, bullet points */}
-                  {promptFields.expertise && (
-                    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-violet-500">
-                        &#x1F4A1; Expertise
-                      </div>
-                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                        <ul className="list-none space-y-2">
-                          {promptFields.expertise.split("\n").filter(l => l.trim().startsWith("- ")).map((line, i) => (
-                            <li key={i} className="flex gap-2">
-                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-violet-500/50" />
-                              <span>{line.replace(/^- /, "")}</span>
-                            </li>
-                          ))}
-                        </ul>
-                        {!promptFields.expertise.includes("\n- ") && (
-                          <span>{promptFields.expertise}</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {/* Constraints + Approach — side by side */}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {promptFields.constraints && (
-                      <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                        <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-red-500">
-                          &#x1F6AB; Constraints
-                        </div>
-                        <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                          {promptFields.constraints}
-                        </div>
-                      </div>
-                    )}
-                    {promptFields.approach && (
-                      <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                        <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-blue-500">
-                          &#x1F4CB; Approach
-                        </div>
-                        <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                          {promptFields.approach}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
+            {/* Instructions */}
+            {(bot.is_published || data.isOwner) && (
+              <AgentInstructionsView systemPrompt={bot.system_prompt} role={bot.role} />
             )}
-
-            {/* Raw prompt for non-structured prompts */}
-            {(bot.is_published || data.isOwner) &&
-              bot.system_prompt &&
-              !promptFields && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
-                    &#x1F9E0; Personality & Instructions
-                  </h3>
-                  <div className="rounded-lg border border-border bg-muted/30 p-4">
-                    <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                      {bot.system_prompt}
-                    </p>
-                  </div>
-                </div>
-              )}
 
             {/* Two-column: Active Tasks + Contributing Ideas */}
             {(data.tasks.length > 0 || data.contributingIdeas.length > 0) && (

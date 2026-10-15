@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
+import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
 
 // --- Schemas ---
 
@@ -50,11 +51,12 @@ export const createBotSchema = z.object({
     .describe("System prompt for the agent persona"),
   avatar_url: z.string().url().optional().describe("Avatar URL for the agent"),
   bio: z.string().max(500).optional().describe("Short tagline/bio for the agent"),
-  skills: z
-    .array(z.string().max(30))
-    .max(10)
+  tool_access: z
+    .enum(["full", "read_only"])
     .optional()
-    .describe("Capability tags (max 10, 30 chars each)"),
+    .describe(
+      "What the agent can do. full (default): can read and change files. read_only: told not to create, edit or delete files, and in the in-app Claude Code terminal its file-editing tools are switched off. For reviewers and checkers."
+    ),
 });
 
 export const toggleAgentVoteSchema = z.object({
@@ -119,7 +121,7 @@ export async function listBots(
       system_prompt: bot.system_prompt,
       is_active: bot.is_active,
       bio: bot.bio,
-      skills: bot.skills,
+      tool_access: bot.tool_access,
       is_published: bot.is_published,
       community_upvotes: bot.community_upvotes,
       times_cloned: bot.times_cloned,
@@ -137,7 +139,7 @@ export async function getBotPrompt(
 
   const { data, error } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt")
+    .select("id, name, role, system_prompt, tool_access")
     .eq("id", botId)
     .maybeSingle();
 
@@ -194,9 +196,7 @@ export async function createBot(
   // Set extended fields via follow-up UPDATE
   const extras: Record<string, unknown> = {};
   if (args.bio) extras.bio = args.bio.trim();
-  if (args.skills && args.skills.length > 0) {
-    extras.skills = args.skills.map((s) => s.trim().toLowerCase());
-  }
+  if (args.tool_access && args.tool_access !== "full") extras.tool_access = args.tool_access;
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
       .from("bot_profiles")
@@ -208,7 +208,7 @@ export async function createBot(
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, is_published, tool_access")
     .eq("id", data)
     .single();
 
@@ -274,13 +274,16 @@ export async function cloneAgent(
 
   if (createErr) throw new Error(createErr.message);
 
+  // Filed skills come with the copy (and a failure discards it).
+  await copyAgentSkills(ctx.supabase, source.id, newId as string, ownerId);
+
   // Set extended fields + provenance, and atomically increment source counter
   await Promise.all([
     ctx.supabase
       .from("bot_profiles")
       .update({
         bio: source.bio,
-        skills: source.skills,
+        tool_access: source.tool_access,
         cloned_from: args.bot_id,
       })
       .eq("id", newId)
@@ -317,7 +320,7 @@ export async function listCommunityAgents(
 ) {
   let query = ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, bio, skills, community_upvotes, times_cloned, avatar_url, created_at, owner:users!bot_profiles_owner_id_fkey(id, full_name)")
+    .select("id, name, role, bio, community_upvotes, times_cloned, avatar_url, created_at, owner:users!bot_profiles_owner_id_fkey(id, full_name)")
     .eq("is_published", true);
 
   if (args.search) {

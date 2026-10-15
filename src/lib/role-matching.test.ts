@@ -3,6 +3,8 @@ import {
   matchRoleToAgent,
   buildRoleMatcher,
   tierRank,
+  sameRole,
+  decideStepRematch,
   MATCH_TIER_RANK,
   type AgentCandidate,
 } from "./role-matching";
@@ -269,5 +271,78 @@ describe("tier comparison for rematch upgrade decisions", () => {
     const aiRank = tierRank("ai"); // 3
     expect(tierRank("exact") > aiRank).toBe(true);
     expect(tierRank("substring") > aiRank).toBe(false);
+  });
+});
+
+describe("sameRole", () => {
+  it("ignores case and surrounding whitespace", () => {
+    expect(sameRole(" QA Engineer ", "qa engineer")).toBe(true);
+  });
+  it("tells different roles apart and treats null as empty", () => {
+    expect(sameRole("Planner", "Code Reviewer")).toBe(false);
+    expect(sameRole(null, "")).toBe(true);
+  });
+});
+
+describe("decideStepRematch", () => {
+  const exactStep = { agent_role: "Planner", bot_id: "sentinel", match_tier: "exact" };
+
+  it("replaces a stale exact agent (assigned agent's role differs from the step role)", () => {
+    expect(
+      decideStepRematch({ step: exactStep, newBotId: "planner", newTier: "exact", assignedAgentRole: "QA Engineer" })
+    ).toEqual({ action: "assign", botId: "planner", tier: "exact" });
+  });
+
+  it("clears a stale exact agent when nothing in the pool matches", () => {
+    expect(
+      decideStepRematch({ step: exactStep, newBotId: null, newTier: "none", assignedAgentRole: "QA Engineer" })
+    ).toEqual({ action: "clear" });
+  });
+
+  it("keeps a valid exact agent when the new match only ties", () => {
+    expect(
+      decideStepRematch({
+        step: { agent_role: "Planner", bot_id: "planner", match_tier: "exact" },
+        newBotId: "other-planner",
+        newTier: "exact",
+        assignedAgentRole: "planner",
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("never touches a hand-picked agent", () => {
+    expect(
+      decideStepRematch({
+        step: { agent_role: "Planner", bot_id: "x", match_tier: "manual" },
+        newBotId: "planner",
+        newTier: "exact",
+        assignedAgentRole: "QA Engineer",
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("keeps a non-exact agent when nothing matches, and assigns to an empty step", () => {
+    expect(
+      decideStepRematch({
+        step: { agent_role: "Dev", bot_id: "a", match_tier: "ai" },
+        newBotId: null,
+        newTier: "none",
+        assignedAgentRole: "Full Stack Engineer",
+      })
+    ).toEqual({ action: "keep" });
+    expect(
+      decideStepRematch({
+        step: { agent_role: "Dev", bot_id: null, match_tier: null },
+        newBotId: "a",
+        newTier: "substring",
+        assignedAgentRole: undefined,
+      })
+    ).toEqual({ action: "assign", botId: "a", tier: "substring" });
+  });
+
+  it("does not treat an exact agent as stale when its role is unknown", () => {
+    expect(
+      decideStepRematch({ step: exactStep, newBotId: null, newTier: "none", assignedAgentRole: undefined })
+    ).toEqual({ action: "keep" });
   });
 });

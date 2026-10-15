@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +27,17 @@ vi.mock("posthog-js/react", () => ({
 
 const mockIsBrowserLaunchAvailable = vi.fn(() => true);
 const mockRequestBrowserLaunch = vi.fn();
-vi.mock("@/lib/terminal/launch-mode", () => ({
+vi.mock("@/lib/terminal/launch-mode", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/terminal/launch-mode")>()),
   isBrowserLaunchAvailable: () => mockIsBrowserLaunchAvailable(),
   requestBrowserLaunch: (payload: unknown) => mockRequestBrowserLaunch(payload),
+}));
+
+// Default: not a supported Mac, so existing tests keep today's terminal-window default.
+const mockPlatformSupported = vi.fn(() => false);
+vi.mock("@/lib/terminal/platform", () => ({
+  readPlatformSignals: () => ({ userAgent: "test" }),
+  resolveTerminalPlatform: () => ({ supported: mockPlatformSupported() }),
 }));
 
 const mockRelayBaseUrl = vi.fn(() => "ws://127.0.0.1:8787");
@@ -67,7 +76,14 @@ vi.mock("@/hooks/use-viewer-terminal-agent", () => ({
     mockPersistViewerTerminalAgent(agent, opts),
 }));
 
-import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
+import {
+  LaunchClaudeCodeButton,
+  BOARD_PRIMARY_TITLE_BROWSER,
+  BOARD_PRIMARY_TITLE_WINDOW,
+  CLAUDE_WINDOW_SUBLINE,
+  TASK_ICON_LABEL_BROWSER,
+  TASK_ICON_LABEL_WINDOW,
+} from "./launch-claude-code-button";
 import { buildGuideBootstrapStep, type CompactPromptEssentials } from "@/lib/launch-claude-code";
 
 /**
@@ -100,6 +116,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mediaMatches.mockReturnValue(true); // desktop
   mockIsBrowserLaunchAvailable.mockReturnValue(true);
+  mockPlatformSupported.mockReturnValue(false);
   mockRelayBaseUrl.mockReturnValue("ws://127.0.0.1:8787");
   mockFetchHelperStatus.mockResolvedValue(null);
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ helperToken: "helper-tok" }) });
@@ -552,8 +569,7 @@ describe("LaunchClaudeCodeButton — desktop Codex (\"Launch in Codex\")", () =>
   });
 });
 
-// ── Card c4c27987 (Option A): primary button follows the remembered agent ──
-
+// ── Card c4c27987 (Option A) + 5a24479e (default destination) ──
 function openBoardMenu() {
   const trigger = screen.getByRole("button", { name: "More ways to launch" });
   fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
@@ -572,7 +588,7 @@ describe("LaunchClaudeCodeButton — board primary label follows the remembered 
     renderBoardButton();
     const button = screen.getByRole("button", { name: /Launch Codex/i });
     expect(button).toBeInTheDocument();
-    expect(button).toHaveAttribute("title", "Opens a Terminal window on this Mac");
+    expect(button).toHaveAttribute("title", BOARD_PRIMARY_TITLE_WINDOW);
   });
 
   it("loading (hook returns undefined): renders the Claude label, no spinner/skeleton", () => {
@@ -857,5 +873,209 @@ describe("LaunchClaudeCodeButton — mobile task-card menu (variant task-menu-it
     mockRememberedAgent.mockReturnValue("codex");
     renderMenuItem();
     expect(screen.getByText("Copy Codex command for this task")).toBeInTheDocument();
+  });
+});
+
+// ── Default launch destination (card 5a24479e) ──
+function renderTaskIcon(onLaunchedInBrowser?: () => void) {
+  render(
+    <LaunchClaudeCodeButton
+      variant="task-icon"
+      ideaId="idea-1"
+      ideaTitle="Idea One"
+      ideaGithubUrl={null}
+      taskId="task-9"
+      taskTitle="Nine"
+      onLaunchedInBrowser={onLaunchedInBrowser}
+    />
+  );
+}
+
+describe("LaunchClaudeCodeButton — board primary defaults to the in-app terminal", () => {
+  it("supported Mac + flag on: primary click requests a browser launch (agent claude, no taskId) and does not navigate", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderBoardButton();
+    fireEvent.click(screen.getByRole("button", { name: /Launch Claude Code/ }));
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string; taskId?: string };
+    expect(payload.agent).toBe("claude");
+    expect(payload.taskId).toBeUndefined();
+    expect(location.assign).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("Codex remembered + supported Mac + flag on: primary click requests a browser launch for codex and does not navigate", async () => {
+    mockRememberedAgent.mockReturnValue("codex");
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderBoardButton();
+    const primary = screen.getByRole("button", { name: /Launch Codex/ });
+    expect(primary).toHaveAttribute("title", BOARD_PRIMARY_TITLE_BROWSER);
+    fireEvent.click(primary);
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string };
+    expect(payload.agent).toBe("codex");
+    expect(location.assign).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("Claude remembered + supported Mac + flag on: primary click requests a browser launch for claude", async () => {
+    mockRememberedAgent.mockReturnValue("claude");
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderBoardButton();
+    fireEvent.click(screen.getByRole("button", { name: /Launch Claude Code/ }));
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    expect((mockRequestBrowserLaunch.mock.calls[0][0] as { agent?: string }).agent).toBe("claude");
+    expect(location.assign).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("supported Mac + flag on: title says it opens the browser terminal; label unchanged", () => {
+    mockPlatformSupported.mockReturnValue(true);
+    renderBoardButton();
+    const primary = screen.getByRole("button", { name: /Launch Claude Code/ });
+    expect(primary).toHaveAttribute("title", BOARD_PRIMARY_TITLE_BROWSER);
+    expect(primary).toHaveTextContent("Launch Claude Code");
+  });
+
+  it("unsupported machine + flag on: primary click uses the claude-cli:// link, title names the Terminal window", async () => {
+    const location = stubLocationAssign();
+    renderBoardButton();
+    const primary = screen.getByRole("button", { name: /Launch Claude Code/ });
+    expect(primary).toHaveAttribute("title", BOARD_PRIMARY_TITLE_WINDOW);
+    fireEvent.click(primary);
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    expect((location.assign.mock.calls[0][0] as string).startsWith("claude-cli://")).toBe(true);
+    expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("flag off on a supported Mac: terminal window, and no title at all", async () => {
+    mockIsBrowserLaunchAvailable.mockReturnValue(false);
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderBoardButton();
+    const primary = screen.getByRole("button", { name: /Launch Claude Code/ });
+    expect(primary).not.toHaveAttribute("title");
+    fireEvent.click(primary);
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("a double-click dispatches only one browser launch (in-flight guard)", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    renderBoardButton();
+    const primary = screen.getByRole("button", { name: /Launch Claude Code/ });
+    fireEvent.click(primary);
+    fireEvent.click(primary);
+    await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("menu on a supported Mac: browser item first in each agent group, Claude window sub-line reworded", () => {
+    mockPlatformSupported.mockReturnValue(true);
+    renderBoardButton();
+    openBoardMenu();
+    const items = screen.getAllByRole("menuitem").map((i) => i.textContent ?? "");
+    const idx = (re: RegExp) => items.findIndex((t) => re.test(t));
+    expect(idx(/Claude Code, In the browser/)).toBeLessThan(idx(/Claude Code, In a terminal window/));
+    expect(idx(/Codex, In the browser/)).toBeLessThan(idx(/Codex, In a terminal window/));
+    expect(idx(/Claude Code, In a terminal window/)).toBeLessThan(idx(/Codex, In the browser/));
+    expect(screen.getByText(CLAUDE_WINDOW_SUBLINE)).toBeInTheDocument();
+    expect(screen.queryByText(/how it works today/)).toBeNull();
+    expect(screen.getAllByText("Beta")).toHaveLength(2);
+  });
+
+  it("menu on an unsupported machine: terminal window stays first in each group", () => {
+    renderBoardButton();
+    openBoardMenu();
+    const items = screen.getAllByRole("menuitem").map((i) => i.textContent ?? "");
+    const idx = (re: RegExp) => items.findIndex((t) => re.test(t));
+    expect(idx(/Claude Code, In a terminal window/)).toBeLessThan(idx(/Claude Code, In the browser/));
+    expect(idx(/Codex, In a terminal window/)).toBeLessThan(idx(/Codex, In the browser/));
+    expect(screen.getByText(CLAUDE_WINDOW_SUBLINE)).toBeInTheDocument();
+  });
+
+  it("menu: the terminal-window item still launches via claude-cli:// on a supported Mac", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderBoardButton();
+    openBoardMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Claude Code.*terminal window/ }));
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
+    location.restore();
+  });
+});
+
+describe("LaunchClaudeCodeButton — task icon defaults to the in-app terminal", () => {
+  it("supported Mac + flag on: labelled 'Launch in browser terminal'; click requests a browser launch with the task and calls onLaunchedInBrowser once", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    const onLaunched = vi.fn();
+    const location = stubLocationAssign();
+    renderTaskIcon(onLaunched);
+    const icon = screen.getByRole("button", { name: TASK_ICON_LABEL_BROWSER });
+    expect(icon).toHaveAttribute("title", TASK_ICON_LABEL_BROWSER);
+    fireEvent.click(icon);
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledTimes(1));
+    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+    const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { taskId?: string; agent?: string };
+    expect(payload.taskId).toBe("task-9");
+    expect(payload.agent).toBe("claude");
+    expect(location.assign).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("unsupported machine: keeps 'Launch in Claude Code', launches via claude-cli://, never calls onLaunchedInBrowser", async () => {
+    const onLaunched = vi.fn();
+    const location = stubLocationAssign();
+    renderTaskIcon(onLaunched);
+    fireEvent.click(screen.getByRole("button", { name: TASK_ICON_LABEL_WINDOW }));
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
+    expect(onLaunched).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("flag off on a supported Mac: terminal window, label unchanged", async () => {
+    mockIsBrowserLaunchAvailable.mockReturnValue(false);
+    mockPlatformSupported.mockReturnValue(true);
+    const location = stubLocationAssign();
+    renderTaskIcon();
+    fireEvent.click(screen.getByRole("button", { name: TASK_ICON_LABEL_WINDOW }));
+    await waitFor(() => expect(location.assign).toHaveBeenCalledTimes(1));
+    expect(mockRequestBrowserLaunch).not.toHaveBeenCalled();
+    location.restore();
+  });
+
+  it("a double-click calls onLaunchedInBrowser once", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    const onLaunched = vi.fn();
+    renderTaskIcon(onLaunched);
+    const icon = screen.getByRole("button", { name: TASK_ICON_LABEL_BROWSER });
+    fireEvent.click(icon);
+    fireEvent.click(icon);
+    await waitFor(() => expect(onLaunched).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onLaunched).toHaveBeenCalledTimes(1);
+    expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed browser launch shows an error toast and leaves the dialog open", async () => {
+    mockPlatformSupported.mockReturnValue(true);
+    mockRequestBrowserLaunch.mockImplementationOnce(() => {
+      throw new Error("dispatch failed");
+    });
+    const toastError = vi.spyOn(toast, "error");
+    const onLaunched = vi.fn();
+    renderTaskIcon(onLaunched);
+    fireEvent.click(screen.getByRole("button", { name: TASK_ICON_LABEL_BROWSER }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't start the browser terminal"));
+    expect(onLaunched).not.toHaveBeenCalled();
+    toastError.mockRestore();
   });
 });

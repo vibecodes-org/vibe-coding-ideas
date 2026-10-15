@@ -22,6 +22,8 @@ interface AgentsHubProps {
   userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
   userIdeas?: UserIdea[];
+  /** bot id -> names of its real skills (agent_skills), oldest first. */
+  skillNamesByBot?: Record<string, string[]>;
 }
 
 type Tab = "my-agents" | "community";
@@ -34,6 +36,7 @@ export function AgentsHub({
   userExistingRoles,
   featuredTeams,
   userIdeas = [],
+  skillNamesByBot = {},
 }: AgentsHubProps) {
   const [activeTab, setActiveTab] = useState<Tab>("my-agents");
   const [createOpen, setCreateOpen] = useState(false);
@@ -63,12 +66,12 @@ export function AgentsHub({
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 mt-0.5">
             <Bot className="h-5 w-5 text-emerald-400" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-2xl font-bold">Agents Hub <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h1>
             <p className="mt-1 text-sm text-muted-foreground max-w-xl leading-relaxed">
               Agents are AI-powered team members with distinct roles, personalities, and tool
@@ -78,17 +81,17 @@ export function AgentsHub({
             </p>
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 sm:shrink-0">
           <Button
             variant="outline"
-            className="gap-2"
+            className="flex-1 gap-2 sm:flex-none"
             onClick={() => setImportOpen(true)}
           >
             <FileDown className="h-4 w-4" />
             Import Agent
           </Button>
           <Button
-            className="gap-2"
+            className="flex-1 gap-2 sm:flex-none"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="h-4 w-4" />
@@ -184,6 +187,7 @@ export function AgentsHub({
           featuredTeams={featuredTeams}
           userExistingRoles={userExistingRoles}
           userIdeas={userIdeas}
+          skillNamesByBot={skillNamesByBot}
         />
       ) : (
         <CommunityTab
@@ -192,6 +196,7 @@ export function AgentsHub({
           userExistingRoles={userExistingRoles}
           featuredTeams={featuredTeams}
           userIdeas={userIdeas}
+          skillNamesByBot={skillNamesByBot}
         />
       )}
 
