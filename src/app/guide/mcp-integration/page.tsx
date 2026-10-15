@@ -346,7 +346,7 @@ export default function McpIntegrationPage() {
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },
                   { name: "delete_workflow_template", description: "Delete a workflow template" },
                   { name: "apply_workflow_template", description: "Apply a template to a task, creating a workflow run" },
-                  { name: "sync_board_agents", description: "Save a claimed step's agent as a Claude Code subagent in your project folder (for sessions VibeCodes didn't launch)" },
+                  { name: "sync_board_agents", description: "Save a claimed step's agent, and the rest of its run's agents, as Claude Code subagents in your project folder and wait until they are loaded (for sessions VibeCodes didn't launch)" },
                   { name: "claim_next_step", description: "Claim the next pending step for execution (orchestration entry point)" },
                   { name: "complete_step", description: "Mark a step as complete with optional output" },
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },

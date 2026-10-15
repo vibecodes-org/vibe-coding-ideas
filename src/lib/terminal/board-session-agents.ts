@@ -18,6 +18,7 @@ import {
   type CachedRoleMatches,
   type SessionAgentPair,
 } from "@/lib/terminal/session-agent-selection";
+import { renderAgentFile } from "@/lib/terminal/session-agent-files";
 import { fetchAgentSkills } from "@/lib/fetch-agent-skills";
 import { getAgentAwarePlatformModelDefaults, resolveModelTier } from "@/lib/platform-model-defaults";
 import type { Database } from "@/types/database";
@@ -215,6 +216,105 @@ export async function loadStepSessionAgent(
   const name = sessionAgentName(inputs[0].bot, tier);
   const def = agents?.[name];
   return def ? { name, def } : null;
+}
+
+/**
+ * Total size a run-wide sync may put in one command (card 0b5656a5). It keeps
+ * the tool result under the 25k-token MCP limit and the copy cost bounded; an
+ * agent that doesn't fit is synced at its own claim.
+ */
+export const RUN_AGENTS_MAX_TOTAL_BYTES = 60_000;
+
+/** Steps of a run that a session may still claim (never completed, skipped or awaiting approval). */
+const RUN_SYNC_STATUSES = ["pending", "in_progress", "failed"] as const;
+/** A run with more steps than this has bigger problems; the rest sync at their own claim. */
+const RUN_STEP_LIMIT = 200;
+
+/**
+ * The agents of the claimed step's whole run, so one sync makes every step's
+ * native subagent available (card 0b5656a5). The claimed step's agent comes
+ * first, then the run's other claimable steps in step order, deduped by name,
+ * persona text only. Each is built exactly as loadStepSessionAgent builds it,
+ * so names and tags match what each step's claim names. Others are added while
+ * the rendered files stay within `maxTotalBytes`; one that doesn't fit is
+ * counted in `omitted` and synced at its own claim. Null when the claimed step
+ * itself has no agent (not on this idea, no bot, no persona text).
+ */
+export async function loadRunSessionAgents(
+  supabase: SupabaseClient<Database>,
+  opts: { stepId: string; ideaId: string; userId: string; maxTotalBytes?: number },
+): Promise<{ agents: { name: string; def: ClaudeCodeAgentDefinition }[]; omitted: number } | null> {
+  const { stepId, ideaId, userId } = opts;
+  const maxTotalBytes = opts.maxTotalBytes ?? RUN_AGENTS_MAX_TOTAL_BYTES;
+  const logContext = { idea: ideaId };
+  const { data: claimed } = await supabase
+    .from("task_workflow_steps")
+    .select("bot_id, model_tier, run_id")
+    .eq("id", stepId)
+    .eq("idea_id", ideaId)
+    .maybeSingle();
+  if (!claimed?.bot_id) return null;
+
+  let others: { bot_id: string | null; model_tier: string | null }[] = [];
+  if (claimed.run_id) {
+    const { data, error } = await supabase
+      .from("task_workflow_steps")
+      .select("id, bot_id, model_tier, step_order")
+      .eq("idea_id", ideaId)
+      .eq("run_id", claimed.run_id)
+      .in("status", [...RUN_SYNC_STATUSES])
+      .not("bot_id", "is", null)
+      .neq("id", stepId)
+      .order("step_order")
+      .limit(RUN_STEP_LIMIT);
+    if (error) {
+      // The claimed step's own agent still syncs; the others sync at their claims.
+      logger.warn("Run session agents: run steps read failed", { ...logContext, error: error.message });
+    } else {
+      others = data ?? [];
+    }
+  }
+
+  const pairs = [claimed, ...others].flatMap((s) =>
+    s.bot_id ? [{ botId: s.bot_id, tier: (s.model_tier ?? null) as SessionAgentTier | null, uses: 1 }] : [],
+  );
+  const toInputs = await loadInputBuilder(supabase, {
+    botIds: [...new Set(pairs.map((p) => p.botId))],
+    userId,
+    agent: "claude",
+    logContext,
+  });
+  if (!toInputs) return null;
+
+  const agents: { name: string; def: ClaudeCodeAgentDefinition }[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  let omitted = 0;
+  for (const [index, pair] of pairs.entries()) {
+    const [input] = toInputs([pair]);
+    if (!input) {
+      if (index === 0) return null;
+      continue;
+    }
+    const name = sessionAgentName(input.bot, pair.tier);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    // One agent per build, like a single claim, so the size packing of a
+    // many-agent payload can never change a tag.
+    const def = buildSessionAgents([input])?.[name];
+    if (!def) {
+      if (index === 0) return null;
+      continue;
+    }
+    const bytes = Buffer.byteLength(renderAgentFile(name, def, { synced: true }), "utf8");
+    if (index > 0 && total + bytes > maxTotalBytes) {
+      omitted++;
+      continue;
+    }
+    total += bytes;
+    agents.push({ name, def });
+  }
+  return { agents, omitted };
 }
 
 /**

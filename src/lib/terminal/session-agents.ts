@@ -257,14 +257,19 @@ export function sessionAgentClaimHint(input: {
   }
   const syncStep =
     input.ideaId && input.stepId
-      ? `If your Agent tool doesn't offer that exact name and tag: when it offers a subagent with this name whose ` +
-        `description starts with "${SYNC_MARKER}", an earlier sync left a stale copy, so sync again; when it ` +
-        `offers one without that marker, VibeCodes launched this session with its own copy, which a sync can't ` +
-        `replace, so skip the sync. When it isn't offered at all, call sync_board_agents (idea_id ` +
-        `"${input.ideaId}", step_id "${input.stepId}"), run the command it returns exactly as its instruction says ` +
-        `(in the background, then end your turn), and spawn the subagent when you wake, only if its description ` +
-        `ends with ${tag}. Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER. If the sync is skipped or ` +
-        `fails, or it still isn't offered with that tag, `
+      ? `If your Agent tool doesn't offer that exact name and tag: when it offers a subagent with this name ` +
+        `without "${SYNC_MARKER}" at the start of its description, VibeCodes launched this session with its own ` +
+        `copy, which a sync can't replace, so skip the sync, even after a READY one. Otherwise (it isn't offered ` +
+        `at all, or its description starts with "${SYNC_MARKER}", so an earlier session's sync left a stale copy), ` +
+        `if a sync this session already ended READY and printed ${tag} for "${name}", it is loaded, so spawn it ` +
+        `by name even if the listing shows an older tag (the listing is not refreshed), and if the spawn says the ` +
+        `type isn't found run the same sync once more (at most 2 syncs per step). Otherwise call ` +
+        `sync_board_agents (idea_id "${input.ideaId}", step_id "${input.stepId}"), run the command it returns ` +
+        `exactly as its instruction says (in the background, then end your turn), and spawn the subagent when you ` +
+        `wake if the sync ended READY and printed ${tag} for it. One sync saves the whole run's agents and waits ` +
+        `until Claude Code has loaded them, so later steps of the run need no sync. After NEW_FOLDER, MISMATCH, ` +
+        `NOT_LOADED or a failed command, never sync again this session. If the sync is skipped, fails, or ` +
+        `doesn't end READY with that tag, or the spawn still isn't found after the second sync, `
       : `If no subagent with that exact name and tag is available, `;
   const instruction =
     `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +

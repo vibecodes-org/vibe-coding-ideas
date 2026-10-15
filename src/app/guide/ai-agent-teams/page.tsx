@@ -359,16 +359,20 @@ export default function AiAgentTeamsPage() {
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 sync_board_agents
               </code>{" "}
-              for that step. The agent is saved as a{" "}
+              for that step. It saves the agents of the whole workflow run, not
+              just that step&apos;s, each as a{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 .claude/agents/vc-*.md
               </code>{" "}
-              file and checked against a fingerprint, so an altered copy is
+              file checked against a fingerprint, so an altered copy is
               deleted rather than run. Everything travels through the
               VibeCodes connection, so it works on any network, cloud sessions
               included: there is nothing to allow-list. Claude Code runs the
-              save in the background and picks the agent up as soon as it
-              finishes, in the same claim, with no wait for another message.
+              save in the background and waits until it has loaded every
+              agent, so each step of the run runs on its own agent without
+              another sync (one retry is allowed if a spawn is not found). When
+              background tasks are available, the first step needs no wait for
+              another message either.
               Connect VibeCodes to cloud sessions with the claude.ai
               connector.
             </li>

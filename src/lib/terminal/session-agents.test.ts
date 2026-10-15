@@ -222,24 +222,48 @@ describe("sessionAgentClaimHint", () => {
       expect(instruction).toContain("when you wake");
     });
 
-    it("syncs each agent at most once per session and never again after a failure or NEW_FOLDER", () => {
-      const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain(
-        "Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER.",
-      );
+    it("trusts a READY sync for the whole run, allows one retry, and never syncs again after a failure", () => {
+      const { instruction, tag, name } = sessionAgentClaimHint(full);
+      expect(instruction).toContain(`if a sync this session already ended READY and printed ${tag} for "${name}", it is loaded`);
+      expect(instruction).toContain("even if the listing shows an older tag");
+      expect(instruction).toContain("run the same sync once more (at most 2 syncs per step)");
+      expect(instruction).toContain("One sync saves the whole run's agents and waits until Claude Code has loaded them");
+      expect(instruction).toContain("After NEW_FOLDER, MISMATCH, NOT_LOADED or a failed command, never sync again this session.");
+      expect(instruction).not.toContain("at most once per session");
     });
 
     it("re-syncs a stale copy that carries the sync marker and skips one that doesn't", () => {
       const { instruction } = sessionAgentClaimHint(full);
       expect(instruction).toContain(`starts with "${SYNC_MARKER}"`);
-      expect(instruction).toMatch(/stale copy, so sync again/);
-      expect(instruction).toMatch(/without that marker, VibeCodes launched this session.*skip the sync/);
+      expect(instruction).toMatch(/starts with "[^"]+", so an earlier session's sync left a stale copy/);
+      expect(instruction).toMatch(/Otherwise call sync_board_agents/);
+      expect(instruction).toMatch(/without "[^"]+" at the start of its description, VibeCodes launched this session.*skip the sync/);
+    });
+
+    it("keeps an unmarked launch copy on the general path even after a READY sync", () => {
+      const { instruction, tag, name } = sessionAgentClaimHint(full);
+      const unmarked = instruction.indexOf("skip the sync, even after a READY one");
+      const ready = instruction.indexOf(`if a sync this session already ended READY and printed ${tag} for "${name}"`);
+      expect(unmarked).toBeGreaterThan(-1);
+      // The launch-copy rule comes first, and the READY clause only covers
+      // "not offered at all" or a marked (sync-saved) stale copy.
+      expect(unmarked).toBeLessThan(ready);
+      expect(instruction).toMatch(/Otherwise \(it isn't offered at all, or its description starts with "[^"]+", so an earlier session's sync left a stale copy\), if a sync this session already ended READY/);
+    });
+
+    it("ignores the note when the sync doesn't end READY with the tag or the spawn is still not found after the second sync", () => {
+      const { instruction } = sessionAgentClaimHint(full);
+      expect(instruction).toContain(
+        "If the sync is skipped, fails, or doesn't end READY with that tag, or the spawn still isn't found after the second sync, ignore this note and follow the steps above.",
+      );
+      expect(instruction).not.toContain("still isn't offered with that tag");
+      expect(instruction).not.toContain("\n");
     });
 
     it("only trusts the subagent after the sync if its tag matches", () => {
       const { instruction, tag } = sessionAgentClaimHint(full);
       expect(instruction).toContain(`ends with ${tag}`);
-      expect(instruction).toMatch(/still isn't offered with that tag/);
+      expect(instruction).toMatch(/doesn't end READY with that tag/);
     });
 
     it("keeps the general-path fallback as the last word", () => {

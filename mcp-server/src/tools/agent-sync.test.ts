@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,19 +20,28 @@ const ATLAS = {
   tool_access: "full" as const,
 };
 
-const tables: Record<string, { data: unknown }> = {};
+const tables: Record<string, { data: unknown; list?: unknown }> = {};
+const LENS = {
+  id: "87e09eb1-0c3e-4f96-9ddc-986fc10a58fd",
+  name: "Lens",
+  role: "Code Reviewer",
+  system_prompt: "## Goal\nReview it.",
+  tool_access: "read_only" as const,
+};
 
 function ctx(opts: { ownerUserId?: string } = {}): McpContext {
-  const chain = (data: unknown) => {
+  const chain = (table: string) => {
+    const data = tables[table]?.data ?? null;
+    const list = tables[table]?.list ?? data;
     const c: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "in", "not", "order", "limit", "range"]) c[m] = vi.fn(() => c);
+    for (const m of ["select", "eq", "neq", "in", "not", "order", "limit", "range"]) c[m] = vi.fn(() => c);
     c.maybeSingle = vi.fn(() => Promise.resolve({ data, error: null }));
     c.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve({ data, error: null }).then(resolve, reject);
+      Promise.resolve({ data: list, error: null }).then(resolve, reject);
     return c;
   };
   return {
-    supabase: { from: (table: string) => chain(tables[table]?.data ?? null) } as unknown as McpContext["supabase"],
+    supabase: { from: (table: string) => chain(table) } as unknown as McpContext["supabase"],
     userId: opts.ownerUserId ? BOT : HUMAN,
     ownerUserId: opts.ownerUserId,
   };
@@ -41,7 +50,7 @@ function ctx(opts: { ownerUserId?: string } = {}): McpContext {
 beforeEach(() => {
   for (const k of Object.keys(tables)) delete tables[k];
   tables.ideas = { data: { id: IDEA } };
-  tables.task_workflow_steps = { data: { bot_id: ATLAS.id, model_tier: "frontier" } };
+  tables.task_workflow_steps = { data: { bot_id: ATLAS.id, model_tier: "frontier", run_id: "run-1" }, list: [] };
   tables.bot_profiles = { data: [ATLAS] };
   tables.agent_skills = { data: [] };
   tables.users = { data: { model_tier_map: null } };
@@ -53,10 +62,30 @@ describe("sync_board_agents", () => {
     const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
     if (res.status !== "ok") throw new Error("expected ok");
     const hint = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
-    expect(res.agent.name).toBe(hint.name);
-    expect(res.agent.tag).toBe(hint.tag);
-    expect(res.agent.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(res.agent.bytes).toBeGreaterThan(100);
+    expect(res.agents[0].name).toBe(hint.name);
+    expect(res.agents[0].tag).toBe(hint.tag);
+    expect(res.agents[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.agents[0].bytes).toBeGreaterThan(100);
+  });
+
+  it("also saves the rest of the run's agents, claimed one first, each with the tag its own claim names", async () => {
+    tables.bot_profiles = { data: [ATLAS, LENS] };
+    tables.task_workflow_steps = {
+      data: { bot_id: ATLAS.id, model_tier: "frontier", run_id: "run-1" },
+      list: [
+        { id: "s2", bot_id: LENS.id, model_tier: "standard", step_order: 2 },
+        { id: "s3", bot_id: ATLAS.id, model_tier: "frontier", step_order: 3 },
+      ],
+    };
+    const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.agents.map((a) => a.name)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-lens-87e09eb1-standard"]);
+    const lens = sessionAgentClaimHint({ bot: LENS, tier: "standard", model: "sonnet", effort: "medium" });
+    expect(res.agents[1].tag).toBe(lens.tag);
+    expect(res.omitted_agents).toBe(0);
+    for (const a of res.agents) expect(res.command).toContain(a.name);
+    expect(syncBoardAgentsContent(res).content).toHaveLength(2);
+    expect(Object.keys(JSON.parse(syncBoardAgentsContent(res).content[0].text))).toEqual(["status", "agents", "omitted_agents", "instruction"]);
   });
 
   it("needs no network and no secret: the command has no download tool", async () => {
@@ -81,8 +110,8 @@ describe("sync_board_agents", () => {
     const { content } = syncBoardAgentsContent(res);
     expect(content).toHaveLength(2);
     const summary = JSON.parse(content[0].text);
-    expect(Object.keys(summary)).toEqual(["status", "agent", "instruction"]);
-    expect(summary.agent).toMatchObject({ name: "vc-atlas-37e8ffb2-frontier", bytes: expect.any(Number) });
+    expect(Object.keys(summary)).toEqual(["status", "agents", "omitted_agents", "instruction"]);
+    expect(summary.agents[0]).toMatchObject({ name: "vc-atlas-37e8ffb2-frontier", bytes: expect.any(Number) });
     if (res.status !== "ok") throw new Error("expected ok");
     expect(content[1].text).toBe(res.command);
     expect(content[1].text.startsWith("(\n")).toBe(true);
@@ -93,11 +122,23 @@ describe("sync_board_agents", () => {
     expect(instruction).toMatch(/run_in_background/);
     expect(instruction).toMatch(/end your turn/);
     expect(instruction).toMatch(/wakes you/);
-    for (const word of ["READY", "NEW_FOLDER", "MISMATCH"]) expect(instruction).toContain(word);
+    for (const word of ["READY", "NEW_FOLDER", "MISMATCH", "NOT_LOADED"]) expect(instruction).toContain(word);
     expect(instruction).toMatch(/general-purpose/);
     expect(instruction).toMatch(/foreground/);
     expect(instruction).toMatch(/Never print/);
     expect(instruction).toMatch(/sync again this session/);
+  });
+
+  it("tells the session every listed agent is loaded after READY, even if its listing shows an older tag", async () => {
+    const { instruction } = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    expect(instruction).toMatch(/READY: every agent in `agents` is loaded/);
+    expect(instruction).toMatch(/without syncing again/);
+    expect(instruction).toMatch(/names the same tag/);
+    expect(instruction).toMatch(/older description or tag/);
+    expect(instruction).toMatch(/not offered at all or its listed description starts with "Saved by sync_board_agents\."/);
+    expect(instruction).toMatch(/offered without that marker is a copy the session was launched with/);
+    expect(instruction).toMatch(/once more \(at most 2 syncs per step\)/);
+    expect(instruction).not.toMatch(/at most once per session/);
   });
 
   it("returns a command that writes a file whose fingerprint and persona are right", async () => {
@@ -106,19 +147,27 @@ describe("sync_board_agents", () => {
     const dir = mkdtempSync(join(tmpdir(), "agent-sync-tool-"));
     try {
       mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
-      const fast = res.command.replace("sleep 5", "sleep 0");
-      const r = spawnSync("bash", ["-c", fast], { cwd: dir, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: dir, NODE_ENV: "test" as const } });
+      // Play Claude Code: read the files shortly after they land.
+      const child = spawn("bash", ["-c", res.command], { cwd: dir, env: { PATH: process.env.PATH ?? "", HOME: dir, NODE_ENV: "test" as const } });
+      let out = "";
+      child.stdout.on("data", (d) => (out += d));
+      const closed = new Promise<void>((resolve) => child.on("close", () => resolve()));
+      await new Promise((r) => setTimeout(r, 700));
+      for (const a of res.agents) readFileSync(join(dir, ".claude", "agents", `${a.name}.md`));
+      await closed;
+      const r = { stdout: out };
       expect(r.stdout.trim().split("\n").pop()).toBe("READY");
-      const written = readFileSync(join(dir, ".claude", "agents", `${res.agent.name}.md`), "utf8");
-      expect(agentFileFingerprint(written)).toBe(res.agent.sha256);
+      expect(r.stdout).toContain(res.agents[0].name);
+      const written = readFileSync(join(dir, ".claude", "agents", `${res.agents[0].name}.md`), "utf8");
+      expect(agentFileFingerprint(written)).toBe(res.agents[0].sha256);
       const parsed = parseAgentFile(written);
       expect(parsed.synced).toBe(true);
       expect(parsed.def.prompt).toContain("$(not run) `nor this`");
-      expect(parsed.def.description.endsWith(res.agent.tag)).toBe(true);
+      expect(parsed.def.description.endsWith(res.agents[0].tag)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 40_000);
 
   it("binds the membership check to the real human, not the bot identity", async () => {
     tables.ideas = { data: null };
