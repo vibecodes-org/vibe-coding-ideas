@@ -413,7 +413,7 @@ export function TerminalMySessionsPanel({
             <TerminalIcon className="h-5 w-5 text-zinc-600" />
             <p className="text-[13px] font-semibold text-zinc-300">No terminals running.</p>
             <p className="max-w-[240px] text-[12px] text-zinc-500">
-              Launch one from an idea board — Launch Claude Code → In the browser.
+              Launch one from an idea board — open the Launch button&apos;s menu and pick &quot;In the browser&quot;.
             </p>
           </div>
         )}

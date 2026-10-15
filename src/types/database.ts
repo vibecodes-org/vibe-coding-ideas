@@ -87,6 +87,11 @@ export type Database = {
            *  picker's default and "Start with Claude Code instead" flips it
            *  back to `'claude'`. See migration 00170. */
           terminal_agent: "claude" | "codex";
+          /** When the one-time "your launch button now starts X" Undo toast
+           *  was shown for this account (docs/launch-button-remembered-
+           *  agent-option-a-spec.html §3). NULL = never shown. See
+           *  migration 00193. */
+          terminal_agent_toast_seen_at: string | null;
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -137,6 +142,7 @@ export type Database = {
           terminal_remote_control?: boolean;
           terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
+          terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -181,6 +187,7 @@ export type Database = {
           terminal_remote_control?: boolean;
           terminal_effort?: string | null;
           terminal_agent?: "claude" | "codex";
+          terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
