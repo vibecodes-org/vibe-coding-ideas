@@ -34,6 +34,15 @@ import { notifyMentions } from "../lib/mention-notify";
 import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
+import {
+  applyModelAvailability,
+  modelSwitchNotice,
+  markerWindowStart,
+  shouldRescueStep,
+  inferUnavailableFromSubstitution,
+  rescueSentence,
+  secondFailureSentence,
+} from "./model-availability";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
 import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
 import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
@@ -110,6 +119,50 @@ export const MODEL_TIER_FALLBACK = SEED_PLATFORM_MODEL_DEFAULTS.fallback;
 export { resolveModelTier, type ModelTierAgentResolution };
 
 /**
+ * The live half of the auto-switch (card 5d0665a2): has any step on this
+ * board reported, earlier today, that a directed model was unavailable?
+ *
+ * Returns the concrete model to route AROUND, or null. The marker stores the
+ * server-resolved model name directly (migration 00195) — there is no tier
+ * to re-resolve here, so this is a single narrow lookup with no dependency on
+ * the caller's model_tier_map or the live platform defaults. Reads the
+ * newest marker only — applyModelAvailability ignores it anyway unless it
+ * names the exact model the tier being claimed would otherwise direct at.
+ *
+ * NEVER THROWS (AC-7). A resolution failure here must degrade to today's
+ * behaviour — a claim that cannot be served because a nice-to-have lookup
+ * failed is strictly worse than a claim served on the user's normal model.
+ */
+export async function readLiveUnavailableModel(ctx: McpContext, ideaId: string): Promise<string | null> {
+  try {
+    const { data, error } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("model_unavailable_model")
+      .eq("idea_id", ideaId)
+      .not("model_unavailable_at", "is", null)
+      .gte("model_unavailable_at", markerWindowStart(new Date()))
+      .order("model_unavailable_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      logger.warn("model-availability marker lookup failed — directing at the usual model", {
+        ideaId,
+        error: error.message,
+      });
+      return null;
+    }
+    return data?.model_unavailable_model ?? null;
+  } catch (err) {
+    logger.warn("model-availability marker lookup threw — directing at the usual model", {
+      ideaId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
  * Mandatory model directive for a claimed step's spawn instruction — placed
  * FIRST in the join (Design-Review CONDITION 2), not appended. Returns "" for
  * null/undefined tier so callers can add it unconditionally without changing
@@ -118,23 +171,34 @@ export { resolveModelTier, type ModelTierAgentResolution };
  * `agent` selects the launch controls: Claude uses its Task tool; Codex uses
  * explicit spawn parameters in a fresh context. A parent /model picker does
  * not configure an already-spawned child. Keep the Claude clause unchanged.
+ *
+ * `unavailableModel` (card 5d0665a2) is the live same-day marker from
+ * readLiveUnavailableModel, or null/undefined. With no marker,
+ * applyModelAvailability is the identity transform and modelSwitchNotice
+ * returns "" — the directive below is byte-for-byte what it has always been
+ * (AC-6).
  */
 export function modelTierClause(
   tier: string | null | undefined,
   agent: AgentKind = "claude",
   userModelTierMap?: unknown,
-  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  unavailableModel?: string | null
 ): string {
   if (!tier) return "";
   const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults);
   if (!resolution) return "";
-  const { resolved, effort, fallback } = resolution;
+  const applied = applyModelAvailability(resolution, unavailableModel);
+  const { directed: resolved, fallback } = applied;
+  const { effort } = resolution;
+  const prefix = modelSwitchNotice(applied);
+  const lead = prefix ? `${prefix} ` : "";
 
   if (agent === "codex") {
-    return `MANDATORY MODEL: launch this step's fresh Codex subagent with model: "${resolved}" and reasoning_effort: "${effort}" as actual spawn parameters, not just words in its prompt. Use fork_turns: "none" when supported; a full-history fork inherits the parent's model and cannot accept these overrides. The execution object contains the resolved launch settings. If the launch reports "${resolved}" unavailable, retry with model: "${fallback}" at the same effort and state the substitution in your output. Keep the accepted launch configuration with the returned child id. When calling complete_step/fail_step, pass agent: "codex", model_used and reasoning_effort_used from that child's accepted launch configuration (or a runtime-reported override). Do not ask the child to identify its model: lack of child introspection does not erase known launch settings. This is orchestrator-reported configuration, not independent verification of the provider runtime. Never report a requested configuration if the launch rejected it or fell back to something else. Do not switch the parent with /model or inherit its model for this tiered step. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. Never edit project docs to reconcile a model mismatch or record concrete tier→model mappings there; follow this claim's execution settings.`;
+    return `${lead}MANDATORY MODEL: launch this step's fresh Codex subagent with model: "${resolved}" and reasoning_effort: "${effort}" as actual spawn parameters, not just words in its prompt. Use fork_turns: "none" when supported; a full-history fork inherits the parent's model and cannot accept these overrides. The execution object contains the resolved launch settings. If the launch reports "${resolved}" unavailable, retry with model: "${fallback}" at the same effort and state the substitution in your output. Keep the accepted launch configuration with the returned child id. When calling complete_step/fail_step, pass agent: "codex", model_used and reasoning_effort_used from that child's accepted launch configuration (or a runtime-reported override). Do not ask the child to identify its model: lack of child introspection does not erase known launch settings. This is orchestrator-reported configuration, not independent verification of the provider runtime. Never report a requested configuration if the launch rejected it or fell back to something else. Do not switch the parent with /model or inherit its model for this tiered step. This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. Never edit project docs to reconcile a model mismatch or record concrete tier→model mappings there; follow this claim's execution settings.`;
   }
 
-  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user's current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don't edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.`;
+  return `${lead}MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user's current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don't edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.`;
 }
 
 // ============================================================
@@ -1233,6 +1297,14 @@ export async function claimNextStep(
   // parallel rather than serially.
   let userModelTierMap: unknown = null;
   let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
+  // Auto-switch (card 5d0665a2, AC-2/AC-6/AC-7): the marker lookup only ever
+  // runs on the tiered path, alongside the two reads above — Auto steps add
+  // no query at all. It is NOT run in parallel with them: readLiveUnavailableModel
+  // never throws and always resolves to a value (null on any failure), so
+  // there is nothing gained by racing it, and keeping it sequential and last
+  // keeps this block easy to reason about as "one extra lookup, one extra
+  // input to modelTierClause".
+  let unavailableModel: string | null = null;
   if (updated.model_tier) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
@@ -1244,11 +1316,27 @@ export async function claimNextStep(
     ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
     platformDefaults = resolvedPlatformDefaults;
+    unavailableModel = await readLiveUnavailableModel(ctx, updated.idea_id);
   }
-  const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults);
-  const codexResolution = claimingAgent === "codex" && updated.model_tier
+  const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults, unavailableModel);
+  const codexBaseResolution = claimingAgent === "codex" && updated.model_tier
     ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
     : null;
+  // Codex's execution object must carry the same switched values the
+  // directive above named — never the tier's normal, unswitched pair.
+  const codexResolution = codexBaseResolution ? applyModelAvailability(codexBaseResolution, unavailableModel) : null;
+  // Is this claim directed at the backup? A native session subagent's
+  // definition pins the tier's NORMAL model (it was built at launch, or by
+  // sync_board_agents, from the unswitched resolution), so spawning it would
+  // run the step on the very model reported unavailable. While a switch is
+  // active the native-subagent note is left out and the step follows the
+  // general path, which the MODEL SWITCH directive above points at the backup.
+  const tierResolutionForSwitch = unavailableModel && updated.model_tier
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
+    : null;
+  const modelSwitched = tierResolutionForSwitch
+    ? applyModelAvailability(tierResolutionForSwitch, unavailableModel).switched
+    : false;
 
   // Tasks 59889027 / e16d69e8: an in-app terminal launch defines the board's
   // agents as real subagents (`claude --agents`, or temporary Codex agent-role
@@ -1258,7 +1346,7 @@ export async function claimNextStep(
   const nativeSubagent =
     // The definitions only exist for a persona with text, so a skills-only
     // persona has no native subagent to name.
-    personaEmbeddable && step.bot_id && matchedBot?.system_prompt
+    personaEmbeddable && step.bot_id && matchedBot?.system_prompt && !modelSwitched
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
           const resolution = tier
@@ -1299,8 +1387,8 @@ export async function claimNextStep(
         agent: "codex" as const,
         mode: "subagent" as const,
         fork_turns: "none" as const,
-        model: codexResolution?.resolved ?? null,
-        reasoning_effort: codexResolution?.effort ?? null,
+        model: codexResolution?.directed ?? null,
+        reasoning_effort: codexBaseResolution?.effort ?? null,
         fallback_model: codexResolution?.fallback ?? null,
         reporting_source: "accepted_launch_configuration" as const,
       },
@@ -1457,6 +1545,26 @@ export async function completeStep(
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
 
+  // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
+  // obeyed the directive's advisory line and substituted the backup has
+  // ALREADY told us the primary was unavailable — it reported model_used =
+  // the fallback. Recording that here is what lets the NEXT claim on this
+  // board skip the dead model without anyone passing a new parameter.
+  //
+  // Deliberately compared against the tier's NORMAL, UNSWITCHED resolution
+  // (Design Review note 1) — if this claim had itself been switched onto the
+  // backup, comparing against the switched pair would infer unavailability
+  // backwards and mark the backup dead instead of the primary. completeStep
+  // never calls applyModelAvailability for exactly this reason.
+  const substitutionResolution = step.model_tier
+    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults)
+    : null;
+  const substitutedUnavailable = inferUnavailableFromSubstitution(
+    step.model_tier,
+    substitutionResolution,
+    params.model_used
+  );
+
   // Token is single-use: clear both hashes as part of completion (design
   // §1.2 — work_token_hash is cleared everywhere claim_token_hash is).
   const updateFields: Record<string, unknown> = {
@@ -1483,6 +1591,37 @@ export async function completeStep(
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
+
+  // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
+  // write after the main completion update. On a DB where migration 00195
+  // hasn't landed yet, this must never take down completion itself — a
+  // deploy can reach production a little before or after its migration.
+  // Only ever SET the marker, never null an existing one over it — a
+  // completion that reports the normal model, or omits model_used entirely,
+  // is not evidence the primary came back (that's the marker's own midnight
+  // UTC expiry to decide, not this step).
+  if (substitutedUnavailable && substitutionResolution) {
+    try {
+      const { error: markerError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: substitutionResolution.resolved,
+        })
+        .eq("id", params.step_id);
+      if (markerError) {
+        logger.warn("model-availability marker write failed on complete_step — completion unaffected", {
+          stepId: params.step_id,
+          error: markerError.message,
+        });
+      }
+    } catch (err) {
+      logger.warn("model-availability marker write threw on complete_step — completion unaffected", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
@@ -1595,6 +1734,11 @@ export const failStepSchema = z.object({
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
+  // Auto-switch (card 5d0665a2). UX Design §2b wording, verbatim.
+  model_unavailable: z.boolean().optional()
+    .describe(
+      "Set true ONLY when the step failed because the directed model could not be reached — out of credits, overloaded, rate-limited, or not on this plan. Never for ordinary failures (a bug, a bad prompt, a failing test). When true, the step returns to pending and is automatically re-run on the tier's configured backup model, and later steps on this board are steered away from the unavailable model until midnight UTC. At most once per step: a second model-unavailable failure leaves the step failed. Ignored for steps with no model tier and for awaiting_approval rejections."
+    ),
   reset_to_step_id: z
     .string()
     .uuid()
@@ -1665,7 +1809,12 @@ export async function failStep(
   const failingAgent: AgentKind = params.agent ?? "claude";
   let userModelTierMap: unknown = null;
   let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
-  if (step.model_tier && params.model_used && params.model_used !== "unknown") {
+  // Auto-switch (card 5d0665a2): also load the map + live platform defaults
+  // when a rescue is potentially in play — the rescue has to name the tier's
+  // configured backup, and an orchestrator reporting an unreachable model has
+  // no model_used to give (that's the whole point of the flag).
+  const modelUnavailableFlagged = params.model_unavailable === true;
+  if (step.model_tier && ((params.model_used && params.model_used !== "unknown") || modelUnavailableFlagged)) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
         .from("users")
@@ -1690,9 +1839,99 @@ export async function failStep(
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
 
+  // Auto-switch, rescue half (card 5d0665a2, AC-1). Never for awaiting_approval
+  // rejections (human gate — UX Design §2b) or Auto steps (no tier to resolve
+  // a backup for). model_unavailable_at is read from the row as it stood
+  // BEFORE this write: already set means this step has had its one rescue,
+  // EVER — a second failure is a real failure, not a second bounce.
+  const rescueEligible = modelUnavailableFlagged && step.status === "in_progress" && !!step.model_tier;
+
+  // AC-7: the guard read is separate from the initial step fetch and never
+  // throws — on a DB without migration 00195 this must degrade to "can't
+  // rescue" (ordinary fail, exactly as on master), not break fail_step for
+  // everyone.
+  let stepUnavailableAt: string | null = null;
+  let markerReadOk = true;
+  if (rescueEligible) {
+    try {
+      const { data: markerRow, error: markerReadError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .select("model_unavailable_at")
+        .eq("id", params.step_id)
+        .maybeSingle();
+      if (markerReadError) {
+        markerReadOk = false;
+        logger.warn("model-availability rescue-guard read failed in fail_step — falling back to ordinary failure", {
+          stepId: params.step_id,
+          error: markerReadError.message,
+        });
+      } else {
+        stepUnavailableAt = markerRow?.model_unavailable_at ?? null;
+      }
+    } catch (err) {
+      markerReadOk = false;
+      logger.warn("model-availability rescue-guard read threw in fail_step — falling back to ordinary failure", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  const canRescue = rescueEligible && markerReadOk;
+  const rescueDecision = canRescue
+    ? shouldRescueStep(params.model_unavailable, stepUnavailableAt !== null)
+    : { rescue: false, reason: "not-a-model-failure" as const };
+
+  // Applied against the LIVE marker (same lookup claim_next_step used to
+  // build this claim's directive) so the model named here is whichever one
+  // this claim was ACTUALLY directed at — the tier's normal model on a first
+  // failure, or the backup on a second failure after an earlier rescue
+  // (Design Review note 2: the second-failure comment must name the backup,
+  // not the unswitched primary).
+  let rescueResolution: { unavailableModel: string; backupModel: string } | null = null;
+  if (canRescue) {
+    const baseResolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults);
+    if (baseResolution) {
+      const liveUnavailable = await readLiveUnavailableModel(ctx, step.idea_id);
+      const applied = applyModelAvailability(baseResolution, liveUnavailable);
+      rescueResolution = { unavailableModel: applied.directed, backupModel: applied.fallback };
+    }
+  }
+
+  // AC-7: for an intended rescue, write the marker FIRST as a guarded,
+  // best-effort update — only flip the step to pending if that write
+  // actually succeeded. Otherwise the rescue-once guard could be bypassed
+  // (a step rescued but never marked could be rescued again) on a DB
+  // without migration 00195, so an intended rescue falls back to an
+  // ordinary failure instead.
+  let actuallyRescue = false;
+  if (rescueDecision.rescue && rescueResolution) {
+    try {
+      const { error: markerWriteError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: rescueResolution.unavailableModel,
+        })
+        .eq("id", params.step_id);
+      if (markerWriteError) {
+        logger.warn("model-availability marker write failed before rescue in fail_step — falling back to ordinary failure", {
+          stepId: params.step_id,
+          error: markerWriteError.message,
+        });
+      } else {
+        actuallyRescue = true;
+      }
+    } catch (err) {
+      logger.warn("model-availability marker write threw before rescue in fail_step — falling back to ordinary failure", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   const updateFields: Record<string, unknown> = {
-    status: "failed",
-    completed_at: new Date().toISOString(),
+    status: actuallyRescue ? "pending" : "failed",
+    completed_at: actuallyRescue ? null : new Date().toISOString(),
     claim_token_hash: null,
     work_token_hash: null,
     executed_model: executedModel,
@@ -1701,7 +1940,16 @@ export async function failStep(
     persona_used: personaUsed,
     persona_honored: personaHonored,
   };
-  if (params.output !== undefined) updateFields.output = params.output;
+  if (actuallyRescue) {
+    // Mirror the cascade reset's shape so a rescued step is indistinguishable
+    // from any other re-claimable pending step. The failure text is not
+    // lost — it survives as the 'failure' comment posted below, which is
+    // also what claim_next_step hands back as rework_instructions.
+    updateFields.started_at = null;
+    updateFields.claimed_by = null;
+  } else if (params.output !== undefined) {
+    updateFields.output = params.output;
+  }
 
   const { data: updated, error: updateError } = await ctx.supabase
     .from("task_workflow_steps")
@@ -1716,6 +1964,62 @@ export async function failStep(
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
+
+  // Make the auto-switch visible in-product rather than leaving a step that
+  // silently un-failed itself, or silently stayed failed a second time.
+  if (actuallyRescue && rescueResolution) {
+    logger.warn("workflow step auto-rescued onto backup model", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      unavailable: rescueResolution.unavailableModel,
+      backup: rescueResolution.backupModel,
+      ownerUserId: ctx.ownerUserId,
+    });
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "comment",
+      content: rescueSentence(rescueResolution.unavailableModel, rescueResolution.backupModel),
+    });
+  } else if (canRescue && rescueDecision.reason === "already-rescued" && rescueResolution) {
+    // Ordinary failure regardless of whether this best-effort marker refresh
+    // succeeds — AC-7: never let a marker write affect the outcome here.
+    try {
+      const { error: markerRefreshError } = await ctx.supabase
+        .from("task_workflow_steps")
+        .update({
+          model_unavailable_at: new Date().toISOString(),
+          model_unavailable_model: rescueResolution.unavailableModel,
+        })
+        .eq("id", params.step_id);
+      if (markerRefreshError) {
+        logger.warn("model-availability marker refresh failed on second failure — failure unaffected", {
+          stepId: params.step_id,
+          error: markerRefreshError.message,
+        });
+      }
+    } catch (err) {
+      logger.warn("model-availability marker refresh threw on second failure — failure unaffected", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    logger.warn("workflow step failed again after a model-unavailability rescue — leaving it failed", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      unavailable: rescueResolution.unavailableModel,
+      ownerUserId: ctx.ownerUserId,
+    });
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "comment",
+      content: secondFailureSentence(rescueResolution.unavailableModel),
+    });
+  }
 
   // Auto-create a failure comment so the output is preserved as a comment
   // (especially important before cascade wipes the step's output column)
@@ -1834,11 +2138,12 @@ export async function failStep(
     }
   }
 
-  // Mark the run as running (cascade continues) or failed (no cascade)
+  // Mark the run as running (cascade continues, or the step was auto-rescued
+  // and is about to be re-run on the backup) or failed (no cascade, no rescue).
   if (step.run_id) {
     await ctx.supabase
       .from("workflow_runs")
-      .update({ status: params.reset_to_step_id ? "running" : "failed" })
+      .update({ status: params.reset_to_step_id || actuallyRescue ? "running" : "failed" })
       .eq("id", step.run_id);
   }
 
@@ -2266,6 +2571,34 @@ export async function resetWorkflow(
     .eq("run_id", run.id);
 
   if (stepsError) throw new Error(`Failed to reset steps: ${stepsError.message}`);
+
+  // Auto-switch (card 5d0665a2, AC-9): a full workflow reset is a fresh run,
+  // so both the rescue-once guard and the board-wide marker clear here.
+  // Cascade rejection (fail_step's reset_to_step_id) and skip_step
+  // deliberately do NOT clear these — see model-availability.ts.
+  //
+  // Separate, best-effort update (AC-7): on a DB where migration 00195
+  // hasn't landed yet, naming these columns in the main reset update above
+  // would make PostgREST reject the WHOLE statement, breaking reset_workflow
+  // for every user. A code deploy can reach production a little before or
+  // after its migration, so this must degrade quietly instead.
+  try {
+    const { error: markerError } = await ctx.supabase
+      .from("task_workflow_steps")
+      .update({ model_unavailable_at: null, model_unavailable_model: null })
+      .eq("run_id", run.id);
+    if (markerError) {
+      logger.warn("model-availability marker clear failed on reset_workflow — reset unaffected", {
+        runId: run.id,
+        error: markerError.message,
+      });
+    }
+  } catch (err) {
+    logger.warn("model-availability marker clear threw on reset_workflow — reset unaffected", {
+      runId: run.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Reset run
   const { error: resetError } = await ctx.supabase
