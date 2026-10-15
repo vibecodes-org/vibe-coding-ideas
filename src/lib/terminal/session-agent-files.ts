@@ -154,7 +154,9 @@ const OLD_ATIME = "200001010000";
  * Claude Code has loaded them. Run from the project folder (the repo root). It:
  *  - picks the folder: `.claude/agents/` when it exists, else the user-level
  *    `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents` when that exists, else it
- *    creates `.claude/agents/` (Claude Code never loads a folder created
+ *    creates `.claude/agents/` and the user-level folder too, so every later
+ *    session on this machine, in any repo, starts with a watched folder and
+ *    nobody has to create one (Claude Code never loads a folder created
  *    mid-session, so it prints NEW_FOLDER and does not wait);
  *  - writes every file to a temp file in that folder and fingerprints each; on
  *    any mismatch it deletes them all and prints MISMATCH (exit 3), so an
@@ -207,7 +209,7 @@ new=0
 project=0
 if [ -d .claude/agents ]; then dir=.claude/agents; project=1
 elif [ -d "$user_dir" ]; then dir="$user_dir"
-else dir=.claude/agents; project=1; new=1; mkdir -p "$dir" || exit 1
+else dir=.claude/agents; project=1; new=1; mkdir -p "$dir" || exit 1; mkdir -p "$user_dir" 2>/dev/null || true
 fi
 vc_sum() {
   norm=$(LC_ALL=C sed 's/[[:space:]]*$//' "$1")

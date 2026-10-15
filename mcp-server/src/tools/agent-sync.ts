@@ -44,9 +44,10 @@ const INSTRUCTION =
   "for that name (the listing is not refreshed), but only when the name is not offered at all or its listed " +
   "description starts with \"Saved by sync_board_agents.\": a name offered without that marker is a copy the " +
   "session was launched with, which a sync can't replace, so use the general-purpose steps for it instead. If " +
-  "one is not offered at all after READY, run the same command once more (at most 2 syncs per step). NEW_FOLDER: the agents folder didn't exist when this session started, so " +
-  "Claude Code won't load it until the next session; use the general-purpose steps, don't sync again this " +
-  "session, include the new .claude/agents/.gitignore in your next commit, and tell the user. MISMATCH: a file " +
+  "one is not offered at all after READY, run the same command once more (at most 2 syncs per step). NEW_FOLDER: no agents folder existed when this session started, so the " +
+  "command created one (and the user-level one, so later sessions in any repo on this machine are covered), " +
+  "which Claude Code won't load until the next session; use the general-purpose steps, don't sync again this " +
+  "session, and include the new .claude/agents/.gitignore in your next commit. MISMATCH: a file " +
   "did not match its fingerprint and none were saved; don't retry, use the general-purpose steps. NOT_LOADED: " +
   "Claude Code had not read the files after about 75 seconds; use the general-purpose steps and don't sync again " +
   "this session. If you can't run in the background (you are a subagent, or background tasks are disabled), run " +

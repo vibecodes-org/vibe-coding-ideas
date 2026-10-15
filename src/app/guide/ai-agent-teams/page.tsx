@@ -379,28 +379,27 @@ export default function AiAgentTeamsPage() {
           </ul>
           <p className="mt-3 text-muted-foreground">
             <strong className="text-foreground">
-              One limit, for a repository that has never had an agents folder.
+              One limit, for the very first session on a machine.
             </strong>{" "}
             Claude Code only watches agent folders that existed when the
-            session started. In a repository with no{" "}
+            session started. If neither the project nor your machine has an
+            agents folder yet, the first sync creates both itself: the
+            project&apos;s{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               .claude/agents/
             </code>{" "}
-            folder the first sync has to create it, so that one step runs the
-            usual way, with the instructions passed along in the message. The
-            sync also adds a{" "}
+            (with a{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              .claude/agents/.gitignore
-            </code>
-            ; commit it and every later session starts with the folder in
-            place. To avoid even that first gap in any repository, create a
-            personal agents folder once with{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              mkdir -p ~/.claude/agents
+              .gitignore
             </code>{" "}
-            on your own machine, or as a line in a cloud environment&apos;s
-            setup script. The sync uses it whenever the project has no agents
-            folder.
+            that gets committed) and your personal{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              ~/.claude/agents
+            </code>
+            . That one session&apos;s steps run the usual way, with the
+            instructions passed along in the message. Every session after
+            it, in any repository on that machine, uses the real agents.
+            There is nothing for you to set up.
           </p>
           <p className="mt-3 text-muted-foreground">
             The files are never committed: they are ignored by a{" "}

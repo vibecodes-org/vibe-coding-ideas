@@ -266,7 +266,7 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
     }
   });
 
-  it("with neither folder, creates the project one with its .gitignore and says NEW_FOLDER", () => {
+  it("with neither folder, creates the project one with its .gitignore and the user one, and says NEW_FOLDER", () => {
     const { root, repo, home } = sandbox();
     try {
       execFileSync("git", ["init", "-q", repo]);
@@ -275,6 +275,33 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
       expect(last(r.stdout)).toBe("NEW_FOLDER");
       expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
       expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("vc-*.md\n");
+      expect(readdirSync(join(home, ".claude", "agents"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("with neither folder, creates the user one under CLAUDE_CONFIG_DIR", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      const cfg = join(root, "cfg");
+      const r = run(cmd(), repo, home, { CLAUDE_CONFIG_DIR: cfg });
+      expect(last(r.stdout)).toBe("NEW_FOLDER");
+      expect(existsSync(join(cfg, "agents"))).toBe(true);
+      expect(existsSync(join(home, ".claude", "agents"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still saves into the project folder when the user folder can't be created", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      writeFileSync(join(home, ".claude"), "not a folder");
+      const r = run(cmd(), repo, home);
+      expect(r.status).toBe(0);
+      expect(last(r.stdout)).toBe("NEW_FOLDER");
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -603,6 +630,7 @@ describe("agentFilesSyncCommand waits until Claude Code has read every file", ()
       expect(r.ms).toBeLessThan(900);
       for (const f of FILES) expect(existsSync(join(repo, ".claude", "agents", `${f.name}.md`))).toBe(true);
       expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("vc-*.md\n");
+      expect(existsSync(join(root, ".claude", "agents"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
