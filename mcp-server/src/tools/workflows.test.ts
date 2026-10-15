@@ -1224,6 +1224,8 @@ function makePersonaClaimContext(opts: {
   pendingStep: ReturnType<typeof makeStepRow>;
   updatedStep: Record<string, unknown>;
   systemPrompt: string | null;
+  /** Auto-switch (card 5d0665a2): model_unavailable_model the marker lookup returns. Omitted -> no marker. */
+  unavailableModel?: string;
 }) {
   const tableCounts: Record<string, number> = {};
 
@@ -1243,6 +1245,12 @@ function makePersonaClaimContext(opts: {
       } else {
         chain.chain.then = (resolve: (val: unknown) => void) =>
           Promise.resolve({ data: [], error: null }).then(resolve);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: opts.unavailableModel !== undefined ? { model_unavailable_model: opts.unavailableModel } : null,
+            error: null,
+          })
+        );
       }
       return chain.chain;
     }
@@ -1405,6 +1413,51 @@ describe("claimNextStep — persona embedding", () => {
       expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
       expect(result.instruction).toContain(expected.instruction);
       expect(result.instruction!.indexOf("NATIVE SUBAGENT:")).toBeGreaterThan(result.instruction!.indexOf("AUTO:"));
+    });
+
+    // Card 5d0665a2: a session subagent's definition pins the tier's normal
+    // model, so while that model is marked unavailable the claim must not
+    // send the step to it.
+    it("leaves the native subagent out while the step is switched to the backup (Claude)", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({
+        pendingStep: step,
+        updatedStep: { ...step, status: "in_progress" },
+        systemPrompt: PERSONA,
+        unavailableModel: "opus",
+      });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
+      expect(result.instruction).toMatch(/^MODEL SWITCH:/);
+      expect(result).not.toHaveProperty("native_subagent");
+      expect(result.instruction).not.toContain("NATIVE SUBAGENT");
+    });
+
+    it("leaves the native agent type out while the step is switched to the backup (Codex)", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({
+        pendingStep: step,
+        updatedStep: { ...step, status: "in_progress" },
+        systemPrompt: PERSONA,
+        unavailableModel: "gpt-6-astra",
+      });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" })) as NativeClaim;
+      expect(result.instruction).toMatch(/^MODEL SWITCH:/);
+      expect(result).not.toHaveProperty("native_subagent");
+      expect(result.instruction).not.toContain("NATIVE SUBAGENT");
+    });
+
+    it("keeps the native subagent when the marker names a model this step isn't directed at", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+      const ctx = makePersonaClaimContext({
+        pendingStep: step,
+        updatedStep: { ...step, status: "in_progress" },
+        systemPrompt: PERSONA,
+        unavailableModel: "haiku",
+      });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
+      expect(result.instruction).not.toContain("MODEL SWITCH");
+      expect(result.native_subagent).toBeDefined();
+      expect(result.instruction).toContain("NATIVE SUBAGENT:");
     });
 
     it("adds nothing to a Codex claim when the bot has no persona", async () => {
@@ -3509,7 +3562,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
    * QA rework (AC-7): the marker write is no longer folded into the same
    * update as status/claim fields — it is now a SEPARATE call (written
    * before the rescue for a first failure, or best-effort after the main
-   * update for a second one), so a DB missing migration 00176 can reject
+   * update for a second one), so a DB missing migration 00195 can reject
    * only the marker write and never the step's real status change. This mock
    * distinguishes every task_workflow_steps call after the initial fetch by
    * its SHAPE rather than its position: a `.select("model_unavailable_at")`
@@ -3953,7 +4006,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
    * run_id: null throughout so checkAndCompleteRun never fires.
    *
    * QA rework (AC-7): the marker write is now a SEPARATE, best-effort call
-   * made AFTER the real completion update, so a DB missing migration 00176
+   * made AFTER the real completion update, so a DB missing migration 00195
    * can reject only the marker write without breaking completion itself.
    * Distinguish the two by whether `.select()` (and so `.maybeSingle()` with
    * real data) follows the `.update()` — the marker write is awaited
@@ -5154,7 +5207,7 @@ describe("resetWorkflow", () => {
    * QA rework (AC-7): the marker clear is now a SEPARATE, best-effort update
    * made AFTER the main reset update — naming the new columns in the main
    * update would make PostgREST reject the WHOLE statement on a DB missing
-   * migration 00176, breaking reset for every user. Captures every
+   * migration 00195, breaking reset for every user. Captures every
    * task_workflow_steps `.update()` call in order.
    */
   function ctxFor(opts: { markerClearError?: { message: string }; markerClearThrows?: boolean } = {}) {

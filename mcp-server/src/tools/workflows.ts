@@ -123,7 +123,7 @@ export { resolveModelTier, type ModelTierAgentResolution };
  * board reported, earlier today, that a directed model was unavailable?
  *
  * Returns the concrete model to route AROUND, or null. The marker stores the
- * server-resolved model name directly (migration 00176) — there is no tier
+ * server-resolved model name directly (migration 00195) — there is no tier
  * to re-resolve here, so this is a single narrow lookup with no dependency on
  * the caller's model_tier_map or the live platform defaults. Reads the
  * newest marker only — applyModelAvailability ignores it anyway unless it
@@ -1325,6 +1325,18 @@ export async function claimNextStep(
   // Codex's execution object must carry the same switched values the
   // directive above named — never the tier's normal, unswitched pair.
   const codexResolution = codexBaseResolution ? applyModelAvailability(codexBaseResolution, unavailableModel) : null;
+  // Is this claim directed at the backup? A native session subagent's
+  // definition pins the tier's NORMAL model (it was built at launch, or by
+  // sync_board_agents, from the unswitched resolution), so spawning it would
+  // run the step on the very model reported unavailable. While a switch is
+  // active the native-subagent note is left out and the step follows the
+  // general path, which the MODEL SWITCH directive above points at the backup.
+  const tierResolutionForSwitch = unavailableModel && updated.model_tier
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
+    : null;
+  const modelSwitched = tierResolutionForSwitch
+    ? applyModelAvailability(tierResolutionForSwitch, unavailableModel).switched
+    : false;
 
   // Tasks 59889027 / e16d69e8: an in-app terminal launch defines the board's
   // agents as real subagents (`claude --agents`, or temporary Codex agent-role
@@ -1334,7 +1346,7 @@ export async function claimNextStep(
   const nativeSubagent =
     // The definitions only exist for a persona with text, so a skills-only
     // persona has no native subagent to name.
-    personaEmbeddable && step.bot_id && matchedBot?.system_prompt
+    personaEmbeddable && step.bot_id && matchedBot?.system_prompt && !modelSwitched
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
           const resolution = tier
@@ -1581,7 +1593,7 @@ export async function completeStep(
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
 
   // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
-  // write after the main completion update. On a DB where migration 00176
+  // write after the main completion update. On a DB where migration 00195
   // hasn't landed yet, this must never take down completion itself — a
   // deploy can reach production a little before or after its migration.
   // Only ever SET the marker, never null an existing one over it — a
@@ -1835,7 +1847,7 @@ export async function failStep(
   const rescueEligible = modelUnavailableFlagged && step.status === "in_progress" && !!step.model_tier;
 
   // AC-7: the guard read is separate from the initial step fetch and never
-  // throws — on a DB without migration 00176 this must degrade to "can't
+  // throws — on a DB without migration 00195 this must degrade to "can't
   // rescue" (ordinary fail, exactly as on master), not break fail_step for
   // everyone.
   let stepUnavailableAt: string | null = null;
@@ -1889,7 +1901,7 @@ export async function failStep(
   // best-effort update — only flip the step to pending if that write
   // actually succeeded. Otherwise the rescue-once guard could be bypassed
   // (a step rescued but never marked could be rescued again) on a DB
-  // without migration 00176, so an intended rescue falls back to an
+  // without migration 00195, so an intended rescue falls back to an
   // ordinary failure instead.
   let actuallyRescue = false;
   if (rescueDecision.rescue && rescueResolution) {
@@ -2565,7 +2577,7 @@ export async function resetWorkflow(
   // Cascade rejection (fail_step's reset_to_step_id) and skip_step
   // deliberately do NOT clear these — see model-availability.ts.
   //
-  // Separate, best-effort update (AC-7): on a DB where migration 00176
+  // Separate, best-effort update (AC-7): on a DB where migration 00195
   // hasn't landed yet, naming these columns in the main reset update above
   // would make PostgREST reject the WHOLE statement, breaking reset_workflow
   // for every user. A code deploy can reach production a little before or
