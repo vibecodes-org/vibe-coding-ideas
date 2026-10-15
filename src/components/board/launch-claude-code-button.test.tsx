@@ -81,6 +81,8 @@ import {
   BOARD_PRIMARY_TITLE_BROWSER,
   BOARD_PRIMARY_TITLE_WINDOW,
   CLAUDE_WINDOW_SUBLINE,
+  CODEX_INSTALL_GUIDE_URL,
+  CODEX_WINDOW_SUBLINE,
   TASK_ICON_LABEL_BROWSER,
   TASK_ICON_LABEL_WINDOW,
 } from "./launch-claude-code-button";
@@ -164,6 +166,8 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     expect(items[2]).toHaveTextContent("Launch in Codex");
     expect(items[3]).toHaveTextContent("Launch Codex in browser terminal");
     expect(items[3]).toHaveTextContent("Beta");
+    // Same Codex sub-line as the board menu (it used to say "Opens a Terminal window on this Mac").
+    expect(items[2]).toHaveTextContent(CODEX_WINDOW_SUBLINE);
   });
 
   it("clicking the browser item calls requestBrowserLaunch and does not navigate", async () => {
@@ -843,6 +847,7 @@ describe("LaunchClaudeCodeButton — board menu: remembered-agent group order + 
     renderBoardButton();
     openBoardMenu();
     expect(screen.getByText("Codex CLI docs")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Install guide/i })).toHaveAttribute("href", CODEX_INSTALL_GUIDE_URL);
   });
 });
 
