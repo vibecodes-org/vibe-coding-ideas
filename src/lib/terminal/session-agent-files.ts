@@ -156,9 +156,10 @@ tmp=$(mktemp "$dir/.$name.XXXXXX") || exit 1
 trap 'rm -f "$tmp"' EXIT
 cat > "$tmp" <<'${delimiter}'
 ${body}${delimiter}
-if command -v sha256sum >/dev/null 2>&1; then hasher="sha256sum"; else hasher="shasum -a 256"; fi
 norm=$(LC_ALL=C sed 's/[[:space:]]*$//' "$tmp")
-got=$(printf '%s' "$norm" | $hasher | cut -d' ' -f1)
+if command -v sha256sum >/dev/null 2>&1; then got=$(printf '%s' "$norm" | sha256sum | cut -d' ' -f1)
+else got=$(printf '%s' "$norm" | shasum -a 256 | cut -d' ' -f1)
+fi
 if [ "$got" != "$want" ]; then
   echo "MISMATCH: the saved file did not match its fingerprint, so it was deleted."
   exit 3
@@ -167,8 +168,11 @@ mv -f "$tmp" "$dir/$name.md" || exit 1
 trap - EXIT
 if [ "$project" = 1 ] && git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$dir/$name.md"; then
   if [ ! -e "$dir/.gitignore" ]; then printf 'vc-*.md\\n' > "$dir/.gitignore"
-  elif ! grep -qxF 'vc-*.md' "$dir/.gitignore"; then printf 'vc-*.md\\n' >> "$dir/.gitignore"
+  elif ! grep -qxF 'vc-*.md' "$dir/.gitignore"; then
+    if [ -s "$dir/.gitignore" ] && [ -n "$(tail -c 1 "$dir/.gitignore")" ]; then printf '\\n' >> "$dir/.gitignore"; fi
+    printf 'vc-*.md\\n' >> "$dir/.gitignore"
   fi
+  if ! git check-ignore -q "$dir/$name.md"; then echo "WARNING: $dir/$name.md is not git-ignored; do not commit it."; fi
 fi
 echo "Saved $name.md into $dir."
 if [ "$new" = 1 ]; then

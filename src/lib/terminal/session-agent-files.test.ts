@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSessionAgents, type SessionAgentInput } from "./session-agents";
@@ -188,6 +188,37 @@ describe("agentFileSyncCommand", () => {
     }
   });
 
+  it("keeps the last line intact when the agents .gitignore has no trailing newline", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", ".gitignore"), "other.md");
+      const r = run(cmd(), repo, home);
+      expect(last(r.stdout)).toBe("READY");
+      expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("other.md\nvc-*.md\n");
+      expect(
+        spawnSync("git", ["check-ignore", "-q", `.claude/agents/${NAME}.md`], { cwd: repo }).status,
+      ).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("warns when the file still isn't ignored after the .gitignore was written", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", ".gitignore"), "vc-*.md\n!vc-*.md\n");
+      const r = run(cmd(), repo, home);
+      expect(r.stdout).toMatch(/WARNING: .*not git-ignored/);
+      expect(last(r.stdout)).toBe("READY");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to the user-level folder, honouring CLAUDE_CONFIG_DIR, and leaves git alone", () => {
     const { root, repo, home } = sandbox();
     try {
@@ -325,5 +356,62 @@ describe("agentFileSyncCommand", () => {
 
   it("keeps a full-size agent far under the argument limit", () => {
     expect(AGENT_FILE_MAX_BYTES + 5_000).toBeLessThan(128 * 1024);
+  });
+});
+
+// macOS has no sha256sum (shasum instead) and its default shell is zsh, which
+// doesn't word-split an unquoted variable. Run the real command both ways.
+describe("agentFileSyncCommand on a machine without sha256sum, and under zsh", () => {
+  const [NAME, DEF] = Object.entries(AGENTS)[0];
+  const FILE = renderAgentFile(NAME, DEF, { synced: true });
+  const SHA = agentFileFingerprint(FILE);
+  const command = agentFileSyncCommand({ name: NAME, content: FILE, sha256: SHA, settleSeconds: 0 });
+  const which = (bin: string) => {
+    const r = spawnSync("sh", ["-c", `command -v ${bin}`], { encoding: "utf8" });
+    return r.status === 0 ? r.stdout.trim() : null;
+  };
+  const hasShasum = which("shasum") !== null;
+  const zshPath = which("zsh");
+
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), "agent-sync-sh-"));
+    const repo = join(root, "repo");
+    mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+    return { root, repo };
+  }
+
+  it.skipIf(!hasShasum)("verifies with shasum when sha256sum is not on PATH", () => {
+    const { root, repo } = setup();
+    try {
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      for (const tool of ["bash", "sed", "cut", "mktemp", "cat", "rm", "mv", "grep", "tail", "tr", "sleep", "git", "shasum", "perl", "env", "dirname"]) {
+        const p = which(tool);
+        if (p) symlinkSync(p, join(bin, tool));
+      }
+      const env = { PATH: bin, HOME: root, NODE_ENV: "test" as const };
+      expect(spawnSync("bash", ["-c", "command -v sha256sum"], { env, encoding: "utf8" }).status).not.toBe(0);
+      const r = spawnSync(join(bin, "bash"), ["-c", command], { cwd: repo, env, encoding: "utf8" });
+      expect(r.stdout.trim().split("\n").pop()).toBe("READY");
+      expect(r.status).toBe(0);
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!zshPath)("runs under zsh (the macOS default shell) and verifies", () => {
+    const { root, repo } = setup();
+    try {
+      const r = spawnSync(zshPath as string, ["-c", command], {
+        cwd: repo,
+        env: { PATH: process.env.PATH ?? "", HOME: root, NODE_ENV: "test" as const },
+        encoding: "utf8",
+      });
+      expect(r.stdout.trim().split("\n").pop()).toBe("READY");
+      expect(r.status).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

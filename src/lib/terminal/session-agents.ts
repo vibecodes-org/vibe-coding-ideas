@@ -263,7 +263,7 @@ export function sessionAgentClaimHint(input: {
         `replace, so skip the sync. When it isn't offered at all, call sync_board_agents (idea_id ` +
         `"${input.ideaId}", step_id "${input.stepId}"), run the command it returns exactly as its instruction says ` +
         `(in the background, then end your turn), and spawn the subagent when you wake, only if its description ` +
-        `ends with ${tag}. Sync at most once per session, never again after a failure. If the sync is skipped or ` +
+        `ends with ${tag}. Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER. If the sync is skipped or ` +
         `fails, or it still isn't offered with that tag, `
       : `If no subagent with that exact name and tag is available, `;
   const instruction =

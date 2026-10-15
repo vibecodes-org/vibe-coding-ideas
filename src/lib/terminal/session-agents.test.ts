@@ -222,10 +222,11 @@ describe("sessionAgentClaimHint", () => {
       expect(instruction).toContain("when you wake");
     });
 
-    it("syncs at most once per session and never again after a failure", () => {
+    it("syncs each agent at most once per session and never again after a failure or NEW_FOLDER", () => {
       const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain("at most once per session");
-      expect(instruction).toContain("never again after a failure");
+      expect(instruction).toContain(
+        "Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER.",
+      );
     });
 
     it("re-syncs a stale copy that carries the sync marker and skips one that doesn't", () => {

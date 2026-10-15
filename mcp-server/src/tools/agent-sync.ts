@@ -42,7 +42,8 @@ const INSTRUCTION =
   "background (you are a subagent, or background tasks are disabled), run it in the foreground and use the " +
   "general-purpose steps for this step: the file is then ready for the next claim. If the command fails for " +
   "any other reason, use the general-purpose steps and don't sync again this session. Never print, show, edit " +
-  "or commit the file: it holds agent instructions and is kept out of git.";
+  "or commit the file: it holds agent instructions and is kept out of git. Sync each agent at most once per " +
+  "session, and never sync again after a failure or NEW_FOLDER.";
 
 export type SyncBoardAgentsResult =
   | {
