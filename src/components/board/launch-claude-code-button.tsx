@@ -56,10 +56,9 @@ import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from 
 
 const APP_URL = resolveAppUrl();
 const INSTALL_GUIDE_URL = "https://docs.claude.com/en/docs/claude-code";
-// Codex support (docs/codex-terminal-ux-design.html §2/§10, implementation
-// slice 2) — placeholder, per the design's Q6: "confirm at implementation
-// time." OpenAI's Codex CLI install page moves; verify before shipping.
-const CODEX_INSTALL_GUIDE_URL = "https://developers.openai.com/codex/cli/";
+// Codex support (docs/codex-terminal-ux-design.html §2/§10). The old
+// developers.openai.com/codex/cli/ address now redirects here (checked 15 Oct 2026).
+export const CODEX_INSTALL_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
 
 // Copy for the default-destination work (card 5a24479e). Exported for tests.
 export const BOARD_PRIMARY_TITLE_BROWSER = "Opens the browser terminal on this board";
@@ -67,6 +66,8 @@ export const BOARD_PRIMARY_TITLE_WINDOW = "Opens a Terminal window on your compu
 export const TASK_ICON_LABEL_BROWSER = "Launch in browser terminal";
 export const TASK_ICON_LABEL_WINDOW = "Launch in Claude Code";
 export const CLAUDE_WINDOW_SUBLINE = "Opens a Terminal window on your computer";
+// Codex's terminal-window launch goes through the Mac helper, so it names the Mac.
+export const CODEX_WINDOW_SUBLINE = "Opens Terminal on this Mac — needs the VibeCodes helper";
 
 // Visibility-race window: if the page never blurs/hides within this, assume no handler.
 const SCHEME_RACE_MS = 1200;
@@ -855,7 +856,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               <Terminal className="mr-2 h-4 w-4" />
               <div className="flex flex-col">
                 <span>Launch in Codex</span>
-                <span className="text-[11px] text-muted-foreground">Opens a Terminal window on this Mac</span>
+                <span className="text-[11px] text-muted-foreground">{CODEX_WINDOW_SUBLINE}</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")} className="py-2.5 sm:py-1.5">
@@ -978,7 +979,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                             </span>
                             <span className="text-[11px] text-muted-foreground">
                               {agent === "codex"
-                                ? "Opens Terminal on this Mac — needs the VibeCodes helper"
+                                ? CODEX_WINDOW_SUBLINE
                                 : CLAUDE_WINDOW_SUBLINE}
                             </span>
                           </div>

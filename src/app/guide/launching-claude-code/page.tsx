@@ -149,12 +149,12 @@ export default function LaunchingClaudeCodePage() {
               </a>{" "}
               for Claude Code, or{" "}
               <a
-                href="https://developers.openai.com/codex/cli/"
+                href="https://learn.chatgpt.com/docs/codex/cli"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                developers.openai.com/codex/cli
+                learn.chatgpt.com/docs/codex/cli
               </a>{" "}
               for Codex — whichever is your remembered agent
             </li>
