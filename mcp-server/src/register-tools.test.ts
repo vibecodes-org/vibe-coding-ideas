@@ -106,6 +106,16 @@ describe("registerTools", () => {
     expect(server.tool).toHaveBeenCalledTimes(86);
   });
 
+  it("declares a result size limit on sync_board_agents so its file isn't saved to disk", () => {
+    const registered: Record<string, { _meta?: Record<string, unknown> }> = {};
+    const server = {
+      tool: vi.fn((name: string) => (registered[name] = {})),
+    };
+    registerTools(server, vi.fn());
+    expect(registered.sync_board_agents._meta).toEqual({ "anthropic/maxResultSizeChars": 150_000 });
+    expect(registered.get_board._meta).toBeUndefined();
+  });
+
   it("registers all expected tool names", () => {
     const server = createMockServer();
     const getContext = vi.fn();

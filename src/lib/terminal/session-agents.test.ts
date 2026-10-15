@@ -1,3 +1,4 @@
+import { SYNC_MARKER } from "./session-agent-files";
 import { describe, it, expect } from "vitest";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
 import {
@@ -208,36 +209,56 @@ describe("sessionAgentClaimHint", () => {
     expect(instruction).toContain("follow the steps above");
   });
 
-  describe("when the session wasn't launched by VibeCodes (card 7939ee17)", () => {
+  describe("when the session wasn't launched by VibeCodes (cards 7939ee17, b9205d04)", () => {
     const IDEA = "62e57071-3645-422f-96c0-b2042e39e6dd";
+    const STEP = "f78635ad-c57c-4907-8b0b-74b5c7fa8819";
     const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
+    const full = { ...base, ideaId: IDEA, stepId: STEP };
 
-    it("tells the orchestrator to sync the board's agents once if the subagent isn't offered", () => {
-      const { instruction } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
-      expect(instruction).toContain(`sync_board_agents (idea_id "${IDEA}")`);
-      expect(instruction).toContain("once");
-      expect(instruction).toContain("run the command it returns");
+    it("tells the orchestrator to sync this step's agent if the subagent isn't offered at all", () => {
+      const { instruction } = sessionAgentClaimHint(full);
+      expect(instruction).toContain(`sync_board_agents (idea_id "${IDEA}", step_id "${STEP}")`);
+      expect(instruction).toContain("in the background, then end your turn");
+      expect(instruction).toContain("when you wake");
+    });
+
+    it("syncs at most once per session and never again after a failure", () => {
+      const { instruction } = sessionAgentClaimHint(full);
+      expect(instruction).toContain("at most once per session");
+      expect(instruction).toContain("never again after a failure");
+    });
+
+    it("re-syncs a stale copy that carries the sync marker and skips one that doesn't", () => {
+      const { instruction } = sessionAgentClaimHint(full);
+      expect(instruction).toContain(`starts with "${SYNC_MARKER}"`);
+      expect(instruction).toMatch(/stale copy, so sync again/);
+      expect(instruction).toMatch(/without that marker, VibeCodes launched this session.*skip the sync/);
     });
 
     it("only trusts the subagent after the sync if its tag matches", () => {
-      const { instruction, tag } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
+      const { instruction, tag } = sessionAgentClaimHint(full);
       expect(instruction).toContain(`ends with ${tag}`);
-      expect(instruction).toMatch(/still isn't offered|doesn't match/);
+      expect(instruction).toMatch(/still isn't offered with that tag/);
     });
 
     it("keeps the general-path fallback as the last word", () => {
-      const { instruction } = sessionAgentClaimHint({ ...base, ideaId: IDEA });
+      const { instruction } = sessionAgentClaimHint(full);
       expect(instruction.trim().endsWith("follow the steps above.")).toBe(true);
     });
 
     it("is one paragraph, so the pinned instruction hashes in workflows.test.ts hold", () => {
-      expect(sessionAgentClaimHint({ ...base, ideaId: IDEA }).instruction).not.toContain("\n");
+      expect(sessionAgentClaimHint(full).instruction).not.toContain("\n");
     });
 
-    it("is unchanged without an idea id, and for Codex", () => {
+    it("says nothing about syncing without both ids, or for Codex", () => {
       expect(sessionAgentClaimHint(base).instruction).not.toContain("sync_board_agents");
-      const codex = sessionAgentClaimHint({ ...base, ideaId: IDEA, agent: "codex" });
+      expect(sessionAgentClaimHint({ ...base, ideaId: IDEA }).instruction).not.toContain("sync_board_agents");
+      const codex = sessionAgentClaimHint({ ...full, agent: "codex" });
       expect(codex.instruction).not.toContain("sync_board_agents");
+    });
+
+    it("makes no mention of a network allowlist", () => {
+      expect(sessionAgentClaimHint(full).instruction).not.toMatch(/allowed domains|allowlist|vibecodes\.co\.uk/i);
     });
   });
 

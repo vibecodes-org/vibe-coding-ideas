@@ -1279,6 +1279,7 @@ export async function claimNextStep(
             skillsText: skillsSection.text,
             agent: claimingAgent,
             ideaId: step.idea_id,
+            stepId: step.id,
           });
         })()
       : null;
