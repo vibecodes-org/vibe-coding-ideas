@@ -55,3 +55,9 @@ Ruled out:
   - `delete_bot_user` could not be dry-run through the Supabase MCP: any request containing `DELETE FROM` waits for a human confirmation, and it timed out unanswered (twice). Its guard is the same code as `update_bot_user`'s, which B2 proved.
 - No app code changed. Every caller already passes its own id, or the platform id as an admin, or runs as service role.
 - Not done: a direct "connect with the anon key and POST /rpc/delete_bot_user" check against the live API. The `has_function_privilege` checks cover the same thing at the database level.
+
+## Fix step, resumed after a container restart (15 Oct 2026, evening)
+- Merged master (85fccbc, which brings 00195_step_model_unavailable, already applied in prod). 00194 is applied after 00195 in time. That's fine: `check:migrations` matches repo files to prod's `schema_migrations` by name, not by order, and 00194 touches nothing 00195 does.
+- Re-checked prod read-only: the three function bodies still match the ones copied into 00194 (apart from the new guard), search_path is pinned, EXECUTE is still held by PUBLIC/anon. No other database function calls the three RPCs.
+- Re-checked every caller on current master: `src/actions/bots.ts`, `kits.ts`, `admin-agents.ts`, `src/lib/copy-agent-skills.ts`, `mcp-server/src/tools/{bots,agent-skill,kits}.ts`. Remote MCP builds a per-request client with the human's JWT and owner = that human; stdio is service role. All pass the new guard.
+- `bot-user-rpc-guard.test.ts`: 12 of 18 fail with 00194 moved out of the folder, 18/18 pass with it. Full suite 4869 passed (2 skipped), `tsc --noEmit` clean in both the app and mcp-server, eslint 0 errors.
