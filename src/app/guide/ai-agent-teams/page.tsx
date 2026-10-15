@@ -352,43 +352,61 @@ export default function AiAgentTeamsPage() {
             </li>
             <li>
               <strong className="text-foreground">
-                A terminal, IDE or desktop session you started yourself
+                A terminal, IDE, desktop or cloud session you started yourself
               </strong>
               : the first time a claimed step names an agent your session
-              doesn&apos;t have, Claude Code runs{" "}
+              doesn&apos;t have, Claude Code calls{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 sync_board_agents
               </code>{" "}
-              once. It saves the agents as{" "}
+              for that step. The agent is saved as a{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 .claude/agents/vc-*.md
               </code>{" "}
-              files in your project folder and picks them up straight away. If
-              that folder didn&apos;t exist when the session started, they load
-              from the next session.
-            </li>
-            <li>
-              <strong className="text-foreground">
-                A Claude Code cloud session
-              </strong>{" "}
-              (claude.ai/code, the phone app, desktop &quot;Cloud&quot;): the same
-              sync, with one extra step. Cloud sessions can only reach
-              approved websites, so in your environment&apos;s settings choose
-              a Custom network, keep the default list and add{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                vibecodes.co.uk
-              </code>
-              . Connect VibeCodes to cloud sessions with the claude.ai
+              file and checked against a fingerprint, so an altered copy is
+              deleted rather than run. Everything travels through the
+              VibeCodes connection, so it works on any network, cloud sessions
+              included: there is nothing to allow-list. Claude Code runs the
+              save in the background and picks the agent up as soon as it
+              finishes, in the same claim, with no wait for another message.
+              Connect VibeCodes to cloud sessions with the claude.ai
               connector.
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            The files are never committed: this repository ignores them, and in
-            any other repository the sync adds a local-only ignore line. Your
-            agents are re-synced on the next claim whenever you edit an
-            agent&apos;s instructions, skills or model. If a sync fails, for
-            example because the network blocks vibecodes.co.uk, the step simply
-            runs as before with the instructions passed along in the message.
+            <strong className="text-foreground">
+              One limit, for a repository that has never had an agents folder.
+            </strong>{" "}
+            Claude Code only watches agent folders that existed when the
+            session started. In a repository with no{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              .claude/agents/
+            </code>{" "}
+            folder the first sync has to create it, so that one step runs the
+            usual way, with the instructions passed along in the message. The
+            sync also adds a{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              .claude/agents/.gitignore
+            </code>
+            ; commit it and every later session starts with the folder in
+            place. To avoid even that first gap in any repository, create a
+            personal agents folder once with{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              mkdir -p ~/.claude/agents
+            </code>{" "}
+            on your own machine, or as a line in a cloud environment&apos;s
+            setup script. The sync uses it whenever the project has no agents
+            folder.
+          </p>
+          <p className="mt-3 text-muted-foreground">
+            The files are never committed: they are ignored by a{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              .gitignore
+            </code>{" "}
+            inside the agents folder. Your agents are re-synced on the next
+            claim whenever you edit an agent&apos;s instructions, skills or
+            model. If a sync fails, the step simply runs as before with the
+            instructions passed along in the message.
           </p>
           <p className="mt-3 text-muted-foreground">
             Cloud sessions don&apos;t read your personal{" "}

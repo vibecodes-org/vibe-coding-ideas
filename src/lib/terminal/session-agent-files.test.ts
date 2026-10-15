@@ -1,15 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSessionAgents, type SessionAgentInput } from "./session-agents";
 import {
+  AGENT_FILE_MAX_BYTES,
   AGENT_FILE_NAME_PATTERN,
-  buildAgentFilesTar,
+  SYNC_MARKER,
+  agentFileFingerprint,
+  agentFileSyncCommand,
   parseAgentFile,
   renderAgentFile,
-  syncCommand,
 } from "./session-agent-files";
 
 const ATLAS = {
@@ -35,14 +37,27 @@ const AGENTS = buildSessionAgents([input(ATLAS), input(LENS, { tier: "standard",
 describe("renderAgentFile / parseAgentFile", () => {
   it("round-trips every definition buildSessionAgents produces", () => {
     for (const [name, def] of Object.entries(AGENTS)) {
-      expect(parseAgentFile(renderAgentFile(name, def))).toEqual({ name, def });
+      expect(parseAgentFile(renderAgentFile(name, def))).toEqual({ name, def, synced: false });
+      expect(parseAgentFile(renderAgentFile(name, def, { synced: true }))).toEqual({ name, def, synced: true });
     }
   });
 
-  it("keeps the prompt byte-for-byte as the body", () => {
+  it("keeps the prompt byte-for-byte as the body, ending in exactly one newline", () => {
     const [name, def] = Object.entries(AGENTS)[0];
     const file = renderAgentFile(name, def);
-    expect(file.endsWith(def.prompt)).toBe(true);
+    expect(file.endsWith(`${def.prompt}\n`)).toBe(true);
+    expect(file.endsWith("\n\n")).toBe(false);
+    expect(renderAgentFile(name, { ...def, prompt: `${def.prompt}\n\n\n` }).endsWith(`${def.prompt}\n`)).toBe(true);
+  });
+
+  it("marks a synced file at the start of the description and keeps the tag last", () => {
+    const [name, def] = Object.entries(AGENTS)[0];
+    const parsed = parseAgentFile(renderAgentFile(name, def, { synced: true }));
+    expect(parsed.synced).toBe(true);
+    const raw = /^description: (.*)$/m.exec(renderAgentFile(name, def, { synced: true }))![1];
+    const description = JSON.parse(raw) as string;
+    expect(description.startsWith(`${SYNC_MARKER} `)).toBe(true);
+    expect(description.endsWith(def.description.slice(def.description.lastIndexOf("[vc ")))).toBe(true);
   });
 
   it("carries disallowedTools for a read-only agent and omits the field for full access", () => {
@@ -58,7 +73,7 @@ describe("renderAgentFile / parseAgentFile", () => {
     const file = renderAgentFile(name, def);
     expect(file).not.toMatch(/^model:/m);
     expect(file).not.toMatch(/^effort:/m);
-    expect(parseAgentFile(file)).toEqual({ name, def });
+    expect(parseAgentFile(file)).toEqual({ name, def, synced: false });
   });
 
   it("rejects a name that isn't a safe vc- filename", () => {
@@ -72,91 +87,331 @@ describe("renderAgentFile / parseAgentFile", () => {
   });
 });
 
-describe("buildAgentFilesTar", () => {
-  it("is read back by the system tar as exactly the rendered files", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-tar-"));
-    try {
-      const tarPath = join(dir, "a.tar");
-      writeFileSync(tarPath, buildAgentFilesTar(AGENTS));
-      const out = join(dir, "out");
-      execFileSync("mkdir", [out]);
-      execFileSync("tar", ["-xf", tarPath, "-C", out]);
-      expect(readdirSync(out).sort()).toEqual(Object.keys(AGENTS).map((n) => `${n}.md`).sort());
-      for (const [name, def] of Object.entries(AGENTS)) {
-        expect(readFileSync(join(out, `${name}.md`), "utf8")).toBe(renderAgentFile(name, def));
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("holds only vc-*.md entries", () => {
-    const listing = spawnSync("tar", ["-tf", "-"], { input: buildAgentFilesTar(AGENTS), encoding: "utf8" });
-    const names = listing.stdout.split("\n").filter(Boolean);
-    expect(names.length).toBe(Object.keys(AGENTS).length);
-    for (const n of names) expect(n).toMatch(AGENT_FILE_NAME_PATTERN);
+describe("agentFileFingerprint", () => {
+  it("ignores trailing whitespace on lines and trailing newlines, nothing else", () => {
+    const base = "a\nb c\n\nd";
+    const fp = agentFileFingerprint(base);
+    expect(agentFileFingerprint("a  \nb c\t\r\n\nd\n\n\n")).toBe(fp);
+    expect(agentFileFingerprint("a\nb  c\n\nd")).not.toBe(fp);
+    expect(agentFileFingerprint(" a\nb c\n\nd")).not.toBe(fp);
+    expect(agentFileFingerprint("a\nb c\nd")).not.toBe(fp);
   });
 });
 
-describe("syncCommand", () => {
-  const url = "https://vibecodes.co.uk/api/terminal/agent-files?t=abc.def_-";
+// The command is run for real, in throwaway directories (never this repo's
+// .claude/agents, never the real ~/.claude).
+describe("agentFileSyncCommand", () => {
+  const [NAME, DEF] = Object.entries(AGENTS)[0];
+  const FILE = renderAgentFile(NAME, DEF, { synced: true });
+  const SHA = agentFileFingerprint(FILE);
+  const cmd = (over: Partial<Parameters<typeof agentFileSyncCommand>[0]> = {}) =>
+    agentFileSyncCommand({ name: NAME, content: FILE, sha256: SHA, settleSeconds: 0, ...over });
 
-  it("is valid bash", () => {
-    const r = spawnSync("bash", ["-n"], { input: syncCommand(url), encoding: "utf8" });
-    expect(r.status).toBe(0);
+  function sandbox() {
+    const root = mkdtempSync(join(tmpdir(), "agent-sync-"));
+    const repo = join(root, "repo");
+    const home = join(root, "home");
+    mkdirSync(repo);
+    mkdirSync(home);
+    return { root, repo, home };
+  }
+  function run(command: string, cwd: string, home: string, env: Record<string, string> = {}) {
+    const clean = { PATH: process.env.PATH ?? "", HOME: home, NODE_ENV: "test" as const, ...env };
+    return spawnSync("bash", ["-c", command], { cwd, encoding: "utf8", env: clean });
+  }
+  const last = (out: string) => out.trim().split("\n").pop();
+
+  it("is valid bash and contains no network tool", () => {
+    expect(spawnSync("bash", ["-n"], { input: cmd(), encoding: "utf8" }).status).toBe(0);
+    expect(cmd()).not.toMatch(/curl|wget|http/i);
   });
 
-  it("single-quotes the url, escaping any quote in it", () => {
-    expect(syncCommand("https://x/y'z")).toContain(`'https://x/y'\\''z'`);
+  it("rejects an unsafe name or a bad fingerprint", () => {
+    expect(() => cmd({ name: "../evil" })).toThrow();
+    expect(() => cmd({ sha256: "nope" })).toThrow();
   });
 
-  it("names the network allowlist when the download fails", () => {
-    expect(syncCommand(url)).toContain("vibecodes.co.uk");
-    expect(syncCommand(url)).toContain("exit 1");
-  });
-
-  it("installs the files from a local server's tar, replaces stale ones, and ignores them in git", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-sync-"));
+  it("writes the file byte-for-byte into an existing project folder and says READY", () => {
+    const { root, repo, home } = sandbox();
     try {
-      writeFileSync(join(dir, "a.tar"), buildAgentFilesTar(AGENTS));
-      execFileSync("git", ["init", "-q", dir]);
-      execFileSync("mkdir", ["-p", join(dir, ".claude", "agents")]);
-      writeFileSync(join(dir, ".claude", "agents", "vc-stale-00000000.md"), "old");
-      writeFileSync(join(dir, ".claude", "agents", "mine.md"), "keep");
-      // file:// stands in for the https download; curl treats both the same way.
-      const r = spawnSync("bash", ["-c", syncCommand(`file://${join(dir, "a.tar")}`)], { cwd: dir, encoding: "utf8" });
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      const r = run(cmd(), repo, home);
       expect(r.status).toBe(0);
-      const files = readdirSync(join(dir, ".claude", "agents")).sort();
-      expect(files).toEqual([...Object.keys(AGENTS).map((n) => `${n}.md`), "mine.md"].sort());
-      expect(r.stdout).toContain("Synced 2 board agents");
-      const status = execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: dir, encoding: "utf8" });
-      expect(status).not.toContain("vc-");
-      expect(status).toContain("mine.md");
+      expect(last(r.stdout)).toBe("READY");
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+      expect(readdirSync(join(repo, ".claude", "agents")).filter((f) => f.startsWith(`.${NAME}`))).toEqual([]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("exits non-zero with the allowlist hint when the download fails", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-sync-"));
+  it("adds a .gitignore in the project folder, so git stays clean apart from it", () => {
+    const { root, repo, home } = sandbox();
     try {
-      const r = spawnSync("bash", ["-c", syncCommand(`file://${join(dir, "missing.tar")}`)], { cwd: dir, encoding: "utf8" });
-      expect(r.status).not.toBe(0);
-      expect(r.stderr).toContain("vibecodes.co.uk");
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      run(cmd(), repo, home);
+      expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("vc-*.md\n");
+      const status = execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: repo, encoding: "utf8" });
+      expect(status).not.toContain(".md");
+      expect(status).toContain(".claude/agents/.gitignore");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("leaves existing files alone and says so on an empty answer", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-sync-"));
+  it("writes no .gitignore when the repo's own rules already ignore the file", () => {
+    const { root, repo, home } = sandbox();
     try {
-      writeFileSync(join(dir, "empty.tar"), "");
-      const r = spawnSync("bash", ["-c", syncCommand(`file://${join(dir, "empty.tar")}`)], { cwd: dir, encoding: "utf8" });
-      expect(r.status).toBe(0);
-      expect(r.stdout).toContain("no agents to sync");
+      execFileSync("git", ["init", "-q", repo]);
+      writeFileSync(join(repo, ".gitignore"), ".claude/agents/vc-*.md\n");
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      run(cmd(), repo, home);
+      expect(existsSync(join(repo, ".claude", "agents", ".gitignore"))).toBe(false);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("appends the pattern to an existing agents .gitignore that lacks it, and never twice", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", ".gitignore"), "other.md\n");
+      run(cmd(), repo, home);
+      run(cmd(), repo, home);
+      expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("other.md\nvc-*.md\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the last line intact when the agents .gitignore has no trailing newline", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", ".gitignore"), "other.md");
+      const r = run(cmd(), repo, home);
+      expect(last(r.stdout)).toBe("READY");
+      expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("other.md\nvc-*.md\n");
+      expect(
+        spawnSync("git", ["check-ignore", "-q", `.claude/agents/${NAME}.md`], { cwd: repo }).status,
+      ).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("warns when the file still isn't ignored after the .gitignore was written", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", ".gitignore"), "vc-*.md\n!vc-*.md\n");
+      const r = run(cmd(), repo, home);
+      expect(r.stdout).toMatch(/WARNING: .*not git-ignored/);
+      expect(last(r.stdout)).toBe("READY");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the user-level folder, honouring CLAUDE_CONFIG_DIR, and leaves git alone", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      const cfg = join(root, "cfg");
+      mkdirSync(join(cfg, "agents"), { recursive: true });
+      const r = run(cmd(), repo, home, { CLAUDE_CONFIG_DIR: cfg });
+      expect(last(r.stdout)).toBe("READY");
+      expect(readFileSync(join(cfg, "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+      expect(existsSync(join(repo, ".claude"))).toBe(false);
+
+      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+      const r2 = run(cmd(), repo, home);
+      expect(last(r2.stdout)).toBe("READY");
+      expect(existsSync(join(home, ".claude", "agents", `${NAME}.md`))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers the project folder over the user folder", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+      run(cmd(), repo, home);
+      expect(existsSync(join(repo, ".claude", "agents", `${NAME}.md`))).toBe(true);
+      expect(existsSync(join(home, ".claude", "agents", `${NAME}.md`))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("with neither folder, creates the project one with its .gitignore and says NEW_FOLDER", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      execFileSync("git", ["init", "-q", repo]);
+      const r = run(cmd(), repo, home);
+      expect(r.status).toBe(0);
+      expect(last(r.stdout)).toBe("NEW_FOLDER");
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+      expect(readFileSync(join(repo, ".claude", "agents", ".gitignore"), "utf8")).toBe("vc-*.md\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("deletes the file and exits 3 with MISMATCH when the content was altered", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      const r = run(cmd({ content: FILE.replace("Ship", "Skip") }), repo, home);
+      expect(r.status).toBe(3);
+      expect(last(r.stdout)).toMatch(/^MISMATCH/);
+      expect(readdirSync(join(repo, ".claude", "agents"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still verifies after whitespace drift (JS and shell fingerprints agree)", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      const drifted = FILE.split("\n").map((l, i) => (i % 2 ? `${l}  ` : `${l}\t`)).join("\n") + "\n\n";
+      const r = run(cmd({ content: drifted }), repo, home);
+      expect(last(r.stdout)).toBe("READY");
+      expect(r.status).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("carries hostile content untouched: expansions, heredoc-looking lines, backticks, non-ASCII", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      const hostile = {
+        ...DEF,
+        prompt: [
+          "$(touch pwned) `touch pwned2` ${HOME} \\n 'q' \"dq\"",
+          "EOF",
+          "VC_AGENT_000000000000",
+          "naïve — café ✓",
+          "line with trailing spaces   ",
+        ].join("\n"),
+      };
+      const file = renderAgentFile(NAME, hostile, { synced: true });
+      const r = run(cmd({ content: file, sha256: agentFileFingerprint(file) }), repo, home);
+      expect(last(r.stdout)).toBe("READY");
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(file);
+      expect(existsSync(join(repo, "pwned"))).toBe(false);
+      expect(existsSync(join(repo, "pwned2"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("never lets file content end the heredoc early", () => {
+    const first = cmd();
+    const delimiter = /<<'(VC_AGENT_[0-9A-F]+)'/.exec(first)![1];
+    const tricky = renderAgentFile(NAME, { ...DEF, prompt: `x\n${delimiter}\ny` });
+    const c = agentFileSyncCommand({ name: NAME, content: tricky, sha256: agentFileFingerprint(tricky), settleSeconds: 0 });
+    expect(c).toContain(tricky);
+    expect(c.split("\n").filter((l) => /^VC_AGENT_[0-9A-F]+$/.test(l)).length).toBeLessThanOrEqual(2);
+  });
+
+  it("replaces an older copy of the same agent", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "old");
+      writeFileSync(join(repo, ".claude", "agents", "mine.md"), "keep");
+      run(cmd(), repo, home);
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+      expect(readFileSync(join(repo, ".claude", "agents", "mine.md"), "utf8")).toBe("keep");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("pauses for the settle time before READY", () => {
+    const { root, repo, home } = sandbox();
+    try {
+      mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+      const t0 = Date.now();
+      run(cmd({ settleSeconds: 1 }), repo, home);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(950);
+      expect(cmd()).toContain("sleep 0");
+      expect(agentFileSyncCommand({ name: NAME, content: FILE, sha256: SHA })).toContain("sleep 5");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a full-size agent far under the argument limit", () => {
+    expect(AGENT_FILE_MAX_BYTES + 5_000).toBeLessThan(128 * 1024);
+  });
+});
+
+// macOS has no sha256sum (shasum instead) and its default shell is zsh, which
+// doesn't word-split an unquoted variable. Run the real command both ways.
+describe("agentFileSyncCommand on a machine without sha256sum, and under zsh", () => {
+  const [NAME, DEF] = Object.entries(AGENTS)[0];
+  const FILE = renderAgentFile(NAME, DEF, { synced: true });
+  const SHA = agentFileFingerprint(FILE);
+  const command = agentFileSyncCommand({ name: NAME, content: FILE, sha256: SHA, settleSeconds: 0 });
+  const which = (bin: string) => {
+    const r = spawnSync("sh", ["-c", `command -v ${bin}`], { encoding: "utf8" });
+    return r.status === 0 ? r.stdout.trim() : null;
+  };
+  const hasShasum = which("shasum") !== null;
+  const zshPath = which("zsh");
+
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), "agent-sync-sh-"));
+    const repo = join(root, "repo");
+    mkdirSync(join(repo, ".claude", "agents"), { recursive: true });
+    return { root, repo };
+  }
+
+  it.skipIf(!hasShasum)("verifies with shasum when sha256sum is not on PATH", () => {
+    const { root, repo } = setup();
+    try {
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      for (const tool of ["bash", "sed", "cut", "mktemp", "cat", "rm", "mv", "grep", "tail", "tr", "sleep", "git", "shasum", "perl", "env", "dirname"]) {
+        const p = which(tool);
+        if (p) symlinkSync(p, join(bin, tool));
+      }
+      const env = { PATH: bin, HOME: root, NODE_ENV: "test" as const };
+      expect(spawnSync("bash", ["-c", "command -v sha256sum"], { env, encoding: "utf8" }).status).not.toBe(0);
+      const r = spawnSync(join(bin, "bash"), ["-c", command], { cwd: repo, env, encoding: "utf8" });
+      expect(r.stdout.trim().split("\n").pop()).toBe("READY");
+      expect(r.status).toBe(0);
+      expect(readFileSync(join(repo, ".claude", "agents", `${NAME}.md`), "utf8")).toBe(FILE);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!zshPath)("runs under zsh (the macOS default shell) and verifies", () => {
+    const { root, repo } = setup();
+    try {
+      const r = spawnSync(zshPath as string, ["-c", command], {
+        cwd: repo,
+        env: { PATH: process.env.PATH ?? "", HOME: root, NODE_ENV: "test" as const },
+        encoding: "utf8",
+      });
+      expect(r.stdout.trim().split("\n").pop()).toBe("READY");
+      expect(r.status).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

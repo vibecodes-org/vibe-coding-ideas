@@ -21,6 +21,7 @@
 
 import { createHash } from "node:crypto";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
+import { SYNC_MARKER } from "./session-agent-files";
 import { agentPersonaBody, disallowedToolsFor, type ToolAccess } from "../agent-tool-access";
 
 export type SessionAgentTier = "frontier" | "standard" | "cheap";
@@ -222,10 +223,12 @@ export function sessionAgentClaimHint(input: {
   skillsText?: string;
   agent?: "claude" | "codex";
   /**
-   * The board's idea id. When given, a Claude claim also says how to fetch the
-   * agents if the session wasn't launched by VibeCodes (sync_board_agents).
+   * The board's idea id and the claimed step's id. When both are given, a
+   * Claude claim also says how to fetch the agent if the session wasn't
+   * launched by VibeCodes (sync_board_agents).
    */
   ideaId?: string;
+  stepId?: string;
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier);
   const tag = sessionAgentTag(
@@ -252,12 +255,17 @@ export function sessionAgentClaimHint(input: {
       `name and tag is available, ignore this note and follow the steps above.`;
     return { name, tag, instruction };
   }
-  const syncStep = input.ideaId
-    ? `If your Agent tool doesn't offer that exact name and tag, this session wasn't launched by VibeCodes: ` +
-      `call sync_board_agents (idea_id "${input.ideaId}") once, run the command it returns, then spawn the ` +
-      `subagent only if its description ends with ${tag} (a new subagent can take a turn to appear). ` +
-      `If the sync fails or it still isn't offered with that tag, `
-    : `If no subagent with that exact name and tag is available, `;
+  const syncStep =
+    input.ideaId && input.stepId
+      ? `If your Agent tool doesn't offer that exact name and tag: when it offers a subagent with this name whose ` +
+        `description starts with "${SYNC_MARKER}", an earlier sync left a stale copy, so sync again; when it ` +
+        `offers one without that marker, VibeCodes launched this session with its own copy, which a sync can't ` +
+        `replace, so skip the sync. When it isn't offered at all, call sync_board_agents (idea_id ` +
+        `"${input.ideaId}", step_id "${input.stepId}"), run the command it returns exactly as its instruction says ` +
+        `(in the background, then end your turn), and spawn the subagent when you wake, only if its description ` +
+        `ends with ${tag}. Sync each agent at most once per session, and never sync again after a failure or NEW_FOLDER. If the sync is skipped or ` +
+        `fails, or it still isn't offered with that tag, `
+      : `If no subagent with that exact name and tag is available, `;
   const instruction =
     `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +
     `${tag}, spawn that subagent type for this step instead of a general-purpose one. Its system prompt already ` +

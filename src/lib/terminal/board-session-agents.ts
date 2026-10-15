@@ -1,11 +1,17 @@
 // The board → Claude Code/Codex subagent definitions, lifted out of the
-// bridge's session/agents route so the agent-files download (card 7939ee17) builds
-// the exact same payload from the exact same reads. Service-role client: the
-// callers have already authorised the user for this idea.
+// bridge's session/agents route so the sync (cards 7939ee17, b9205d04) builds
+// the exact same definitions from the exact same reads. The caller passes the
+// client and has already authorised the user for this idea.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
-import { buildSessionAgents, sessionAgentName, type ClaudeCodeAgentDefinition, type SessionAgentInput } from "@/lib/terminal/session-agents";
+import {
+  buildSessionAgents,
+  sessionAgentName,
+  type ClaudeCodeAgentDefinition,
+  type SessionAgentInput,
+  type SessionAgentTier,
+} from "@/lib/terminal/session-agents";
 import {
   selectSessionAgentPairs,
   type AllocatedAgent,
@@ -25,7 +31,7 @@ const STEP_MAX_PAGES = 20;
 /**
  * Every claimable step that has a bot, paged by id. One unordered
  * `.limit(1000)` used to hand back an arbitrary sample on a board with more
- * (Balla Bot has ~1,900), so a waiting agent could silently drop out.
+ * (one real board has ~1,900), so a waiting agent could silently drop out.
  */
 async function fetchClaimableSteps(supabase: SupabaseClient<Database>, ideaId: string, logContext: Record<string, unknown>) {
   const steps: { bot_id: string | null; model_tier: string | null }[] = [];
@@ -49,6 +55,62 @@ async function fetchClaimableSteps(supabase: SupabaseClient<Database>, ideaId: s
   return steps;
 }
 
+
+type InputBuilder = (pairs: SessionAgentPair[]) => SessionAgentInput[];
+
+/**
+ * Reads what turning (bot, tier) pairs into agent inputs needs: the bots, their
+ * skills, the user's tier map and the platform defaults. Null when the skills
+ * can't be read (agents built without them would never match a claim).
+ */
+async function loadInputBuilder(
+  supabase: SupabaseClient<Database>,
+  opts: { botIds: string[]; userId: string; agent: "claude" | "codex"; logContext: Record<string, unknown> },
+): Promise<InputBuilder | null> {
+  const { botIds, userId, agent, logContext } = opts;
+  const [{ data: bots }, skillsByBot, { data: owner }, platformDefaults] = await Promise.all([
+    supabase.from("bot_profiles").select("id, name, role, system_prompt, tool_access").in("id", botIds),
+    // Same read claim_next_step uses, so both build the same Skills text. A
+    // failed read gives nothing rather than agents that would never match.
+    fetchAgentSkills(supabase, botIds).catch((err: unknown) => {
+      logger.error("Terminal session agents fetch: skills read failed", {
+        ...logContext,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }),
+    supabase.from("users").select("model_tier_map").eq("id", userId).maybeSingle(),
+    getAgentAwarePlatformModelDefaults(supabase),
+  ]);
+
+  if (!skillsByBot) return null;
+
+  const botsById = new Map((bots ?? []).map((b) => [b.id, b]));
+  return (pairs) => {
+    const inputs: SessionAgentInput[] = [];
+    for (const { botId, tier } of pairs) {
+      const bot = botsById.get(botId);
+      if (!bot?.system_prompt) continue;
+      // Resolved exactly as claim_next_step resolves it, so the definition's
+      // model/effort match the step's MANDATORY MODEL directive.
+      const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults) : null;
+      inputs.push({
+        bot: {
+          id: bot.id,
+          name: bot.name,
+          role: bot.role,
+          system_prompt: bot.system_prompt,
+          tool_access: bot.tool_access,
+        },
+        tier,
+        model: resolution?.resolved ?? null,
+        effort: resolution?.effort ?? null,
+        skills: skillsByBot.get(botId) ?? [],
+      });
+    }
+    return inputs;
+  };
+}
 
 /**
  * The board's agent definitions for one user and idea, or null when there is
@@ -94,49 +156,13 @@ export async function loadBoardSessionAgents(
   });
   if (waiting.length === 0 && optional.length === 0) return null;
 
-  const botIds = [...new Set([...waiting, ...optional].map((p) => p.botId))];
-  const [{ data: bots }, skillsByBot, { data: owner }, platformDefaults] = await Promise.all([
-    supabase.from("bot_profiles").select("id, name, role, system_prompt, tool_access").in("id", botIds),
-    // Same read claim_next_step uses, so both build the same Skills text. A
-    // failed read gives nothing rather than agents that would never match.
-    fetchAgentSkills(supabase, botIds).catch((err: unknown) => {
-      logger.error("Terminal session agents fetch: skills read failed", {
-        ...logContext,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }),
-    supabase.from("users").select("model_tier_map").eq("id", userId).maybeSingle(),
-    getAgentAwarePlatformModelDefaults(supabase),
-  ]);
-
-  if (!skillsByBot) return null;
-
-  const botsById = new Map((bots ?? []).map((b) => [b.id, b]));
-  const toInputs = (pairs: SessionAgentPair[]): SessionAgentInput[] => {
-    const inputs: SessionAgentInput[] = [];
-    for (const { botId, tier } of pairs) {
-      const bot = botsById.get(botId);
-      if (!bot?.system_prompt) continue;
-      // Resolved exactly as claim_next_step resolves it, so the definition's
-      // model/effort match the step's MANDATORY MODEL directive.
-      const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults) : null;
-      inputs.push({
-        bot: {
-          id: bot.id,
-          name: bot.name,
-          role: bot.role,
-          system_prompt: bot.system_prompt,
-          tool_access: bot.tool_access,
-        },
-        tier,
-        model: resolution?.resolved ?? null,
-        effort: resolution?.effort ?? null,
-        skills: skillsByBot.get(botId) ?? [],
-      });
-    }
-    return inputs;
-  };
+  const toInputs = await loadInputBuilder(supabase, {
+    botIds: [...new Set([...waiting, ...optional].map((p) => p.botId))],
+    userId,
+    agent,
+    logContext,
+  });
+  if (!toInputs) return null;
   const waitingInputs = toInputs(waiting);
   const optionalInputs = toInputs(optional);
 
@@ -144,7 +170,7 @@ export async function loadBoardSessionAgents(
   const delivered = agents ? Object.keys(agents) : [];
   const waitingDelivered = waitingInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;
   const optionalDelivered = optionalInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;
-  logger.info("Terminal session agents delivered to bridge", {
+  logger.info("Terminal session agents built", {
     ...logContext,
     agent,
     agents: delivered.length,
@@ -162,9 +188,39 @@ export async function loadBoardSessionAgents(
 }
 
 /**
+ * The one agent a claimed step names: its bot at the step's tier, built exactly
+ * as the `--agents` payload and the claim hint build it (so the name and tag
+ * agree). Null when the step isn't on this idea, has no bot, or the bot has no
+ * persona text; throws nothing for those, the caller says so.
+ */
+export async function loadStepSessionAgent(
+  supabase: SupabaseClient<Database>,
+  opts: { stepId: string; ideaId: string; userId: string },
+): Promise<{ name: string; def: ClaudeCodeAgentDefinition } | null> {
+  const { stepId, ideaId, userId } = opts;
+  const logContext = { idea: ideaId };
+  const { data: step } = await supabase
+    .from("task_workflow_steps")
+    .select("bot_id, model_tier")
+    .eq("id", stepId)
+    .eq("idea_id", ideaId)
+    .maybeSingle();
+  if (!step?.bot_id) return null;
+  const tier = (step.model_tier ?? null) as SessionAgentTier | null;
+  const toInputs = await loadInputBuilder(supabase, { botIds: [step.bot_id], userId, agent: "claude", logContext });
+  if (!toInputs) return null;
+  const inputs = toInputs([{ botId: step.bot_id, tier, uses: 1 }]);
+  if (inputs.length === 0) return null;
+  const agents = buildSessionAgents(inputs);
+  const name = sessionAgentName(inputs[0].bot, tier);
+  const def = agents?.[name];
+  return def ? { name, def } : null;
+}
+
+/**
  * Whether `userId` is on the idea's team as its author or a collaborator.
  * (is_idea_team_member() also counts allocated agents, which are bots that
- * never download agent files.) Two keyed reads, so no large `.in()`.
+ * never sync agent files.) Two keyed reads, so no large `.in()`.
  */
 export async function isBoardMember(
   supabase: SupabaseClient<Database>,

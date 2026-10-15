@@ -211,7 +211,12 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
-import { syncBoardAgents, syncBoardAgentsSchema } from "./tools/agent-sync";
+import {
+  SYNC_MAX_RESULT_SIZE_CHARS,
+  syncBoardAgents,
+  syncBoardAgentsContent,
+  syncBoardAgentsSchema,
+} from "./tools/agent-sync";
 import {
   getIdeaEnhancementPrompt,
   getIdeaEnhancementPromptSchema,
@@ -1516,19 +1521,26 @@ export function registerTools(
     }
   );
 
-  server.tool(
+  const syncTool = server.tool(
     "sync_board_agents",
-    "Save this board's agents as real Claude Code subagents (.claude/agents/vc-*.md, untracked) in the current project folder, for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, and at most once per claim. Returns a shell command that downloads the definitions (a 5-minute link) and installs them; run it from the project folder, then spawn the subagent. If it fails, carry on with claim_next_step's general-purpose steps. Remote connector only.",
+    "Save the agent of a step you just claimed as a real Claude Code subagent (an untracked .claude/agents/vc-*.md file), for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, with that step's id. Returns a JSON summary (agent name, tag, sha256) and, in a second text block, a self-checking shell command that carries the file: no download, so it works on any network. Run the command exactly as given with run_in_background and end your turn; the completion wakes you with the subagent loaded. If it fails, carry on with claim_next_step's general-purpose steps.",
     syncBoardAgentsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await syncBoardAgents(ctx, syncBoardAgentsSchema.parse(args)));
+        return syncBoardAgentsContent(await syncBoardAgents(ctx, syncBoardAgentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
     }
   );
+  // One agent file is up to ~50,000 characters, the point where Claude Code
+  // saves a tool result to a file instead of showing it. Declared on the tool.
+  if (syncTool && typeof syncTool === "object") {
+    (syncTool as { _meta?: Record<string, unknown> })._meta = {
+      "anthropic/maxResultSizeChars": SYNC_MAX_RESULT_SIZE_CHARS,
+    };
+  }
 
   server.tool(
     "get_agent_skill_content",

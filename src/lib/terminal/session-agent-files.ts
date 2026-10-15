@@ -6,11 +6,14 @@
 // and loads without a restart. The definitions come from buildSessionAgents, so
 // names, prompts and match tags are identical to the `--agents` payload; this
 // module only changes the container: a markdown file with YAML frontmatter, a
-// minimal tar to carry several of them in one download, and the shell command
-// that installs the download.
+// fingerprint that survives a model retyping whitespace, and the one shell
+// command that writes and verifies the file. The command carries the file
+// itself, so it travels through the MCP connector and needs no network (card
+// b9205d04).
 //
-// Server-side only (Buffer). No agent text is ever logged or committed.
+// Server-side only (node:crypto). No agent text is ever logged or committed.
 
+import { createHash, randomBytes } from "node:crypto";
 import type { ClaudeCodeAgentDefinition } from "./session-agents";
 
 /** `vc-<slug>-<id8>[-<tier>].md`: flat, lowercase, nothing a path can escape through. */
@@ -25,22 +28,37 @@ function assertSafeName(name: string): void {
 }
 
 /**
+ * Starts the description of every file the sync writes. A claim that finds an
+ * agent offered with a different tag re-syncs only when the offered
+ * description starts with this: without it the copy came from VibeCodes'
+ * `--agents` launch flag, which beats files on a name clash, so a sync can't
+ * replace it.
+ */
+export const SYNC_MARKER = "Saved by sync_board_agents.";
+
+/**
  * One agent file. The description is a JSON string (valid double-quoted YAML,
  * so colons and quotes in it can't break the frontmatter); the body is the
- * definition's prompt, unchanged.
+ * definition's prompt followed by exactly one newline. `synced` puts the
+ * marker first; the match tag stays last.
  */
-export function renderAgentFile(name: string, def: ClaudeCodeAgentDefinition): string {
+export function renderAgentFile(
+  name: string,
+  def: ClaudeCodeAgentDefinition,
+  opts: { synced?: boolean } = {},
+): string {
   assertSafeName(name);
-  const lines = ["---", `name: ${name}`, `description: ${JSON.stringify(def.description)}`];
+  const description = opts.synced ? `${SYNC_MARKER} ${def.description}` : def.description;
+  const lines = ["---", `name: ${name}`, `description: ${JSON.stringify(description)}`];
   if (def.model) lines.push(`model: ${def.model}`);
   if (def.effort) lines.push(`effort: ${def.effort}`);
   if (def.disallowedTools?.length) lines.push(`disallowedTools: ${def.disallowedTools.join(DISALLOWED_SEPARATOR)}`);
   lines.push("---", "");
-  return lines.join("\n") + def.prompt;
+  return lines.join("\n") + def.prompt.replace(/\n+$/, "") + "\n";
 }
 
 /** Inverse of renderAgentFile, for tests and for checking what a sync wrote. */
-export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAgentDefinition } {
+export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAgentDefinition; synced: boolean } {
   const lines = file.split("\n");
   if (lines[0] !== "---") throw new Error("Agent file has no frontmatter");
   const end = lines.indexOf("---", 1);
@@ -56,98 +74,112 @@ export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAge
   const model = fields.get("model");
   const effort = fields.get("effort");
   const disallowed = fields.get("disallowedTools");
+  const parsed = JSON.parse(description) as string;
+  const synced = parsed.startsWith(`${SYNC_MARKER} `);
   const def: ClaudeCodeAgentDefinition = {
-    description: JSON.parse(description) as string,
-    prompt: lines.slice(end + 1).join("\n"),
+    description: synced ? parsed.slice(SYNC_MARKER.length + 1) : parsed,
+    prompt: lines.slice(end + 1).join("\n").replace(/\n$/, ""),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(disallowed ? { disallowedTools: disallowed.split(DISALLOWED_SEPARATOR) } : {}),
   };
-  return { name, def };
-}
-
-const BLOCK = 512;
-
-function octal(value: number, width: number): string {
-  return value.toString(8).padStart(width - 1, "0") + "\0";
-}
-
-function tarEntry(fileName: string, content: Buffer): Buffer {
-  if (Buffer.byteLength(fileName) > 100) throw new Error("Agent file name too long for a tar header");
-  const header = Buffer.alloc(BLOCK);
-  header.write(fileName, 0, "utf8");
-  header.write(octal(0o644, 8), 100, "ascii");
-  header.write(octal(0, 8), 108, "ascii");
-  header.write(octal(0, 8), 116, "ascii");
-  header.write(octal(content.length, 12), 124, "ascii");
-  header.write(octal(0, 12), 136, "ascii");
-  header.write("        ", 148, "ascii"); // checksum placeholder: eight spaces
-  header.write("0", 156, "ascii"); // regular file
-  header.write("ustar\0", 257, "ascii");
-  header.write("00", 263, "ascii");
-  let sum = 0;
-  for (const byte of header) sum += byte;
-  header.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
-  const padding = Buffer.alloc((BLOCK - (content.length % BLOCK)) % BLOCK);
-  return Buffer.concat([header, content, padding]);
-}
-
-/** A ustar archive of flat `<name>.md` files, readable by any tar. */
-export function buildAgentFilesTar(agents: Record<string, ClaudeCodeAgentDefinition>): Buffer {
-  const entries = Object.entries(agents).map(([name, def]) =>
-    tarEntry(`${name}.md`, Buffer.from(renderAgentFile(name, def), "utf8")),
-  );
-  return Buffer.concat([...entries, Buffer.alloc(BLOCK * 2)]);
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return { name, def, synced };
 }
 
 /**
- * The one command the session runs from the project folder. It downloads the
- * archive, swaps the old `vc-*.md` files for the new ones (other files in
- * `.claude/agents/` are never touched), and makes sure git ignores them: a
- * repo with its own ignore rule is left alone, any other repo gets a line in
- * `.git/info/exclude`, which is local and never committed. Fails with a
- * non-zero exit and a hint when the download can't be made.
+ * Fingerprint of an agent file: trailing spaces, tabs and carriage returns
+ * removed from every line, trailing newlines removed from the end, sha256 hex.
+ * The shell side computes the same thing (`LC_ALL=C sed`, `$(...)`), so a
+ * session that retypes the file with whitespace slips still verifies, and any
+ * real edit does not.
  */
-export function syncCommand(url: string): string {
-  return `(
-set -e
-dir=.claude/agents
-fresh=0
-[ -d "$dir" ] || { mkdir -p "$dir"; fresh=1; }
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-curl -fsS --max-time 20 -o "$tmp/agents.tar" ${shellQuote(url)} || {
-  echo "Could not download the board agents. If this is a Claude Code cloud session, add vibecodes.co.uk to the environment's allowed domains." >&2
-  exit 1
+export function agentFileFingerprint(content: string): string {
+  // Split on \n only (never JS's wider line terminators) to match sed.
+  const normalised = content
+    .split("\n")
+    .map((line) => line.replace(/[ \t\r\v\f]+$/, ""))
+    .join("\n")
+    .replace(/\n+$/, "");
+  return createHash("sha256").update(normalised, "utf8").digest("hex");
 }
-if [ ! -s "$tmp/agents.tar" ]; then
-  echo "VibeCodes has no agents to sync for this board."
-  exit 0
+
+/** The command (inline, one `bash -c`) must stay far under Linux's 128 KB argument limit. */
+export const AGENT_FILE_MAX_BYTES = 90_000;
+
+function heredocDelimiter(content: string): string {
+  for (;;) {
+    const delimiter = `VC_AGENT_${randomBytes(6).toString("hex").toUpperCase()}`;
+    if (!content.includes(delimiter)) return delimiter;
+  }
+}
+
+/**
+ * The one command that writes a synced agent file and checks it. Run from the
+ * project folder (the repo root). It:
+ *  - picks the folder: `.claude/agents/` when it exists, else the user-level
+ *    `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents` when that exists, else it
+ *    creates `.claude/agents/` (Claude Code never loads a folder created
+ *    mid-session, so it prints NEW_FOLDER);
+ *  - writes the file to a temp file in that folder, fingerprints it and, on a
+ *    mismatch, deletes it and prints MISMATCH (exit 3), so an altered persona
+ *    never lands;
+ *  - moves it into place, and in the project folder of a git repo adds a
+ *    `.gitignore` (`vc-*.md`) unless git already ignores the file;
+ *  - pauses `settleSeconds` (Claude Code's folder watcher can lag the command's
+ *    completion) and prints READY.
+ * The file is a quoted heredoc, so nothing in it is expanded. No network.
+ * Last line of output: READY, NEW_FOLDER or MISMATCH.
+ */
+export function agentFileSyncCommand(opts: {
+  name: string;
+  content: string;
+  sha256: string;
+  settleSeconds?: number;
+}): string {
+  const { name, content, sha256 } = opts;
+  assertSafeName(name);
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error("sha256 must be 64 lowercase hex characters");
+  const settle = Math.max(0, Math.min(30, Math.floor(opts.settleSeconds ?? 5)));
+  const body = content.endsWith("\n") ? content : `${content}\n`;
+  const delimiter = heredocDelimiter(body);
+  return `(
+name='${name}'
+want='${sha256}'
+user_dir="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents"
+new=0
+project=0
+if [ -d .claude/agents ]; then dir=.claude/agents; project=1
+elif [ -d "$user_dir" ]; then dir="$user_dir"
+else dir=.claude/agents; project=1; new=1; mkdir -p "$dir" || exit 1
 fi
-mkdir "$tmp/out"
-tar -xf "$tmp/agents.tar" -C "$tmp/out"
-rm -f "$dir"/vc-*.md
-count=0
-for f in "$tmp"/out/vc-*.md; do
-  [ -e "$f" ] || continue
-  mv "$f" "$dir/"
-  count=$((count + 1))
-done
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  sample=$(ls "$dir"/vc-*.md 2>/dev/null | head -n 1)
-  if [ -n "$sample" ] && ! git check-ignore -q "$sample"; then
-    exclude=$(git rev-parse --git-path info/exclude)
-    mkdir -p "$(dirname "$exclude")"
-    echo '.claude/agents/vc-*.md' >> "$exclude"
+tmp=$(mktemp "$dir/.$name.XXXXXX") || exit 1
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp" <<'${delimiter}'
+${body}${delimiter}
+norm=$(LC_ALL=C sed 's/[[:space:]]*$//' "$tmp")
+if command -v sha256sum >/dev/null 2>&1; then got=$(printf '%s' "$norm" | sha256sum | cut -d' ' -f1)
+else got=$(printf '%s' "$norm" | shasum -a 256 | cut -d' ' -f1)
+fi
+if [ "$got" != "$want" ]; then
+  echo "MISMATCH: the saved file did not match its fingerprint, so it was deleted."
+  exit 3
+fi
+mv -f "$tmp" "$dir/$name.md" || exit 1
+trap - EXIT
+if [ "$project" = 1 ] && git rev-parse --git-dir >/dev/null 2>&1 && ! git check-ignore -q "$dir/$name.md"; then
+  if [ ! -e "$dir/.gitignore" ]; then printf 'vc-*.md\\n' > "$dir/.gitignore"
+  elif ! grep -qxF 'vc-*.md' "$dir/.gitignore"; then
+    if [ -s "$dir/.gitignore" ] && [ -n "$(tail -c 1 "$dir/.gitignore")" ]; then printf '\\n' >> "$dir/.gitignore"; fi
+    printf 'vc-*.md\\n' >> "$dir/.gitignore"
   fi
+  if ! git check-ignore -q "$dir/$name.md"; then echo "WARNING: $dir/$name.md is not git-ignored; do not commit it."; fi
 fi
-echo "Synced $count board agents into $dir."
-if [ "$fresh" = 1 ]; then
-  echo "The agents folder was new, so Claude Code may only load them from the next session."
+echo "Saved $name.md into $dir."
+if [ "$new" = 1 ]; then
+  echo "NEW_FOLDER"
+else
+  sleep ${settle}
+  echo "READY"
 fi
 )`;
 }

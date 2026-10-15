@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 84 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 86 tools.",
 };
 
 function ToolTable({
@@ -129,7 +129,7 @@ export default function McpIntegrationPage() {
             <p className="text-muted-foreground">
               The first time you use it, Claude Code will open your browser for
               OAuth authentication. Log in with your VibeCodes account and
-              authorize the connection. After that, Claude Code can use all 84
+              authorize the connection. After that, Claude Code can use all 86
               VibeCodes tools on your behalf.
             </p>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -296,12 +296,12 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">84 tools</strong> across 10
+            <strong className="text-foreground">86 tools</strong> across 10
             categories:
           </p>
 
           <div className="space-y-2">
-            <CollapsibleTools title="Ideas & Voting" toolCount={8}>
+            <CollapsibleTools title="Ideas & Voting" toolCount={10}>
               <ToolTable
                 tools={[
                   { name: "list_ideas", description: "List ideas with optional status filter and search" },
@@ -309,6 +309,8 @@ export default function McpIntegrationPage() {
                   { name: "create_idea", description: "Create a new idea with title, description, tags, and visibility" },
                   { name: "delete_idea", description: "Delete an idea (author or admin only)" },
                   { name: "update_idea_description", description: "Rewrite an idea's description (markdown)" },
+                  { name: "get_idea_enhancement_prompt", description: "Get the prompts and context to enhance an idea's description yourself (no AI credits used)" },
+                  { name: "get_new_idea_enhancement_prompt", description: "Get the prompts to enhance a new idea's description before it is created (no AI credits used)" },
                   { name: "update_idea_status", description: "Update idea status: open, in_progress, completed, or archived" },
                   { name: "update_idea_tags", description: "Set or replace tags on an idea" },
                   { name: "toggle_vote", description: "Toggle your upvote on an idea" },
@@ -344,7 +346,7 @@ export default function McpIntegrationPage() {
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },
                   { name: "delete_workflow_template", description: "Delete a workflow template" },
                   { name: "apply_workflow_template", description: "Apply a template to a task, creating a workflow run" },
-                  { name: "sync_board_agents", description: "Save the board's agents as Claude Code subagents in your project folder (for sessions VibeCodes didn't launch)" },
+                  { name: "sync_board_agents", description: "Save a claimed step's agent as a Claude Code subagent in your project folder (for sessions VibeCodes didn't launch)" },
                   { name: "claim_next_step", description: "Claim the next pending step for execution (orchestration entry point)" },
                   { name: "complete_step", description: "Mark a step as complete with optional output" },
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
