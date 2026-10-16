@@ -27,6 +27,7 @@ export interface StepReportResult {
   boards: StepReportBoard[];
 }
 
+const PERIODS: StepReportPeriod[] = ["30", "60", "90", "all"];
 const PAGE = 1000;
 const CHUNK = 100;
 
@@ -79,6 +80,7 @@ export async function getStepPerformanceReport(params: {
   period: StepReportPeriod;
 }): Promise<StepReportResult> {
   await requireAdmin();
+  if (!PERIODS.includes(params.period)) throw new Error("Unknown period");
   const db = serviceClient();
   const since = params.period === "all" ? null : new Date(Date.now() - Number(params.period) * 86_400_000).toISOString();
   const board = params.boardId;
@@ -86,9 +88,10 @@ export async function getStepPerformanceReport(params: {
   const steps = await readAll<ReportStepRow>((from, to) => {
     let q = db
       .from("task_workflow_steps")
-      .select("id, idea_id, run_id, title, status, step_order, started_at, completed_at, executed_model, reasoning_effort_used")
+      .select("id, idea_id, run_id, title, status, step_order, human_check_required, started_at, completed_at, executed_model, reasoning_effort_used")
       .not("run_id", "is", null);
-    if (since) q = q.gte("updated_at", since);
+    // Steps that ran in the period (fail_step sets completed_at too).
+    if (since) q = q.or(`started_at.gte.${since},completed_at.gte.${since}`);
     if (board) q = q.eq("idea_id", board);
     return q.order("id").range(from, to);
   });
@@ -98,7 +101,7 @@ export async function getStepPerformanceReport(params: {
     db.from("workflow_runs").select("id, template_id, status").order("id").range(from, to)
   );
   const templates = await readAll<ReportTemplateRow>((from, to) =>
-    db.from("workflow_templates").select("id, idea_id, name, steps").order("id").range(from, to)
+    db.from("workflow_templates").select("id, idea_id, name, steps, updated_at").order("id").range(from, to)
   );
 
   const stepIds = new Set(steps.map((s) => s.id));
@@ -106,7 +109,7 @@ export async function getStepPerformanceReport(params: {
     await readAll<ReportCommentRow>((from, to) => {
       let q = db
         .from("workflow_step_comments")
-        .select("step_id, type, author_id")
+        .select("step_id, type, author_id, created_at")
         .in("type", ["failure", "changes_requested"]);
       // No date filter: a step that ran in the period may have been sent back before it.
       if (board) q = q.eq("idea_id", board);
@@ -123,7 +126,7 @@ export async function getStepPerformanceReport(params: {
     let q = db
       .from("workflow_step_usage")
       .select("step_id, run_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens");
-    if (since) q = q.gte("created_at", since);
+    // No date filter: every attempt of a step that ran in the period counts, even one before it.
     if (board) q = q.eq("idea_id", board);
     return q.order("id").range(from, to);
   }).catch((err: unknown) => {

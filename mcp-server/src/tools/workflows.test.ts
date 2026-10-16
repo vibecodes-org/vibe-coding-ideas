@@ -6727,6 +6727,16 @@ describe("step cost (card ba37039b)", () => {
     });
   });
 
+  it("complete_step still completes when the usage report is empty or malformed", async () => {
+    for (const usage of [{ models: [], output_estimated: true }, "NO_TRANSCRIPT", "{oops"]) {
+      const insert = vi.fn(() => Promise.resolve({ error: null }));
+      const parsed = completeStepSchema.parse({ claim_token: TCT.token, step_id: STEP_ID, output: "done", usage });
+      const result = await completeStep(completionContext("in_progress", insert), parsed);
+      expect(result.status).toBe("completed");
+      expect(insert).not.toHaveBeenCalled();
+    }
+  });
+
   it("complete_step still completes when the usage write fails", async () => {
     const insert = vi.fn(() => Promise.resolve({ error: { message: "relation \"workflow_step_usage\" does not exist" } }));
     const result = await completeStep(completionContext("in_progress", insert), { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage: USAGE });

@@ -50,6 +50,20 @@ describe("recordStepUsage", () => {
     });
   });
 
+  it("accepts the command's line passed as a string", async () => {
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    await recordStepUsage(ctxWith(insert), STEP, "completed", JSON.stringify(USAGE));
+    expect(((insert.mock.calls[0] as unknown[])[0] as unknown[])).toHaveLength(2);
+  });
+
+  it("skips, without throwing, anything that isn't a usage report", async () => {
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    for (const bad of [{ models: [], output_estimated: true }, "NO_TRANSCRIPT a1", "{not json", 42, { models: [{ model: "x" }] }]) {
+      await expect(recordStepUsage(ctxWith(insert), STEP, "completed", bad)).resolves.toBeUndefined();
+    }
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("does nothing when no usage was reported", async () => {
     const insert = vi.fn();
     await recordStepUsage(ctxWith(insert), STEP, "failed", undefined);

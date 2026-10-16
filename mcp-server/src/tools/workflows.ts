@@ -48,7 +48,7 @@ import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-s
 import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
-import { recordStepUsage, stepUsageSchema } from "../lib/step-usage";
+import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1469,7 +1469,7 @@ export const completeStepSchema = z.object({
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
-  usage: stepUsageSchema.optional(),
+  usage: stepUsageParam,
 });
 
 export async function completeStep(
@@ -1753,7 +1753,7 @@ export const failStepSchema = z.object({
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
-  usage: stepUsageSchema.optional(),
+  usage: stepUsageParam,
   // Auto-switch (card 5d0665a2). UX Design §2b wording, verbatim.
   model_unavailable: z.boolean().optional()
     .describe(

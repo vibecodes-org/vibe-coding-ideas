@@ -169,6 +169,23 @@ export function StepPerformanceReportView() {
 
       {filters}
 
+      {state === "error" && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
+          <p className="text-xs text-red-400">Couldn&apos;t load the report for these filters. The figures below are from the last load.</p>
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={retry}>
+            <RotateCcw className="h-3 w-3" />
+            Try again
+          </Button>
+        </div>
+      )}
+
+      {r.summary.unpricedModels.length > 0 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-500">
+          No price is set for {r.summary.unpricedModels.join(", ")}, so steps that used {r.summary.unpricedModels.length === 1 ? "it" : "them"} show no cost.
+          Add {r.summary.unpricedModels.length === 1 ? "it" : "them"} to <code className="font-mono">src/lib/step-cost/pricing.ts</code>.
+        </div>
+      )}
+
       {r.templates.length === 0 ? (
         <div className="rounded-lg border p-8 text-center">
           <p className="text-sm font-medium">No workflow steps finished in this period.</p>
@@ -181,14 +198,15 @@ export function StepPerformanceReportView() {
       <div className="max-w-3xl space-y-1 text-[11px] text-muted-foreground">
         <p>
           <span className="font-medium text-foreground">Caught problems:</span> the step&apos;s agent sent work back to an earlier step.{" "}
-          <span className="font-medium text-foreground">You rejected:</span> a person turned it down at its approval gate.{" "}
+          <span className="font-medium text-foreground">You rejected:</span> a person failed a step that has an approval gate.{" "}
           <span className="font-medium text-foreground">Had to redo:</span> a later step, or a person, sent work back to this step. Each counts runs, not messages.
         </p>
         <p>
           <span className="font-medium text-foreground">Cost per run:</span> median cost of one run of the step, every attempt included, over the runs that recorded it.
           It&apos;s what the tokens would cost at Anthropic API prices, whether the session ran on a subscription or an API key. Sessions report it from their
           subagent&apos;s Claude Code transcript; output tokens are estimated from text length, so totals are within about 10%. Steps a session ran without a
-          subagent, Codex steps and runs from before cost tracking show no cost.
+          subagent, Codex steps, steps on a model with no price, and runs from before cost tracking show no cost. A run that started before
+          the period isn&apos;t counted in the whole-run figures.
         </p>
         <p>
           With All boards, templates with the same name are combined. A step that has run 5+ times and caught a problem in at least 1 in 5 runs is marked

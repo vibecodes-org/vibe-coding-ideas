@@ -107,11 +107,26 @@ describe("stepUsageCommand", () => {
     }
   });
 
+  it("says NO_TRANSCRIPT when the transcript holds no real model call (a subagent that died on an API error)", () => {
+    const synthetic = JSON.stringify({ type: "assistant", message: { model: "<synthetic>", id: "f0e1d2", role: "assistant", content: [text("API Error: overloaded")], usage: { input_tokens: 0, output_tokens: 0 } } });
+    const root = sandbox({ a1: [synthetic, userLine] });
+    try {
+      expect(run(root, "a1")).toBe("NO_TRANSCRIPT");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   const hasZsh = spawnSync("zsh", ["-c", "true"]).status === 0;
-  it.skipIf(!hasZsh)("gives the same answer under zsh", () => {
-    const root = sandbox({ a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("z".repeat(70)), read: 10 })] });
+  it.skipIf(!hasZsh)("gives the same answer under zsh, several agent ids included", () => {
+    const root = sandbox({
+      a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("z".repeat(70)), read: 10 })],
+      a2: [line({ id: "msg_2", model: "claude-opus-5-5", block: text("z".repeat(70)), read: 20 })],
+    });
     try {
       expect(run(root, "a1", "zsh")).toBe(run(root, "a1", "bash"));
+      expect(run(root, "a1 a2", "zsh")).toBe(run(root, "a1 a2", "bash"));
+      expect(JSON.parse(run(root, "a1 a2", "zsh")).models[0].calls).toBe(2);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

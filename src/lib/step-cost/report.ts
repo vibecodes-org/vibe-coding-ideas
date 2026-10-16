@@ -4,7 +4,7 @@
 // of its earlier versions. Pure: the server action fetches the rows, this
 // turns them into the report.
 
-import { usageCost, type ModelUsage } from "./pricing";
+import { priceKey, usageCost, type ModelUsage } from "./pricing";
 
 export interface ReportStepRow {
   id: string;
@@ -13,14 +13,15 @@ export interface ReportStepRow {
   title: string;
   status: string;
   step_order: number | null;
+  human_check_required: boolean;
   started_at: string | null;
   completed_at: string | null;
   executed_model: string | null;
   reasoning_effort_used: string | null;
 }
 export interface ReportRunRow { id: string; template_id: string | null; status: string }
-export interface ReportTemplateRow { id: string; idea_id: string; name: string; steps: unknown }
-export interface ReportCommentRow { step_id: string; type: string; author_id: string }
+export interface ReportTemplateRow { id: string; idea_id: string; name: string; steps: unknown; updated_at: string }
+export interface ReportCommentRow { step_id: string; type: string; author_id: string; created_at: string }
 export interface ReportUsageRow extends ModelUsage { step_id: string; run_id: string | null }
 
 export interface ReportInput {
@@ -68,11 +69,13 @@ export interface StepPerformanceReport {
     runsWithCost: number;
     medianCostPerFinishedRun: number | null;
     workSentBack: number;
+    /** Models in recorded usage that have no price yet; those steps show no cost. */
+    unpricedModels: string[];
   };
   templates: TemplatePerformance[];
 }
 
-/** Statuses that mean the step actually ran (an in-progress or reset step hasn't finished an attempt). */
+/** Statuses that mean the step finished an attempt (an in-progress or reset step hasn't). */
 const RAN = new Set(["completed", "failed", "awaiting_approval"]);
 /** Below this many runs a step gets no label. */
 const CATCHES_MIN_RUNS = 5;
@@ -80,6 +83,13 @@ const CATCHES_MIN_SHARE = 0.2;
 const NEVER_MIN_RUNS = 10;
 /** Earlier-version steps that ran fewer times than this are left out. */
 const EARLIER_MIN_RUNS = 3;
+/**
+ * fail_step with reset_to_step_id writes the failing step's 'failure' comment
+ * and the target's 'changes_requested' comment in the same call, as the same
+ * author. Pairing them within this window is how a catch is told apart from
+ * an agent that simply failed.
+ */
+const CASCADE_PAIR_MS = 60_000;
 
 export function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -99,7 +109,7 @@ function mode(values: string[]): string | null {
   return best;
 }
 
-function templateTitles(steps: unknown): string[] {
+export function templateTitles(steps: unknown): string[] {
   if (!Array.isArray(steps)) return [];
   return steps
     .map((s) => (s && typeof s === "object" && typeof (s as { title?: unknown }).title === "string" ? (s as { title: string }).title : null))
@@ -113,62 +123,111 @@ function minutes(step: ReportStepRow): number | null {
   return Number.isFinite(ms) && ms >= 0 ? ms / 60000 : null;
 }
 
-interface Signals { caught: number; rejected: number; redo: number }
+interface Signals { caught: boolean; rejected: boolean; redo: boolean }
+
+/** Per step: did its agent send work back, did a person reject it at its gate, was work sent back to it. */
+function stepSignals(input: ReportInput): Map<string, Signals> {
+  const stepById = new Map(input.steps.map((s) => [s.id, s]));
+  const signals = new Map<string, Signals>();
+  const get = (id: string) => {
+    let s = signals.get(id);
+    if (!s) {
+      s = { caught: false, rejected: false, redo: false };
+      signals.set(id, s);
+    }
+    return s;
+  };
+
+  // Send-backs keyed by run + author, to pair with the failure that caused them.
+  const sendBacks = new Map<string, { stepId: string; at: number }[]>();
+  for (const c of input.comments) {
+    if (c.type !== "changes_requested") continue;
+    get(c.step_id).redo = true;
+    const run = stepById.get(c.step_id)?.run_id;
+    if (!run) continue;
+    const key = `${run}|${c.author_id}`;
+    const list = sendBacks.get(key) ?? [];
+    list.push({ stepId: c.step_id, at: Date.parse(c.created_at) });
+    sendBacks.set(key, list);
+  }
+
+  for (const c of input.comments) {
+    if (c.type !== "failure") continue;
+    const step = stepById.get(c.step_id);
+    if (!step) continue;
+    if (input.botIds.has(c.author_id)) {
+      const at = Date.parse(c.created_at);
+      const paired = (sendBacks.get(`${step.run_id}|${c.author_id}`) ?? []).some(
+        (b) => b.stepId !== c.step_id && Math.abs(b.at - at) <= CASCADE_PAIR_MS
+      );
+      if (paired) get(c.step_id).caught = true;
+    } else if (step.human_check_required) {
+      get(c.step_id).rejected = true;
+    }
+  }
+  return signals;
+}
 
 export function buildStepPerformanceReport(input: ReportInput): StepPerformanceReport {
   const runs = new Map(input.runs.map((r) => [r.id, r]));
   const templates = new Map(input.templates.map((t) => [t.id, t]));
+  const signals = stepSignals(input);
 
-  const signals = new Map<string, Signals>();
-  let workSentBack = 0;
-  for (const c of input.comments) {
-    const s = signals.get(c.step_id) ?? { caught: 0, rejected: 0, redo: 0 };
-    if (c.type === "failure") {
-      if (input.botIds.has(c.author_id)) s.caught++;
-      else s.rejected++;
-    } else if (c.type === "changes_requested") s.redo++;
-    signals.set(c.step_id, s);
-  }
-
-  // Cost per step row (every attempt), and per run. A step whose usage names
-  // a model with no price still counts as recorded, at the price it has.
-  const stepCost = new Map<string, number>();
-  let costRecorded = 0;
-  const runsWithCost = new Set<string>();
-  for (const u of input.usage) {
-    const cost = usageCost(u) ?? 0;
-    stepCost.set(u.step_id, (stepCost.get(u.step_id) ?? 0) + cost);
-    costRecorded += cost;
-    if (u.run_id) runsWithCost.add(u.run_id);
-  }
-
-  interface Acc { key: string; name: string; current: string[]; rows: ReportStepRow[] }
+  interface Acc { key: string; templates: Map<string, ReportTemplateRow>; rows: ReportStepRow[] }
   const groups = new Map<string, Acc>();
+  const counted = new Set<string>();
   const ranRuns = new Set<string>();
+  let workSentBack = 0;
 
   for (const step of input.steps) {
     const sig = signals.get(step.id);
-    const ran = RAN.has(step.status) || (sig?.caught ?? 0) > 0 || (sig?.rejected ?? 0) > 0;
+    const ran = RAN.has(step.status) || !!sig?.caught || !!sig?.rejected;
     if (!ran || !step.run_id) continue;
-    const run = runs.get(step.run_id);
-    const template = run?.template_id ? templates.get(run.template_id) : undefined;
+    const template = templates.get(runs.get(step.run_id)?.template_id ?? "");
     if (!template) continue;
-    ranRuns.add(step.run_id);
     const key = input.singleBoard ? template.id : template.name.trim().toLowerCase();
     let acc = groups.get(key);
     if (!acc) {
-      acc = { key, name: template.name, current: templateTitles(template.steps), rows: [] };
+      acc = { key, templates: new Map(), rows: [] };
       groups.set(key, acc);
     }
+    acc.templates.set(template.id, template);
     acc.rows.push(step);
-    if ((sig?.caught ?? 0) > 0) workSentBack++;
+    counted.add(step.id);
+    ranRuns.add(step.run_id);
+    if (sig?.caught) workSentBack++;
   }
+
+  // Cost per step row (every attempt). A step with any usage from a model that
+  // has no price shows no cost rather than a cost that's too low.
+  const stepCost = new Map<string, number>();
+  const unpricedSteps = new Set<string>();
+  const unpricedModels = new Set<string>();
+  for (const u of input.usage) {
+    if (!counted.has(u.step_id)) continue;
+    const cost = usageCost(u);
+    if (cost === null) {
+      unpricedSteps.add(u.step_id);
+      if (!priceKey(u.model)) unpricedModels.add(u.model);
+      continue;
+    }
+    stepCost.set(u.step_id, (stepCost.get(u.step_id) ?? 0) + cost);
+  }
+  for (const id of unpricedSteps) stepCost.delete(id);
+  const runOfStep = new Map(input.steps.map((s) => [s.id, s.run_id]));
+  const runsWithCost = new Set([...stepCost.keys()].map((id) => runOfStep.get(id)).filter((r): r is string => !!r));
+  const costRecorded = [...stepCost.values()].reduce((a, c) => a + c, 0);
 
   const finishedRunCosts: number[] = [];
   const result: TemplatePerformance[] = [];
 
   for (const acc of groups.values()) {
-    const currentSet = new Set(acc.current);
+    // Current steps: every title any merged template still has, the most
+    // recently edited template's order first.
+    const byRecent = [...acc.templates.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const currentTitles = [...new Set(byRecent.flatMap((t) => templateTitles(t.steps)))];
+    const currentSet = new Set(currentTitles);
+
     const byTitle = new Map<string, ReportStepRow[]>();
     for (const r of acc.rows) {
       const list = byTitle.get(r.title) ?? [];
@@ -180,10 +239,9 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       let caught = 0, rejected = 0, redo = 0;
       for (const r of rows) {
         const s = signals.get(r.id);
-        if (!s) continue;
-        if (s.caught > 0) caught++;
-        if (s.rejected > 0) rejected++;
-        if (s.redo > 0) redo++;
+        if (s?.caught) caught++;
+        if (s?.rejected) rejected++;
+        if (s?.redo) redo++;
       }
       const costs = rows.map((r) => stepCost.get(r.id)).filter((c): c is number => c !== undefined);
       const ran = rows.length;
@@ -205,7 +263,7 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       };
     };
 
-    const current = acc.current.filter((t) => byTitle.has(t)).map((t) => toRow(t, byTitle.get(t)!));
+    const current = currentTitles.filter((t) => byTitle.has(t)).map((t) => toRow(t, byTitle.get(t)!));
     const currentRows = acc.rows.filter((r) => currentSet.has(r.title));
     const earlierRows = acc.rows.filter((r) => !currentSet.has(r.title));
 
@@ -214,7 +272,9 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       .sort((a, b) => Math.min(...a[1].map((r) => r.step_order ?? 0)) - Math.min(...b[1].map((r) => r.step_order ?? 0)))
       .map(([t, rows]) => toRow(t, rows));
 
-    // Whole run, over finished runs of the current version.
+    // Whole run: finished runs whose every current step is in this report.
+    // A run that started before the period is missing its early steps, so
+    // it is left out rather than counted short.
     const perRun = new Map<string, ReportStepRow[]>();
     for (const r of currentRows) {
       const list = perRun.get(r.run_id!) ?? [];
@@ -224,7 +284,11 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     const runMinutes: number[] = [];
     const runCosts: number[] = [];
     for (const [runId, rows] of perRun) {
-      if (runs.get(runId)?.status !== "completed") continue;
+      const run = runs.get(runId);
+      if (run?.status !== "completed") continue;
+      const runTitles = templateTitles(templates.get(run.template_id ?? "")?.steps);
+      const present = new Set(rows.map((r) => r.title));
+      if (runTitles.length === 0 || !runTitles.every((t) => present.has(t))) continue;
       const mins = rows.map(minutes);
       if (mins.every((m) => m !== null)) runMinutes.push(mins.reduce<number>((a, m) => a + (m ?? 0), 0));
       const costs = rows.map((r) => stepCost.get(r.id));
@@ -238,7 +302,7 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     const since = currentRows.map((r) => r.started_at ?? r.completed_at).filter((d): d is string => !!d).sort()[0] ?? null;
     result.push({
       key: acc.key,
-      name: acc.name,
+      name: byRecent[0].name,
       currentRuns: new Set(currentRows.map((r) => r.run_id)).size,
       currentSince: since,
       current,
@@ -257,6 +321,7 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       runsWithCost: runsWithCost.size,
       medianCostPerFinishedRun: median(finishedRunCosts),
       workSentBack,
+      unpricedModels: [...unpricedModels].sort(),
     },
     templates: result,
   };

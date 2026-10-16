@@ -40,9 +40,18 @@ ALTER TABLE workflow_step_usage ENABLE ROW LEVEL SECURITY;
 
 -- Written by complete_step / fail_step: as the board member running the
 -- workflow on the remote MCP server, as the service role on the stdio one.
+-- The step must belong to the board the row names, and a member can only
+-- report as themselves, so nobody can charge cost to another board's step.
 CREATE POLICY "Team members can record step usage"
   ON workflow_step_usage FOR INSERT
-  WITH CHECK (is_idea_team_member(idea_id, auth.uid()));
+  WITH CHECK (
+    is_idea_team_member(idea_id, auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM task_workflow_steps s
+      WHERE s.id = workflow_step_usage.step_id AND s.idea_id = workflow_step_usage.idea_id
+    )
+    AND (reported_by IS NULL OR reported_by = auth.uid())
+  );
 
 -- Read only by the admin report.
 CREATE POLICY "Admins can read step usage"

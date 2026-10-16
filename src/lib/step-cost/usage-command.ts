@@ -13,8 +13,9 @@
 // totals land within ~10%.
 //
 // Plain POSIX shell + awk (macOS and Linux, bash or zsh), read-only, no
-// network. Prints one JSON line, or "NO_TRANSCRIPT <id>" when a transcript
-// can't be found.
+// network. Prints one JSON line, or a line starting NO_TRANSCRIPT when a
+// transcript can't be found or holds no model calls. The id list is split
+// with $(printf …), which zsh (a Mac's default shell) splits too.
 
 /** The placeholder the session replaces with the Agent tool's agentId(s). */
 export const USAGE_COMMAND_PLACEHOLDER = "AGENT_ID";
@@ -41,13 +42,14 @@ END {
     m = model[id]; est = int(len[id] / 3.5 + 0.5); out = (rep[id] > est) ? rep[id] : est
     C[m]++; I[m] += inp[id]; O[m] += out; R[m] += rd[id]; W5[m] += w5m[id]; W1[m] += w1h[id]
   }
-  printf "{\"models\":["
-  n = 0
+  n = 0; body = ""
   for (m in C) {
-    if (n++) printf ","
-    printf "{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d}", m, C[m], I[m], O[m], R[m], W5[m], W1[m]
+    if (n++) body = body ","
+    body = body sprintf("{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d}", m, C[m], I[m], O[m], R[m], W5[m], W1[m])
   }
-  printf "],\"output_estimated\":true}\n"
+  # A subagent that died on an API error has no real model calls to report.
+  if (n == 0) { print "NO_TRANSCRIPT"; exit }
+  printf "{\"models\":[%s],\"output_estimated\":true}\n", body
 }`;
 
 /**
@@ -60,7 +62,7 @@ export function stepUsageCommand(agentIds: string = USAGE_COMMAND_PLACEHOLDER): 
 ids='${agentIds}'
 root="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
 list=""
-for id in $ids; do
+for id in $(printf '%s\n' "$ids"); do
   case "$id" in ''|*[!A-Za-z0-9_-]*) echo "NO_TRANSCRIPT $id"; exit 0;; esac
   f=$(find "$root" -path "*/subagents/agent-$id.jsonl" -type f 2>/dev/null | head -n 1)
   if [ -z "$f" ]; then echo "NO_TRANSCRIPT $id"; exit 0; fi
