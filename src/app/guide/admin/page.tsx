@@ -128,6 +128,29 @@ export default function AdminPage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">Step Performance Report</h2>
+          <p className="mb-4 text-muted-foreground">
+            The <strong className="text-foreground">Reports</strong> tab shows
+            what each workflow step contributes, for one board or all boards,
+            over the last 30, 60 or 90 days or all time. For each template it
+            lists every step&apos;s runs, how often its agent caught a problem
+            and sent work back, how often a person rejected it at its approval
+            gate, how often it had to redo work, its median time, the model it
+            ran on, and its cost per run. Steps from a template&apos;s earlier
+            versions are listed separately, so old and new numbers don&apos;t
+            mix.
+          </p>
+          <p className="text-muted-foreground">
+            Cost is what the tokens would cost at Anthropic API prices. When a
+            step&apos;s subagent finishes, the Claude Code session totals that
+            subagent&apos;s token use from its local transcript and reports it
+            with the step. Output tokens are estimated from text length, so
+            totals are within about 10%. Steps run without a subagent, Codex
+            steps and runs from before cost tracking show no cost.
+          </p>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">
             Featured Teams & Project Kits
           </h2>
