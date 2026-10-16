@@ -39,7 +39,7 @@ Ruled out:
 **Migration first, then merge.** Every caller on current master already passes its own id, the platform id as an admin, or runs as service role, so the migration breaks nothing on master. The PR changes no runtime code, only the migration, the regression test and these notes, so merging after is safe too.
 
 ## Regression test
-`src/lib/bot-user-rpc-guard.test.ts` replays every migration in order. It takes the LAST `CREATE OR REPLACE FUNCTION` of each of the three functions and asserts that it compares `p_owner_id` with `auth.uid()`, exempts only `service_role`, and pins search_path. It also asserts that the net EXECUTE grants leave anon/PUBLIC revoked on all four functions. Without 00194 it fails, because the latest bodies are 00055/00036/00090, which have no `auth.uid()`, and there is no revoke.
+`src/lib/bot-user-rpc-guard.test.ts` replays every migration in order. It takes the LAST `CREATE OR REPLACE FUNCTION` of each of the three functions and asserts that it compares `p_owner_id` with `auth.uid()`, exempts only `service_role`, and pins search_path. It also asserts that the net EXECUTE grants leave anon/PUBLIC revoked on all four functions. Without 00194 it fails, because the latest bodies are 00055/00036/00038, which have no `auth.uid()`, and there is no revoke.
 
 ## Related, not fixed here (flag only)
 - `decrement_starter_credit(p_user_id)` is SECURITY DEFINER, anon-executable, has no `auth.uid()` check and no pinned search_path. Anyone can burn anyone's starter AI credits. It's a different area (AI credits), so it's flagged on the card for Nick to decide on a follow-up card, not fixed here.
@@ -61,3 +61,8 @@ Ruled out:
 - Re-checked prod read-only: the three function bodies still match the ones copied into 00194 (apart from the new guard), search_path is pinned, EXECUTE is still held by PUBLIC/anon. No other database function calls the three RPCs.
 - Re-checked every caller on current master: `src/actions/bots.ts`, `kits.ts`, `admin-agents.ts`, `src/lib/copy-agent-skills.ts`, `mcp-server/src/tools/{bots,agent-skill,kits}.ts`. Remote MCP builds a per-request client with the human's JWT and owner = that human; stdio is service role. All pass the new guard.
 - `bot-user-rpc-guard.test.ts`: 12 of 18 fail with 00194 moved out of the folder, 18/18 pass with it. Full suite 4869 passed (2 skipped), `tsc --noEmit` clean in both the app and mcp-server, eslint 0 errors.
+
+## Review and release (16 Oct 2026)
+- Code review passed in an independent cloud session. It re-ran the test (12 of 18 fail without 00194) and found no blocking issues.
+- Prod dry run of the new `create_bot_user`, `update_bot_user` and all the REVOKE/GRANT lines: a single DO block that reached its RAISE EXCEPTION, so nothing persisted. It refused anon, a caller with no JWT, a user acting for another user, a non-admin creating a platform agent, and an admin updating another user's agent. It allowed own create/update, an admin creating a platform agent, and service role. Afterwards anon has EXECUTE on none of the 5 functions.
+- `delete_bot_user` again can't be dry-run through the Supabase MCP. Any statement containing `DELETE FROM` waits for a human to confirm it.
