@@ -9,6 +9,7 @@ import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
 import { AdminTemplatesDashboard } from "./admin-templates-dashboard";
 import { AdminMcpToolsDashboard } from "./admin-mcp-tools-dashboard";
+import { StepPerformanceReportView } from "./step-performance-report";
 import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalEffortCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import type { McpToolLogWithUser, McpToolStatsRow } from "./admin-mcp-tools-dashboard";
 import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformStatsEntry } from "@/app/(main)/admin/page";
@@ -81,6 +82,7 @@ export function AdminTabs({
         <TabsTrigger value="teams">Teams</TabsTrigger>
         <TabsTrigger value="templates">Workflows</TabsTrigger>
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
+        <TabsTrigger value="reports">Reports</TabsTrigger>
         {isSuperAdmin && <TabsTrigger value="platform">Platform</TabsTrigger>}
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6 space-y-10">
@@ -109,6 +111,11 @@ export function AdminTabs({
       </TabsContent>
       <TabsContent value="mcp-tools" className="mt-6">
         <AdminMcpToolsDashboard recentLogs={mcpToolLogs} stats={mcpToolStats} allToolNames={allMcpToolNames} />
+      </TabsContent>
+      <TabsContent value="reports" className="mt-6">
+        <h2 className="mb-1 text-lg font-semibold">Step Performance</h2>
+        <p className="mb-4 text-sm text-muted-foreground">What each workflow step contributes: problems it catches, rework it causes, time and cost.</p>
+        <StepPerformanceReportView />
       </TabsContent>
       {/* No trigger renders this tab for non-super-admins, but a direct
           ?tab=platform deep link still resolves this value — AdminPlatformDashboard
