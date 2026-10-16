@@ -20,6 +20,13 @@
 -- Also revokes EXECUTE from PUBLIC and anon on these three and on
 -- admin_delete_bot_user / admin_update_bot_user (their is_admin check already
 -- holds for anon; this is defence in depth).
+--
+-- Production apply (16 Oct 2026) went in two parts, because the Supabase
+-- connector held SQL containing a delete for a confirmation the cloud session
+-- could not show: everything except delete_bot_user was recorded as
+-- 00194_bot_user_rpcs_require_caller, and delete_bot_user (the same body as
+-- below) as 00194b_delete_bot_user_requires_caller. The end state is this
+-- whole file.
 
 CREATE OR REPLACE FUNCTION public.create_bot_user(
   p_name text,
