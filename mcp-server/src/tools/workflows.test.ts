@@ -1337,8 +1337,11 @@ describe("claimNextStep — persona embedding", () => {
         expect(explicit.instruction).toBe(implicit.instruction);
         expect(explicit).not.toHaveProperty("execution");
         // Task 59889027 added one NATIVE SUBAGENT paragraph on the embedded
-        // paths; everything else must stay byte-identical, so pin the rest.
-        const preexisting = implicit.instruction!.replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "");
+        // paths and card ba37039b one STEP COST paragraph on every Claude
+        // claim; everything else must stay byte-identical, so pin the rest.
+        const preexisting = implicit.instruction!
+          .replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "")
+          .replace(/\n\nSTEP COST: [^\n]*/, "");
         hashes[`${tier ?? "auto"}/${systemPrompt ? "embedded" : "missing"}`] =
           createHash("sha256").update(preexisting).digest("hex");
       }
@@ -6671,5 +6674,82 @@ describe("rematchWorkflowAgents — stale exact agents", () => {
     const result = await rematchWorkflowAgents(ctx, { task_id: TASK_ID });
     expect(result.matched).toBe(0);
     expect(writes).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card ba37039b: step cost — the claim hands out the usage command, and
+// complete_step / fail_step store the totals the session passes back.
+// ---------------------------------------------------------------------------
+
+describe("step cost (card ba37039b)", () => {
+  const USAGE = {
+    models: [{ model: "claude-opus-5-5", calls: 3, input_tokens: 6, output_tokens: 900, cache_read_tokens: 40000, cache_write_5m_tokens: 9000, cache_write_1h_tokens: 0 }],
+    output_estimated: true,
+  };
+
+  it("gives a Claude claim the usage command and the STEP COST paragraph, and a Codex claim neither", async () => {
+    const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "standard" });
+    const ctx = () => makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: "You are Atlas." });
+    const claude = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command?: string; instruction?: string };
+    expect(claude.usage_command).toContain("ids='AGENT_ID'");
+    expect(claude.instruction).toContain("\n\nSTEP COST: When this step's subagent returns, run the \"usage_command\"");
+    const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
+    expect(codex).not.toHaveProperty("usage_command");
+    expect(codex.instruction).not.toContain("STEP COST:");
+  });
+
+  function completionContext(stepStatus: string, usageInsert: ReturnType<typeof vi.fn>) {
+    const stepData = { claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, step_order: 2, human_check_required: false, status: stepStatus };
+    const updatedStep = { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Build", agent_role: "developer", status: "completed", output: "done" };
+    return makeContext(((table: string) => {
+      if (table === "workflow_step_usage") return { insert: usageInsert };
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: updatedStep, error: null }));
+        chain.chain.then = (resolve: (val: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve);
+        return chain.chain;
+      }
+      const chain = createChain(null);
+      chain.chain.then = (resolve: (val: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve);
+      chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: null }));
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  it("complete_step stores the reported usage against the step", async () => {
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    await completeStep(completionContext("in_progress", insert), { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage: USAGE });
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(((insert.mock.calls[0] as unknown[])[0] as Record<string, unknown>[])[0]).toMatchObject({
+      step_id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, outcome: "completed", model: "claude-opus-5-5", cache_read_tokens: 40000,
+    });
+  });
+
+  it("complete_step still completes when the usage report is empty or malformed", async () => {
+    for (const usage of [{ models: [], output_estimated: true }, "NO_TRANSCRIPT", "{oops"]) {
+      const insert = vi.fn(() => Promise.resolve({ error: null }));
+      const parsed = completeStepSchema.parse({ claim_token: TCT.token, step_id: STEP_ID, output: "done", usage });
+      const result = await completeStep(completionContext("in_progress", insert), parsed);
+      expect(result.status).toBe("completed");
+      expect(insert).not.toHaveBeenCalled();
+    }
+  });
+
+  it("complete_step still completes when the usage write fails", async () => {
+    const insert = vi.fn(() => Promise.resolve({ error: { message: "relation \"workflow_step_usage\" does not exist" } }));
+    const result = await completeStep(completionContext("in_progress", insert), { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage: USAGE });
+    expect(result.status).toBe("completed");
+  });
+
+  it("fail_step stores a failed attempt's usage, but not a human rejecting an approval gate", async () => {
+    const failed = vi.fn(() => Promise.resolve({ error: null }));
+    await failStep(completionContext("in_progress", failed), { claim_token: TCT.token, step_id: STEP_ID, output: "broken", usage: USAGE });
+    expect(((failed.mock.calls[0] as unknown[])[0] as Record<string, unknown>[])[0]).toMatchObject({ outcome: "failed" });
+
+    const rejected = vi.fn(() => Promise.resolve({ error: null }));
+    await failStep(completionContext("awaiting_approval", rejected), { step_id: STEP_ID, output: "no", usage: USAGE });
+    expect(rejected).not.toHaveBeenCalled();
   });
 });
