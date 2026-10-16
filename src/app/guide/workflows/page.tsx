@@ -511,7 +511,8 @@ export default function WorkflowsPage() {
                 <p>
                   <strong className="text-foreground">Complete the step</strong>{" "}
                   — call <code className="rounded bg-muted px-1.5 py-0.5 text-xs">complete_step</code> with
-                  the output. If the step has an approval gate, it pauses for
+                  the output, and with the step&apos;s token use for the admin
+                  cost report. If the step has an approval gate, it pauses for
                   human review
                 </p>
               </div>

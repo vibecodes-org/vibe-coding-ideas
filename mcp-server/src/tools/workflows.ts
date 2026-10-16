@@ -47,6 +47,8 @@ import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/t
 import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
 import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
+import { stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
+import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1288,6 +1290,18 @@ export async function claimNextStep(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
   );
 
+  // Card ba37039b: the admin step report's cost column. Claude Code only —
+  // Codex keeps its token counts elsewhere (follow-up).
+  if (claimingAgent === "claude") {
+    contextParts.push(
+      `STEP COST: When this step's subagent returns, run the "usage_command" from this response with AGENT_ID ` +
+      `replaced by the agentId the Agent tool returned for it (space-separated if the step used more than one ` +
+      `subagent). It reads that subagent's local transcript, needs no network and prints one line of JSON: pass it ` +
+      `unchanged as the "usage" parameter of complete_step or fail_step. If it prints NO_TRANSCRIPT, or the step ` +
+      `ran without a subagent, omit "usage". Never let this hold up or change the step.`
+    );
+  }
+
   // P2b: MANDATORY MODEL directive, resolved via the claiming user's
   // model_tier_map override AND the live platform-default setting. Both
   // lookups only run when a tier is set — Auto steps (model_tier null) add no
@@ -1401,6 +1415,7 @@ export async function claimNextStep(
         }
       : {}),
     ...(nativeSubagent ? { native_subagent: { name: nativeSubagent.name, tag: nativeSubagent.tag } } : {}),
+    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommand() } : {}),
     instruction,
     rework_instructions,
     available_agents,
@@ -1454,6 +1469,7 @@ export const completeStepSchema = z.object({
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
+  usage: stepUsageParam,
 });
 
 export async function completeStep(
@@ -1591,6 +1607,9 @@ export async function completeStep(
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
+
+  // Card ba37039b: this attempt's token use, for the admin step report.
+  await recordStepUsage(ctx, step, newStatus, params.usage);
 
   // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
   // write after the main completion update. On a DB where migration 00195
@@ -1734,6 +1753,7 @@ export const failStepSchema = z.object({
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
+  usage: stepUsageParam,
   // Auto-switch (card 5d0665a2). UX Design §2b wording, verbatim.
   model_unavailable: z.boolean().optional()
     .describe(
@@ -1961,6 +1981,10 @@ export async function failStep(
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
   if (!updated) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
+
+  // Card ba37039b: the failed attempt still cost tokens. A human rejecting an
+  // awaiting_approval step ran no subagent, so only in_progress attempts count.
+  if (step.status === "in_progress") await recordStepUsage(ctx, step, "failed", params.usage);
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
