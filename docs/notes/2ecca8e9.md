@@ -31,8 +31,8 @@ Only caller: `decrementStarterCredit(supabase, userId)` in `src/lib/ai-helpers.t
 
 **No path charges a different user while running as a signed-in user.** The two that charge "someone" not proven by the JWT both use the service role. In `ai_usage_log` the `role_matching` and `workflow_matching` rows exist (insert policy `auth.uid() = user_id`), which agrees with the after() adjudication path still carrying the user's JWT.
 
-## Fix (migration 00196)
-`supabase/migrations/00196_starter_credit_rpcs_require_caller.sql`, same pattern as PR #368's 00194:
+## Fix (migration 00197; planned as 00196, renumbered because master took 00196)
+`supabase/migrations/00197_starter_credit_rpcs_require_caller.sql`, same pattern as PR #368's 00194:
 - `decrement_starter_credit`: unless `auth.role() = 'service_role'`, raise 42501 when `auth.uid()` is null or `p_user_id IS DISTINCT FROM auth.uid()`. Body otherwise unchanged from production. `SET search_path = public`.
 - `grant_starter_credits`: body unchanged (prod version, super-admin check), `SET search_path = public`.
 - Both: `REVOKE EXECUTE ... FROM PUBLIC, anon`; `GRANT EXECUTE ... TO authenticated, service_role`.
@@ -51,8 +51,9 @@ SECURITY INVOKER, `search_path = ''`, EXECUTE held by anon. It reads `public.ai_
 - `p_user_id = auth.uid()` with no service-role exemption: breaks stdio MCP and `rematchActiveWorkflows`.
 
 ## Fix step (16 Oct 2026)
-- Test first: `src/lib/starter-credit-rpc-guard.test.ts` failed 7 of 10 without 00196 (caller check, null-caller refusal, service-role-only exemption, search_path x2, grants x2); 10/10 pass with it. Its migration-replay helpers are copied from PR #368's `bot-user-rpc-guard.test.ts` (that file isn't on master yet); worth sharing once both are merged.
-- Migration `supabase/migrations/00196_starter_credit_rpcs_require_caller.sql` as planned. Both bodies are copied from prod's `pg_get_functiondef` with only the guard added to the decrement. No app code or type change.
+- Test first: `src/lib/starter-credit-rpc-guard.test.ts` failed 7 of 10 without the migration (caller check, null-caller refusal, service-role-only exemption, search_path x2, grants x2); 10/10 pass with it. Its migration-replay helpers are copied from PR #368's `bot-user-rpc-guard.test.ts` (that file isn't on master yet); worth sharing once both are merged.
+- Migration `supabase/migrations/00197_starter_credit_rpcs_require_caller.sql` as planned. Both bodies are copied from prod's `pg_get_functiondef` with only the guard added to the decrement. No app code or type change.
 - Full suite (4861 passed, 2 skipped), `tsc --noEmit` (app and mcp-server), mcp-server build and eslint (0 errors) pass.
 - The prod dry-run DO block (in the PR description) was rehearsed on a stand-in schema in PGlite (Postgres 16 in WASM) with Supabase's own `auth.uid()`/`auth.role()` definitions: it ends `DRY RUN OK, rolled back: anon refused …; other refused …; no-sub refused …; own allowed; service role allowed; grant refused …`, and afterwards the old function and grants are still in place. With the other-user check removed it ends `DRY RUN FAILED: other-user decrement allowed`. Stand-in tables prove nothing about names; the real-schema run is still owed (release session).
 - Release order: migration first, then merge (every caller on master already passes the guard; the PR changes no runtime code).
+- Renumbered to 00197 (16 Oct): master took 00196 (`00196_workflow_step_usage`, PR #369, unrelated tables) after this branch was cut; master merged into the branch. PR #368's 00194 doesn't clash.
