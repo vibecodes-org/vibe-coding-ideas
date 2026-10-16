@@ -49,3 +49,10 @@ SECURITY INVOKER, `search_path = ''`, EXECUTE held by anon. It reads `public.ai_
 ## Ruled out
 - Changing callers to stop passing userId: the RPC would still be anon-callable; the database is the boundary.
 - `p_user_id = auth.uid()` with no service-role exemption: breaks stdio MCP and `rematchActiveWorkflows`.
+
+## Fix step (16 Oct 2026)
+- Test first: `src/lib/starter-credit-rpc-guard.test.ts` failed 7 of 10 without 00196 (caller check, null-caller refusal, service-role-only exemption, search_path x2, grants x2); 10/10 pass with it. Its migration-replay helpers are copied from PR #368's `bot-user-rpc-guard.test.ts` (that file isn't on master yet); worth sharing once both are merged.
+- Migration `supabase/migrations/00196_starter_credit_rpcs_require_caller.sql` as planned. Both bodies are copied from prod's `pg_get_functiondef` with only the guard added to the decrement. No app code or type change.
+- Full suite (4861 passed, 2 skipped), `tsc --noEmit` (app and mcp-server), mcp-server build and eslint (0 errors) pass.
+- The prod dry-run DO block (in the PR description) was rehearsed on a stand-in schema in PGlite (Postgres 16 in WASM) with Supabase's own `auth.uid()`/`auth.role()` definitions: it ends `DRY RUN OK, rolled back: anon refused …; other refused …; no-sub refused …; own allowed; service role allowed; grant refused …`, and afterwards the old function and grants are still in place. With the other-user check removed it ends `DRY RUN FAILED: other-user decrement allowed`. Stand-in tables prove nothing about names; the real-schema run is still owed (release session).
+- Release order: migration first, then merge (every caller on master already passes the guard; the PR changes no runtime code).
