@@ -131,4 +131,53 @@ describe("POST /api/terminal/session/end", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ results: [] });
   });
+
+  // Card 6b2cb8ac: "Update now" on one Mac used to end every Mac's sessions.
+  // With `machines`, only rows whose machine_label is one of this Mac's
+  // names (case-insensitive) end; unlabelled rows are left alone.
+  it("all + machines ends only this Mac's sessions", async () => {
+    const select = makeSelectChain({
+      data: [
+        { id: "row-mini", sid: "sid-mini", machine_label: "Nicks-Mac-mini.local" },
+        { id: "row-mbp", sid: "sid-mbp", machine_label: "Nicks-MacBook-Pro.local" },
+        { id: "row-null", sid: "sid-null", machine_label: null },
+      ],
+      error: null,
+    });
+    const updates: ReturnType<typeof makeUpdateChain>[] = [];
+    mockFrom.mockImplementationOnce(() => select).mockImplementation(() => {
+      const c = makeUpdateChain();
+      updates.push(c);
+      return c;
+    });
+
+    const res = await POST(req({ all: true, machines: ["nicks-mac-mini.local", "Nicks-Mac-mini"] }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toEqual([{ sid: "sid-mini", ended: true, relayConfirmed: true }]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].__calls).toContainEqual({ method: "eq", args: ["id", "row-mini"] });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("all without machines still ends every active session (unchanged)", async () => {
+    mockFrom
+      .mockImplementationOnce(() =>
+        makeSelectChain({
+          data: [
+            { id: "a", sid: "sid-a", machine_label: "x" },
+            { id: "b", sid: "sid-b", machine_label: null },
+          ],
+          error: null,
+        }),
+      )
+      .mockImplementation(() => makeUpdateChain());
+    const body = await (await POST(req({ all: true }))).json();
+    expect(body.results.map((r: { sid: string }) => r.sid)).toEqual(["sid-a", "sid-b"]);
+  });
+
+  it("rejects more than 5 machine names", async () => {
+    const res = await POST(req({ all: true, machines: ["a", "b", "c", "d", "e", "f"] }));
+    expect(res.status).toBe(400);
+  });
 });

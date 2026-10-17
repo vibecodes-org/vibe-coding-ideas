@@ -45,7 +45,12 @@ const BodySchema = z.object({
   // this route must accept the new reason BEFORE the relay is deployed to
   // start sending it, or the callback 400s and the registry row stays a ghost
   // exactly as before this fix.
-  reason: z.enum(["idle_timeout", "time_limit", "peer_gone"]).optional(),
+  // "bridge_ended" (card 6b2cb8ac): the bridge closed its leg on purpose
+  // (code 1000: the agent exited, the helper quit, the folder couldn't be got
+  // ready), so the relay ended the session at once instead of opening the 90s
+  // reconnect hold — see terminal/relay/src/index.js's endFromBridge(). Same
+  // deploy-order rule as peer_gone: this must be live before the relay sends it.
+  reason: z.enum(["idle_timeout", "time_limit", "peer_gone", "bridge_ended"]).optional(),
 });
 
 export async function POST(req: Request) {

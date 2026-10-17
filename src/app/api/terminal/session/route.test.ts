@@ -495,6 +495,22 @@ describe("POST /api/terminal/session — Codex support (docs/codex-terminal-requ
     expect(insertSpy).toHaveBeenCalledWith(expect.objectContaining({ agent: "codex" }));
   });
 
+  // Card 6b2cb8ac: the "wrong agent" report couldn't be reproduced because the
+  // mint log never said which agent a session started. It must now.
+  it("logs which agent the session was minted for", async () => {
+    await POST(req({ ideaId: IDEA_1, agent: "codex" }));
+    expect(logger.info).toHaveBeenCalledWith(
+      "Minted terminal session tokens",
+      expect.objectContaining({ agent: "codex", sid: "sid-minted-1" }),
+    );
+    vi.mocked(logger.info).mockClear();
+    await POST(req({ ideaId: IDEA_1 }));
+    expect(logger.info).toHaveBeenCalledWith(
+      "Minted terminal session tokens",
+      expect.objectContaining({ agent: "claude" }),
+    );
+  });
+
   it("transfers a complete independent user Codex pair on a fresh launch", async () => {
     tableResults.users = {
       data: { terminal_codex_model: "gpt-6-astra", terminal_codex_effort: "high" }, error: null,

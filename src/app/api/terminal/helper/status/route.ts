@@ -10,19 +10,24 @@
 //
 // The caller's helper session id is always `helperSessionId(user.id)` — one
 // reserved, deterministic id per owner (never per-launch random, unlike a
-// terminal session's sid) — so there is nothing for the request body to name;
-// a signed-in user can only ever ask about their OWN helper.
+// terminal session's sid) — so the request can only narrow WHICH of the
+// caller's own helper legs (one per Mac) it asks about; a signed-in user can
+// only ever ask about their OWN helper.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { mintControlToken, helperSessionId } from "../../../../../../terminal/shared/session-token.mjs";
+import { sanitizeMachineList } from "../../../../../../terminal/shared/control-frames.mjs";
 import { relayHttpBaseUrl } from "@/lib/terminal/relay-http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+// Card 6b2cb8ac: `?machines=a,b` (this Mac's names, from the page's own
+// launches) asks about THIS Mac's helper leg — the relay now keeps one per
+// Mac. Absent → the relay's old answer (whichever helper leg is newest).
+export async function GET(req: Request) {
   try {
     const secret = process.env.TERMINAL_SESSION_SECRET;
     if (!secret) {
@@ -41,10 +46,12 @@ export async function GET() {
     const sid = helperSessionId(user.id);
     const control = await mintControlToken({ sub: user.id, sid, secret });
     const httpBase = relayHttpBaseUrl();
+    const machines = sanitizeMachineList(new URL(req.url).searchParams.get("machines"));
+    const machinesParam = machines.length > 0 ? `&machines=${encodeURIComponent(machines.join(","))}` : "";
 
     let res: Response;
     try {
-      res = await fetch(`${httpBase}/helper/status?session=${encodeURIComponent(sid)}`, {
+      res = await fetch(`${httpBase}/helper/status?session=${encodeURIComponent(sid)}${machinesParam}`, {
         headers: { Authorization: `Bearer ${control}` },
       });
     } catch (err) {
