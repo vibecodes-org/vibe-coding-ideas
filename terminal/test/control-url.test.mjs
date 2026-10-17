@@ -71,3 +71,16 @@ test("a primary-shaped call and a handshake-shaped call differ ONLY in the purpo
   assert.equal(primary.toString(), handshake.toString());
   assert.equal(new URL(buildControlConnectUrl(baseArgs({ purpose: "open-terminal" }))).searchParams.get("purpose"), "open-terminal");
 });
+
+// Card 6b2cb8ac: the helper reports the Mac's fixed name as machineLabel and
+// its other names (e.g. a drifted hostname) as machineAliases, so the relay
+// can keep one helper control leg per Mac and target commands to this Mac.
+test("machineAliases are sent comma-separated when present, omitted otherwise", () => {
+  const withAliases = new URL(
+    buildControlConnectUrl(baseArgs({ machineLabel: "Nicks-MacBook-Pro.local", machineAliases: ["Nicks-MBP.home.local"] })),
+  );
+  assert.equal(withAliases.searchParams.get("machineLabel"), "Nicks-MacBook-Pro.local");
+  assert.equal(withAliases.searchParams.get("machineAliases"), "Nicks-MBP.home.local");
+  assert.equal(new URL(buildControlConnectUrl(baseArgs())).searchParams.has("machineAliases"), false);
+  assert.equal(new URL(buildControlConnectUrl(baseArgs({ machineAliases: [] }))).searchParams.has("machineAliases"), false);
+});

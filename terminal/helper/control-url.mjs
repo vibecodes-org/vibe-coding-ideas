@@ -19,6 +19,7 @@
  *   token: string,
  *   helperVersion: string,
  *   machineLabel: string,
+ *   machineAliases?: string[],
  *   alwaysOn: boolean,
  *   availability?: { codex?: boolean, claude?: boolean } | null,
  *   purpose?: "open-terminal",
@@ -31,6 +32,7 @@ export function buildControlConnectUrl({
   token,
   helperVersion,
   machineLabel,
+  machineAliases,
   alwaysOn,
   availability,
   purpose,
@@ -43,6 +45,10 @@ export function buildControlConnectUrl({
     machineLabel,
     alwaysOn: alwaysOn ? "1" : "0",
   });
+  // Card 6b2cb8ac: `machineLabel` is the Mac's fixed name; its other names
+  // (a hostname that drifts with the network) ride along so the relay treats
+  // them as the same Mac. Absent for an old helper — the relay copes.
+  if (machineAliases && machineAliases.length > 0) params.set("machineAliases", machineAliases.join(","));
   if (availability) {
     params.set("codexInstalled", availability.codex ? "1" : "0");
     params.set("claudeInstalled", availability.claude ? "1" : "0");

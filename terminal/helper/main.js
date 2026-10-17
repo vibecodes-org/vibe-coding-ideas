@@ -93,6 +93,12 @@ const SHARED_CONTROL_FRAMES = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "control-frames.mjs")
   : path.resolve(__dirname, "..", "shared", "control-frames.mjs");
 
+// Card 6b2cb8ac: this Mac's names (fixed LocalHostName first, the drifting
+// hostname as an alias) — the same resolver the bridge uses.
+const SHARED_MACHINE_NAME = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "machine-name.mjs")
+  : path.resolve(__dirname, "..", "shared", "machine-name.mjs");
+
 // Codex support (docs/codex-terminal-requirements.md FR-3/FR-11) — the shared
 // PATH-resolution + binary-existence checks, same split as every other
 // SHARED_* constant above.
@@ -194,6 +200,31 @@ let _openTerminalGate = null;
 async function openTerminalGateMod() {
   if (!_openTerminalGate) _openTerminalGate = await import(pathToFileURL(LOCAL_OPEN_TERMINAL_GATE).href);
   return _openTerminalGate;
+}
+
+let _machineNames = null;
+/**
+ * This Mac's names, resolved once: `{ canonical, names }` (see
+ * shared/machine-name.mjs). Falls back to the plain hostname on any failure.
+ * @returns {Promise<{ canonical: string, aliases: string[] }>}
+ */
+async function machineNames() {
+  if (_machineNames) return _machineNames;
+  try {
+    const { resolveMachineNames } = await import(pathToFileURL(SHARED_MACHINE_NAME).href);
+    const { execFileSync } = require("node:child_process");
+    const r = resolveMachineNames({
+      hostname: os.hostname(),
+      platform: process.platform,
+      run: (file, runArgs) =>
+        execFileSync(file, runArgs, { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] }),
+    });
+    _machineNames = { canonical: r.canonical || os.hostname(), aliases: r.names.slice(1) };
+  } catch (e) {
+    log("warn", "couldn't resolve this Mac's names — using the hostname", { err: String(e?.message || e) });
+    _machineNames = { canonical: os.hostname(), aliases: [] };
+  }
+  return _machineNames;
 }
 
 let _controlUrl = null;
@@ -883,12 +914,14 @@ async function connectControl(relayBase, token) {
   }
 
   const { buildControlConnectUrl } = await controlUrlMod();
+  const machine = await machineNames();
   const url = buildControlConnectUrl({
     relayBase,
     sid: claims.sid,
     token,
     helperVersion: HELPER_VERSION,
-    machineLabel: os.hostname(),
+    machineLabel: machine.canonical,
+    machineAliases: machine.aliases,
     alwaysOn,
     availability,
   });
@@ -969,12 +1002,14 @@ async function connectOpenTerminalControl(relayBase, token) {
   }
 
   const { buildControlConnectUrl } = await controlUrlMod();
+  const machine = await machineNames();
   const url = buildControlConnectUrl({
     relayBase,
     sid: claims.sid,
     token,
     helperVersion: HELPER_VERSION,
-    machineLabel: os.hostname(),
+    machineLabel: machine.canonical,
+    machineAliases: machine.aliases,
     alwaysOn,
     availability,
     purpose: "open-terminal",
