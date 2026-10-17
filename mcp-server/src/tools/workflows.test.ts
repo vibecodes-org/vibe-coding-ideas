@@ -6693,7 +6693,11 @@ describe("step cost (card ba37039b)", () => {
     const ctx = () => makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: "You are Atlas." });
     const claude = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command?: string; instruction?: string };
     expect(claude.usage_command).toContain("ids='AGENT_ID'");
-    expect(claude.instruction).toContain("\n\nSTEP COST: When this step's subagent returns, run the \"usage_command\"");
+    expect(claude.usage_command).toMatch(/mark='vcu_[0-9a-f]{24}'/);
+    // Near the top, so the session transcript holds the marker even if a long claim is cut short.
+    expect(Object.keys(claude).slice(0, 2)).toEqual(["done", "usage_command"]);
+    expect(claude.instruction).toContain("\n\nSTEP COST: When the step's work is done, run the \"usage_command\"");
+    expect(claude.instruction).toContain("if you did the work yourself, run it unchanged");
     const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
     expect(codex).not.toHaveProperty("usage_command");
     expect(codex.instruction).not.toContain("STEP COST:");

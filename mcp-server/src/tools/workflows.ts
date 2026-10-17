@@ -47,7 +47,7 @@ import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/t
 import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
 import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
-import { stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
+import { newUsageMarker, stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
 import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
@@ -1294,11 +1294,11 @@ export async function claimNextStep(
   // Codex keeps its token counts elsewhere (follow-up).
   if (claimingAgent === "claude") {
     contextParts.push(
-      `STEP COST: When this step's subagent returns, run the "usage_command" from this response with AGENT_ID ` +
-      `replaced by the agentId the Agent tool returned for it (space-separated if the step used more than one ` +
-      `subagent). It reads that subagent's local transcript, needs no network and prints one line of JSON: pass it ` +
-      `unchanged as the "usage" parameter of complete_step or fail_step. If it prints NO_TRANSCRIPT, or the step ` +
-      `ran without a subagent, omit "usage". Never let this hold up or change the step.`
+      `STEP COST: When the step's work is done, run the "usage_command" from this response before complete_step or ` +
+      `fail_step. Replace AGENT_ID with the agentId the Agent tool returned for each subagent that did the work ` +
+      `(space-separated); if you did the work yourself, run it unchanged. It reads this session's local Claude Code ` +
+      `transcripts from this claim on, needs no network and prints one line of JSON: pass it unchanged as the ` +
+      `"usage" parameter. If it prints NO_TRANSCRIPT, omit "usage". Never let this hold up or change the step.`
     );
   }
 
@@ -1393,6 +1393,9 @@ export async function claimNextStep(
 
   return {
     done: false,
+    // Early in the response: the session transcript must record the marker
+    // inside it even if a long claim is cut short there.
+    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommand(newUsageMarker()) } : {}),
     step: updated,
     claim_token,
     work_token: workTokenPair?.token ?? null,
@@ -1415,7 +1418,6 @@ export async function claimNextStep(
         }
       : {}),
     ...(nativeSubagent ? { native_subagent: { name: nativeSubagent.name, tag: nativeSubagent.tag } } : {}),
-    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommand() } : {}),
     instruction,
     rework_instructions,
     available_agents,
