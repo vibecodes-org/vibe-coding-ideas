@@ -156,6 +156,15 @@ describe("POST /api/terminal/session/workspace", () => {
     expect(body.workspace.newFolderName).toBe("my-new-idea");
   });
 
+  it("a GitHub address whose owner or name starts with '-' gets repo null (it could read as a command option)", async () => {
+    for (const github_url of ["https://github.com/-acme/widget", "https://github.com/acme/-widget"]) {
+      setTables({ row: sessionRow(), idea: { title: "Widget", github_url } });
+      const body = await (await POST(req({ sid: SID, token: await bridgeToken(), machineNames: names }))).json();
+      expect(body.workspace.repo, github_url).toBeNull();
+      expect(body.workspace.repoFolderName, github_url).toBeNull();
+    }
+  });
+
   it("401s a bad token", async () => {
     const res = await POST(req({ sid: SID, token: "not-a-token", machineNames: names }));
     expect(res.status).toBe(401);

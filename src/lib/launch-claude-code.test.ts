@@ -3110,6 +3110,27 @@ describe("chooseLaunchCwdDetailed — per-Mac rule (card 6b2cb8ac)", () => {
     expect(chooseLaunchCwdDetailed(rows, [])).toEqual({ cwd: undefined });
   });
 
+  // Code review rework: "Set exact folder" in a browser that has never run a
+  // terminal session saves under MANUAL_PIN_HOSTNAME (it knows no Mac name),
+  // so that row is this browser's own. The helper still checks it on the Mac.
+  it("a manually-pinned row (MANUAL_PIN_HOSTNAME) resolves like any own row in a browser that knows no machine name", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/projects/pinned", hostname: MANUAL_PIN_HOSTNAME },
+      { absolute_path: "/Users/nick/repo", hostname: "Nicks-Mac-mini.local" },
+    ];
+    expect(chooseLaunchCwdDetailed(rows, [])).toEqual({ cwd: "/Users/nick/projects/pinned" });
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: rows, machineNames: [] });
+    expect(t.cwd).toBe("/Users/nick/projects/pinned");
+    expect(t.source).toBe("recorded");
+    expect(t.displayLabel).toBe(`This machine — ${MANUAL_PIN_HOSTNAME}`);
+  });
+
+  it("a browser that knows its Mac's names never uses a manually-pinned row", () => {
+    const rows = [{ absolute_path: "/Users/nick/projects/pinned", hostname: MANUAL_PIN_HOSTNAME }];
+    expect(chooseLaunchCwdDetailed(rows, MINI)).toEqual({ cwd: undefined });
+    expect(resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: rows, machineNames: MINI }).cwd).toBeUndefined();
+  });
+
   it("resolveEffectiveLaunchTarget labels the own row", () => {
     const t = resolveEffectiveLaunchTarget({
       hasRepo: true,

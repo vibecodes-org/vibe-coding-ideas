@@ -567,7 +567,11 @@ export interface ChooseLaunchCwdDecision {
  * PER-MAC RULE (card 6b2cb8ac). Each Mac uses only its OWN saved folder:
  *
  *  1. Own rows = usable rows whose hostname is (case-insensitively) one of
- *     `machineNames`. None → undefined.
+ *     `machineNames`. None → undefined. A browser that knows NO machine name
+ *     counts the `MANUAL_PIN_HOSTNAME` rows as its own instead: "Set exact
+ *     folder" saves there exactly when the browser knows no Mac name, and the
+ *     helper re-checks the folder on the Mac anyway. Once the browser knows
+ *     its Mac's names, a manual-pin row is never used (it could be any Mac's).
  *  2. One distinct path across the own rows → that path (a Mac with two names
  *     whose rows agree is one Mac).
  *  3. Own rows disagree → undefined.
@@ -585,12 +589,17 @@ export interface ChooseLaunchCwdDecision {
  * (strict validation, plus not `/`, a home directory, or another top-level
  * landing zone) after the worktree suffix is collapsed; bad rows are ignored.
  */
+/** The hostnames whose rows are this browser's own (see rule 1 above). */
+function ownHostnameKeys(machineNames: ReadonlyArray<string>): Set<string> {
+  const names = new Set(machineNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  return names.size > 0 ? names : new Set([MANUAL_PIN_HOSTNAME]);
+}
+
 export function chooseLaunchCwdDetailed(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined,
   machineNames: ReadonlyArray<string> = []
 ): ChooseLaunchCwdDecision {
-  const names = new Set(machineNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
-  if (names.size === 0) return { cwd: undefined };
+  const names = ownHostnameKeys(machineNames);
 
   // Read-side self-heal: a row that was recorded from inside a
   // `claude --worktree` session (see stripClaudeWorktreeSuffix) resolves to
@@ -701,7 +710,7 @@ export function resolveEffectiveLaunchTarget({
 }: ResolveEffectiveLaunchTargetArgs): EffectiveLaunchTarget {
   const { cwd: recordedCwd } = chooseLaunchCwdDetailed(recordedPaths, machineNames);
   if (recordedCwd) {
-    const names = new Set(machineNames.map((n) => n.trim().toLowerCase()));
+    const names = ownHostnameKeys(machineNames);
     const match = (recordedPaths ?? []).find(
       (r) =>
         names.has(r.hostname.trim().toLowerCase()) &&

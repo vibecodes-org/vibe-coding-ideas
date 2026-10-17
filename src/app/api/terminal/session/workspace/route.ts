@@ -48,7 +48,8 @@ const BodySchema = z.object({
   machineNames: z.array(z.string().min(1).max(200)).min(1).max(5),
 });
 
-const REPO_PART = /^[A-Za-z0-9._-]+$/;
+// GitHub owner/name characters, never a leading "-" (the helper passes them to git/gh, where it would read as an option).
+const REPO_PART = /^[A-Za-z0-9._][A-Za-z0-9._-]*$/;
 
 export interface WorkspaceRepo {
   owner: string;
