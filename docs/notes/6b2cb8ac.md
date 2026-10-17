@@ -274,3 +274,33 @@ Old tests that pinned the bug (the borrowing rules 2/3 and "manual pin wins" in 
 2. Merge the PR to master; wait until the production deploy for the merge commit is READY (the app must accept `bridge_ended` before the relay sends it). Check the helper download redirect serves 0.3.25.
 3. Relay: from a checkout whose `terminal/relay` + `terminal/shared` equal master, `npm test`, then `npx wrangler deploy`, `/healthz`, `wrangler deployments list`. Tell Nick first: live terminals blip and reconnect.
 4. Nick updates each Mac from that Mac (board → Update now → only this Mac's helper closes → drag to Applications). Then on the Mac mini, browser terminal on board d650f96a: expect "Looking for…" → "Found it: ~/<repo>" → Claude starts there, and the mini's saved folder is corrected under both its names.
+
+## Rework after code review (Fix step, Atlas, 17 Oct)
+Two blocking problems from the review, plus three small safety notes. Every new test was written first and failed on the branch before the change (evidence in the Fix step's scratchpad, `rework-evidence/*-before.txt`).
+
+### Decisions (and why)
+1. A moved project's real checkout was skipped and a second copy downloaded (this board's saved GitHub address still names the old owner; the checkout's origin names the organisation; SSH host aliases failed the same way).
+   - The page's folder and this Mac's saved folders are trusted when they exist and are a git checkout (a real `.git` folder) **unless every remote names a different project name**. A checkout with no remotes is trusted. I kept that one check instead of dropping the remote check entirely (the reviewer's first suggestion): a saved row can still be stale and point at another project, and opening the wrong project is worse than one search.
+   - Project name = last segment of any remote, `.git` dropped, lower-cased (`repoNameFromRemote`): covers a changed owner, SSH host aliases, other hosts and local paths.
+   - Search ranking: exact GitHub owner/name first, then origin over another remote, then most recently used. A same-name-only match is the fallback after every exact match.
+   - Before downloading, `~/projects/<repo>` is reused (`how: "found"`) when it is already a checkout with a same-name remote. The search normally finds it first; this covers a search that stopped on its time or folder budget.
+   - Real-disk probe (read-only, download stubbed, this board's production address naming the old owner): with the page's folder → `~/projects/vibe-coding-ideas` (`saved`); with nothing known → the search picks `~/projects/vibe-coding-ideas` (`found`) and lists the other checkout as also found. No download, nothing written.
+2. "Set exact folder" in a browser that has never run a terminal session saves under `set manually`, and the per-Mac rule ignored it. Now, **only when the browser knows no machine name**, the `set manually` rows count as its own (the helper re-checks the folder on the Mac anyway). A browser that knows its Mac's names still never uses a `set manually` row: it could be any Mac's (the plan's "never another Mac's row"). This replaces the build-log line saying such pins are ignored until the pin migration.
+3. Safety notes:
+   - The search skips `*.vibecodes-partial-*` folders. Before a download, leftover partial folders of the same project (`<repo>` or `<repo>-2…-9`) are removed when the process that made them is no longer running; a running one (another helper downloading right now) is left alone.
+   - Resume uses the same guard as a launch (`resolveResumeFolder`, shared by the resolver and the bridge's start-up): never `/`, the home folder or a top-level folder → `folder-not-allowed`, nothing spawned. A resume still opens the folder as given (not its realpath), as before.
+   - A GitHub owner or name starting with `-` is refused in the workspace route and in the bridge's check of the app's answer (`sanitizeWorkspace`, moved into folder-resolve.js so it can be tested), so it can never reach git or gh as an option.
+- No visible wording changed. The two unmocked wordings ("Couldn't find a safe project folder", the generic "Couldn't download the project") are untouched, waiting on Nick.
+
+### Known follow-ups (not done here)
+- The review's other non-blocking notes are left as they are (see the Code review step's output).
+
+### Tests that failed before and pass after
+- `terminal/bridge/src/folder-resolve.test.js`: "moved project…", "SSH host alias…", "a saved checkout with no remotes is trusted…", "search: a project-name-only match…", "search: a different project with another name is never a match" (guard), "search: a half-downloaded *.vibecodes-partial-* folder is never picked", "before downloading: ~/projects/<repo> … reused, not -2", "resolveResumeFolder…", "sanitizeWorkspace drops a repo whose owner or name starts with '-'", "repoNameFromRemote…".
+- `terminal/bridge/src/git-clone.test.js`: "stale half-downloads of this project left by a dead process are cleared first; a live one is left alone".
+- `terminal/test/fresh-mac-folder.test.mjs`: 8a moved project (before: cloned into `widget-2`), 8b SSH host alias (before: cloned into `~/projects/widget`), 8c resume into the home folder (before: spawned there and ran).
+- `src/lib/launch-claude-code.test.ts`: "a manually-pinned row (MANUAL_PIN_HOSTNAME) resolves like any own row in a browser that knows no machine name" (restores the deleted test for the no-names case), plus "a browser that knows its Mac's names never uses a manually-pinned row" (guard).
+- `src/app/api/terminal/session/workspace/route.test.ts`: "a GitHub address whose owner or name starts with '-' gets repo null".
+
+### Release checklist
+Unchanged: still one release (helper 0.3.25 + app + relay, in the order above). The rework touches only the bridge (ships in the helper) and the app; no relay change, no new route, no migration.
