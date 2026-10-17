@@ -12,6 +12,9 @@ import {
   parseGitRemotes,
   searchForCheckout,
   resolveWorkspaceFolder,
+  resolveResumeFolder,
+  sanitizeWorkspace,
+  repoNameFromRemote,
   SEARCH_ROOT_NAMES,
 } from "./folder-resolve.js";
 
@@ -359,4 +362,110 @@ test("ranking: origin match first, then most recently used, and the others are r
 
 test("the search roots list is the approved one", () => {
   assert.deepEqual(SEARCH_ROOT_NAMES, ["projects", "code", "dev", "src", "Developer", "repos", "git", "GitHub", "Projects", "Code", "workspace", "work"]);
+});
+
+// ── code review rework: moved projects, SSH host aliases, partial folders ───
+
+test("repoNameFromRemote reads the project name from any remote shape", () => {
+  for (const [url, name] of [
+    ["https://github.com/NewOrg/Widget.git", "widget"],
+    ["git@github-work:acme/widget.git", "widget"],
+    ["ssh://git@github-work/acme/widget", "widget"],
+    ["https://gitlab.example.com/group/sub/widget/", "widget"],
+    ["/Users/me/bare/widget.git", "widget"],
+  ]) {
+    assert.equal(repoNameFromRemote(url), name, url);
+  }
+  for (const url of ["", null, "   "]) assert.equal(repoNameFromRemote(url), null, String(url));
+});
+
+test("moved project: the page's folder whose remote names the new owner is trusted, never re-downloaded", async (t) => {
+  const home = tmpHome(t);
+  const checkout = makeCheckout(path.join(home, "projects", "widget"), { origin: "https://github.com/NewOrg/widget.git" });
+  const { deps: d } = deps(home);
+  const r = await resolveWorkspaceFolder({ hint: checkout, workspace: workspace({ savedFolders: [checkout] }), isResume: false, deps: d });
+  assert.deepEqual(r, { ok: true, path: checkout, how: "saved", alsoFound: [] });
+});
+
+test("SSH host alias: this Mac's saved folder with git@github-work:… is trusted", async (t) => {
+  const home = tmpHome(t);
+  const checkout = makeCheckout(path.join(home, "code", "widget"), { origin: "git@github-work:acme/widget.git" });
+  const { deps: d } = deps(home);
+  const r = await resolveWorkspaceFolder({ hint: null, workspace: workspace({ savedFolders: [checkout] }), isResume: false, deps: d });
+  assert.deepEqual(r, { ok: true, path: checkout, how: "saved", alsoFound: [] });
+});
+
+test("a saved checkout with no remotes is trusted; one whose remotes all name another project is not", async (t) => {
+  const home = tmpHome(t);
+  const local = makeCheckout(path.join(home, "projects", "local-only"), {});
+  const other = makeCheckout(path.join(home, "projects", "gadget"), { origin: "https://github.com/acme/gadget.git" });
+  const notGit = path.join(home, "projects", "plain");
+  fs.mkdirSync(notGit, { recursive: true });
+  const { deps: d } = deps(home, { clone: async () => ({ ok: false, reason: "stub" }) });
+  assert.equal((await resolveWorkspaceFolder({ hint: local, workspace: workspace(), isResume: false, deps: d })).path, local);
+  const r = await resolveWorkspaceFolder({ hint: other, workspace: workspace({ savedFolders: [notGit] }), isResume: false, deps: d });
+  assert.deepEqual(r, { ok: false, reason: "stub", detail: null });
+});
+
+test("search: a project-name-only match (moved owner or SSH alias) is found, ranked after exact owner matches", async (t) => {
+  const home = tmpHome(t);
+  const moved = makeCheckout(path.join(home, "projects", "widget"), { origin: "https://github.com/NewOrg/widget.git" }, { indexMtime: new Date("2026-10-15") });
+  const alias = makeCheckout(path.join(home, "widget-alias"), { origin: "git@github-work:acme/widget.git" }, { indexMtime: new Date("2026-10-10") });
+  const { deps: d } = deps(home);
+  const r = await resolveWorkspaceFolder({ hint: null, workspace: workspace(), isResume: false, deps: d });
+  assert.deepEqual(r, { ok: true, path: moved, how: "found", alsoFound: [alias] });
+  // An exact owner match wins even when it is older.
+  const exact = makeCheckout(path.join(home, "code", "widget"), { origin: REPO.cloneUrl }, { indexMtime: new Date("2026-01-01") });
+  const again = await resolveWorkspaceFolder({ hint: null, workspace: workspace(), isResume: false, deps: d });
+  assert.equal(again.path, exact);
+  assert.deepEqual(again.alsoFound, [moved, alias]);
+});
+
+test("search: a different project with another name is never a match", async (t) => {
+  const home = tmpHome(t);
+  makeCheckout(path.join(home, "projects", "widget"), { origin: "https://github.com/acme/widget-docs.git" });
+  const r = searchForCheckout({ home, repoKey: "acme/widget", fs, now: () => 0 });
+  assert.deepEqual(r.matches, []);
+});
+
+test("search: a half-downloaded *.vibecodes-partial-* folder is never picked", async (t) => {
+  const home = tmpHome(t);
+  makeCheckout(path.join(home, "projects", "widget.vibecodes-partial-123"), { origin: REPO.cloneUrl });
+  const r = searchForCheckout({ home, repoKey: "acme/widget", fs, now: () => 0 });
+  assert.deepEqual(r.matches, []);
+});
+
+test("before downloading: ~/projects/<repo> already a checkout of the same project is reused, not -2", async (t) => {
+  const home = tmpHome(t);
+  const existing = makeCheckout(path.join(home, "projects", "widget"), { origin: "git@github-work:neworg/widget.git" });
+  // A clock that jumps past the search budget at once, so only the pre-clone check can find it.
+  let clock = 0;
+  const { deps: d } = deps(home, { now: () => (clock += 10_000) });
+  const r = await resolveWorkspaceFolder({ hint: null, workspace: workspace(), isResume: false, deps: d });
+  assert.deepEqual(r, { ok: true, path: existing, how: "found", alsoFound: [] });
+});
+
+test("resolveResumeFolder: the same guard as a fresh launch, synchronously", (t) => {
+  const home = tmpHome(t);
+  const dir = path.join(home, "projects", "widget");
+  fs.mkdirSync(dir, { recursive: true });
+  assert.deepEqual(resolveResumeFolder({ hint: dir, fs, homedir: home }), { ok: true, path: dir, how: "saved", alsoFound: [] });
+  assert.deepEqual(resolveResumeFolder({ hint: path.join(dir, ".claude", "worktrees", "x"), fs, homedir: home }).path, dir);
+  for (const hint of ["/", home, "/tmp", "/Users"]) {
+    assert.equal(resolveResumeFolder({ hint, fs, homedir: home }).reason, "folder-not-allowed", hint);
+  }
+  assert.equal(resolveResumeFolder({ hint: path.join(home, "gone"), fs, homedir: home }).reason, "folder-missing");
+  assert.equal(resolveResumeFolder({ hint: null, fs, homedir: home }).reason, "folder-missing");
+});
+
+test("sanitizeWorkspace drops a repo whose owner or name starts with '-' (it could read as a command option)", () => {
+  const base = { newFolderName: "x", repoFolderName: "widget", savedFolders: [], otherLiveSessionsOnThisMac: 0 };
+  assert.deepEqual(sanitizeWorkspace({ ...base, repo: { owner: "acme", name: "widget", cloneUrl: "https://github.com/acme/widget.git" } }).repo, {
+    owner: "acme",
+    name: "widget",
+    cloneUrl: "https://github.com/acme/widget.git",
+  });
+  assert.equal(sanitizeWorkspace({ ...base, repo: { owner: "-acme", name: "widget", cloneUrl: "u" } }).repo, null);
+  assert.equal(sanitizeWorkspace({ ...base, repo: { owner: "acme", name: "--upload-pack=x", cloneUrl: "u" } }).repo, null);
+  assert.equal(sanitizeWorkspace({ ...base, repoFolderName: "-x", repo: null }).repoFolderName, null);
 });

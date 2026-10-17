@@ -12,9 +12,14 @@
 //   1. No workspace info (an older app, or the lookup failed): the page's
 //      folder if it exists, else `folder-lookup-failed`.
 //   2. The page's folder, then this Mac's saved folders — each only if it
-//      really exists and (for a repo board) is a checkout of the board's repo.
+//      really exists and (for a repo board) is a git checkout none of whose
+//      remotes names a DIFFERENT project (a moved project's new owner, or an
+//      SSH host alias like `git@github-work:o/n.git`, is still this project).
 //   3. Repo board: search the usual code folders for a checkout → `found`.
-//   4. Repo board: clone it into ~/projects/<repo> → `cloned`.
+//      Exact owner/name matches first; a same-project-name match (owner
+//      changed, or an SSH host alias) is a lower-ranked fallback.
+//   4. Repo board: ~/projects/<repo> if it is already a checkout of the same
+//      project (`found`), else clone it there → `cloned`.
 //   5. Repo-less board: ~/projects/<board name>, reused or created → `created`.
 //   6. Final guard: never `/`, never the home folder, never a top-level folder.
 //
@@ -66,9 +71,13 @@ const SEARCH_DEPTH = 2;
 const MAX_ALSO_FOUND = 3;
 const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
 
+/** A clone still downloading (or one left behind by a stopped helper): never a checkout. */
+export const PARTIAL_MARKER = ".vibecodes-partial-";
+
 /** @param {string} name */
 function isSkippedName(name) {
   if (name.startsWith(".")) return true;
+  if (name.includes(PARTIAL_MARKER)) return true;
   const lower = name.toLowerCase();
   if (SKIP_NAMES.has(lower)) return true;
   if (lower.startsWith("onedrive")) return true;
@@ -98,6 +107,21 @@ export function normalizeGithubRepo(url) {
 }
 
 /**
+ * The project name (last path segment, `.git` dropped, lower-cased) of any
+ * remote — any host, SSH host aliases (`git@github-work:o/n.git`), or a local
+ * path. Null when there is none.
+ * @param {unknown} url
+ * @returns {string | null}
+ */
+export function repoNameFromRemote(url) {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim().replace(/\/+$/, "").replace(/\.git$/i, "");
+  if (!trimmed) return null;
+  const last = trimmed.split(/[/:]/).pop() ?? "";
+  return last ? last.toLowerCase() : null;
+}
+
+/**
  * Every `[remote "<name>"] url = …` in a `.git/config`.
  * @param {string} text
  * @returns {{ name: string, url: string }[]}
@@ -120,25 +144,60 @@ export function parseGitRemotes(text) {
   return out;
 }
 
+/** `owner/name` → `name`. @param {string} repoKey */
+function nameOfKey(repoKey) {
+  return repoKey.split("/").pop() ?? repoKey;
+}
+
 /**
- * Is `dir` a checkout (a real `.git` FOLDER — a `.git` file is a worktree or
- * submodule and is skipped) whose remotes include `repoKey`?
- * @returns {"origin" | "other" | null}
+ * How `dir` relates to the board's repo. Null when it isn't a checkout (a
+ * real `.git` FOLDER — a `.git` file is a worktree or submodule and is
+ * skipped). Otherwise the best remote: `exact` (same GitHub owner/name) over
+ * `name` (same project name: a moved project or an SSH host alias), origin
+ * over another remote; `remotes` says whether any remote named a project.
+ * @returns {{ exact: boolean, name: boolean, origin: boolean, remotes: boolean } | null}
  */
-function remoteMatch(dir, repoKey, fs) {
+function checkoutMatch(dir, repoKey, fs) {
   try {
     if (!fs.lstatSync(path.join(dir, ".git")).isDirectory()) return null;
     const remotes = parseGitRemotes(fs.readFileSync(path.join(dir, ".git", "config"), "utf8"));
-    let match = null;
+    const wantName = nameOfKey(repoKey);
+    let best = { exact: false, name: false, origin: false, remotes: false };
+    const score = (m) => (m.exact ? 4 : m.name ? 2 : 0) + (m.origin ? 1 : 0);
     for (const r of remotes) {
-      if (normalizeGithubRepo(r.url) !== repoKey) continue;
-      if (r.name === "origin") return "origin";
-      match = "other";
+      const remoteName = repoNameFromRemote(r.url);
+      if (!remoteName) continue;
+      best.remotes = true;
+      const exact = normalizeGithubRepo(r.url) === repoKey;
+      const name = exact || remoteName === wantName;
+      if (!name) continue;
+      const m = { exact, name, origin: r.name === "origin", remotes: true };
+      if (score(m) > score(best)) best = m;
     }
-    return match;
+    return best;
   } catch {
     return null;
   }
+}
+
+/**
+ * Search/clone matching: a checkout with a remote of the same project.
+ * @returns {{ exact: boolean, origin: boolean } | null}
+ */
+function remoteMatch(dir, repoKey, fs) {
+  const m = checkoutMatch(dir, repoKey, fs);
+  return m && m.name ? { exact: m.exact, origin: m.origin } : null;
+}
+
+/**
+ * The page's folder / this Mac's saved folders: trusted when it is a checkout
+ * and no remote says it is a DIFFERENT project (a checkout with no remotes is
+ * trusted too — the Mac saved it for this board).
+ * @returns {boolean}
+ */
+function trustedSavedCheckout(dir, repoKey, fs) {
+  const m = checkoutMatch(dir, repoKey, fs);
+  return !!m && (m.name || !m.remotes);
 }
 
 /** @returns {boolean} */
@@ -177,13 +236,13 @@ function isDirectory(p, fs) {
  * below a root, never reads a skipped folder, and stops at the time or
  * folder-read budget.
  * @param {{ home: string, repoKey: string, fs: any, now: () => number, budgetMs?: number, maxReads?: number }} opts
- * @returns {{ matches: { path: string, origin: boolean, mtime: number }[], scanned: number, ms: number, stopped: boolean }}
+ * @returns {{ matches: { path: string, exact: boolean, origin: boolean, mtime: number }[], scanned: number, ms: number, stopped: boolean }}
  */
 export function searchForCheckout({ home, repoKey, fs, now, budgetMs = SEARCH_BUDGET_MS, maxReads = SEARCH_MAX_READS }) {
   const started = now();
   let scanned = 0;
   let stopped = false;
-  /** @type {Map<string, { path: string, origin: boolean, mtime: number }>} */
+  /** @type {Map<string, { path: string, exact: boolean, origin: boolean, mtime: number }>} */
   const found = new Map();
 
   const budgetLeft = () => {
@@ -205,7 +264,7 @@ export function searchForCheckout({ home, repoKey, fs, now, budgetMs = SEARCH_BU
       /* keep the path as found */
     }
     if (found.has(real)) return;
-    found.set(real, { path: real, origin: match === "origin", mtime: lastUsed(dir, fs) });
+    found.set(real, { path: real, exact: match.exact, origin: match.origin, mtime: lastUsed(dir, fs) });
   };
 
   /** @returns {{ name: string, dir: boolean, link: boolean }[] | null} */
@@ -279,6 +338,7 @@ export function searchForCheckout({ home, repoKey, fs, now, budgetMs = SEARCH_BU
 
   const matches = [...found.values()].sort(
     (a, b) =>
+      Number(b.exact) - Number(a.exact) ||
       Number(b.origin) - Number(a.origin) ||
       b.mtime - a.mtime ||
       a.path.length - b.path.length ||
@@ -308,6 +368,48 @@ function real(p, fs) {
 }
 
 /**
+ * The resume rule, synchronous (the bridge decides before the relay link
+ * opens): the conversation belongs to its folder, so it must exist here, and
+ * passes the same final guard as any launch.
+ * @param {{ hint: string | null, fs: any, homedir: string }} args
+ * @returns {Resolution}
+ */
+export function resolveResumeFolder({ hint, fs, homedir: home }) {
+  const hintPath = hint ? stripClaudeWorktreeSuffix(hint) : null;
+  if (!hintPath || !isDirectory(hintPath, fs)) return { ok: false, reason: "folder-missing", detail: null };
+  if (!allowed(hintPath, home) || !allowed(real(hintPath, fs), home)) return { ok: false, reason: "folder-not-allowed", detail: null };
+  return { ok: true, path: hintPath, how: "saved", alsoFound: [] };
+}
+
+/** GitHub owner/name part: GitHub's own characters, never a leading "-" (it would read as a command option). */
+const REPO_PART_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]*$/;
+
+/**
+ * The app's workspace answer, checked before the bridge trusts any of it.
+ * @param {unknown} raw @returns {Workspace | null}
+ */
+export function sanitizeWorkspace(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const w = /** @type {any} */ (raw);
+  let repo = null;
+  if (w.repo && typeof w.repo === "object") {
+    const { owner, name, cloneUrl } = w.repo;
+    if (typeof owner === "string" && REPO_PART_RE.test(owner) && typeof name === "string" && REPO_PART_RE.test(name) && typeof cloneUrl === "string") {
+      repo = { owner, name, cloneUrl };
+    }
+  }
+  if (typeof w.newFolderName !== "string") return null;
+  const folderName = typeof w.repoFolderName === "string" ? w.repoFolderName : repo ? repo.name : null;
+  return {
+    repo,
+    repoFolderName: folderName && REPO_PART_RE.test(folderName) ? folderName : null,
+    newFolderName: w.newFolderName,
+    savedFolders: Array.isArray(w.savedFolders) ? w.savedFolders.filter((p) => typeof p === "string").slice(0, 10) : [],
+    otherLiveSessionsOnThisMac: Number.isFinite(w.otherLiveSessionsOnThisMac) ? Number(w.otherLiveSessionsOnThisMac) : 0,
+  };
+}
+
+/**
  * @typedef {{ repo: { owner: string, name: string, cloneUrl: string } | null, repoFolderName: string | null,
  *   newFolderName: string, savedFolders: string[], otherLiveSessionsOnThisMac: number }} Workspace
  * @typedef {{ ok: true, path: string, how: "saved"|"found"|"cloned"|"created", alsoFound: string[] }
@@ -331,13 +433,7 @@ export async function resolveWorkspaceFolder({ hint, workspace, isResume, deps }
   const hintPath = hint ? stripClaudeWorktreeSuffix(hint) : null;
 
   // 0. Resume: its own folder or nothing.
-  if (isResume) {
-    if (hintPath && isDirectory(hintPath, fs)) {
-      if (!allowed(hintPath, home)) return { ok: false, reason: "folder-not-allowed", detail: null };
-      return guard({ ok: true, path: real(hintPath, fs), how: "saved", alsoFound: [] });
-    }
-    return { ok: false, reason: "folder-missing", detail: null };
-  }
+  if (isResume) return resolveResumeFolder({ hint, fs, homedir: home });
 
   // 1. No workspace info.
   if (!workspace) {
@@ -356,7 +452,7 @@ export async function resolveWorkspaceFolder({ hint, workspace, isResume, deps }
   for (const raw of candidates) {
     const c = stripClaudeWorktreeSuffix(/** @type {string} */ (raw));
     if (!allowed(c, home) || !isDirectory(c, fs)) continue;
-    if (repoKey && !remoteMatch(c, repoKey, fs)) continue;
+    if (repoKey && !trustedSavedCheckout(c, repoKey, fs)) continue;
     if (!allowed(real(c, fs), home)) continue;
     return { ok: true, path: real(c, fs), how: "saved", alsoFound: [] };
   }
@@ -374,14 +470,23 @@ export async function resolveWorkspaceFolder({ hint, workspace, isResume, deps }
       return { ok: true, path: best.path, how: "found", alsoFound };
     }
 
-    // 4. Clone.
+    // 4. ~/projects/<repo> already a checkout of this project (the search can
+    //    stop on its budget before reaching it) → reuse it, never a -2 copy.
     if (!isSafeFolderName(workspace.repoFolderName ?? "")) return { ok: false, reason: "folder-not-allowed", detail: null };
+    const usual = path.join(home, "projects", /** @type {string} */ (workspace.repoFolderName));
+    if (isDirectory(usual, fs) && remoteMatch(usual, repoKey, fs) && allowed(real(usual, fs), home)) {
+      const p = real(usual, fs);
+      onProgress({ kind: "found", path: p, alsoFound: [] });
+      return { ok: true, path: p, how: "found", alsoFound: [] };
+    }
+
+    // 5. Clone.
     const cloned = await deps.clone({ repo, repoFolderName: /** @type {string} */ (workspace.repoFolderName) });
     if (!cloned?.ok) return { ok: false, reason: cloned?.reason || "clone-failed", detail: cloned?.detail ?? null };
     return guard({ ok: true, path: real(cloned.path, fs), how: "cloned", alsoFound: [] });
   }
 
-  // 5. Repo-less board: ~/projects/<board name>.
+  // 6. Repo-less board: ~/projects/<board name>.
   if (!isSafeFolderName(workspace.newFolderName)) return { ok: false, reason: "folder-not-allowed", detail: null };
   const dest = path.join(home, "projects", workspace.newFolderName);
   if (!isDirectory(dest, fs)) {

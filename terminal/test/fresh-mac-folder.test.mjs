@@ -11,6 +11,9 @@
 //   6 — Resume whose folder isn't on this Mac → ends with folder-missing and
 //       a plain line, nothing spawned.
 //   7 — the agent quits within 10s → ends with agent-stopped-early:<code>.
+//   8 — code review rework: a moved project (the board names the old owner)
+//       and an SSH host alias are this Mac's real checkout, never a second
+//       download; a resume into the home folder is refused like a launch.
 //
 // A temp HOME stands in for the Mac's home folder, the stand-in relay for the
 // relay, and a small HTTP server for the app's workspace/folder routes.
@@ -261,4 +264,63 @@ test("7: the agent exits within 10s → agent-stopped-early:<code> with a plain 
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "agent-stopped-early:1", run.getStderr());
   assert.match(run.getBuf(), /Claude Code stopped straight away \(exit code 1\)\./);
+});
+
+// ── 8: code review rework ────────────────────────────────────────────────────
+test("8a: moved project — the page's folder points at the new owner → the agent runs there, nothing is downloaded", { timeout: 90000 }, async (t) => {
+  const home = tmpDir(t, "vc-fm-home-");
+  const src = tmpDir(t, "vc-fm-src-");
+  const bare = makeBareRepo(src); // a clone WOULD succeed, so a wrong decision shows up as widget-2
+  const checkout = makeCheckout(path.join(home, "projects", "widget"), "https://github.com/neworg/widget.git");
+  const app = await startFakeApp({
+    repo: { owner: "acme", name: "widget", cloneUrl: `file://${bare}` },
+    repoFolderName: "widget",
+    newFolderName: "widget-board",
+    savedFolders: [checkout],
+    otherLiveSessionsOnThisMac: 0,
+  });
+  t.after(app.close);
+  const run = await launch(t, { home, appUrl: app.url, link: { cwd: checkout, prompt: PROMPT } });
+  await waitFor(() => pwdOf(run.getBuf()) !== null || run.bridge.exitCode !== null, 60000, "the agent's folder");
+  assert.equal(pwdOf(run.getBuf()), checkout, run.getStderr());
+  assert.deepEqual(fs.readdirSync(path.join(home, "projects")), ["widget"], "no second copy");
+  await waitFor(() => app.calls.some((c) => c.url === "/api/terminal/session/folder"), 5000, "the folder record");
+  assert.equal(app.calls.find((c) => c.url === "/api/terminal/session/folder").body.path, checkout);
+});
+
+test("8b: SSH host alias — a checkout with git@github-work:… is found by the search, nothing is downloaded", { timeout: 90000 }, async (t) => {
+  const home = tmpDir(t, "vc-fm-home-");
+  const src = tmpDir(t, "vc-fm-src-");
+  const bare = makeBareRepo(src);
+  const checkout = makeCheckout(path.join(home, "widget"), "git@github-work:acme/widget.git");
+  const app = await startFakeApp({
+    repo: { owner: "acme", name: "widget", cloneUrl: `file://${bare}` },
+    repoFolderName: "widget",
+    newFolderName: "widget-board",
+    savedFolders: [],
+    otherLiveSessionsOnThisMac: 0,
+  });
+  t.after(app.close);
+  const run = await launch(t, { home, appUrl: app.url, link: { prompt: PROMPT } });
+  await waitFor(() => pwdOf(run.getBuf()) !== null || run.bridge.exitCode !== null, 60000, "the agent's folder");
+  assert.equal(pwdOf(run.getBuf()), checkout, run.getStderr());
+  assert.ok(!fs.existsSync(path.join(home, "projects")), "nothing downloaded");
+});
+
+test("8c: Resume into the home folder → folder-not-allowed, nothing spawned", { timeout: 60000 }, async (t) => {
+  const home = tmpDir(t, "vc-fm-home-");
+  const fakeBin = tmpDir(t, "vc-fm-bin-");
+  fs.writeFileSync(path.join(fakeBin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${PWD_CMD}" "$@"\n`, { mode: 0o755 });
+  const app = await startFakeApp(null);
+  t.after(app.close);
+  const run = await launch(t, {
+    home,
+    appUrl: app.url,
+    cmd: null,
+    link: { cwd: home, resumeId: "0b1bc584-0000-4000-8000-000000000000" },
+    env: { PATH: `${fakeBin}:${process.env.PATH}` },
+  });
+  await once(run.bridge, "exit");
+  assert.equal(run.shutdownWhy(), "folder-not-allowed", run.getStderr());
+  assert.ok(!run.getStderr().includes('"spawning PTY"'), "nothing spawned");
 });

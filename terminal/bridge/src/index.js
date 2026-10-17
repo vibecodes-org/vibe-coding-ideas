@@ -50,7 +50,7 @@ import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSession
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
-import { resolveWorkspaceFolder } from "./folder-resolve.js";
+import { resolveResumeFolder, resolveWorkspaceFolder, sanitizeWorkspace } from "./folder-resolve.js";
 import { cloneRepo } from "./git-clone.js";
 import { progressLine, failureLines, earlyExitLine, promptFolderNote } from "./bridge-copy.js";
 import { resolveMachineNames } from "../../shared/machine-name.mjs";
@@ -218,8 +218,10 @@ const WORKTREE_REQUESTED = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE
 // THIS MAC before the agent starts — see folder-resolve.js. Three launch modes:
 //   - "direct": an explicit --cmd/BRIDGE_CMD with no prompt (dev/test only).
 //     Today's behaviour exactly: spawns first, in the hint or process.cwd().
-//   - "resume": the conversation belongs to its folder — it must exist here,
-//     or the session ends with `folder-missing` (checked synchronously below).
+//   - "resume": the conversation belongs to its folder — it must exist here
+//     and pass the same "never /, the home folder or a top-level folder"
+//     guard, or the session ends with `folder-missing` / `folder-not-allowed`
+//     (checked synchronously below).
 //   - "fresh": everything else. The spawn waits for the relay's `attached`
 //     frame (R1, as before) and the folder resolution that follows it.
 const IS_RESUME = !explicitCmd && !!(RESUME || RESUME_ID);
@@ -232,15 +234,11 @@ let CWD = MODE === "direct" ? HINT : null;
 /** A resume whose folder isn't on this Mac — ended once the relay link opens. */
 let folderFailure = null;
 if (MODE === "resume") {
-  const hint = HINT ? stripClaudeWorktreeSuffix(HINT) : null;
-  let ok = false;
-  try {
-    ok = !!hint && fs.statSync(hint).isDirectory();
-  } catch { /* missing */ }
-  if (ok) CWD = hint;
+  const res = resolveResumeFolder({ hint: HINT, fs, homedir: os.homedir() });
+  if (res.ok) CWD = res.path;
   else {
-    folderFailure = { reason: "folder-missing", detail: null };
-    log("warn", "resume folder isn't on this Mac — not spawning", { cwd: HINT });
+    folderFailure = { reason: res.reason, detail: null };
+    log("warn", "resume folder can't be used on this Mac — not spawning", { cwd: HINT, reason: res.reason });
   }
 }
 // Task 5b8a3865 (Nick, 5 Sep 2026): a requested worktree is only APPENDED when
@@ -439,28 +437,7 @@ async function fetchSessionAgents() {
 // resolver then uses the page's folder only if it exists here.
 const WORKSPACE_FETCH_TIMEOUT_MS = 5000;
 const FOLDER_RECORD_TIMEOUT_MS = 3000;
-const SAFE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
-
-/** @param {unknown} raw @returns {import("./folder-resolve.js").Workspace | null} */
-function sanitizeWorkspace(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const w = /** @type {any} */ (raw);
-  let repo = null;
-  if (w.repo && typeof w.repo === "object") {
-    const { owner, name, cloneUrl } = w.repo;
-    if (typeof owner === "string" && SAFE_SEGMENT_RE.test(owner) && typeof name === "string" && SAFE_SEGMENT_RE.test(name) && typeof cloneUrl === "string") {
-      repo = { owner, name, cloneUrl };
-    }
-  }
-  if (typeof w.newFolderName !== "string") return null;
-  return {
-    repo,
-    repoFolderName: typeof w.repoFolderName === "string" ? w.repoFolderName : repo ? repo.name : null,
-    newFolderName: w.newFolderName,
-    savedFolders: Array.isArray(w.savedFolders) ? w.savedFolders.filter((p) => typeof p === "string").slice(0, 10) : [],
-    otherLiveSessionsOnThisMac: Number.isFinite(w.otherLiveSessionsOnThisMac) ? Number(w.otherLiveSessionsOnThisMac) : 0,
-  };
-}
+// sanitizeWorkspace (folder-resolve.js) checks the answer before it is used.
 
 /** @returns {Promise<import("./folder-resolve.js").Workspace | null>} */
 async function fetchWorkspace() {

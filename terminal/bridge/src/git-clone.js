@@ -7,7 +7,10 @@
 //   - Destination ~/projects/<repo>; an empty folder of that name is fine, one
 //     taken by something else gets -2 … -9. The clone goes into a temporary
 //     sibling folder and is renamed into place only on success, so a failed or
-//     stopped download never leaves a half-made project behind.
+//     stopped download never leaves a half-made project behind. A temporary
+//     folder of THIS project left by a process that is no longer running (a
+//     helper quit mid-download) is cleared before a new download; one whose
+//     process is still running is left alone.
 //   - Never a password prompt: GIT_TERMINAL_PROMPT=0 and no askpass helpers, so
 //     a hidden process can't sit waiting on input. The Mac's own credential
 //     helpers still apply (Apple's git uses the keychain).
@@ -22,7 +25,7 @@
 // git-clone.test.js.
 
 import path from "node:path";
-import { isSafeFolderName } from "./folder-resolve.js";
+import { isSafeFolderName, PARTIAL_MARKER } from "./folder-resolve.js";
 
 export const STALL_MS = 60_000;
 export const CAP_MS = 20 * 60_000;
@@ -97,6 +100,45 @@ export function pickCloneDestination({ home, repoFolderName, fs }) {
   return null;
 }
 
+/** @param {number} pid @returns {boolean} */
+function defaultIsPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return /** @type {any} */ (e)?.code === "EPERM"; // alive, someone else's
+  }
+}
+
+/**
+ * Remove ~/projects/<name>[-N].vibecodes-partial-<pid> folders whose process
+ * has gone. Never touches another project's, or a live process's.
+ * @param {{ home: string, repoFolderName: string, fs: any, pid: number, isPidAlive: (pid: number) => boolean, log: Function }} opts
+ */
+export function clearStalePartials({ home, repoFolderName, fs, pid, isPidAlive, log }) {
+  const parent = path.join(home, "projects");
+  const escaped = repoFolderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^${escaped}(?:-[2-9])?${PARTIAL_MARKER.replace(/[.]/g, "\\.")}(\\d+)$`);
+  let entries = [];
+  try {
+    entries = fs.readdirSync(parent);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const m = re.exec(name);
+    if (!m) continue;
+    const owner = Number(m[1]);
+    if (owner === pid || isPidAlive(owner)) continue;
+    try {
+      fs.rmSync(path.join(parent, name), { recursive: true, force: true });
+      log("cleared a stale partial download", { pid: owner });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 /** @returns {boolean} the probe ran and exited 0 */
 function probeOk(run, file, args, opts) {
   try {
@@ -110,7 +152,7 @@ function probeOk(run, file, args, opts) {
 /**
  * @param {{ repo: { owner: string, name: string, cloneUrl: string }, home: string, repoFolderName: string,
  *   env: Record<string, string | undefined>, platform?: string, run: Function, spawn: Function, fs: any,
- *   now?: () => number, onProgress?: (e: object) => void, pid?: number, stallMs?: number, capMs?: number,
+ *   now?: () => number, onProgress?: (e: object) => void, pid?: number, isPidAlive?: (pid: number) => boolean, stallMs?: number, capMs?: number,
  *   log?: (msg: string, extra?: object) => void }} opts
  * @returns {Promise<{ ok: true, path: string } | { ok: false, reason: string, detail: string | null }>}
  */
@@ -147,6 +189,9 @@ export async function cloneRepo(opts) {
     return { ok: false, reason: "git-missing", detail: null };
   }
 
+  if (isSafeFolderName(repoFolderName)) {
+    clearStalePartials({ home, repoFolderName, fs, pid, isPidAlive: opts.isPidAlive ?? defaultIsPidAlive, log });
+  }
   const dest = pickCloneDestination({ home, repoFolderName, fs });
   if (!dest) return { ok: false, reason: "folder-unavailable", detail: null };
   try {
@@ -154,7 +199,7 @@ export async function cloneRepo(opts) {
   } catch (e) {
     return { ok: false, reason: "folder-unavailable", detail: String(/** @type {any} */ (e)?.code || e) };
   }
-  const tmp = `${dest}.vibecodes-partial-${pid}`;
+  const tmp = `${dest}${PARTIAL_MARKER}${pid}`;
   const cleanup = () => {
     try {
       fs.rmSync(tmp, { recursive: true, force: true });

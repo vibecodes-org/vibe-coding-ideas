@@ -235,3 +235,17 @@ test("no free destination → folder-unavailable", async (t) => {
   assert.equal(out.reason, "folder-unavailable");
   assert.equal(s.calls.length, 0);
 });
+
+test("stale half-downloads of this project left by a dead process are cleared first; a live one is left alone", async (t) => {
+  const home = tmpHome(t);
+  const projects = path.join(home, "projects");
+  fs.mkdirSync(path.join(projects, "widget.vibecodes-partial-111", ".git"), { recursive: true });
+  fs.mkdirSync(path.join(projects, "widget-2.vibecodes-partial-222", ".git"), { recursive: true });
+  fs.mkdirSync(path.join(projects, "widget.vibecodes-partial-333", ".git"), { recursive: true });
+  fs.mkdirSync(path.join(projects, "gadget.vibecodes-partial-111", ".git"), { recursive: true });
+  const s = fakeSpawn([{ makeDir: true }]);
+  const { opts } = base(home, { run: okRun().run, spawn: s.spawn, isPidAlive: (pid) => pid === 333 });
+  const out = await cloneRepo(opts);
+  assert.deepEqual(out, { ok: true, path: path.join(projects, "widget") });
+  assert.deepEqual(fs.readdirSync(projects).sort(), ["gadget.vibecodes-partial-111", "widget", "widget.vibecodes-partial-333"]);
+});
