@@ -587,6 +587,9 @@ describe("TerminalSessionChooser", () => {
     let statusQueue: Array<{ connected: boolean }>;
 
     beforeEach(() => {
+      // Card 6b2cb8ac: the update flow targets THIS Mac by name; this browser
+      // has launched a session on "mac-a".
+      window.localStorage.setItem("vc:term:machines", JSON.stringify(["mac-a"]));
       vi.useFakeTimers();
       originalLocation = window.location;
       assignSpy = vi.fn();
@@ -602,7 +605,7 @@ describe("TerminalSessionChooser", () => {
       });
       statusQueue = [];
       fetchMock = vi.fn((url: string) => {
-        if (url === "/api/terminal/helper/status") {
+        if (url.startsWith("/api/terminal/helper/status")) {
           const next = statusQueue.shift() ?? { connected: true };
           return Promise.resolve({ ok: true, json: async () => next } as Response);
         }
@@ -639,7 +642,7 @@ describe("TerminalSessionChooser", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/terminal/helper/command",
-        expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce" }) }),
+        expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce", machines: ["mac-a"] }) }),
       );
       expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/end", expect.anything());
       expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
@@ -660,7 +663,7 @@ describe("TerminalSessionChooser", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Update now" }));
       expect(screen.getByText("Update the helper?")).toBeInTheDocument();
-      expect(screen.getByText(/Your 2 running sessions will end first/)).toBeInTheDocument();
+      expect(screen.getByText(/Your 2 running sessions on this Mac will end first/)).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalled(); // nothing happens until confirmed
 
       await act(async () => {
@@ -670,7 +673,7 @@ describe("TerminalSessionChooser", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/terminal/session/end",
-        expect.objectContaining({ body: JSON.stringify({ all: true }) }),
+        expect.objectContaining({ body: JSON.stringify({ all: true, machines: ["mac-a"] }) }),
       );
       expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
     });

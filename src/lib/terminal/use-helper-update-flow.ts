@@ -31,6 +31,7 @@ import {
 } from "./helper-update-flow";
 import { TERMINAL_HELPER_DOWNLOAD_URL } from "./platform";
 import type { HelperStatus } from "./helper-row";
+import { thisMacMachineNames, thisMacStatusQuery } from "./machine-identity";
 
 export interface UseHelperUpdateFlowOptions {
   /** The caller's current live-session count (across all of the user's
@@ -85,7 +86,11 @@ export function useHelperUpdateFlow({
   const [state, setState] = useState<UpdateFlowState>(INITIAL_UPDATE_FLOW_STATE);
 
   const start = useCallback(() => {
-    setState((s) => updateFlowReducer(s, { type: "update-clicked", sessionCount }));
+    // Card 6b2cb8ac: a browser that knows no Mac name never ends anything
+    // (it can't tell which sessions are on this Mac), so there is nothing to
+    // confirm — straight to the download.
+    const count = thisMacMachineNames().length > 0 ? sessionCount : 0;
+    setState((s) => updateFlowReducer(s, { type: "update-clicked", sessionCount: count }));
   }, [sessionCount]);
   const confirm = useCallback(() => {
     setState((s) => updateFlowReducer(s, { type: "confirmed" }));
@@ -107,13 +112,23 @@ export function useHelperUpdateFlow({
     let cancelled = false;
     onQuiesceStart?.();
     const hadSessions = sessionCount > 0;
+    // Card 6b2cb8ac: only THIS Mac. The relay now keeps one helper link per
+    // Mac; `machines` targets this one, and the end call ends only this
+    // Mac's sessions. With no known name (a browser that has never launched a
+    // session) nothing is ended or closed: the download starts at once, with
+    // the honest "couldn't reach the helper to close it" notice.
+    const machines = thisMacMachineNames();
     (async () => {
+      if (machines.length === 0) {
+        if (!cancelled) setState((s) => updateFlowReducer(s, { type: "quiesce-undelivered" }));
+        return;
+      }
       if (hadSessions) {
         try {
           await fetch("/api/terminal/session/end", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ all: true }),
+            body: JSON.stringify({ all: true, machines }),
           });
         } catch {
           /* best effort — the quiesce command below still proceeds */
@@ -132,7 +147,7 @@ export function useHelperUpdateFlow({
         const res = await fetch("/api/terminal/helper/command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmd: "quiesce" }),
+          body: JSON.stringify({ cmd: "quiesce", machines }),
         });
         if (res.ok) {
           const body = (await res.json().catch(() => null)) as { delivered?: unknown } | null;
@@ -151,7 +166,7 @@ export function useHelperUpdateFlow({
       while (!cancelled) {
         let settled = false;
         try {
-          const res = await fetch("/api/terminal/helper/status");
+          const res = await fetch(`/api/terminal/helper/status${thisMacStatusQuery(machines)}`);
           if (res.ok) {
             const status = (await res.json()) as HelperStatus;
             settled = status.connected === false;

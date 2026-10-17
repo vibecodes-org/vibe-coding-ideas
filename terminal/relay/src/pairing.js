@@ -222,6 +222,14 @@ export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
 // the waiver dies with it) and the UX falls back to a clean fresh launch.
 export const RECONNECT_GRACE_MS = 90_000;
 
+/**
+ * How long a session that the BRIDGE ended on purpose (close 1000 with a
+ * reason) remembers why (card 6b2cb8ac). A browser attaching to that sid in
+ * this window is closed 1000 with the same reason instead of opening an empty
+ * session that never pairs. Overridable via env TERMINAL_TOMBSTONE_MS.
+ */
+export const TOMBSTONE_MS = 10 * 60 * 1000;
+
 /** Default idle cap: 2 hours of no traffic (was 30 min until 3 Sep 2026 — Nick steps away for an hour or more and an idle session costs nothing: the DO hibernates, heartbeats are auto-answered without waking it). Overridable via env TERMINAL_IDLE_MS. */
 export const DEFAULT_IDLE_MS = 2 * 60 * 60 * 1000;
 /** Default backstop cap on total session age: 24 hours. Overridable via env TERMINAL_MAX_MS. */

@@ -121,8 +121,15 @@
  *  0.3.24 (task 18a37612, 14 Oct 2026): first helper whose bridge starts
  *  Claude Code at the chosen effort (`--effort <level>`) on new and resumed
  *  sessions. An older helper ignores the field and Claude decides — soft
- *  nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.24";
+ *  nudge.
+ *  0.3.25 (card 6b2cb8ac, 17 Oct 2026): first helper that finds the board's
+ *  project folder on the Mac itself before the agent starts (this Mac's saved
+ *  folder → an existing checkout → download it → a new folder), reports why
+ *  an agent stopped (a clear ended screen instead of 90 seconds of
+ *  "reconnecting"), and reports the Mac's fixed name so "Update now" closes
+ *  only this Mac's helper. An older helper on a Mac with no folder of its own
+ *  still starts in the wrong place — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.25";
 
 export type HelperVersionParts = readonly [number, number, number];
 

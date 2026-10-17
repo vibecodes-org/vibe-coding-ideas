@@ -2,7 +2,8 @@
 // "End" and the "End all sessions" panic button).
 //
 // `POST { sid }` ends ONE of the caller's own sessions; `POST { all: true }`
-// ends every one of them. Ownership is resolved via the `terminal_sessions`
+// ends every one of them; `POST { all: true, machines }` ends every one on
+// that Mac only (card 6b2cb8ac). Ownership is resolved via the `terminal_sessions`
 // registry (RLS-scoped to the caller — never a raw sid trusted blind), then
 // each target is closed at the relay via a short-lived, sid-bound CONTROL
 // token (terminal/shared/session-token.mjs → mintControlToken/authorizeControl)
@@ -27,7 +28,11 @@ export const dynamic = "force-dynamic";
 
 const BodySchema = z.union([
   z.object({ sid: z.string().min(1).max(128) }),
-  z.object({ all: z.literal(true) }),
+  // Card 6b2cb8ac: `machines` scopes "end all" to ONE Mac (the helper update
+  // flow on that Mac). Only active rows whose machine_label matches one of the
+  // names (case-insensitive) end; rows with no label are left alone, since
+  // they may be another Mac's.
+  z.object({ all: z.literal(true), machines: z.array(z.string().min(1).max(200)).min(1).max(5).optional() }),
 ]);
 
 interface EndResult {
@@ -63,15 +68,24 @@ export async function POST(req: Request) {
     // honest even if this route ever runs under a different client.
     let query = supabase
       .from("terminal_sessions")
-      .select("id, sid")
+      .select("id, sid, machine_label")
       .eq("user_id", user.id)
       .eq("status", "active");
     if ("sid" in parsed.data) query = query.eq("sid", parsed.data.sid);
-    const { data: targets, error: targetsErr } = await query;
+    const { data: rows, error: targetsErr } = await query;
     if (targetsErr) {
       logger.error("Terminal session end: target lookup failed", { error: targetsErr.message });
       return NextResponse.json({ error: "Couldn't look up your sessions" }, { status: 500 });
     }
+    // Filtered here, not in SQL: hostnames are stored in whatever case the
+    // Mac reported, and `.in()` compares exactly.
+    const machines =
+      "all" in parsed.data && parsed.data.machines
+        ? new Set(parsed.data.machines.map((m) => m.trim().toLowerCase()))
+        : null;
+    const targets = machines
+      ? (rows ?? []).filter((r) => r.machine_label != null && machines.has(r.machine_label.trim().toLowerCase()))
+      : rows;
 
     if (!targets || targets.length === 0) {
       // Not an error — an already-ended/foreign sid, or "end all" with none
@@ -122,7 +136,11 @@ export async function POST(req: Request) {
       results.push({ sid: target.sid, ended: true, relayConfirmed });
     }
 
-    logger.info("Ended terminal session(s)", { userId: user.id, count: results.length });
+    logger.info("Ended terminal session(s)", {
+      userId: user.id,
+      count: results.length,
+      machines: machines ? [...machines] : null,
+    });
     return NextResponse.json({ results });
   } catch (err) {
     logger.error("Terminal session end error", {

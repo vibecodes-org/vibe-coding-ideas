@@ -372,6 +372,23 @@ export default function LaunchingClaudeCodePage() {
               — point Claude Code at an existing absolute path
             </li>
           </ul>
+          <p className="mb-4 text-muted-foreground">
+            <strong className="text-foreground">In the browser terminal on a Mac</strong>,
+            the VibeCodes helper sorts out the folder itself before Claude Code
+            or Codex starts, and shows each step in the terminal. It uses this
+            Mac&apos;s saved folder if it&apos;s really there; otherwise it looks
+            for your existing copy of the board&apos;s GitHub project in your
+            usual code folders; otherwise it downloads it into{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              ~/projects
+            </code>
+            ; and a board with no GitHub project gets a new folder there. Each
+            Mac only ever uses its own saved folder. If the folder can&apos;t be
+            got ready (no access to a private project, no internet, git not
+            installed yet), the terminal says why and offers{" "}
+            <strong className="text-foreground">&quot;Start again&quot;</strong>{" "}
+            — it never starts somewhere else.
+          </p>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Important:</strong> the path

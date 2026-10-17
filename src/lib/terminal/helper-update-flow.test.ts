@@ -85,12 +85,14 @@ describe("settled-phase helpers", () => {
 });
 
 describe("updateConfirmBody", () => {
-  it("pluralizes the session count", () => {
+  // Card 6b2cb8ac (decision 9, mock 4d): the update closes only this Mac's
+  // helper, so the confirm says "on this Mac".
+  it("pluralizes the session count and says 'on this Mac'", () => {
     expect(updateConfirmBody(1)).toBe(
-      "Your 1 running session will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.",
+      "Your 1 running session on this Mac will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.",
     );
     expect(updateConfirmBody(2)).toBe(
-      "Your 2 running sessions will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.",
+      "Your 2 running sessions on this Mac will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.",
     );
   });
 });

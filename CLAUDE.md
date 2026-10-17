@@ -135,6 +135,29 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   process's cwd), the prompt said "cd in first", and the agent cd'd into and
   *recorded* another project's checkout as that board's folder (29 Aug 2026).
   The terminal-window (claude-cli://) launch keeps the default "degrade" ladder.
+- **The helper resolves the project folder on the Mac before the agent
+  starts; the page never sends another Mac's folder.** Order (bridge
+  `folder-resolve.js`): this Mac's own saved folder if it really is the
+  project → an existing checkout found by its git remote → clone into
+  `~/projects/<repo>` → a new `~/projects/<board>` for a repo-less board.
+  Never `/`, never home, never another Mac's row (`chooseLaunchCwdDetailed`
+  only uses rows whose hostname is one of this browser's machine names).
+  The bridge records the result through `/api/terminal/session/folder` under
+  every name the Mac reports (its fixed `scutil --get LocalHostName` +
+  ".local", plus `os.hostname()`), so one Mac with two network names stays
+  one Mac. A folder it can't get ready ends the session with a reason and a
+  "Start again" screen; it never starts somewhere else (card 6b2cb8ac,
+  17 Oct 2026: the Mac mini opened the MacBook's folder, which didn't exist
+  there, and every session died silently).
+- **A bridge 1000 close ends the session at once; only an abnormal close
+  gets the 90s hold.** The relay passes the bridge's reason to the browser
+  and leaves a 10-minute tombstone so a late reattach gets the same reason.
+  Treating a deliberate stop like a dropped link showed "Connected" plus
+  "reconnecting…" for 90s, then a Resume that died again.
+- **Helper control legs are per Mac.** "Update now" closes only this Mac's
+  helper and ends only this Mac's sessions (`machines` on helper command /
+  status / session end). A browser that knows no machine name skips the
+  close and just downloads.
 
 ### Mocks and new controls
 A new control must match the existing controls of the same kind on the same screen: layout, labels, help line and save behaviour. That holds for both agents' versions of a setting (Claude and Codex) and for both screens, Settings and Admin. List every difference you keep as a decision for Nick. On 14 Oct 2026 a Claude effort control was mocked after the neighbouring Claude row instead of the Codex pair; the mismatch was approved, built and shipped (card fae2ce4f).

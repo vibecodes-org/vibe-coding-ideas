@@ -18,10 +18,17 @@ import { relayHttpBaseUrl } from "@/lib/terminal/relay-http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Card 6b2cb8ac: optional `machines` — this Mac's names (as the page learned
+// them from its own launches). The relay keeps one helper leg per Mac and
+// delivers the command only to the leg whose names match, so "Update now" on
+// one Mac no longer closes another Mac's helper. Absent → the relay's old
+// behaviour (the newest live helper leg).
+const Machines = z.array(z.string().min(1).max(200)).max(5).optional();
+
 const BodySchema = z.union([
-  z.object({ cmd: z.literal("stop") }),
-  z.object({ cmd: z.literal("quiesce") }),
-  z.object({ cmd: z.literal("set-always-on"), value: z.boolean() }),
+  z.object({ cmd: z.literal("stop"), machines: Machines }),
+  z.object({ cmd: z.literal("quiesce"), machines: Machines }),
+  z.object({ cmd: z.literal("set-always-on"), value: z.boolean(), machines: Machines }),
 ]);
 
 export async function POST(req: Request) {
@@ -73,7 +80,13 @@ export async function POST(req: Request) {
     }
 
     const body = await res.json();
-    logger.info("Sent terminal helper command", { userId: user.id, cmd: parsed.data.cmd, delivered: body?.delivered });
+    logger.info("Sent terminal helper command", {
+      userId: user.id,
+      cmd: parsed.data.cmd,
+      delivered: body?.delivered,
+      machines: parsed.data.machines ?? null,
+      reason: body?.reason ?? null,
+    });
     return NextResponse.json(body);
   } catch (err) {
     logger.error("Terminal helper command error", {

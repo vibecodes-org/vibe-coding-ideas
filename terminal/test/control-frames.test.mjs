@@ -300,3 +300,48 @@ test("the three new helper frames stay mutually disjoint and disjoint from every
     assert.equal(parseControlMessage(frames[i]), null);
   }
 });
+
+// ── Card 6b2cb8ac: bridge end reasons, the bridge-cwd frame, machine lists ──
+import {
+  sanitizeBridgeEndReason,
+  encodeBridgeCwdFrame,
+  isBridgeCwdFrame,
+  parseBridgeCwdFrame,
+  sanitizeMachineList,
+} from "../shared/control-frames.mjs";
+
+test("sanitizeBridgeEndReason keeps a safe token, else 'ended'", () => {
+  assert.equal(sanitizeBridgeEndReason("pty-exit"), "pty-exit");
+  assert.equal(sanitizeBridgeEndReason("agent-stopped-early:1"), "agent-stopped-early:1");
+  assert.equal(sanitizeBridgeEndReason("folder-missing"), "folder-missing");
+  assert.equal(sanitizeBridgeEndReason("has space"), "ended");
+  assert.equal(sanitizeBridgeEndReason("x".repeat(121)), "ended");
+  assert.equal(sanitizeBridgeEndReason(""), "ended");
+  assert.equal(sanitizeBridgeEndReason(undefined), "ended");
+  assert.equal(sanitizeBridgeEndReason("/Users/x"), "ended");
+});
+
+test("bridge-cwd frame round-trips an absolute folder and rejects anything else", () => {
+  const f = encodeBridgeCwdFrame("/Users/x/projects/p");
+  assert.equal(isBridgeCwdFrame(f), true);
+  assert.equal(parseBridgeCwdFrame(f), "/Users/x/projects/p");
+  // A long (but bounded) path still fits — this frame has its own length gate.
+  const long = "/Users/x/" + "a".repeat(900);
+  assert.equal(parseBridgeCwdFrame(encodeBridgeCwdFrame(long)), long);
+  assert.equal(parseBridgeCwdFrame(JSON.stringify({ t: "bridge-cwd", cwd: "/" + "a".repeat(1100) })), null);
+  assert.equal(parseBridgeCwdFrame(JSON.stringify({ t: "bridge-cwd", cwd: "relative/p" })), null);
+  assert.equal(parseBridgeCwdFrame(JSON.stringify({ t: "bridge-cwd", cwd: 5 })), null);
+  assert.equal(parseBridgeCwdFrame(JSON.stringify({ t: "bridge-cwd", cwd: "/a\u0000b" })), null);
+  assert.equal(isBridgeCwdFrame(encodeAttachedFrame()), false);
+  assert.equal(isBridgeVersionFrame(f), false);
+  assert.equal(parseControlMessage(f), null);
+});
+
+test("sanitizeMachineList takes a comma string or array, bounds and lowercases it", () => {
+  assert.deepEqual(sanitizeMachineList("Nicks-Mac-mini.local, nicks-mac-mini.local,Other"), ["nicks-mac-mini.local", "other"]);
+  assert.deepEqual(sanitizeMachineList(["A", "b", "c", "d", "e", "f", "g"]), ["a", "b", "c", "d", "e"]);
+  assert.deepEqual(sanitizeMachineList(""), []);
+  assert.deepEqual(sanitizeMachineList(null), []);
+  assert.deepEqual(sanitizeMachineList([5, " ", "x"]), ["x"]);
+  assert.equal(sanitizeMachineList(["y".repeat(300)])[0].length, 80);
+});

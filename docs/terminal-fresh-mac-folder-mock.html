@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fresh Mac Terminal Screens</title>
+<style>
+  /* Page chrome (same family as the other docs/*.html mocks). */
+  :root {
+    --bg: #0f1115; --surface: #171a21; --line: #2a313d; --text: #e6e9ef; --muted: #9aa3b2; --accent: #5eead4; --warn: #fbbf24;
+    /* Tailwind palette values the real terminal panel uses (zinc / emerald / amber / sky / rose). */
+    --z100: #f4f4f5; --z200: #e4e4e7; --z300: #d4d4d8; --z400: #a1a1aa; --z500: #71717a; --z600: #52525b; --z700: #3f3f46; --z800: #27272a;
+    --em400: #34d399; --em500: #10b981; --em950: #022c22;
+    --am200: #fde68a; --am300: #fcd34d; --am400: #fbbf24; --am500: #f59e0b;
+    --sky300: #7dd3fc; --sky400: #38bdf8; --sky500: #0ea5e9; --sky950: #082f49;
+    --rose400: #fb7185; --rose500: #f43f5e;
+    /* terminal-session-view.tsx: header #141417, body/xterm #0c0c0e, xterm foreground #cfd8df. */
+    --hdr: #141417; --term: #0c0c0e; --term-fg: #cfd8df;
+    /* xterm.js default ANSI colours (the app only sets background/foreground/cursor). */
+    --ansi-yellow: #c4a000; --ansi-cyan: #06989a; --ansi-dim: #555753; --claude: #d97757;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem 16px 5rem; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 .3rem; line-height: 1.25; }
+  h2 { font-size: 1.15rem; margin: 2.6rem 0 .6rem; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+  h3 { font-size: .98rem; margin: 1.8rem 0 .3rem; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.2rem; }
+  .when { color: var(--muted); font-size: .84rem; margin: 0 0 .6rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1.1rem; margin: .8rem 0; font-size: .9rem; }
+  .card.decision { border-color: var(--warn); }
+  .card ol, .card ul { margin: .3rem 0; padding-left: 1.2rem; }
+  .card li { margin: .3rem 0; }
+  .rec { color: var(--em400); font-weight: 600; }
+  .tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .02em; border: 1px solid var(--line); border-radius: 999px; padding: 0 .55rem; color: var(--muted); margin-left: .35rem; vertical-align: 1px; }
+  .tag.new { color: var(--em400); border-color: rgba(16,185,129,.4); }
+  .tag.changed { color: var(--sky300); border-color: rgba(14,165,233,.4); }
+  .tag.same { color: var(--z400); }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .85em; color: var(--accent); }
+
+  /* ── The terminal panel, rebuilt from terminal-session-view.tsx's classes ── */
+  .frame { border: 1px solid var(--z800); border-radius: 8px; overflow: hidden; background: var(--term); margin: .4rem 0 .4rem; }
+  .hdr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-bottom: 1px solid var(--z800); background: var(--hdr); padding: 8px 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; line-height: 16px; }
+  .pill svg { width: 12px; height: 12px; }
+  .pill.connected { border-color: rgba(16,185,129,.5); background: rgba(16,185,129,.1); color: var(--em400); }
+  .pill.ended { border-color: var(--z600); background: rgba(39,39,42,.6); color: var(--z300); }
+  .pill.connecting { border-color: rgba(245,158,11,.5); background: rgba(245,158,11,.1); color: var(--am400); }
+  .pill.notconn { border-color: var(--z600); background: rgba(39,39,42,.6); color: var(--z300); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--z700); background: rgba(39,39,42,.6); border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; color: var(--z300); line-height: 14px; }
+  .board { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--z500); }
+  .board .faint { color: var(--z600); }
+  .hdr .right { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+  .btn-xs { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid var(--z700); background: rgba(39,39,42,.6); color: var(--z200); cursor: pointer; font-family: inherit; }
+  .btn-xs svg { width: 12px; height: 12px; }
+  .btn-xs.end { border-color: rgba(244,63,94,.45); background: transparent; color: var(--rose400); }
+  .btn-xs.update { border: 0; background: var(--sky500); color: var(--sky950); font-weight: 600; }
+  .body { position: relative; height: 330px; }
+  .term { height: 100%; padding: 8px 12px; font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.45; color: var(--term-fg); white-space: pre-wrap; word-break: break-word; overflow: hidden; }
+  .term.dimmed { opacity: .45; }
+  .term .vc { color: var(--ansi-cyan); font-weight: 700; }
+  .term .y { color: var(--ansi-yellow); }
+  .term .dim { color: var(--ansi-dim); }
+  .term .claude { color: var(--claude); }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--term-fg); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; overflow-y: auto; background: rgba(12,12,14,.95); padding: 24px; text-align: center; }
+  .overlay .ico { width: 28px; height: 28px; color: var(--z400); }
+  .overlay .title { font-size: 16px; font-weight: 600; color: var(--z300); line-height: 1.35; }
+  .overlay .msg { max-width: 28rem; font-size: 13px; color: var(--z400); margin: 0; line-height: 1.5; }
+  .overlay .msg code { color: var(--z200); background: rgba(39,39,42,.8); border: 1px solid var(--z700); border-radius: 4px; padding: 0 4px; font-size: 12px; word-break: break-all; }
+  .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: 6px; font-size: 14px; font-weight: 500; border: 0; cursor: pointer; font-family: inherit; }
+  .btn svg { width: 16px; height: 16px; }
+  .btn.primary { background: var(--em500); color: var(--em950); }
+  .btn.outline { background: rgba(39,39,42,.6); color: var(--z200); border: 1px solid var(--z700); }
+  .btn.update { background: var(--sky500); color: var(--sky950); font-weight: 600; height: 36px; font-size: 14px; }
+  .link { font-size: 11px; color: var(--z500); text-decoration: underline; background: none; border: 0; cursor: pointer; font-family: inherit; padding: 0; }
+  .link.strong { font-size: 12px; color: var(--z300); text-decoration-color: var(--z600); text-underline-offset: 2px; }
+  .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+  .banner { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid rgba(245,158,11,.3); background: rgba(245,158,11,.05); padding: 8px 12px; font-size: 11px; color: var(--am300); }
+  .banner svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .inputbar { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--z800); background: var(--hdr); padding: 8px 12px; font-size: 12px; color: var(--z500); }
+  .inputbar .p { color: var(--em400); font-family: ui-monospace, Menlo, monospace; }
+  .notice { border-bottom: 1px solid var(--z800); border-left: 2px solid var(--sky500); background: rgba(14,165,233,.05); padding: 10px 14px; }
+  .notice .h { font-size: 12.5px; font-weight: 700; color: var(--sky300); }
+  .notice .b { font-size: 11px; color: var(--z500); }
+  .notice .acts { margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px; }
+  .ghost-xs { height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; background: transparent; border: 0; color: var(--z200); font-family: inherit; }
+  .accept-xs { height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; background: var(--sky500); color: var(--sky950); border: 0; font-weight: 500; font-family: inherit; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compare .lbl { font-size: .78rem; color: var(--muted); margin-bottom: .2rem; }
+  .strike { text-decoration: line-through; color: var(--z500); }
+  ins { text-decoration: none; background: rgba(16,185,129,.15); color: var(--em400); border-radius: 3px; padding: 0 2px; }
+  @media (max-width: 639px) {
+    .board { display: none; } /* the real header hides the board/folder line below the sm breakpoint */
+    .body { height: 400px; }
+    .compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Browser terminal on a new Mac: the new and changed screens</h1>
+<p class="meta">For card 6b2cb8ac (Nick to approve before the fix is built). Every panel below is rebuilt from the real terminal panel's colours, sizes and controls. Example projects: the public VibeCodes repo, plus made-up names (<code>you/example-app</code>, <code>my-new-idea</code>). Tags: <span class="tag new">new</span> <span class="tag changed">changed</span> <span class="tag same">unchanged look, new timing</span></p>
+
+<div class="card">
+  <b>What changes, in one paragraph.</b> When you start a browser terminal on a Mac, the VibeCodes helper on that Mac now works out the project folder itself before Claude Code (or Codex) starts. It uses this Mac's saved folder if it's really there; otherwise it looks for your copy of the board's GitHub project on this Mac; otherwise it downloads it into <code>~/projects</code>; for a board with no GitHub project it makes a new folder. It saves the result for this Mac only. You see each step as a line in the terminal. If anything stops it, the panel says exactly why, with one <b>Start again</b> button, instead of "Connected" plus 90 seconds of "reconnecting".
+</div>
+
+<!-- ════════════════════════════════════════ (b) progress ════ -->
+<h2>1 · While the helper gets the project folder ready <span class="tag new">new</span></h2>
+<p class="when">Shown as lines in the terminal itself (like the helper's existing "Note: …" lines), so they stay in the scrollback. The header says Connected, because the link to your Mac is up.</p>
+
+<h3>1a · Found the project already on this Mac</h3>
+<p class="when">When: this Mac has no saved folder for the board, or its saved folder has gone. The helper finds your existing copy in a couple of seconds.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill connected"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>Connected</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 8d7499d6</span></span>
+    <span class="right"><button class="btn-xs">Pop out</button><button class="btn-xs">Read-only</button><button class="btn-xs end"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>End</button></span>
+  </div>
+  <div class="body"><div class="term"><span class="vc">VibeCodes</span>  Looking for vibe-coding-ideas on this Mac…
+<span class="vc">VibeCodes</span>  Found it: ~/code/vibe-coding-ideas
+<span class="vc">VibeCodes</span>  Starting Claude Code there.
+
+<span class="claude">╭──────────────────────────────────────────╮</span>
+<span class="claude">│</span> ✻ Welcome to Claude Code!                <span class="claude">│</span>
+<span class="claude">│</span>   cwd: /Users/you/code/vibe-coding-ideas <span class="claude">│</span>
+<span class="claude">╰──────────────────────────────────────────╯</span>
+
+&gt; <span class="cursor"></span></div></div>
+  <div class="inputbar"><span class="p">›</span><span>Click the terminal and type to steer the agent. Enter sends.</span></div>
+</div>
+
+<h3>1b · Found more than one copy</h3>
+<p class="when">When: the search finds two checkouts of the same project. It picks the one you used most recently and says where the other one is.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill connected"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>Connected</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 3fa1c2d0</span></span>
+    <span class="right"><button class="btn-xs end"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>End</button></span>
+  </div>
+  <div class="body" style="height:170px"><div class="term"><span class="vc">VibeCodes</span>  Looking for vibe-coding-ideas on this Mac…
+<span class="vc">VibeCodes</span>  Found 2 copies. Using the one you used most recently: ~/projects/vibe-coding-ideas
+<span class="vc">VibeCodes</span>  (The other one is ~/old/vibe-coding-ideas.)
+<span class="vc">VibeCodes</span>  Starting Claude Code there.</div></div>
+</div>
+
+<h3>1c · Downloading the project</h3>
+<p class="when">When: the project isn't anywhere the helper looks. It downloads it from GitHub into <code>~/projects/&lt;project name&gt;</code>. The percentage updates in place.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill connected"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>Connected</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 51b9e0aa</span></span>
+    <span class="right"><button class="btn-xs end"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>End</button></span>
+  </div>
+  <div class="body" style="height:200px"><div class="term"><span class="vc">VibeCodes</span>  Looking for vibe-coding-ideas on this Mac…
+<span class="vc">VibeCodes</span>  It isn't on this Mac yet, so it's being downloaded from GitHub
+           (vibecodes-org/vibe-coding-ideas) into ~/projects/vibe-coding-ideas.
+<span class="vc">VibeCodes</span>  If your Mac asks to use your GitHub sign-in from the keychain, click Always Allow.
+<span class="vc">VibeCodes</span>  Downloading… 45%</div></div>
+</div>
+<p class="when">…then, when it finishes: <code>Downloaded. Starting Claude Code there.</code> and Claude Code starts as in 1a.</p>
+
+<h3>1d · A board with no GitHub project</h3>
+<p class="when">When: the board has no repo and this Mac has no saved folder. Same <code>~/projects/&lt;board name&gt;</code> folder the launch uses today; an existing folder of that name is reused as it is.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill connected"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>Connected</span>
+    <span class="chip">Codex</span>
+    <span class="board">My new idea <span class="faint">· session 0c77e1f4</span></span>
+    <span class="right"><button class="btn-xs end"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>End</button></span>
+  </div>
+  <div class="body" style="height:150px"><div class="term"><span class="vc">VibeCodes</span>  This board has no GitHub project yet, so it gets a new folder: ~/projects/my-new-idea
+<span class="vc">VibeCodes</span>  Starting Codex there.</div></div>
+</div>
+
+<!-- ════════════════════════════════════════ (a) stopped straight away ════ -->
+<h2>2 · The agent stopped on your Mac straight away <span class="tag new">new</span></h2>
+<p class="when">Same layout as today's "Session ended" panel (icon, title, message, one main button, small links). No "Resume this conversation": nothing ever started, so there's nothing to resume. <b>Start again</b> starts a fresh session, which finds or downloads the project as in section 1.</p>
+
+<h3>2a · Reopening a conversation whose folder isn't on this Mac</h3>
+<p class="when">When: you Resume a conversation, but its project folder doesn't exist on this Mac. (A fresh session never gets here: the helper finds the folder first.)</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· /Users/you/projects/vibe-coding-ideas · session 8d7499d6</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="y">The project folder ~/projects/vibe-coding-ideas isn't on this Mac, so this conversation can't be reopened here.</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Claude Code stopped on your Mac straight away</div>
+      <p class="msg">The project folder <code>~/projects/vibe-coding-ideas</code> isn't on this Mac, so this conversation can't be reopened here. Start again for a new session: VibeCodes will find or download the project on this Mac.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <button class="link">View my other sessions</button>
+    </div>
+  </div>
+</div>
+
+<h3>2b · Claude Code isn't installed</h3>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 37e9a8c1</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="y">Claude Code isn't installed on this Mac, so this session couldn't start. Install it, then start a new session: https://docs.claude.com/en/docs/claude-code</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Claude Code stopped on your Mac straight away</div>
+      <p class="msg">Claude Code isn't installed on this Mac. Install it, then start again.</p>
+      <button class="link strong">How to install Claude Code</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <button class="link">View my other sessions</button>
+    </div>
+  </div>
+</div>
+
+<h3>2c · Codex isn't installed</h3>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Codex</span>
+    <span class="board">VibeCodes <span class="faint">· session 4c0b19e2</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="y">Codex isn't installed on this Mac, so this session couldn't start. Install it, then start a new session: https://developers.openai.com/codex/cli/</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Codex stopped on your Mac straight away</div>
+      <p class="msg">Codex isn't installed on this Mac. Install it, then start again.</p>
+      <button class="link strong">How to install Codex</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <button class="link">View my other sessions</button>
+    </div>
+  </div>
+</div>
+
+<h3>2d · It closed for a reason the helper can't name</h3>
+<p class="when">When: the agent itself quits within 10 seconds of starting, without saying why on screen.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 0b1bc584</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="y">Claude Code stopped straight away (exit code 1).</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Claude Code stopped on your Mac straight away</div>
+      <p class="msg">It closed before it showed anything (exit code 1). Start again. If it keeps happening, open Terminal on this Mac and type <code>claude</code> to see its own message.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <div class="links"><button class="link">Show what happened</button><button class="link">View my other sessions</button></div>
+    </div>
+  </div>
+</div>
+
+<h3>2e · Same thing, on a Mac that still has the old helper</h3>
+<p class="when">When: the helper on this Mac is older than this release, so it can't report the reason. Uses the existing "Update now" button (the same one the "Update your terminal helper" bar uses).</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 456e0b99</span></span>
+  </div>
+  <div class="body">
+    <div class="term"></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Claude Code stopped on your Mac straight away</div>
+      <p class="msg">The VibeCodes helper on this Mac is out of date, so it can't tell us why. Update it, then start again.</p>
+      <div class="row"><button class="btn update">Update now</button><button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button></div>
+      <button class="link">View my other sessions</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ (c) failures ════ -->
+<h2>3 · When the helper can't get the folder ready <span class="tag new">new</span></h2>
+<p class="when">Nothing starts in the wrong place: the helper stops, says why, and offers Start again. "Show what happened" hides the message so you can read the terminal lines underneath (for example, GitHub's exact error).</p>
+
+<h3>3a · No access to a private project</h3>
+<p class="when">When: the project is private on GitHub and this Mac isn't signed in to GitHub with an account that can see it. (The helper tries your Mac's saved GitHub sign-in, then GitHub's own sign-in tool if it's installed.)</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">Example app <span class="faint">· session 9a0d33f1</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="vc">VibeCodes</span>  Looking for example-app on this Mac…
+<span class="vc">VibeCodes</span>  It isn't on this Mac yet, so it's being downloaded from GitHub (you/example-app)…
+<span class="y">GitHub said: Repository not found (this Mac isn't signed in with an account that can see it).</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Couldn't download example-app</div>
+      <p class="msg">It's a private GitHub project, and this Mac isn't signed in to GitHub with an account that can see <code>you/example-app</code>. Sign this Mac in to GitHub (in Terminal: <code>gh auth login</code>), or download it once yourself with <code>git clone https://github.com/you/example-app.git ~/projects/example-app</code>. Then start again.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <div class="links"><button class="link">Show what happened</button><button class="link">View my other sessions</button></div>
+    </div>
+  </div>
+</div>
+
+<h3>3b · The download didn't finish</h3>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 51b9e0aa</span></span>
+  </div>
+  <div class="body">
+    <div class="term"><span class="vc">VibeCodes</span>  Downloading… 45%
+<span class="y">GitHub said: Could not resolve host: github.com</span></div>
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Couldn't download vibe-coding-ideas</div>
+      <p class="msg">The download from GitHub stopped before it finished. Check this Mac's internet connection, then start again. Nothing half-downloaded was left behind.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <div class="links"><button class="link">Show what happened</button><button class="link">View my other sessions</button></div>
+    </div>
+  </div>
+</div>
+
+<h3>3c · Git isn't installed yet</h3>
+<p class="when">When: a brand-new Mac without Apple's developer tools. The helper opens Apple's own installer (decision 5).</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· session 7d2f8a10</span></span>
+  </div>
+  <div class="body">
+    <div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">This Mac needs Apple's developer tools first</div>
+      <p class="msg">Git isn't installed yet, so the project can't be downloaded. Your Mac is showing Apple's installer now: click Install (it takes a few minutes), then start again.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <button class="link">View my other sessions</button>
+    </div>
+  </div>
+</div>
+
+<h3>3d · Couldn't make the folder, or couldn't ask VibeCodes</h3>
+<div class="compare">
+  <div>
+    <div class="lbl">The new folder can't be created (disk full, no permission)</div>
+    <div class="frame"><div class="body" style="height:250px"><div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Couldn't create the project folder</div>
+      <p class="msg"><code>~/projects/my-new-idea</code> couldn't be created on this Mac. Check there's free space, then start again.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+    </div></div></div>
+  </div>
+  <div>
+    <div class="lbl">The helper couldn't reach VibeCodes to look the board up</div>
+    <div class="frame"><div class="body" style="height:250px"><div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Couldn't check where this project lives</div>
+      <p class="msg">The helper on this Mac couldn't reach VibeCodes to look it up. Check this Mac's internet connection, then start again.</p>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+    </div></div></div>
+  </div>
+</div>
+
+<h3>3e · After clicking "Show what happened"</h3>
+<p class="when">The message shrinks to a one-line bar at the bottom (same place as the reconnecting bar, in grey), so you can read the terminal and still start again in one click. "Show the message" brings the full message back.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill ended"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>Session ended</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">Example app <span class="faint">· session 9a0d33f1</span></span>
+  </div>
+  <div class="body" style="height:220px">
+    <div class="term"><span class="vc">VibeCodes</span>  Looking for example-app on this Mac…
+<span class="vc">VibeCodes</span>  It isn't on this Mac yet, so it's being downloaded from GitHub (you/example-app)…
+<span class="y">GitHub said: remote: Repository not found.</span>
+<span class="y">GitHub said: fatal: repository 'https://github.com/you/example-app.git/' not found</span></div>
+    <div class="banner" style="border-top-color:var(--z700);background:rgba(39,39,42,.6);color:var(--z300);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px">
+      <b>Couldn't download example-app.</b>
+      <button class="btn-xs" style="border:0;background:var(--em500);color:var(--em950);font-weight:600"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:none;margin:0"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start again</button>
+      <button class="link" style="color:var(--z400)">Show the message</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ (d) other changes ════ -->
+<h2>4 · Other screens that change</h2>
+
+<h3>4a · "Reconnecting" only appears when the connection really dropped <span class="tag same">unchanged look</span></h3>
+<p class="when">Today this amber bar also appeared (for 90 seconds, next to a green "Connected") when the agent had simply stopped on your Mac. After the fix it only appears when the link to your Mac genuinely drops (sleep, Wi-Fi). When the agent stops on purpose, you go straight to the right "ended" screen.</p>
+<div class="frame">
+  <div class="hdr">
+    <span class="pill connected"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>Connected</span>
+    <span class="chip">Claude Code</span>
+    <span class="board">VibeCodes <span class="faint">· /Users/you/projects/vibe-coding-ideas · session 2b6c1e07</span></span>
+    <span class="right"><button class="btn-xs end"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>End</button></span>
+  </div>
+  <div class="body" style="height:180px">
+    <div class="term">&gt; working on the board task…</div>
+    <div class="banner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><b>Connection interrupted — reconnecting…</b> Your machine may have slept; we're holding your session and will resume automatically.</div>
+  </div>
+</div>
+
+<h3>4b · Ended because the helper closed, or you quit the agent <span class="tag changed">changed timing + one new message</span></h3>
+<p class="when">Today both of these sat on "reconnecting" for 90 seconds and then said "We couldn't reattach in time after the connection dropped", which was untrue. Now they end at once with the real reason. The conversation did run, so Resume stays.</p>
+<div class="compare">
+  <div>
+    <div class="lbl">The helper on this Mac quit (an update, or Quit from the menu bar) <span class="tag new">new message</span></div>
+    <div class="frame"><div class="body" style="height:270px"><div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">The helper on your Mac was closed</div>
+      <p class="msg">Claude Code stopped because the VibeCodes helper quit (for example, for an update). Your conversation is saved.</p>
+      <div class="row"><button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Resume this conversation</button><button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start fresh</button></div>
+    </div></div></div>
+  </div>
+  <div>
+    <div class="lbl">You quit Claude Code yourself (typed /exit) <span class="tag same">existing message</span></div>
+    <div class="frame"><div class="body" style="height:270px"><div class="overlay">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/></svg>
+      <div class="title">Session ended</div>
+      <p class="msg">Claude Code on your machine stopped. The scrollback above is kept.</p>
+      <div class="row"><button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Resume this conversation</button><button class="btn outline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>Start fresh</button></div>
+    </div></div></div>
+  </div>
+</div>
+
+<h3>4c · "Couldn't reach the helper on this Mac" only when it really didn't answer <span class="tag same">unchanged look</span></h3>
+<p class="when">Today this showed after 8 seconds whenever the terminal stayed blank, even though the helper had answered and the agent had simply died. After the fix it only shows if the helper never answers; once it answers, you see section 1, 2 or 3 instead.</p>
+<div class="frame">
+  <div class="hdr"><span class="pill notconn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"/></svg>Not connected yet</span><span class="chip">Claude Code</span></div>
+  <div class="body" style="height:230px"><div class="overlay">
+    <svg class="ico" style="color:var(--sky400)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="3 3"/></svg>
+    <div class="title" style="color:var(--z200)">Couldn't reach the helper on this Mac</div>
+    <p class="msg">It may not be running. Try again — or re-install the helper if it keeps happening.</p>
+  </div></div>
+</div>
+
+<h3>4d · Updating the helper closes only the helper on this Mac <span class="tag changed">changed wording</span></h3>
+<p class="when">Today "Update now" / "Download the helper" closes whichever Mac's helper happens to be connected, and ends your running sessions on every Mac. After the fix it only touches this Mac. On a Mac that has never run the helper, the download starts straight away (no "Closing the helper…" step).</p>
+<div class="frame">
+  <div class="notice">
+    <div class="h">Update the helper?</div>
+    <div class="b">Your 1 running session <ins>on this Mac</ins> will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.</div>
+    <div class="acts"><button class="ghost-xs">Not now</button><button class="accept-xs">End sessions &amp; update</button></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ decisions ════ -->
+<h2>5 · Decisions for Nick</h2>
+<div class="card decision">
+<ol>
+  <li><b>Where the helper looks for your existing copy.</b> <span class="rec">Recommended:</span> the usual code folders in your home folder (projects, code, dev, src, Developer, repos, git, GitHub, and the top of the home folder itself), two levels deep, for at most about 2 seconds. Not Documents, Desktop or Downloads: macOS would show a "VibeCodes wants to access your Documents folder" permission box. <i>Alternative:</i> also look in Documents (GitHub Desktop keeps projects there), accepting that one-time permission box.</li>
+  <li><b>Folders your other Macs have saved.</b> <span class="rec">Recommended:</span> ignore them completely. Each Mac uses only its own saved folder (one Mac with two network names counts as one). The search above already covers the usual places. <i>Alternative:</i> check another Mac's folder on this Mac as one more place to look (only used if it really is the project here).</li>
+  <li><b>More than one copy found.</b> <span class="rec">Recommended:</span> use the one you used most recently, and say where the other is (1b).</li>
+  <li><b>Where a download goes.</b> <span class="rec">Recommended:</span> <code>~/projects/&lt;project name&gt;</code> (today's convention). If that name is taken by a different project, <code>~/projects/&lt;project name&gt;-2</code>.</li>
+  <li><b>Git not installed.</b> <span class="rec">Recommended:</span> the helper opens Apple's installer for you (3c). <i>Alternative:</i> only show the message.</li>
+  <li><b>When the folder can't be got ready.</b> <span class="rec">Recommended:</span> stop and say why, with Start again (section 3). Nothing ever starts in your home folder or at the top of the disk. <i>Alternative:</i> start the agent in a plain folder and let it sort things out (your 17 Oct decision ruled this out; listed only for completeness).</li>
+  <li><b>The button name.</b> <span class="rec">Recommended:</span> "Start again" (your word) on these new screens, and rename today's "Launch again" button on the ended screen to match, so there's one name for one action. <i>Alternative:</i> say "Launch again" everywhere, as today.</li>
+  <li><b>A second session on the same board.</b> Today, if any session on this board is running on any Mac, a new one gets its own separate working copy (a side branch). <span class="rec">Recommended:</span> only do that when the other session is on the same Mac, so work on the Mac mini doesn't land on a side branch just because the MacBook is busy.</li>
+  <li><b>Wording change in the update confirmation</b> (4d): add "on this Mac". <span class="rec">Recommended:</span> yes.</li>
+</ol>
+</div>
+
+<h2>6 · Where this deliberately differs from today's controls</h2>
+<div class="card">
+<p>Checked against the existing ended / error / timeout panels in the same terminal panel (CLAUDE.md "Mocks and new controls"). Each difference is kept on purpose and needs your OK:</p>
+<ol>
+  <li><b>"How to install Claude Code / Codex" link</b> (2b, 2c). No ended screen has a link like this today; the helper's terminal line already carries the address. Styled like the setup screen's "Download the x64 version" link.</li>
+  <li><b>"Show what happened" link</b> (2d, section 3). New. Same small underlined style as the existing "View my other sessions" link, next to it. Clicking it swaps the message for the one-line bar in 3e (grey, in the reconnecting bar's place, with a small green Start again), which is also new.</li>
+  <li><b>Button label "Start again"</b> instead of today's "Launch again" (decision 7). Same green button and terminal icon.</li>
+  <li><b>Titles that name the cause</b> ("Couldn't download example-app"). Same grey styling and square icon as today's ended titles, not the red "Error" styling, matching the calm tone of the existing setup and ended copy.</li>
+  <li><b>Old-helper screen</b> (2e) puts the existing blue "Update now" button first and makes Start again the outline button, because updating is the fix there. Same pairing as today's "Resume this conversation" + "Start fresh".</li>
+  <li><b>Progress lines</b> carry a teal "VibeCodes" tag. The helper's existing notes are yellow because they're warnings; these are information. Failure lines stay yellow like today.</li>
+  <li><b>No new header pill</b> while the folder is being got ready: the header keeps saying "Connected" (the link is up) and the lines explain the wait. A "Setting up…" pill was considered and left out to keep the header as it is.</li>
+</ol>
+</div>
+</main>
+</body>
+</html>

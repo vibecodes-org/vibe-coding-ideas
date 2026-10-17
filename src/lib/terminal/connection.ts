@@ -14,6 +14,8 @@
 // xterm DOM rendering lives in the component; everything here is testable without
 // a DOM, a socket, or React.
 
+import { shouldShowHelperUpdateNudge } from "./helper-version";
+
 /** How long we wait for the relay handshake before declaring an error (≈30s). */
 export const CONNECT_TIMEOUT_MS = 30_000;
 
@@ -98,7 +100,26 @@ export type TerminalErrorKind =
   | "e2ee-required"
   | "e2ee-verify-failed";
 
-export type EndedReason = "user" | "remote" | "idle" | "max-duration" | "reconnect-failed";
+export type EndedReason =
+  | "user"
+  | "remote"
+  | "idle"
+  | "max-duration"
+  | "reconnect-failed"
+  // Card 6b2cb8ac: a bridge that stops on purpose closes 1000 with a reason
+  // token (terminal/shared/control-frames.mjs → BRIDGE END REASONS). These
+  // are the ones the page tells apart. Every one except `helper-closed`
+  // means the agent never really started, so there is nothing to resume.
+  | "agent-stopped-early"
+  | "agent-not-installed"
+  | "folder-missing"
+  | "folder-unavailable"
+  | "folder-not-allowed"
+  | "folder-lookup-failed"
+  | "clone-failed"
+  | "clone-no-access"
+  | "git-missing"
+  | "helper-closed";
 
 export interface TerminalConnectionState {
   status: TerminalStatus;
@@ -124,6 +145,13 @@ export interface TerminalConnectionState {
    * `errorKind === "cap-reached"` with a numeric cap in the refusal body.
    */
   refusalCap: number | null;
+  /**
+   * Card 6b2cb8ac: extra detail for `endedReason` — the agent's exit code for
+   * `agent-stopped-early` (from the bridge's `agent-stopped-early:<code>`
+   * token), or `"old-helper"` when an old helper's bare `pty-exit` arrived
+   * before any output (see the reducer's old-helper rule). Null otherwise.
+   */
+  endedDetail: string | null;
 }
 
 export type TerminalEvent =
@@ -136,7 +164,19 @@ export type TerminalEvent =
   | { type: "connect-timeout" }
   | { type: "reconnect-exhausted" }
   | { type: "link-silent" }
-  | { type: "closed"; code: number; reason?: string; sinceDisconnectMs?: number }
+  | {
+      type: "closed";
+      code: number;
+      reason?: string;
+      sinceDisconnectMs?: number;
+      /**
+       * Card 6b2cb8ac old-helper rule inputs: whether ANY PTY bytes reached
+       * this tab on this session, and the bridge's announced helper version.
+       * Omitted (undefined) → the rule never fires.
+       */
+      ptyBytesSeen?: boolean;
+      helperVersion?: string | null;
+    }
   | { type: "reset" };
 
 export const initialConnectionState: TerminalConnectionState = {
@@ -147,6 +187,7 @@ export const initialConnectionState: TerminalConnectionState = {
   closeCode: null,
   closeReason: null,
   refusalCap: null,
+  endedDetail: null,
 };
 
 /** A status that means "we are mid-handshake, no bridge stream yet". */
@@ -171,7 +212,7 @@ export function mapCloseCode(
   reason: string | undefined,
   priorStatus: TerminalStatus,
   sinceDisconnectMs = 0,
-): Pick<TerminalConnectionState, "status" | "errorKind" | "endedReason"> {
+): Pick<TerminalConnectionState, "status" | "errorKind" | "endedReason"> & { endedDetail?: string | null } {
   switch (code) {
     case RELAY_CLOSE.OWNER_MISMATCH:
       return { status: "error", errorKind: "owner-mismatch", endedReason: null };
@@ -218,7 +259,7 @@ export function mapCloseCode(
     case 1000:
       // Normal closure — a clean session end. Parse the reason for the calm
       // idle / max-duration copy when the bridge supplied it.
-      return { status: "session-ended", errorKind: null, endedReason: parseEndedReason(reason) };
+      return { status: "session-ended", errorKind: null, ...parseEndedReason(reason) };
     default:
       // 1005 (no status), 1006 (abnormal) and anything unexpected.
       if (isHandshaking(priorStatus)) {
@@ -238,12 +279,56 @@ export function mapCloseCode(
  * Keep the builders and this classifier in step — connection.test.ts pins the
  * default strings.
  */
-function parseEndedReason(reason: string | undefined): EndedReason {
-  const r = (reason ?? "").toLowerCase();
-  if (r.includes("idle")) return "idle";
-  if (r.includes("max")) return "max-duration";
-  return "remote";
+/** Bridge end tokens (card 6b2cb8ac) the page maps to their own EndedReason. */
+const BRIDGE_END_REASONS: ReadonlySet<string> = new Set([
+  "agent-stopped-early",
+  "agent-not-installed",
+  "folder-missing",
+  "folder-unavailable",
+  "folder-not-allowed",
+  "folder-lookup-failed",
+  "clone-failed",
+  "clone-no-access",
+  "git-missing",
+]);
+
+/** Bridge end tokens that mean the helper itself went away under a running agent. */
+const HELPER_CLOSED_REASONS: ReadonlySet<string> = new Set(["sigterm", "sigint", "helper-gone"]);
+
+/**
+ * Classify a 1000 close reason. Bridge tokens first (exact, or the part before
+ * ":" — `agent-stopped-early:1` carries the exit code as detail), then the
+ * relay's idle / max-duration lifecycle reasons, else a plain remote end.
+ */
+export function parseEndedReason(reason: string | undefined): {
+  endedReason: EndedReason;
+  endedDetail: string | null;
+} {
+  const raw = (reason ?? "").trim();
+  const colon = raw.indexOf(":");
+  const token = (colon >= 0 ? raw.slice(0, colon) : raw).toLowerCase();
+  const detail = colon >= 0 ? raw.slice(colon + 1).trim() || null : null;
+  if (BRIDGE_END_REASONS.has(token)) {
+    return {
+      endedReason: token as EndedReason,
+      endedDetail: token === "agent-stopped-early" ? detail : null,
+    };
+  }
+  if (HELPER_CLOSED_REASONS.has(token)) return { endedReason: "helper-closed", endedDetail: null };
+  const r = raw.toLowerCase();
+  if (r.includes("idle")) return { endedReason: "idle", endedDetail: null };
+  if (r.includes("max")) return { endedReason: "max-duration", endedDetail: null };
+  return { endedReason: "remote", endedDetail: null };
 }
+
+/** The first helper whose bridge reports why an agent stopped (card 6b2cb8ac). */
+export const FIRST_HELPER_WITH_END_REASONS = "0.3.25";
+
+function isOlderThanEndReasonHelper(version: string | null | undefined): boolean {
+  // Missing or malformed → assume an old helper (same as the update nudge).
+  return shouldShowHelperUpdateNudge(version, FIRST_HELPER_WITH_END_REASONS);
+}
+
 
 // ── same-owner takeover vs. genuine attach-rejection (card cbe60db5, rework 6) ─
 //
@@ -306,6 +391,7 @@ export function terminalReducer(
         closeCode: null,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
       };
 
     case "session-created":
@@ -341,7 +427,7 @@ export function terminalReducer(
       // First (or any) bytes from the bridge prove it's attached and streaming.
       if (state.status === "connected") return state;
       if (state.status === "waiting-to-pair" || state.status === "disconnected" || state.status === "connecting") {
-        return { ...state, status: "connected", errorKind: null, endedReason: null, closeCode: null, closeReason: null };
+        return { ...state, status: "connected", errorKind: null, endedReason: null, endedDetail: null, closeCode: null, closeReason: null };
       }
       // Deliberately NOT "error" here (fix/terminal-bringback-state-reset): a
       // genuine error (duplicate-preemption, owner-mismatch, connect-timeout, …)
@@ -357,7 +443,7 @@ export function terminalReducer(
       return state;
 
     case "user-end":
-      return { ...state, status: "session-ended", endedReason: "user", errorKind: null };
+      return { ...state, status: "session-ended", endedReason: "user", endedDetail: null, errorKind: null };
 
     case "connect-timeout":
       // Only the connect clock — irrelevant once a stream is live.
@@ -369,7 +455,7 @@ export function terminalReducer(
       // landed → an HONEST end (not an error). The saved work on the machine is safe;
       // the overlay offers a clean fresh launch. A user-end already terminal → keep it.
       if (state.status === "session-ended") return state;
-      return { ...state, status: "session-ended", endedReason: "reconnect-failed", errorKind: null };
+      return { ...state, status: "session-ended", endedReason: "reconnect-failed", endedDetail: null, errorKind: null };
 
     case "link-silent":
       // The heartbeat watchdog declared the link DEAD: nothing inbound (PTY bytes
@@ -389,7 +475,23 @@ export function terminalReducer(
         return { ...state, closeCode: event.code, closeReason: event.reason ?? null };
       }
       const mapped = mapCloseCode(event.code, event.reason, state.status, event.sinceDisconnectMs ?? 0);
-      return { ...state, ...mapped, closeCode: event.code, closeReason: event.reason ?? null };
+      let endedReason = mapped.endedReason;
+      let endedDetail = mapped.endedDetail ?? null;
+      // Old-helper rule (card 6b2cb8ac): a helper older than 0.3.25 reports a
+      // bare "pty-exit" even when the agent died before showing anything (the
+      // Mac mini's 20ms deaths). No output ever reached this tab on this
+      // session → treat it as "stopped straight away", with the Update button.
+      if (
+        event.code === 1000 &&
+        endedReason === "remote" &&
+        (event.reason ?? "").trim() === "pty-exit" &&
+        event.ptyBytesSeen === false &&
+        isOlderThanEndReasonHelper(event.helperVersion)
+      ) {
+        endedReason = "agent-stopped-early";
+        endedDetail = "old-helper";
+      }
+      return { ...state, ...mapped, endedReason, endedDetail, closeCode: event.code, closeReason: event.reason ?? null };
     }
 
     case "reset":
@@ -817,5 +919,38 @@ export function parseBridgeVersionE2ee(text: string): boolean {
     return msg.e2ee === true;
   } catch {
     return false;
+  }
+}
+
+// ── bridge-cwd frame (card 6b2cb8ac) ─────────────────────────────────────────
+//
+// `{"t":"bridge-cwd","cwd":"/abs/path"}` — sent by a 0.3.25+ bridge once it has
+// resolved the project folder on the Mac (its saved folder, an existing
+// checkout, a fresh download or a new folder). Mirrors
+// terminal/shared/control-frames.mjs → parseBridgeCwdFrame: its own length
+// gate (a folder can be longer than isControlFrame's 200 chars), absolute
+// POSIX only, at most 1024 characters, no control characters.
+
+const MAX_BRIDGE_CWD_LENGTH = 1024;
+
+export function isBridgeCwdFrame(text: string): boolean {
+  if (text.length === 0 || text.length > MAX_BRIDGE_CWD_LENGTH + 64) return false;
+  try {
+    const msg = JSON.parse(text) as unknown;
+    return !!msg && typeof msg === "object" && (msg as { t?: unknown }).t === "bridge-cwd";
+  } catch {
+    return false;
+  }
+}
+
+export function parseBridgeCwdFrame(text: string): string | null {
+  if (!isBridgeCwdFrame(text)) return null;
+  try {
+    const cwd = (JSON.parse(text) as { cwd?: unknown }).cwd;
+    if (typeof cwd !== "string" || !cwd.startsWith("/") || cwd.length > MAX_BRIDGE_CWD_LENGTH) return null;
+    if (/[\u0000-\u001f\u007f]/.test(cwd)) return null;
+    return cwd;
+  } catch {
+    return null;
   }
 }

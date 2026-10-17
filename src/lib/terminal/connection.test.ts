@@ -915,3 +915,80 @@ describe("silent-link watchdog — probe before declaring", () => {
     expect(RELAUNCH_IF_BRIDGE_SILENT_MS).toBeLessThan(DEFAULT_TTL_SECONDS * 1000 / 10);
   });
 });
+
+// Card 6b2cb8ac (regression test 11): a bridge that stops on purpose closes
+// with 1000 + a reason token. Today every one of them reads as a generic
+// "remote" end, so a session that never started offers "Resume" into a
+// conversation that doesn't exist.
+describe("bridge end reasons (card 6b2cb8ac)", () => {
+  it("agent-stopped-early:<code> → its own reason, with the exit code as detail", () => {
+    const m = mapCloseCode(1000, "agent-stopped-early:1", "connected");
+    expect(m.status).toBe("session-ended");
+    expect(m.endedReason).toBe("agent-stopped-early");
+    expect(m.endedDetail).toBe("1");
+  });
+
+  it.each([
+    "agent-not-installed",
+    "folder-missing",
+    "folder-unavailable",
+    "folder-not-allowed",
+    "folder-lookup-failed",
+    "clone-failed",
+    "clone-no-access",
+    "git-missing",
+  ] as const)("%s → its own reason", (token) => {
+    const m = mapCloseCode(1000, token, "waiting-to-pair");
+    expect(m.endedReason).toBe(token);
+    expect(m.endedDetail).toBeNull();
+  });
+
+  it.each(["SIGTERM", "SIGINT", "helper-gone"])("%s → helper-closed", (token) => {
+    expect(mapCloseCode(1000, token, "connected").endedReason).toBe("helper-closed");
+  });
+
+  it("existing reasons are unchanged", () => {
+    expect(mapCloseCode(1000, "pty-exit", "connected").endedReason).toBe("remote");
+    expect(mapCloseCode(1000, "idle-timeout: 2h", "connected").endedReason).toBe("idle");
+    expect(mapCloseCode(1000, "max-duration", "connected").endedReason).toBe("max-duration");
+    expect(mapCloseCode(1000, "ended-by-user", "connected").endedReason).toBe("remote");
+  });
+
+  it("old-helper rule: pty-exit with no PTY bytes on an old/unknown helper → agent-stopped-early (old-helper)", () => {
+    const base = run([{ type: "connect" }, { type: "session-created", sessionId: "s" }, { type: "relay-open" }]);
+    for (const helperVersion of [null, "0.3.24"]) {
+      const s = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit", ptyBytesSeen: false, helperVersion });
+      expect(s.endedReason).toBe("agent-stopped-early");
+      expect(s.endedDetail).toBe("old-helper");
+    }
+  });
+
+  it("old-helper rule does not fire once bytes arrived, on a new helper, or when unknown", () => {
+    const base = run([{ type: "connect" }, { type: "session-created", sessionId: "s" }, { type: "relay-open" }]);
+    const seen = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit", ptyBytesSeen: true, helperVersion: "0.3.24" });
+    expect(seen.endedReason).toBe("remote");
+    const fresh = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit", ptyBytesSeen: false, helperVersion: "0.3.25" });
+    expect(fresh.endedReason).toBe("remote");
+    const unknown = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit" });
+    expect(unknown.endedReason).toBe("remote");
+  });
+});
+
+describe("bridge-cwd frame (card 6b2cb8ac) — mirrors terminal/shared/control-frames.mjs", () => {
+  it("parses an absolute folder and rejects anything else", async () => {
+    const { parseBridgeCwdFrame } = await import("./connection");
+    const shared = await import("../../../terminal/shared/control-frames.mjs");
+    const cases = [
+      shared.encodeBridgeCwdFrame("/Users/x/projects/p"),
+      shared.encodeBridgeCwdFrame("/Users/x/" + "a".repeat(900)),
+      JSON.stringify({ t: "bridge-cwd", cwd: "/" + "a".repeat(1100) }),
+      JSON.stringify({ t: "bridge-cwd", cwd: "relative/p" }),
+      JSON.stringify({ t: "bridge-cwd", cwd: 5 }),
+      JSON.stringify({ t: "bridge-cwd", cwd: "/a\u0000b" }),
+      JSON.stringify({ t: "bridge-version", v: "0.3.25" }),
+      "not json",
+    ];
+    for (const c of cases) expect(parseBridgeCwdFrame(c)).toBe(shared.parseBridgeCwdFrame(c));
+    expect(parseBridgeCwdFrame(cases[0])).toBe("/Users/x/projects/p");
+  });
+});

@@ -41,7 +41,7 @@ import {
 import { LaunchPathDialog } from "./launch-path-dialog";
 import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
-import { getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { getMachineIdentities } from "@/lib/terminal/machine-identity";
 import {
   defaultLaunchTarget,
   isBrowserLaunchAvailable,
@@ -148,15 +148,13 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // session had recorded the folder. Null until the first launch click.
   const [freshPaths, setFreshPaths] = useState<RecordedProjectPath[] | null>(null);
 
-  // This browser's real machine hostname, as announced by a bridge on a previous
-  // terminal session. Lets the resolver below pick the recorded folder keyed to
-  // THIS machine when several are on file with different paths — without it,
-  // that case resolves to nothing and the user is asked every launch. Lazily
-  // initialised like savedState above (getMachineIdentity is SSR-safe — null on
-  // the server) and re-read at launch-click time alongside the recorded
-  // folders: a bridge that announced during THIS page's previous session has
-  // updated it since mount.
-  const [realHostname, setRealHostname] = useState<string | null>(() => getMachineIdentity());
+  // Every name this browser's Mac is known by, learned from sessions launched
+  // from this browser. The resolver below only ever uses a folder saved under
+  // one of these names (card 6b2cb8ac: never another Mac's folder). Lazily
+  // initialised like savedState above (getMachineIdentities is SSR-safe — []
+  // on the server) and re-read at launch-click time alongside the recorded
+  // folders: a session launched earlier on THIS page may have added a name.
+  const [machineNames, setMachineNames] = useState<string[]>(() => getMachineIdentities());
 
   // Re-read localStorage (call after a dialog save or when the dropdown opens, so
   // we never show a stale new-mode path).
@@ -177,9 +175,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       resolveEffectiveLaunchTarget({
         hasRepo: !!ideaGithubUrl,
         recordedPaths: effectiveRecordedPaths,
-        realHostname,
+        machineNames,
       }),
-    [ideaGithubUrl, effectiveRecordedPaths, realHostname]
+    [ideaGithubUrl, effectiveRecordedPaths, machineNames]
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -216,8 +214,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     state: LaunchPathState;
     cwd: string | undefined;
   }> => {
-    const hostname = getMachineIdentity();
-    if (hostname !== realHostname) setRealHostname(hostname);
+    const names = getMachineIdentities();
+    if (names.join("\n") !== machineNames.join("\n")) setMachineNames(names);
     let paths = effectiveRecordedPaths;
     try {
       const fresh = await listRecordedProjectPaths(ideaId);
@@ -231,11 +229,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     const target = resolveEffectiveLaunchTarget({
       hasRepo: !!ideaGithubUrl,
       recordedPaths: paths,
-      realHostname: hostname,
+      machineNames: names,
     });
     const state = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, target);
     return { state, cwd: resolveLaunchCwd(state, target.cwd) };
-  }, [ideaId, ideaTitle, ideaGithubUrl, effectiveRecordedPaths, manualPin, realHostname]);
+  }, [ideaId, ideaTitle, ideaGithubUrl, effectiveRecordedPaths, manualPin, machineNames]);
 
   const buildPrompt = useCallback(
     (state: LaunchPathState): string => {

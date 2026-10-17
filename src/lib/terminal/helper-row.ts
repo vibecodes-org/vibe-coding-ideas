@@ -12,6 +12,8 @@
 // connected + zero sessions is exactly the linger window (design §2's
 // Active → Lingering transition).
 
+import { thisMacStatusQuery } from "./machine-identity";
+
 /** Mirrors terminal/relay/src/helper-status.js's computeHelperStatus() output. */
 export interface HelperStatus {
   connected: boolean;
@@ -46,7 +48,9 @@ export interface HelperStatus {
  */
 export async function fetchHelperStatus(): Promise<HelperStatus | null> {
   try {
-    const res = await fetch("/api/terminal/helper/status");
+    // Card 6b2cb8ac: THIS Mac's helper (the relay keeps one link per Mac).
+    // No known name → the account's newest helper link, as before.
+    const res = await fetch(`/api/terminal/helper/status${thisMacStatusQuery()}`);
     if (!res.ok) return null;
     return (await res.json()) as HelperStatus;
   } catch {

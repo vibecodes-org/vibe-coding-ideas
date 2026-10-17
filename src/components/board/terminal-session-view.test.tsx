@@ -20,7 +20,7 @@
 // object-reference stability of the ref container.
 
 import { useRef } from "react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type {
   UseTerminalSessionResult,
@@ -75,6 +75,7 @@ function installMockSession() {
         closeCode: null,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -123,6 +124,7 @@ function installMockSessionWithE2eeState(notEncryptedYet: boolean) {
         closeCode: null,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -160,6 +162,7 @@ function installMockWaitingSession(pairingTimedOut: boolean) {
         closeCode: null,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -206,6 +209,7 @@ function installMockErrorSession(
         closeCode: RELAY_CLOSE.DUP_BROWSER,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
         ...stateOverrides,
       },
       launchPhase: "idle",
@@ -256,6 +260,7 @@ function installMockEndedSession(
         closeCode: 1000,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
         ...stateOverrides,
       },
       launchPhase: "idle",
@@ -659,7 +664,7 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     // The blind mint stays available too, but relabelled so it's never
     // confused with Resume.
     expect(screen.getByRole("button", { name: /Start fresh/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Launch again$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Start again$/ })).not.toBeInTheDocument();
   });
 
   it("falls back to the legacy --continue shape (resume:true, no resumeId) when only cwd is known", () => {
@@ -701,12 +706,12 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     );
   });
 
-  it("hides Resume entirely and keeps the plain 'Launch again' button when no cwd is known (legacy pre-0.3.3 session)", () => {
+  it("hides Resume entirely and keeps the plain 'Start again' button when no cwd is known (legacy pre-0.3.3 session)", () => {
     installMockEndedSession({ endedReason: "idle", cwd: null, claudeSessionId: null });
     renderEndedView();
 
     expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Start again$/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Start fresh/ })).not.toBeInTheDocument();
   });
 
@@ -719,7 +724,7 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     renderEndedView();
 
     expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Start again$/ })).toBeInTheDocument();
   });
 
   // Bug cbe60db5-followup-2 (low-medium): the ended panel had no path to a
@@ -743,7 +748,7 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     expect(onBrowseSessions).toHaveBeenCalledTimes(1);
   });
 
-  it("also renders the link alongside the plain 'Launch again' button (no cwd known)", () => {
+  it("also renders the link alongside the plain 'Start again' button (no cwd known)", () => {
     const onBrowseSessions = vi.fn();
     installMockEndedSession({ endedReason: "idle", cwd: null, claudeSessionId: null });
     renderEndedView(vi.fn(), onBrowseSessions);
@@ -975,7 +980,8 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
 
     const retry = screen.getByRole("button", { name: /Retry/ });
     fireEvent.click(retry);
-    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
+    // Card 6b2cb8ac: with the tab's own agent (Claude when none was recorded).
+    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true, agent: "claude" });
   });
 });
 
@@ -996,6 +1002,7 @@ function installMockSessionWithStatus(status: TerminalConnectionState["status"],
         closeCode: null,
         closeReason: null,
         refusalCap: null,
+        endedDetail: null,
       },
       launchPhase: "idle",
       peerDegraded: false,
@@ -1060,7 +1067,7 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
       const containerRef = useRef<HTMLDivElement | null>(null);
       lastContainerRef = containerRef;
       return {
-        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null },
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null, endedDetail: null },
         launchPhase: "idle",
         peerDegraded: false,
         helperVersion: null,
@@ -1127,6 +1134,15 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
 // installed." Every download affordance in this view now runs the shared
 // stand-down-first flow (helper-update-flow.ts) instead of being a bare link.
 describe("TerminalSessionView — helper download affordances run the Update-now flow", () => {
+  // Card 6b2cb8ac: the update flow ends sessions only when this browser knows
+  // which Mac it's on (a session launched from it announced the name).
+  beforeEach(() => {
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["mac-a"]));
+  });
+  afterEach(() => {
+    window.localStorage.removeItem("vc:term:machines");
+  });
+
   function renderWithLiveCount(liveSessionCount: number) {
     return render(
       <TerminalSessionView
@@ -1157,7 +1173,7 @@ describe("TerminalSessionView — helper download affordances run the Update-now
     renderWithLiveCount(2);
     fireEvent.click(screen.getByRole("button", { name: "Update now" }));
     expect(screen.getByTestId("helper-update-confirm")).toBeInTheDocument();
-    expect(screen.getByText(/Your 2 running sessions will end first/)).toBeInTheDocument();
+    expect(screen.getByText(/Your 2 running sessions on this Mac will end first/)).toBeInTheDocument();
     // The nudge itself steps aside while the flow is in progress.
     expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
@@ -1171,7 +1187,7 @@ describe("TerminalSessionView — helper download affordances run the Update-now
       const containerRef = useRef<HTMLDivElement | null>(null);
       lastContainerRef = containerRef;
       return {
-        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null },
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null, endedDetail: null },
         launchPhase: "idle",
         peerDegraded: false,
         helperVersion: null,
@@ -1196,7 +1212,7 @@ describe("TerminalSessionView — helper download affordances run the Update-now
     const download = screen.getByRole("button", { name: /Download for Mac/ });
     expect(screen.queryByRole("link", { name: /Download for Mac/ })).not.toBeInTheDocument();
     fireEvent.click(download);
-    expect(screen.getByText(/Your 1 running session will end first/)).toBeInTheDocument();
+    expect(screen.getByText(/Your 1 running session on this Mac will end first/)).toBeInTheDocument();
   });
 });
 
@@ -1309,5 +1325,166 @@ describe("TerminalSessionView pane order", () => {
     installMockSession();
     renderPane(undefined);
     expect(screen.getByRole("tabpanel").style.order).toBe("");
+  });
+});
+
+// ── Card 6b2cb8ac ────────────────────────────────────────────────────────────
+function installMockSessionWith(
+  partial: Omit<Partial<UseTerminalSessionResult>, "state"> & { state?: Partial<TerminalConnectionState> },
+) {
+  const actions = mockActions();
+  mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    lastContainerRef = containerRef;
+    const { state, ...rest } = partial;
+    return {
+      launchPhase: "idle",
+      peerDegraded: false,
+      helperVersion: "0.3.25",
+      notEncryptedYet: false,
+      e2eeActive: false,
+      pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
+      readOnly: false,
+      autoAccept: false,
+      remoteControlEarlyExit: false,
+      inputEnabled: false,
+      platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+      paired: true,
+      xtermReady: true,
+      containerRef,
+      pairingTimedOut: false,
+      actions,
+      ...rest,
+      state: {
+        status: "session-ended",
+        sessionId: "sess-1",
+        errorKind: null,
+        endedReason: "remote",
+        endedDetail: null,
+        closeCode: 1000,
+        closeReason: null,
+        refusalCap: null,
+        ...state,
+      },
+    };
+  });
+  return actions;
+}
+
+function renderCardView(
+  opts: {
+    entry?: Partial<SessionEntry>;
+    agent?: "claude" | "codex";
+    ideaGithubUrl?: string | null;
+    onResumeEndedSession?: (payload: BrowserLaunchPayload, sid: string | null) => void;
+  } = {},
+) {
+  return render(
+    <TerminalSessionView
+      entry={baseEntry(opts.entry)}
+      descriptor={{ ideaId: "idea-1", ideaTitle: "Example app", ideaGithubUrl: opts.ideaGithubUrl ?? null }}
+      label="Session 1"
+      isActive
+      expanded
+      onRequestExpand={vi.fn()}
+      autoConnectWhenExpanded={false}
+      onReportSummary={vi.fn()}
+      onRegisterActions={vi.fn()}
+      onAnnounce={vi.fn()}
+      onBrowseSessions={vi.fn()}
+      onResumeEndedSession={opts.onResumeEndedSession ?? vi.fn()}
+      agent={opts.agent}
+      onAgentChange={vi.fn()}
+    />,
+  );
+}
+
+// Regression test 13 (view half): the tab's own agent, not the dock-wide
+// remembered one, is what the Setup panel's Connect launches.
+describe("TerminalSessionView — Setup Connect uses the tab's own agent (card 6b2cb8ac)", () => {
+  it("a Claude tab with a remembered Codex pick connects Claude", () => {
+    const actions = installMockSessionWith({ paired: false, pair: null, state: { status: "idle", endedReason: null, sessionId: null, closeCode: null } });
+    renderCardView({ entry: { agent: "claude" }, agent: "codex" });
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
+    expect(actions.connect).toHaveBeenCalledWith(expect.objectContaining({ agent: "claude" }));
+  });
+
+  it("a tab with no recorded agent falls back to the picker's agent, then Claude", () => {
+    const actions = installMockSessionWith({ paired: false, pair: null, state: { status: "idle", endedReason: null, sessionId: null, closeCode: null } });
+    renderCardView({ agent: "codex" });
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
+    expect(actions.connect).toHaveBeenCalledWith(expect.objectContaining({ agent: "codex" }));
+  });
+});
+
+describe("TerminalSessionView — ended screens from the approved mock (card 6b2cb8ac)", () => {
+  it("2b: agent not installed → install link, Start again, never Resume", () => {
+    const actions = installMockSessionWith({ cwd: "/Users/you/p", state: { endedReason: "agent-not-installed" } });
+    renderCardView({ entry: { agent: "claude" } });
+    expect(screen.getByText("Claude Code stopped on your Mac straight away")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code isn't installed on this Mac. Install it, then start again.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "How to install Claude Code" })).toHaveAttribute(
+      "href",
+      "https://docs.claude.com/en/docs/claude-code",
+    );
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start again" }));
+    expect(actions.beginBrowserLaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("2c: Codex install link", () => {
+    installMockSessionWith({ state: { endedReason: "agent-not-installed" } });
+    renderCardView({ entry: { agent: "codex" } });
+    expect(screen.getByText("Codex stopped on your Mac straight away")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "How to install Codex" })).toBeInTheDocument();
+  });
+
+  it("2a: folder missing on resume shows the folder, ~-shortened", () => {
+    installMockSessionWith({ cwd: "/Users/you/projects/vibe-coding-ideas", state: { endedReason: "folder-missing" } });
+    renderCardView();
+    expect(screen.getByText("~/projects/vibe-coding-ideas")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+  });
+
+  it("2e: old helper → Update now first, Start again as the outline button", () => {
+    installMockSessionWith({ helperVersion: "0.3.24", state: { endedReason: "agent-stopped-early", endedDetail: "old-helper" } });
+    renderCardView();
+    expect(
+      screen.getByText("The VibeCodes helper on this Mac is out of date, so it can't tell us why. Update it, then start again."),
+    ).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button").map((b) => b.textContent?.trim());
+    expect(buttons.indexOf("Update now")).toBeGreaterThanOrEqual(0);
+    expect(buttons.indexOf("Update now")).toBeLessThan(buttons.indexOf("Start again"));
+  });
+
+  it("3a: private repo copy uses the board's repo; Show what happened swaps to the bar and back", () => {
+    const actions = installMockSessionWith({ state: { endedReason: "clone-no-access" } });
+    renderCardView({ ideaGithubUrl: "https://github.com/you/example-app" });
+    expect(screen.getByText("Couldn't download example-app")).toBeInTheDocument();
+    expect(screen.getByText("git clone https://github.com/you/example-app.git ~/projects/example-app")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show what happened" }));
+    expect(screen.queryByText("Couldn't download example-app")).not.toBeInTheDocument();
+    expect(screen.getByText("Couldn't download example-app.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start again" }));
+    expect(actions.beginBrowserLaunch).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Show the message" }));
+    expect(screen.getByText("Couldn't download example-app")).toBeInTheDocument();
+  });
+
+  it("4b: helper closed keeps Resume + Start fresh", () => {
+    installMockSessionWith({ cwd: "/Users/you/p", state: { endedReason: "helper-closed" } });
+    renderCardView();
+    expect(screen.getByText("The helper on your Mac was closed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Resume this conversation/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start fresh/ })).toBeInTheDocument();
+  });
+
+  it("the plain ended panel's button is now 'Start again' (was 'Launch again')", () => {
+    installMockSessionWith({ state: { endedReason: "user" } });
+    renderCardView();
+    expect(screen.getByRole("button", { name: "Start again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Launch again/ })).not.toBeInTheDocument();
   });
 });

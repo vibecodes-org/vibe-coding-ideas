@@ -557,6 +557,9 @@ export async function POST(req: Request) {
       ideaId,
       sid: tokens.sid,
       exp: tokens.exp,
+      // Card 6b2cb8ac: which agent this session was minted for, so a "started
+      // the wrong agent" report can be checked against the server log.
+      agent: effectiveAgent,
     });
 
     // Return both leg tokens + the session id. The browser token is for the in-app

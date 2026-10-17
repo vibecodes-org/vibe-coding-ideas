@@ -90,6 +90,18 @@ describe("POST /api/terminal/session/closed", () => {
     expect(await res.json()).toEqual({ updated: false });
   });
 
+  // Card 6b2cb8ac: the relay ends a session at once when the bridge closes on
+  // purpose (code 1000) and tells the app with reason "bridge_ended". This
+  // route must accept it BEFORE the relay ships, or the callback 400s and the
+  // row stays "active".
+  it("accepts reason bridge_ended and ends the row", async () => {
+    const chain = makeChain({ data: { id: "row-1" }, error: null });
+    mockFrom.mockReturnValue(chain);
+    const res = await POST(req({ sid: "sid-1", reason: "bridge_ended" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updated: true });
+  });
+
   it("401s when the notify token is rejected", async () => {
     mockAuthorizeNotify.mockResolvedValue({ ok: false, reason: "expired" });
     const res = await POST(req({ sid: "sid-1" }));
