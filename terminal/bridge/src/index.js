@@ -22,7 +22,9 @@
 //   --token   <jwt>      app-minted bridge-role token    [BRIDGE_TOKEN] (required by the relay)
 //   --cmd     <command>  command to run in the PTY       [BRIDGE_CMD]  default "claude"
 //                        (everything after --cmd, or the env string, is shell-split)
-//   --cwd     <dir>      working directory               [BRIDGE_CWD]  default process.cwd()
+//   --cwd     <dir>      the page's suggested project folder [BRIDGE_CWD] — a HINT the bridge
+//                        checks on this Mac (card 6b2cb8ac, see folder-resolve.js); the dev/test
+//                        --cmd override falls back to process.cwd()
 //   --launch-url <url>   a `vibecodes://launch?…` deep link [BRIDGE_LAUNCH_URL]
 //                        Parsed for relay/session/token/cwd — exactly what a packaged
 //                        helper's URL-scheme handler hands us (slice 7). It takes
@@ -48,6 +50,11 @@ import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSession
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
+import { resolveWorkspaceFolder } from "./folder-resolve.js";
+import { cloneRepo } from "./git-clone.js";
+import { progressLine, failureLines, earlyExitLine, promptFolderNote } from "./bridge-copy.js";
+import { resolveMachineNames } from "../../shared/machine-name.mjs";
+import { stripClaudeWorktreeSuffix } from "../../shared/project-path.mjs";
 import { isBinaryInstalled } from "../../shared/binary-check.mjs";
 import {
   sanitizeHelperVersion,
@@ -60,6 +67,7 @@ import {
   isAttachedFrame,
   isPeerDegradedFrame,
   isPeerReattachedFrame,
+  encodeBridgeCwdFrame,
 } from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
@@ -202,49 +210,80 @@ const REMOTE_CONTROL = launched?.remoteControl === true || process.env.BRIDGE_RE
 // above. `BRIDGE_WORKTREE` env mirrors their own dev/test convenience
 // fallback.
 const WORKTREE_REQUESTED = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE === "1"));
-const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
+// FOLDER (card 6b2cb8ac). The page's folder is only a HINT: it can be
+// another Mac's folder, or missing entirely on a Mac that has never run this
+// board. node-pty can't enter a folder that doesn't exist, so the agent used
+// to die in ~20ms with a blank terminal (and with no folder at all it started
+// at "/", the helper's own folder). The bridge now resolves the real folder ON
+// THIS MAC before the agent starts — see folder-resolve.js. Three launch modes:
+//   - "direct": an explicit --cmd/BRIDGE_CMD with no prompt (dev/test only).
+//     Today's behaviour exactly: spawns first, in the hint or process.cwd().
+//   - "resume": the conversation belongs to its folder — it must exist here,
+//     or the session ends with `folder-missing` (checked synchronously below).
+//   - "fresh": everything else. The spawn waits for the relay's `attached`
+//     frame (R1, as before) and the folder resolution that follows it.
+const IS_RESUME = !explicitCmd && !!(RESUME || RESUME_ID);
+const LAUNCH_PROMPT = RESUME || RESUME_ID ? "" : launched?.prompt || "";
+const MODE = IS_RESUME ? "resume" : explicitCmd && !LAUNCH_PROMPT ? "direct" : "fresh";
+const HINT = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || (explicitCmd ? process.cwd() : null);
+// The folder the PTY spawns in: known now for direct/resume, set after the
+// resolution for a fresh launch (spawnPty is never called before that).
+let CWD = MODE === "direct" ? HINT : null;
+/** A resume whose folder isn't on this Mac — ended once the relay link opens. */
+let folderFailure = null;
+if (MODE === "resume") {
+  const hint = HINT ? stripClaudeWorktreeSuffix(HINT) : null;
+  let ok = false;
+  try {
+    ok = !!hint && fs.statSync(hint).isDirectory();
+  } catch { /* missing */ }
+  if (ok) CWD = hint;
+  else {
+    folderFailure = { reason: "folder-missing", detail: null };
+    log("warn", "resume folder isn't on this Mac — not spawning", { cwd: HINT });
+  }
+}
 // Task 5b8a3865 (Nick, 5 Sep 2026): a requested worktree is only APPENDED when
 // the folder can actually take one. `claude --worktree` branches off HEAD, so
 // a git repo with no commits yet (or a folder that isn't a repo at all) made
 // Claude Code exit on the spot with "Error creating worktree: Failed to
 // resolve base branch HEAD" and the session was dead before the first
-// keystroke. Checked here, synchronously, ONLY when isolation was asked for
-// AND this is a genuinely fresh launch (resume/resumeId/explicitCmd never
-// append the flag anyway, so they never pay for the git calls). When the
-// folder can't host a worktree the launch proceeds in the main folder and
-// `WORKTREE_FALLBACK_BANNER` is written into the terminal ahead of Claude's
-// own output so the user knows the two sessions now share the folder.
-const WORKTREE_ELIGIBILITY =
-  WORKTREE_REQUESTED && !explicitCmd && !RESUME_ID && !RESUME
-    ? checkWorktreeEligibility(CWD, { run: runGitSync })
-    : { eligible: true, reason: /** @type {const} */ ("ok") };
-const WORKTREE = WORKTREE_REQUESTED && WORKTREE_ELIGIBILITY.eligible;
-const WORKTREE_FALLBACK_BANNER = WORKTREE_REQUESTED ? worktreeFallbackBanner(WORKTREE_ELIGIBILITY.reason) : null;
-if (WORKTREE_FALLBACK_BANNER) {
-  log("warn", "worktree isolation requested but the folder can't host one — launching in the main folder", {
-    cwd: CWD,
-    reason: WORKTREE_ELIGIBILITY.reason,
+// keystroke. Checked in prepareLaunch() once the folder is known, ONLY for a
+// genuinely fresh launch (resume/resumeId/explicitCmd never append the flag
+// anyway). When the folder can't host a worktree the launch proceeds in the
+// main folder and `WORKTREE_FALLBACK_BANNER` is written into the terminal
+// ahead of Claude's own output so the user knows the two sessions now share
+// the folder.
+let WORKTREE_FALLBACK_BANNER = null;
+// One conversation id for the whole process: the launch command is built
+// before the folder is known (for the relay URL's `conv`) and again after it
+// (prepareLaunch, which may add --worktree) — both must name the same id.
+const CONV_ID = crypto.randomUUID();
+/** @param {boolean} worktree */
+function computeLaunch(worktree) {
+  return resolveAgentLaunch({
+    agent: AGENT,
+    explicitCmd,
+    resumeId: RESUME_ID,
+    resume: RESUME,
+    model: MODEL,
+    // FR-4: for a Codex launch MODEL is the Codex model id (mint-resolved); the
+    // codex branch reads codexModel/codexEffort, the claude branch reads model —
+    // only one fires per AGENT, so passing MODEL to both is safe.
+    codexModel: MODEL,
+    codexEffort: EFFORT,
+    // Task 18a37612: Claude's `--effort` (the claude branch re-whitelists it;
+    // the codex branch never reads this one).
+    effort: EFFORT,
+    permissionMode: PERMISSION_MODE,
+    worktree,
+    remoteControl: REMOTE_CONTROL,
+    mintId: () => CONV_ID,
   });
 }
-const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
-  agent: AGENT,
-  explicitCmd,
-  resumeId: RESUME_ID,
-  resume: RESUME,
-  model: MODEL,
-  // FR-4: for a Codex launch MODEL is the Codex model id (mint-resolved); the
-  // codex branch reads codexModel/codexEffort, the claude branch reads model —
-  // only one fires per AGENT, so passing MODEL to both is safe.
-  codexModel: MODEL,
-  codexEffort: EFFORT,
-  // Task 18a37612: Claude's `--effort` (the claude branch re-whitelists it;
-  // the codex branch never reads this one).
-  effort: EFFORT,
-  permissionMode: PERMISSION_MODE,
-  worktree: WORKTREE,
-  remoteControl: REMOTE_CONTROL,
-  mintId: () => crypto.randomUUID(),
-});
+const INITIAL_LAUNCH = computeLaunch(false);
+let CMD = INITIAL_LAUNCH.cmd;
+const CONV = INITIAL_LAUNCH.conv;
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
 // hard rules (see docs/terminal-bootstrap-prompt-ux.html + the shared deep-link
 // module):
@@ -259,7 +298,9 @@ const { cmd: CMD, conv: CONV } = resolveAgentLaunch({
 // never carries a prompt (nothing to bootstrap) — forced empty even if a
 // caller somehow sent both, so the resumed command is never followed by a
 // stray argv element.
-const PROMPT = RESUME || RESUME_ID ? "" : launched?.prompt || "";
+// May gain a short "you're already in <folder>" note once the folder is
+// resolved (local argv only — the launch link's budget is untouched).
+let PROMPT = LAUNCH_PROMPT;
 // Real PTY spawn size (Bug B, card cbe60db5) — see spawn-dims.js's header
 // comment for why this can't just be a post-spawn resize for a promptless
 // launch. Falls back to the historical 80x24 default when the link didn't
@@ -298,7 +339,21 @@ const HELPER_VERSION = resolveHelperVersion();
 // unreadable/absurd hostname is an honest omission, never a crash — the relay
 // simply has nothing to forward, identical to an old bridge that never sends
 // this param at all.
-const HOST = sanitizeMachineLabel(os.hostname());
+// Card 6b2cb8ac: a Mac's hostname drifts with the network (one MacBook shows
+// up as two machines), so the CANONICAL name is the Mac's fixed
+// LocalHostName (+ ".local"); the hostname stays as an alias. Every name goes
+// to the app with the workspace/folder calls so folder records stay per-Mac.
+const MACHINE = resolveMachineNames({
+  hostname: os.hostname(),
+  platform: process.platform,
+  run: (file, runArgs) =>
+    require("node:child_process").execFileSync(file, runArgs, {
+      encoding: "utf8",
+      timeout: 1000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }),
+});
+const HOST = MACHINE.canonical ?? sanitizeMachineLabel(os.hostname());
 
 // ── E2EE key delivery (Terminal P2, FR-1) ─────────────────────────────────────
 // The bridge has no room in the launch deep link for a 256-bit key — that
@@ -376,6 +431,80 @@ async function fetchSessionAgents() {
   }
 }
 
+// ── This board's project folder on this Mac (card 6b2cb8ac) ─────────────────
+// Same off-relay channel and token as the key/agents fetches. The app answers
+// with the board's repo (clone address built server-side), the folder names,
+// THIS Mac's saved folders only, and how many other live sessions run on this
+// Mac (for the worktree decision). Never throws: null on any failure, and the
+// resolver then uses the page's folder only if it exists here.
+const WORKSPACE_FETCH_TIMEOUT_MS = 5000;
+const FOLDER_RECORD_TIMEOUT_MS = 3000;
+const SAFE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+/** @param {unknown} raw @returns {import("./folder-resolve.js").Workspace | null} */
+function sanitizeWorkspace(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const w = /** @type {any} */ (raw);
+  let repo = null;
+  if (w.repo && typeof w.repo === "object") {
+    const { owner, name, cloneUrl } = w.repo;
+    if (typeof owner === "string" && SAFE_SEGMENT_RE.test(owner) && typeof name === "string" && SAFE_SEGMENT_RE.test(name) && typeof cloneUrl === "string") {
+      repo = { owner, name, cloneUrl };
+    }
+  }
+  if (typeof w.newFolderName !== "string") return null;
+  return {
+    repo,
+    repoFolderName: typeof w.repoFolderName === "string" ? w.repoFolderName : repo ? repo.name : null,
+    newFolderName: w.newFolderName,
+    savedFolders: Array.isArray(w.savedFolders) ? w.savedFolders.filter((p) => typeof p === "string").slice(0, 10) : [],
+    otherLiveSessionsOnThisMac: Number.isFinite(w.otherLiveSessionsOnThisMac) ? Number(w.otherLiveSessionsOnThisMac) : 0,
+  };
+}
+
+/** @returns {Promise<import("./folder-resolve.js").Workspace | null>} */
+async function fetchWorkspace() {
+  if (!TOKEN || !SESSION || MACHINE.names.length === 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WORKSPACE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/workspace`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sid: SESSION, token: TOKEN, machineNames: MACHINE.names }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return sanitizeWorkspace(body?.workspace);
+  } catch (e) {
+    log("warn", "workspace fetch failed — using the page's folder only", { err: String(e?.message || e) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Save the resolved folder for THIS Mac (every name it goes by). Best effort. */
+async function recordFolder(folderPath, how) {
+  if (!TOKEN || !SESSION || MACHINE.names.length === 0) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FOLDER_RECORD_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/folder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sid: SESSION, token: TOKEN, machineNames: MACHINE.names, path: folderPath, how }),
+      signal: controller.signal,
+    });
+    log(res.ok ? "info" : "warn", "project folder recorded", { how, status: res.status });
+  } catch (e) {
+    log("warn", "couldn't record the project folder (the agent's own record step is the backup)", { err: String(e?.message || e) });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Codex reads custom agents only from role files (see session-agents.js), so
 // a Codex launch writes them to a private temp folder — outside the project
 // and ~/.codex — that is removed when this bridge exits, on every exit path
@@ -418,6 +547,11 @@ function sessionAgentArgs(body) {
 }
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
+// An agent that exits this soon after spawning "stopped straight away" (card 6b2cb8ac).
+const EARLY_EXIT_MS = 10000;
+// How long a fresh launch waits for the browser leg to be paired before it
+// writes its folder progress lines (the relay drops frames with no peer).
+const PEER_WAIT_MS = 3000;
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
 // giving up (prompt launches only). An OLD relay never sends it → clean exit, no
@@ -467,12 +601,58 @@ const TERMINAL_CLOSE_CODES = new Set([
 ]);
 const NORMAL_CLOSURE = 1000;
 
-const [file, ...cmdArgs] = shellSplit(CMD);
+let [file, ...cmdArgs] = shellSplit(CMD);
 // `--agents` (task 59889027) is added once fetchSessionAgents() resolves —
-// always before the child spawns: a prompt-carrying launch waits for the
-// relay's `attached` frame (which comes after the fetch), and a promptless
-// resume waits for the fetch itself; see buildSpawnArgs.
-let spawnArgs = buildSpawnArgs(cmdArgs, [], PROMPT);
+// always before the child spawns: a fresh launch waits for the relay's
+// `attached` frame (which comes after the fetch), and a promptless resume
+// waits for the fetch itself; see buildSpawnArgs.
+let sessionAgentFlags = [];
+let spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
+
+/**
+ * Build the final launch for a FRESH session once its folder is known:
+ * the worktree decision (decision 8: only when another live session runs on
+ * THIS Mac — `isolateHere`), its eligibility check on the real folder, then
+ * the command and argv (with the possibly-noted prompt).
+ * @param {string} folder @param {{ isolateHere: boolean }} opts
+ */
+function prepareLaunch(folder, { isolateHere }) {
+  const wantWorktree = WORKTREE_REQUESTED && isolateHere && !explicitCmd;
+  const eligibility = wantWorktree ? checkWorktreeEligibility(folder, { run: runGitSync }) : { eligible: true, reason: /** @type {const} */ ("ok") };
+  WORKTREE_FALLBACK_BANNER = wantWorktree ? worktreeFallbackBanner(eligibility.reason) : null;
+  if (WORKTREE_REQUESTED && !isolateHere) {
+    log("info", "worktree isolation requested, but no other live session runs on this Mac — using the main folder");
+  }
+  if (WORKTREE_FALLBACK_BANNER) {
+    log("warn", "worktree isolation requested but the folder can't host one — launching in the main folder", {
+      cwd: folder,
+      reason: eligibility.reason,
+    });
+  }
+  ({ cmd: CMD } = computeLaunch(wantWorktree && eligibility.eligible));
+  [file, ...cmdArgs] = shellSplit(CMD);
+  spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
+}
+
+/** The real path of the page's hint, or null (for "did the bridge pick another folder?"). */
+function realHint() {
+  if (!HINT) return null;
+  try {
+    return fs.realpathSync(stripClaudeWorktreeSuffix(HINT));
+  } catch {
+    return null;
+  }
+}
+
+/** Sync probe for git-clone.js (git/xcode-select/gh): status + error, never throws. */
+function runProbeSync(cmd, cmdArgsList, opts = {}) {
+  const r = require("node:child_process").spawnSync(cmd, cmdArgsList, {
+    env: opts.env,
+    timeout: 5000,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+  return { status: r.status, error: r.error };
+}
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
 // node-pty ships a `spawn-helper` binary under prebuilds/<platform>-<arch>/.
@@ -647,6 +827,37 @@ async function main() {
     },
   });
 
+  /** Write lines into the terminal stream (buffered until the link is open). */
+  function writeLines(text) {
+    if (!text) return;
+    const buf = Buffer.from(text, "utf8");
+    bytesOut += buf.length;
+    outputBatcher.queueBinary(buf);
+  }
+
+  // A resume whose folder isn't on this Mac: the line goes out the moment the
+  // relay link opens, and the session ends there (see the ws "open" handler).
+  if (folderFailure) {
+    writeLines(failureLines(folderFailure, { home: os.homedir(), agent: AGENT, folder: HINT }).join(""));
+  }
+
+  // Whether the browser leg is paired right now (peer-reattached / -degraded).
+  let peerPaired = false;
+  /** @type {Array<() => void>} */
+  let peerWaiters = [];
+  function waitForPeer(ms) {
+    if (peerPaired) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        peerWaiters = peerWaiters.filter((w) => w !== done);
+        resolve();
+      }
+      peerWaiters.push(done);
+    });
+  }
+
   function shutdown(code, why) {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -741,8 +952,14 @@ async function main() {
    * The prompt is one argv element in `spawnArgs`; it is deliberately NOT
    * logged (only its length is).
    */
-  function spawnPty() {
-    if (term || shuttingDown || agentMissing) return;
+  function spawnPty(cwd = CWD) {
+    if (term || shuttingDown || agentMissing || folderFailure) return;
+    if (!cwd) {
+      // Never "/" or the helper's own folder (card 6b2cb8ac): no folder, no spawn.
+      log("error", "no project folder resolved — not spawning");
+      if (open) shutdown(1, "folder-lookup-failed");
+      return;
+    }
     if (!checkAgentInstalled()) {
       // Nothing to spawn — FR-3: no `command not found`, no half-started
       // session. For a PROMPT-carrying launch this runs after the relay's
@@ -760,7 +977,7 @@ async function main() {
     log("info", "spawning PTY", {
       file,
       args: cmdArgs,
-      cwd: CWD,
+      cwd,
       promptChars: PROMPT.length,
       cols: SPAWN_COLS,
       rows: SPAWN_ROWS,
@@ -771,7 +988,7 @@ async function main() {
         name: "xterm-color",
         cols: SPAWN_COLS,
         rows: SPAWN_ROWS,
-        cwd: CWD,
+        cwd,
         env: cachedSpawnEnv,
       });
     } catch (e) {
@@ -781,6 +998,7 @@ async function main() {
       return;
     }
     term = spawned;
+    const spawnedAt = Date.now();
 
     // Tell the supervising helper (if any) which pid to verify-kill should WE
     // die uncleanly (a SIGKILL'd bridge can run no cleanup — matrix row c).
@@ -816,6 +1034,18 @@ async function main() {
     term.onExit(({ exitCode, signal }) => {
       ptyExited = true; // lets an in-flight kill escalation confirm instantly
       log("info", "PTY exited", { exitCode, signal });
+      // Card 6b2cb8ac: an agent that quits within seconds, without saying why
+      // on screen, gets a plain line and its own end reason, so the page shows
+      // "stopped on your Mac straight away" (with no Resume) instead of a
+      // generic end.
+      if (!shuttingDown && Date.now() - spawnedAt < EARLY_EXIT_MS) {
+        const code = Number.isInteger(exitCode) ? exitCode : 0;
+        const line = Buffer.from(earlyExitLine(AGENT, code), "utf8");
+        bytesOut += line.length;
+        outputBatcher.queueBinary(line);
+        shutdown(0, `agent-stopped-early:${code}`);
+        return;
+      }
       shutdown(0, "pty-exit");
     });
 
@@ -866,7 +1096,7 @@ async function main() {
   // closing (4005/4006/…) — so `open` alone proves nothing. The spawn is
   // therefore gated on the relay's explicit `attached` control frame, sent only
   // after authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
-  if (!PROMPT && !WANTS_AGENTS) spawnPty();
+  if (MODE !== "fresh" && !WANTS_AGENTS) spawnPty();
   // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
   // relay connect URL is built, so a successful fetch can announce `e2ee=1`
   // on THIS attach (and every reconnect reuses the SAME key — see
@@ -878,19 +1108,96 @@ async function main() {
   // prompt-carrying launch hasn't spawned yet (it waits for the relay's
   // `attached` frame); a resume is held until the fetch finishes (bounded by
   // SESSION_AGENTS_FETCH_TIMEOUT_MS, no agents on any failure).
-  const [E2EE_KEY, SESSION_AGENTS_BODY] = await Promise.all([fetchE2eeSessionKey(), fetchSessionAgents()]);
+  // Card 6b2cb8ac: a fresh launch also asks the app where this board's
+  // project lives on this Mac, in parallel (bounded, null on any failure).
+  const [E2EE_KEY, SESSION_AGENTS_BODY, WORKSPACE] = await Promise.all([
+    fetchE2eeSessionKey(),
+    fetchSessionAgents(),
+    MODE === "fresh" ? fetchWorkspace() : Promise.resolve(null),
+  ]);
   // A signal or helper-gone shutdown landed during the fetch: write no role
   // files, spawn nothing and don't dial the relay.
   if (shuttingDown) return;
   if (SESSION_AGENTS_BODY && !term) {
     const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
     if (agentArgs.length > 0) {
-      spawnArgs = buildSpawnArgs(cmdArgs, agentArgs, PROMPT);
+      sessionAgentFlags = agentArgs;
+      spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }
-  if (!PROMPT && WANTS_AGENTS && !term) spawnPty();
+  if (MODE !== "fresh" && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
+
+  /**
+   * FRESH LAUNCH (card 6b2cb8ac), run once on the relay's `attached` frame:
+   * is the agent installed (no point downloading a project for a missing
+   * CLI) → wait for the browser to be paired so the progress lines are seen →
+   * resolve the folder on this Mac (saved → search → clone → new) → record it
+   * for this Mac → tell the page → spawn there. Any failure writes its line(s)
+   * first, then ends the session with its reason — never a silent death.
+   */
+  let freshStarted = false;
+  async function startFreshLaunch() {
+    if (freshStarted || term || shuttingDown) return;
+    freshStarted = true;
+    if (!checkAgentInstalled()) {
+      shutdown(1, "agent-not-installed");
+      return;
+    }
+    await waitForPeer(PEER_WAIT_MS);
+    if (shuttingDown) return;
+    const home = os.homedir();
+    const progress = (event) => writeLines(progressLine(event, { home, agent: AGENT }));
+    const res = await resolveWorkspaceFolder({
+      hint: HINT,
+      workspace: WORKSPACE,
+      isResume: false,
+      deps: {
+        fs,
+        homedir: home,
+        now: () => Date.now(),
+        onProgress: progress,
+        log: (msg, extra) => log("info", msg, extra),
+        clone: (cloneArgs) =>
+          cloneRepo({
+            ...cloneArgs,
+            home,
+            env: cachedSpawnEnv || resolveSpawnEnv(),
+            run: runProbeSync,
+            spawn: require("node:child_process").spawn,
+            fs,
+            onProgress: progress,
+            log: (msg, extra) => log("info", msg, extra),
+          }),
+      },
+    });
+    if (shuttingDown) return;
+    if (!res.ok) {
+      const newFolder = WORKSPACE
+        ? path.join(home, "projects", (WORKSPACE.repo ? WORKSPACE.repoFolderName : WORKSPACE.newFolderName) || "")
+        : null;
+      writeLines(failureLines(res, { home, agent: AGENT, folder: HINT, newFolder }).join(""));
+      log("warn", "project folder not ready — not spawning", { reason: res.reason });
+      shutdown(1, res.reason);
+      return;
+    }
+    if (res.how === "cloned") progress({ kind: "clone-done" });
+    CWD = res.path;
+    log("info", "project folder ready", { how: res.how, cwd: res.path, alsoFound: res.alsoFound.length });
+    if (WORKSPACE) await recordFolder(res.path, res.how);
+    if (shuttingDown) return;
+    // The page learns the folder from the bridge (plaintext metadata, like
+    // host/conv). Text frames are never buffered, so only when the link is up.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { outputBatcher.sendControl(encodeBridgeCwdFrame(res.path)); } catch { /* best effort */ }
+    }
+    // The page's prompt may still say "cd into your clone, or git clone…";
+    // tell the agent it is already in the right place (local argv only).
+    if (PROMPT && res.path !== realHint()) PROMPT = `${promptFolderNote(res)}\n\n${PROMPT}`;
+    prepareLaunch(res.path, { isolateHere: WORKSPACE ? WORKSPACE.otherLiveSessionsOnThisMac > 0 : true });
+    spawnPty(res.path);
+  }
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
@@ -949,12 +1256,12 @@ async function main() {
         return;
       }
       // 1000 (clean end) or PEER_GONE 4004 (grace elapsed) — a deliberate session end.
-      shutdown(openedAtLeastOnce && !(PROMPT && !term) ? 0 : 1, "ws-close");
+      shutdown(openedAtLeastOnce && !(MODE === "fresh" && !term) ? 0 : 1, "ws-close");
       return;
     }
     // Transient drop. Only worth reconnecting if there's a live child to preserve.
     if (!claudeAlive()) {
-      shutdown(openedAtLeastOnce && !(PROMPT && !term) ? 0 : 1, "ws-close");
+      shutdown(openedAtLeastOnce && !(MODE === "fresh" && !term) ? 0 : 1, "ws-close");
       return;
     }
     const now = Date.now();
@@ -1075,17 +1382,25 @@ async function main() {
         clearTimeout(attachTimer);
         attachTimer = null;
         log("info", "relay confirmed attach", { session: SESSION });
-        if (PROMPT) spawnPty();
+        if (MODE === "fresh") {
+          startFreshLaunch().catch((e) => {
+            log("error", "fresh launch failed", { err: String(e?.stack || e) });
+            shutdown(1, "fatal");
+          });
+        }
         return;
       }
       // Grace-window notices (relay holding / pair restored). Informational for the
       // bridge — the child keeps running regardless; recognised so they don't log as
       // "unknown". Skew-safe: an old relay simply never sends them.
       if (isPeerDegradedFrame(text)) {
+        peerPaired = false;
         log("debug", "relay reports peer degraded (holding session)");
         return;
       }
       if (isPeerReattachedFrame(text)) {
+        peerPaired = true;
+        for (const w of [...peerWaiters]) w();
         // Terminal P2 (E2EE) reconnect fix (1–2 Sep 2026 incident): the pair
         // is whole again — which includes the BROWSER having re-attached on
         // its own (tab wake, watchdog, Wi-Fi blip, hard refresh) while this
@@ -1154,7 +1469,7 @@ async function main() {
       // sends the frame → clean exit with NOTHING spawned (graceful skew; the
       // dock's existing ~8s fallback covers the UX). Reconnects always have a live
       // PTY (term set), so this never arms on a reconnect.
-      if (PROMPT && !term && !attachTimer) {
+      if (MODE === "fresh" && !term && !freshStarted && !attachTimer) {
         attachTimer = setTimeout(() => {
           log("error", "no attach confirmation from relay — exiting without spawning", {
             ms: ATTACH_CONFIRM_TIMEOUT_MS,
@@ -1175,6 +1490,11 @@ async function main() {
       // banner has actually reached the wire.
       if (agentMissing) {
         shutdown(1, "agent-not-installed");
+        return;
+      }
+      // Card 6b2cb8ac: same for a resume whose folder isn't on this Mac.
+      if (folderFailure) {
+        shutdown(1, folderFailure.reason);
         return;
       }
     });
