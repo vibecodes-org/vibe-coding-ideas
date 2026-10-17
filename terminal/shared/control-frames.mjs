@@ -585,7 +585,6 @@ export function parseBridgeCwdFrame(text) {
   try {
     const cwd = JSON.parse(/** @type {string} */ (text)).cwd;
     if (typeof cwd !== "string" || !cwd.startsWith("/") || cwd.length > MAX_CWD_LENGTH) return null;
-    // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f\u007f]/.test(cwd)) return null;
     return cwd;
   } catch {
