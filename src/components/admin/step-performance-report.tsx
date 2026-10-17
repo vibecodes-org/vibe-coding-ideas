@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { CircleDollarSign, GitBranch, RotateCcw, Undo2, Workflow } from "lucide-react";
+import { CircleDollarSign, GitBranch, RotateCcw, Undo2, Upload, Workflow } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,9 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getStepPerformanceReport,
+  importStepUsageBackfill,
   type StepReportBoard,
   type StepReportPeriod,
 } from "@/actions/admin-step-report";
+import { chunkBackfillFile } from "@/lib/step-cost/backfill-chunks";
 import type { StepPerformanceReport, StepPerformanceRow, TemplatePerformance } from "@/lib/step-cost/report";
 
 type LoadState = "loading" | "ready" | "error";
@@ -47,6 +49,8 @@ export function StepPerformanceReportView() {
   const [board, setBoard] = useState("all");
   const [period, setPeriod] = useState<StepReportPeriod>("60");
   const [reloadToken, setReloadToken] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +85,34 @@ export function StepPerformanceReportView() {
     setReloadToken((t) => t + 1);
   }
 
+  async function importFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const total = { imported: 0, alreadyCosted: 0, unknownSteps: 0 };
+      for (const chunk of chunkBackfillFile(await file.text())) {
+        const r = await importStepUsageBackfill(chunk);
+        total.imported += r.imported;
+        total.alreadyCosted += r.alreadyCosted;
+        total.unknownSteps += r.unknownSteps;
+      }
+      const left = [
+        total.alreadyCosted > 0 ? `${total.alreadyCosted} already had a cost` : "",
+        total.unknownSteps > 0 ? `${total.unknownSteps} belong to deleted steps` : "",
+      ].filter(Boolean);
+      toast.success(
+        `Stored the cost of ${total.imported} step attempt${total.imported === 1 ? "" : "s"}.` + (left.length ? ` Left out: ${left.join(", ")}.` : "")
+      );
+      retry();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't import the file");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const filters = (
     <div className="flex flex-wrap items-end gap-4 rounded-lg border p-4">
       <div className="space-y-1">
@@ -113,6 +145,16 @@ export function StepPerformanceReportView() {
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="ml-auto space-y-1">
+        <Label className="text-xs text-muted-foreground">Past runs</Label>
+        <div>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={importing} onClick={() => fileInput.current?.click()}>
+            <Upload className="h-3 w-3" />
+            {importing ? "Importing…" : "Import past cost"}
+          </Button>
+          <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={importFile} />
+        </div>
       </div>
     </div>
   );
@@ -179,6 +221,15 @@ export function StepPerformanceReportView() {
         </div>
       )}
 
+      {r.summary.runs > 0 && r.summary.costRecorded === 0 && (
+        <div className="rounded-lg border px-4 py-3 text-xs text-muted-foreground">
+          No cost is recorded for these runs. New steps record it when they finish. For past runs, run{" "}
+          <code className="font-mono text-foreground">node scripts/step-usage-backfill.mjs</code> from the VibeCodes repo on each machine that ran
+          them, then choose <span className="font-medium text-foreground">Import past cost</span> and pick the file it writes. Claude Code keeps
+          transcripts for about 30 days, so older runs can&apos;t be costed.
+        </div>
+      )}
+
       {r.summary.unpricedModels.length > 0 && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-500">
           No price is set for {r.summary.unpricedModels.join(", ")}, so steps that used {r.summary.unpricedModels.length === 1 ? "it" : "them"} show no cost.
@@ -203,10 +254,11 @@ export function StepPerformanceReportView() {
         </p>
         <p>
           <span className="font-medium text-foreground">Cost per run:</span> median cost of one run of the step, every attempt included, over the runs that recorded it.
-          It&apos;s what the tokens would cost at Anthropic API prices, whether the session ran on a subscription or an API key. Sessions report it from their
-          subagent&apos;s Claude Code transcript; output tokens are estimated from text length, so totals are within about 10%. Steps a session ran without a
-          subagent, Codex steps, steps on a model with no price, and runs from before cost tracking show no cost. A run that started before
-          the period isn&apos;t counted in the whole-run figures.
+          It&apos;s what the tokens would cost at Anthropic API prices, whether the session ran on a subscription or an API key: the session&apos;s own
+          calls from the claim to the completion plus its subagents&apos;, read from the Claude Code transcripts on the machine that ran it. Output
+          tokens are estimated from text length, so totals are within about 10%. Codex steps, steps run in a different session from the one that
+          claimed them, steps on a model with no price, and runs whose transcripts weren&apos;t imported show no cost. A run that started before the
+          period isn&apos;t counted in the whole-run figures.
         </p>
         <p>
           With All boards, templates with the same name are combined. A step that has run 5+ times and caught a problem in at least 1 in 5 runs is marked

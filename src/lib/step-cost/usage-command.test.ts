@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stepUsageCommand, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, stepUsageCommand, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
 
 // One transcript line per content block, shaped like Claude Code 2.1.300's.
-function line(o: { id: string; model: string; block: object; input?: number; read?: number; write?: number; write1h?: number; out?: number }) {
+function line(o: { id: string; model: string; block: object; input?: number; read?: number; write?: number; write1h?: number; out?: number; main?: boolean }) {
   return JSON.stringify({
-    parentUuid: "p", isSidechain: true, agentId: "x",
+    parentUuid: "p", isSidechain: !o.main, ...(o.main ? {} : { agentId: "x" }),
     message: {
       model: o.model, id: o.id, type: "message", role: "assistant",
       content: [o.block], container: null, stop_reason: null, stop_sequence: null,
@@ -23,16 +23,29 @@ function line(o: { id: string; model: string; block: object; input?: number; rea
 }
 const userLine = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: '"type":"assistant" "usage":{"input_tokens":999999}' }] } });
 
-function sandbox(files: Record<string, string[]>) {
+const MARK = "vcu_0123456789abcdef01234567";
+/** The claim_next_step result as the session transcript records it: the marker sits inside usage_command. */
+const claimLine = JSON.stringify({
+  type: "user", isSidechain: false,
+  message: { role: "user", content: [{ type: "tool_result", content: [{ type: "text", text: `{"done":false,"usage_command":"(\\nmark='${MARK}'"}` }] }] },
+});
+
+function sandbox(files: Record<string, string[]>, main?: string[]) {
   const root = mkdtempSync(join(tmpdir(), "step-usage-"));
-  const dir = join(root, "projects", "-repo", "session-1", "subagents");
+  const project = join(root, "projects", "-repo");
+  const dir = join(project, "session-1", "subagents");
   mkdirSync(dir, { recursive: true });
   for (const [id, lines] of Object.entries(files)) writeFileSync(join(dir, `agent-${id}.jsonl`), lines.join("\n") + "\n");
+  if (main) writeFileSync(join(project, "session-1.jsonl"), main.join("\n") + "\n");
   return root;
 }
 
 function run(root: string, ids: string, shell = "bash") {
-  const r = spawnSync(shell, ["-c", stepUsageCommand(ids)], {
+  return runCommand(root, stepUsageCommand(MARK, ids), shell);
+}
+
+function runCommand(root: string, command: string, shell = "bash") {
+  const r = spawnSync(shell, ["-c", command], {
     encoding: "utf8",
     env: { PATH: process.env.PATH ?? "", HOME: join(root, "nohome"), CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
   });
@@ -42,8 +55,12 @@ function run(root: string, ids: string, shell = "bash") {
 const text = (t: string) => ({ type: "text", text: t });
 
 describe("stepUsageCommand", () => {
-  it("leaves the placeholder in by default", () => {
-    expect(stepUsageCommand()).toContain(`ids='${USAGE_COMMAND_PLACEHOLDER}'`);
+  it("leaves the placeholder in by default, once, and only takes a well-formed marker", () => {
+    const command = stepUsageCommand(newUsageMarker());
+    expect(command).toContain(`ids='${USAGE_COMMAND_PLACEHOLDER}'`);
+    expect(command.split(USAGE_COMMAND_PLACEHOLDER)).toHaveLength(2);
+    expect(newUsageMarker()).not.toBe(newUsageMarker());
+    expect(() => stepUsageCommand("vcu_'; rm -rf ~; '")).toThrow();
   });
 
   it("totals each call once per model and keeps exact input/cache counts", () => {
@@ -101,7 +118,8 @@ describe("stepUsageCommand", () => {
       expect(run(root, "a1 nope")).toBe("NO_TRANSCRIPT nope");
       expect(run(root, "$(touch pwned)")).toMatch(/^NO_TRANSCRIPT/);
       expect(run(root, "")).toBe("NO_TRANSCRIPT");
-      expect(run(root, USAGE_COMMAND_PLACEHOLDER)).toBe("NO_TRANSCRIPT AGENT_ID");
+      // Unchanged means "I did the step myself": with no session transcript to read, nothing to report.
+      expect(run(root, USAGE_COMMAND_PLACEHOLDER)).toBe("NO_TRANSCRIPT");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -117,6 +135,58 @@ describe("stepUsageCommand", () => {
     }
   });
 
+  // The session's own calls: the step's whole cost when it did the work itself.
+  const mainBefore = line({ id: "msg_m0", model: "claude-opus-5-5", block: text("before the claim"), read: 999_000, main: true });
+  const mainAfter = [
+    line({ id: "msg_m1", model: "claude-opus-5-5", block: text("x".repeat(35)), read: 1000, main: true }),
+    line({ id: "msg_m2", model: "claude-opus-5-5", block: text("x".repeat(35)), read: 2000, main: true }),
+  ];
+
+  it("counts the session's own calls after the claim when it ran the command unchanged", () => {
+    const root = sandbox({}, [mainBefore, claimLine, userLine, ...mainAfter]);
+    try {
+      const out = JSON.parse(run(root, USAGE_COMMAND_PLACEHOLDER));
+      expect(out.models).toEqual([expect.objectContaining({ model: "claude-opus-5-5", calls: 2, cache_read_tokens: 3000 })]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the subagents' calls to the session's, even when every AGENT_ID in the command is replaced", () => {
+    const root = sandbox(
+      { a1: [line({ id: "msg_1", model: "claude-sonnet-5-5", block: text("hi"), read: 500 })] },
+      [mainBefore, claimLine, ...mainAfter]
+    );
+    try {
+      const command = stepUsageCommand(MARK).replaceAll(USAGE_COMMAND_PLACEHOLDER, "a1");
+      const models = JSON.parse(runCommand(root, command)).models as { model: string; cache_read_tokens: number }[];
+      expect(models.map((m) => `${m.model}:${m.cache_read_tokens}`).sort()).toEqual(["claude-opus-5-5:3000", "claude-sonnet-5-5:500"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads the newest transcript holding the marker when a forked session repeats the claim", () => {
+    const root = sandbox({}, [mainBefore, claimLine, mainAfter[0]]);
+    const forked = join(root, "projects", "-repo", "session-2.jsonl");
+    writeFileSync(forked, [mainBefore, claimLine, ...mainAfter].join("\n") + "\n");
+    utimesSync(join(root, "projects", "-repo", "session-1.jsonl"), new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+    try {
+      expect(JSON.parse(run(root, USAGE_COMMAND_PLACEHOLDER)).models[0].calls).toBe(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a session transcript without this claim's marker", () => {
+    const root = sandbox({}, [mainBefore, ...mainAfter]);
+    try {
+      expect(run(root, USAGE_COMMAND_PLACEHOLDER)).toBe("NO_TRANSCRIPT");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   const hasZsh = spawnSync("zsh", ["-c", "true"]).status === 0;
   it.skipIf(!hasZsh)("gives the same answer under zsh, several agent ids included", () => {
     const root = sandbox({
@@ -127,6 +197,13 @@ describe("stepUsageCommand", () => {
       expect(run(root, "a1", "zsh")).toBe(run(root, "a1", "bash"));
       expect(run(root, "a1 a2", "zsh")).toBe(run(root, "a1 a2", "bash"));
       expect(JSON.parse(run(root, "a1 a2", "zsh")).models[0].calls).toBe(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+    const inline = sandbox({}, [mainBefore, claimLine, ...mainAfter]);
+    try {
+      expect(run(inline, USAGE_COMMAND_PLACEHOLDER, "zsh")).toBe(run(inline, USAGE_COMMAND_PLACEHOLDER, "bash"));
+      expect(JSON.parse(run(inline, USAGE_COMMAND_PLACEHOLDER, "zsh")).models[0].calls).toBe(2);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

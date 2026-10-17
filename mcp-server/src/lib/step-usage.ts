@@ -1,32 +1,13 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
+import { stepUsageSchema } from "../../../src/lib/step-cost/usage-schema";
 import type { McpContext } from "../context";
 
 // Card ba37039b: the token totals a session reports for one step attempt.
-// The shape is exactly what stepUsageCommand (src/lib/step-cost/usage-command.ts)
-// prints, so the session can pass that JSON line straight through.
+// The schema lives in src/lib/step-cost/usage-schema.ts, shared with the
+// admin report's import of past runs.
 
-const tokenCount = z.number().int().min(0).max(1e12);
-
-export const stepUsageSchema = z.object({
-  models: z
-    .array(
-      z.object({
-        model: z.string().min(1).max(80),
-        calls: z.number().int().min(0).max(1e6).optional(),
-        input_tokens: tokenCount,
-        output_tokens: tokenCount,
-        cache_read_tokens: tokenCount,
-        cache_write_5m_tokens: tokenCount,
-        cache_write_1h_tokens: tokenCount,
-      })
-    )
-    .min(1)
-    .max(12),
-  output_estimated: z.boolean().optional(),
-});
-
-export type StepUsage = z.infer<typeof stepUsageSchema>;
+export { stepUsageSchema, type StepUsage } from "../../../src/lib/step-cost/usage-schema";
 
 /**
  * The tool parameter. Deliberately accepts anything: a malformed or empty
@@ -37,12 +18,12 @@ export const stepUsageParam = z
   .unknown()
   .optional()
   .describe(
-    "Optional: the step's token use, for the admin step report's cost column. After this step's subagent " +
-      "returns, run the usage_command from claim_next_step with AGENT_ID replaced by the agentId the Agent tool " +
-      "returned, and pass the one line of JSON it prints here unchanged: " +
+    "Optional: the step's token use, for the admin step report's cost column. When the step's work is done, " +
+      "run the usage_command from claim_next_step (AGENT_ID replaced by the agentId of each subagent that did the " +
+      "work, or left as it is if you did the work yourself) and pass the one line of JSON it prints here unchanged: " +
       '{"models":[{"model","calls","input_tokens","output_tokens","cache_read_tokens","cache_write_5m_tokens",' +
-      '"cache_write_1h_tokens"}],"output_estimated"}. Omit it if the command printed NO_TRANSCRIPT or the step ' +
-      "ran without a subagent. Self-reported; never blocks completion."
+      '"cache_write_1h_tokens"}],"output_estimated"}. Omit it if the command printed NO_TRANSCRIPT. ' +
+      "Self-reported; never blocks completion."
   );
 
 /**

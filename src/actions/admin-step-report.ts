@@ -13,6 +13,7 @@ import {
   type ReportUsageRow,
   type StepPerformanceReport,
 } from "@/lib/step-cost/report";
+import { backfillFileSchema } from "@/lib/step-cost/usage-schema";
 
 // Admin step report (card ba37039b). Admins can read every workflow step, but
 // not every board's runs, templates or step comments, so after the admin
@@ -31,7 +32,7 @@ const PERIODS: StepReportPeriod[] = ["30", "60", "90", "all"];
 const PAGE = 1000;
 const CHUNK = 100;
 
-async function requireAdmin() {
+async function requireAdmin(): Promise<string> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -39,6 +40,7 @@ async function requireAdmin() {
   if (!user) throw new Error("Not authenticated");
   const { data: profile } = await supabase.from("users").select("is_admin").eq("id", user.id).single();
   if (!profile?.is_admin) throw new Error("Admin access required");
+  return user.id;
 }
 
 function serviceClient() {
@@ -71,6 +73,19 @@ async function readByIds<T>(
     const { data, error } = await read(ids.slice(i, i + CHUNK));
     if (error) throw new Error(error.message);
     rows.push(...(data ?? []));
+  }
+  return rows;
+}
+
+/** readByIds for reads that can pass 1,000 rows in one chunk. */
+async function readAllByIds<T>(
+  ids: string[],
+  page: (chunk: string[], from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    rows.push(...(await readAll<T>((from, to) => page(chunk, from, to))));
   }
   return rows;
 }
@@ -144,4 +159,105 @@ export async function getStepPerformanceReport(params: {
     report: buildStepPerformanceReport({ steps, runs, templates, comments, botIds, usage, singleBoard: !!board }),
     boards,
   };
+}
+
+export interface StepUsageImportResult {
+  /** Step attempts stored. */
+  imported: number;
+  /** Attempts left out because their step already had a cost recorded. */
+  alreadyCosted: number;
+  /** Attempts for steps that no longer exist. */
+  unknownSteps: number;
+}
+
+// The page sends a big file in pieces (src/lib/step-cost/backfill-chunks.ts); one call is capped at 1 MB.
+const MAX_IMPORT_CHARS = 1_000_000;
+
+type UsageInsert = Database["public"]["Tables"]["workflow_step_usage"]["Insert"];
+
+/**
+ * Stores past step costs from the file scripts/step-usage-backfill.mjs writes.
+ * A step that already has a cost is left alone, so importing a file twice, or
+ * files from two machines, never counts anything twice.
+ */
+export async function importStepUsageBackfill(fileText: string): Promise<StepUsageImportResult> {
+  const adminId = await requireAdmin();
+  if (typeof fileText !== "string" || fileText.length > MAX_IMPORT_CHARS) throw new Error("That file is too big to be a step cost file.");
+  let json: unknown;
+  try {
+    json = JSON.parse(fileText);
+  } catch {
+    throw new Error("That file isn't JSON. Choose the file scripts/step-usage-backfill.mjs wrote.");
+  }
+  const parsed = backfillFileSchema.safeParse(json);
+  if (!parsed.success) throw new Error("That isn't a step cost file from scripts/step-usage-backfill.mjs.");
+  const attempts = parsed.data.attempts;
+  const db = serviceClient();
+
+  const stepIds = [...new Set(attempts.map((a) => a.step_id))];
+  const steps = new Map(
+    (
+      await readByIds<{ id: string; run_id: string | null; idea_id: string }>(stepIds, (chunk) =>
+        db.from("task_workflow_steps").select("id, run_id, idea_id").in("id", chunk)
+      )
+    ).map((s) => [s.id, s])
+  );
+  const costed = new Set(
+    (
+      await readAllByIds<{ step_id: string }>(stepIds, (chunk, from, to) =>
+        db.from("workflow_step_usage").select("step_id").in("step_id", chunk).order("id").range(from, to)
+      )
+    ).map((r) => r.step_id)
+  );
+
+  const result: StepUsageImportResult = { imported: 0, alreadyCosted: 0, unknownSteps: 0 };
+  // Grouped by step: a batch never splits one, so a partly stored file can be imported again.
+  const byStep = new Map<string, UsageInsert[]>();
+  for (const a of attempts) {
+    const step = steps.get(a.step_id);
+    if (!step) {
+      result.unknownSteps++;
+      continue;
+    }
+    if (costed.has(a.step_id)) {
+      result.alreadyCosted++;
+      continue;
+    }
+    result.imported++;
+    const rows = byStep.get(step.id) ?? [];
+    byStep.set(step.id, rows);
+    for (const m of a.models) {
+      rows.push({
+        step_id: step.id,
+        run_id: step.run_id,
+        idea_id: step.idea_id,
+        outcome: a.outcome,
+        model: m.model,
+        calls: m.calls ?? 0,
+        input_tokens: m.input_tokens,
+        output_tokens: m.output_tokens,
+        cache_read_tokens: m.cache_read_tokens,
+        cache_write_5m_tokens: m.cache_write_5m_tokens,
+        cache_write_1h_tokens: m.cache_write_1h_tokens,
+        output_estimated: a.output_estimated ?? true,
+        reported_by: adminId,
+        created_at: a.ended_at,
+      });
+    }
+  }
+  const batches: UsageInsert[][] = [[]];
+  for (const rows of byStep.values()) {
+    if (batches[batches.length - 1].length + rows.length > 500) batches.push([]);
+    batches[batches.length - 1].push(...rows);
+  }
+  for (const [i, batch] of batches.entries()) {
+    if (batch.length === 0) continue;
+    const { error } = await db.from("workflow_step_usage").insert(batch);
+    if (error) {
+      logger.error("step usage import failed", { error: error.message, batch: i });
+      throw new Error(i === 0 ? "Couldn't store the costs." : "Only part of the file was stored. Import it again to add the rest.");
+    }
+  }
+  logger.info("step usage imported", { ...result, adminId });
+  return result;
 }

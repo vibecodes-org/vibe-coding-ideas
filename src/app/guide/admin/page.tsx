@@ -140,13 +140,27 @@ export default function AdminPage() {
             versions are listed separately, so old and new numbers don&apos;t
             mix.
           </p>
-          <p className="text-muted-foreground">
+          <p className="mb-4 text-muted-foreground">
             Cost is what the tokens would cost at Anthropic API prices. When a
-            step&apos;s subagent finishes, the Claude Code session totals that
-            subagent&apos;s token use from its local transcript and reports it
-            with the step. Output tokens are estimated from text length, so
-            totals are within about 10%. Steps run without a subagent, Codex
-            steps and runs from before cost tracking show no cost.
+            step&apos;s work is done, the Claude Code session totals its own
+            token use since the claim, plus that of any subagent that did the
+            work, from its local transcripts, and reports it with the step.
+            Output tokens are estimated from text length, so totals are within
+            about 10%. Codex steps and steps run in a different session from
+            the one that claimed them show no cost.
+          </p>
+          <p className="text-muted-foreground">
+            For runs from before cost tracking, run{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              node scripts/step-usage-backfill.mjs
+            </code>{" "}
+            from the VibeCodes repo on each machine that ran workflow steps. It
+            reads the transcripts still on disk (Claude Code keeps about 30
+            days), works out each step attempt&apos;s cost the same way, and
+            writes a file holding only step ids, times and token counts. Choose{" "}
+            <strong className="text-foreground">Import past cost</strong> on the
+            report and pick that file. Steps that already have a cost are left
+            alone, so importing a file twice changes nothing.
           </p>
         </section>
 
