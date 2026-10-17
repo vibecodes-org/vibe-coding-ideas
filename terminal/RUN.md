@@ -203,6 +203,55 @@ The DO logs `session ended … why:idle-timeout` and closes both legs. Note: loc
 wrangler bug workers-sdk#1812/#10307); production delivers them. Deploy steps:
 `relay/DEPLOY.md`.
 
+## Fresh Mac: the bridge resolves the project folder (card 6b2cb8ac)
+
+Before the agent starts, the bridge works out the project folder on the Mac
+itself (`bridge/src/folder-resolve.js`, `bridge/src/git-clone.js`):
+
+1. Resume: the conversation's own folder must exist, else the session ends
+   with `folder-missing` (no search: the conversation belongs to that folder).
+2. The page's `cwd=` hint, then this Mac's saved folders (from the app), each
+   only if it is a real directory and, for a repo board, a checkout of that
+   repo (matched by a remote in `.git/config`).
+3. A search of the usual code folders (`~/projects`, `~/code`, `~/dev`,
+   `~/src`, `~/Developer`, `~/repos`, `~/git`, `~/GitHub`, … plus the top of
+   home), two levels deep, about 2s. Never Documents/Desktop/Downloads, never
+   `.claude/worktrees`, never through a symlink.
+4. A clone into `~/projects/<repo>` (`-2`…`-9` if taken), into a temp folder
+   then renamed; `GIT_TERMINAL_PROMPT=0`, then `gh`, then SSH, only after an
+   access failure. Git missing → `xcode-select --install` and `git-missing`.
+5. A repo-less board → `~/projects/<board>` (created, or reused as is).
+
+Never `/`, never home. Progress and failure lines go into the terminal stream.
+
+Bridge ↔ app (bridge-token auth, like `/session/key`):
+
+| route | body | reply |
+|---|---|---|
+| `POST /api/terminal/session/workspace` | `{sid, token, machineNames}` | `{workspace: {repo, repoFolderName, newFolderName, savedFolders, otherLiveSessionsOnThisMac} \| null}` |
+| `POST /api/terminal/session/folder` | `{sid, token, machineNames, path, how}` | `{ok: true}` or 400 `not-a-project-folder` |
+
+`machineNames` = the Mac's fixed name (`scutil --get LocalHostName` + ".local")
+first, then `os.hostname()` (`shared/machine-name.mjs`). The folder is saved
+under every name. The bridge also sends the browser a TEXT frame
+`{"t":"bridge-cwd","cwd":"/abs"}` with the folder it chose.
+
+Ending: a bridge that stops on purpose closes 1000 with a reason token
+(`shared/control-frames.mjs` lists them, e.g. `pty-exit`,
+`agent-stopped-early:<code>`, `folder-missing`, `clone-no-access`,
+`git-missing`). The relay ends the session at once (closed callback
+`bridge_ended`), forwards the reason to the browser, and keeps a 10-minute
+tombstone (`TERMINAL_TOMBSTONE_MS`) so a late browser attach gets the same
+reason. Only an abnormal close (1006, errors) gets the 90s reconnect hold.
+
+Helper control legs are per Mac: the helper connects with `machineLabel`
+(fixed name) and `machineAliases`; `/helper/status?machines=` and
+`/helper/command {machines}` target one Mac's leg(s).
+
+Tests: `terminal/test/fresh-mac-folder.test.mjs` (real bridge process, temp
+HOME, stand-in app), `bridge/src/folder-resolve.test.js`,
+`bridge/src/git-clone.test.js`, and the relay's bridge-end / helper-leg tests.
+
 ## Stubbed for later slices
 
 - **Helper code-signing / notarization**, registering the **`vibecodes://`** URL
