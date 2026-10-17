@@ -27,6 +27,7 @@ import {
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
   RECONNECT_GRACE_MS,
+  TOMBSTONE_MS,
   idleCloseReason,
   maxCloseReason,
   resolveMs,
@@ -49,6 +50,8 @@ import {
   isAlwaysOnFrame,
   parseAlwaysOnValue,
   encodeOpenTerminalAuthorizedFrame,
+  sanitizeBridgeEndReason,
+  sanitizeMachineList,
 } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
@@ -62,6 +65,10 @@ const NORMAL_CLOSURE = 1000;
  *   `graceMs` — reconnect grace window (default 90s); tests pass small values.
  *   `sendAttachedFrame` — default true (mirrors the real DO's R1 confirmation to
  *   the bridge leg); tests pass false to simulate an OLD relay for skew coverage.
+ *   `tombstoneMs` — how long a session the bridge ended on purpose remembers
+ *   why (default 10 min; card 6b2cb8ac).
+ *   `onSessionClosed(sid, reason)` — stands in for the real DO's app
+ *   callback (POST /api/terminal/session/closed); called for "bridge_ended".
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
  */
 export function startStandinRelay(opts = {}) {
@@ -71,6 +78,20 @@ export function startStandinRelay(opts = {}) {
   const maxMs = resolveMs(opts.maxMs, DEFAULT_MAX_MS);
   const graceMs = resolveMs(opts.graceMs, RECONNECT_GRACE_MS);
   const sendAttachedFrame = opts.sendAttachedFrame !== false;
+  const tombstoneMs = resolveMs(opts.tombstoneMs, TOMBSTONE_MS);
+  const onSessionClosed = opts.onSessionClosed || (() => {});
+  // Ended-session tombstones (card 6b2cb8ac) — mirrors the DO's
+  // tombstoneReason/tombstoneAt/tombstoneOwner keys: sid -> { reason, at, owner }.
+  const tombstones = new Map();
+  const freshTombstone = (sid) => {
+    const t = tombstones.get(sid);
+    if (!t) return null;
+    if (Date.now() - t.at >= tombstoneMs) {
+      tombstones.delete(sid);
+      return null;
+    }
+    return t;
+  };
   // session id -> { bridge: ws|null, browser: ws|null, owner: string|null,
   //                 idleTimer, maxTimer, graceTimer }
   //
@@ -87,7 +108,30 @@ export function startStandinRelay(opts = {}) {
   // real bridge/browser pairing). `{ ws, owner, version, machineLabel,
   // alwaysOn, uncleanAt }`; `uncleanAt` is set whenever a helper's socket
   // closes without a preceding goodbye frame — see computeHelperStatus.
+  //
+  // PER MAC (card 6b2cb8ac): each entry is now a LIST of legs (one per Mac,
+  // tagged with the Mac's names), mirroring the DO's per-leg attachments, and
+  // `machineRecords` keeps each Mac's last-known status (the DO's
+  // `helper:<name>:<field>` keys), keyed `${session}|${name}`.
   const helperLegs = new Map();
+  const machineRecords = new Map();
+  const legsOf = (session) => helperLegs.get(session) ?? [];
+  const isOpen = (leg) => !!leg?.ws && leg.ws.readyState === leg.ws.OPEN && !leg.retired;
+  const intersects = (a, b) => a.some((n) => b.includes(n));
+  const recordMachine = (session, leg) => {
+    for (const name of leg.names) machineRecords.set(`${session}|${name}`, leg);
+  };
+  const statusOf = (leg, connected) =>
+    computeHelperStatus({
+      connected,
+      version: leg?.version ?? null,
+      machineLabel: leg?.machineLabel ?? null,
+      alwaysOn: leg?.alwaysOn ?? false,
+      uncleanAt: connected ? null : leg?.uncleanAt ?? null,
+      now: Date.now(),
+      codexInstalled: leg?.codexInstalled ?? null,
+      claudeInstalled: leg?.claudeInstalled ?? null,
+    });
 
   // Multi-session stage 3 (POST /end): the stand-in needs a plain HTTP
   // endpoint alongside the WebSocket upgrade path, so — unlike the original
@@ -158,17 +202,22 @@ export function startStandinRelay(opts = {}) {
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
     }
-    const leg = helperLegs.get(session);
-    const status = computeHelperStatus({
-      connected: !!leg?.ws && leg.ws.readyState === leg.ws.OPEN,
-      version: leg?.version ?? null,
-      machineLabel: leg?.machineLabel ?? null,
-      alwaysOn: leg?.alwaysOn ?? false,
-      uncleanAt: leg?.uncleanAt ?? null,
-      now: Date.now(),
-      codexInstalled: leg?.codexInstalled ?? null,
-      claudeInstalled: leg?.claudeInstalled ?? null,
-    });
+    let status;
+    if (url.searchParams.has("machines")) {
+      // Per-Mac status (card 6b2cb8ac) — mirrors the DO's machineHelperStatus.
+      const machines = sanitizeMachineList(url.searchParams.get("machines"));
+      const live = legsOf(session).filter((l) => isOpen(l) && intersects(l.names, machines));
+      const newest = live[live.length - 1];
+      if (newest) status = statusOf(newest, true);
+      else {
+        const rec = machines.map((n) => machineRecords.get(`${session}|${n}`)).find(Boolean);
+        status = statusOf(rec ?? null, false);
+      }
+    } else {
+      const legs = legsOf(session);
+      const leg = legs[legs.length - 1];
+      status = statusOf(leg ?? null, isOpen(leg));
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(status));
   }
@@ -210,17 +259,30 @@ export function startStandinRelay(opts = {}) {
       res.end(JSON.stringify({ error: "bad-value" }));
       return;
     }
-    const leg = helperLegs.get(session);
-    const delivered = !!leg?.ws && leg.ws.readyState === leg.ws.OPEN;
-    if (delivered) {
-      try {
-        leg.ws.send(encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined));
-      } catch { /* leg already closing */ }
+    const frame = encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined);
+    const reply = (obj) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(obj));
+    };
+    if (body?.machines !== undefined) {
+      // Per-Mac command (card 6b2cb8ac) — mirrors the DO's handleHelperCommand.
+      const machines = sanitizeMachineList(body.machines);
+      if (machines.length === 0) return reply({ delivered: false, reason: "machine-unknown" });
+      const targets = legsOf(session).filter((l) => isOpen(l) && intersects(l.names, machines));
+      for (const t of targets) {
+        try { t.ws.send(frame); } catch { /* leg already closing */ }
+      }
+      if (targets.length === 0) return reply({ delivered: false, reason: "not-on-this-mac" });
+      return reply({ delivered: true });
+    }
+    const live = legsOf(session).filter(isOpen);
+    const leg = live[live.length - 1];
+    if (leg) {
+      try { leg.ws.send(frame); } catch { /* leg already closing */ }
     } else {
       log("helper command: no live helper leg", { session, cmd });
     }
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ delivered }));
+    reply({ delivered: !!leg });
   }
 
   /** Close both legs with code 1000 + a lifecycle reason, then forget the session. */
@@ -270,7 +332,8 @@ export function startStandinRelay(opts = {}) {
    * + "stopped unexpectedly" (uncleanAt) durably per reserved session id.
    */
   async function handleHelperConnection(ws, url, session, token) {
-    const existing = helperLegs.get(session);
+    const existingLegs = legsOf(session);
+    const existing = existingLegs[existingLegs.length - 1];
     const auth = await authorizeAttach({
       token,
       secret,
@@ -286,10 +349,21 @@ export function startStandinRelay(opts = {}) {
     }
 
     // Same-owner PREEMPTION: a second helper leg for the same owner wins
-    // latest-first (mirrors the Cloudflare DO's fetchHelperLeg).
-    if (existing?.ws && existing.ws.readyState === existing.ws.OPEN) {
-      try { existing.ws.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
+    // latest-first (mirrors the Cloudflare DO's fetchHelperLeg) — but only on
+    // the SAME Mac (a shared machine name; card 6b2cb8ac). A leg with no
+    // names on either side keeps the old replace-every-leg rule.
+    const names = sanitizeMachineList(
+      [sanitizeMachineLabel(url.searchParams.get("machineLabel")), ...sanitizeMachineList(url.searchParams.get("machineAliases") ?? "")].filter(Boolean),
+    );
+    for (const old of existingLegs) {
+      if (!isOpen(old)) continue;
+      if (names.length === 0 || old.names.length === 0 || intersects(names, old.names)) {
+        old.retired = true;
+        try { old.ws.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
+      }
     }
+    // A Mac's own last record supplies anything this attach didn't announce.
+    const prior = names.map((n) => machineRecords.get(`${session}|${n}`)).find(Boolean) ?? (names.length === 0 ? existing : undefined);
 
     // Codex support (FR-3's helper-side half) — tri-state, mirrors the
     // Cloudflare DO's fetchHelperLeg exactly: "1"/"0" is a known answer,
@@ -298,15 +372,17 @@ export function startStandinRelay(opts = {}) {
     const codexInstalledRaw = url.searchParams.get("codexInstalled");
     const claudeInstalledRaw = url.searchParams.get("claudeInstalled");
     const codexInstalled =
-      codexInstalledRaw === "1" ? true : codexInstalledRaw === "0" ? false : existing?.codexInstalled ?? null;
+      codexInstalledRaw === "1" ? true : codexInstalledRaw === "0" ? false : prior?.codexInstalled ?? null;
     const claudeInstalled =
-      claudeInstalledRaw === "1" ? true : claudeInstalledRaw === "0" ? false : existing?.claudeInstalled ?? null;
+      claudeInstalledRaw === "1" ? true : claudeInstalledRaw === "0" ? false : prior?.claudeInstalled ?? null;
 
     const leg = {
       ws,
       owner: auth.sub,
-      version: sanitizeHelperVersion(url.searchParams.get("helperVersion")) ?? existing?.version ?? null,
-      machineLabel: sanitizeMachineLabel(url.searchParams.get("machineLabel")) ?? existing?.machineLabel ?? null,
+      names,
+      retired: false,
+      version: sanitizeHelperVersion(url.searchParams.get("helperVersion")) ?? prior?.version ?? null,
+      machineLabel: sanitizeMachineLabel(url.searchParams.get("machineLabel")) ?? prior?.machineLabel ?? null,
       alwaysOn: url.searchParams.get("alwaysOn") === "1",
       codexInstalled,
       claudeInstalled,
@@ -314,7 +390,8 @@ export function startStandinRelay(opts = {}) {
       uncleanAt: null,
       goodbye: false,
     };
-    helperLegs.set(session, leg);
+    helperLegs.set(session, [...existingLegs.filter((l) => isOpen(l)), leg]);
+    recordMachine(session, leg);
     log("helper attached", { session, version: leg.version, alwaysOn: leg.alwaysOn, codexInstalled, claudeInstalled });
 
     // OPEN-TERMINAL RELAY AUTHORIZATION (desktop Codex security fix, Finding
@@ -349,7 +426,7 @@ export function startStandinRelay(opts = {}) {
     });
 
     const teardown = () => {
-      if (helperLegs.get(session) !== leg) return; // a superseding attach already owns this slot
+      if (leg.retired) return; // a same-Mac relaunch already replaced this leg
       log("helper detached", { session, goodbye: leg.goodbye });
       if (!leg.goodbye) leg.uncleanAt = Date.now();
     };
@@ -384,7 +461,7 @@ export function startStandinRelay(opts = {}) {
       secret,
       session,
       role,
-      boundOwner: sessions.get(session)?.owner ?? null,
+      boundOwner: sessions.get(session)?.owner ?? freshTombstone(session)?.owner ?? null,
       maxSessionMs: maxMs,
     });
     if (!auth.ok) {
@@ -394,6 +471,20 @@ export function startStandinRelay(opts = {}) {
     }
     if (auth.expired) {
       log("attach authorized with expired token (reattach waiver)", { session, role });
+    }
+
+    // ENDED-SESSION TOMBSTONE (card 6b2cb8ac) — mirrors the DO's fetch() step
+    // 1b: a browser attaching to a sid its bridge just ended on purpose is
+    // closed 1000 with that reason; a bridge attaching forgets the tombstone.
+    if (role === "bridge") {
+      tombstones.delete(session);
+    } else if (role === "browser" && !sessions.has(session)) {
+      const tomb = freshTombstone(session);
+      if (tomb && (tomb.owner === null || tomb.owner === auth.sub)) {
+        log("attach to an ended session — closing with its reason", { session, reason: tomb.reason });
+        ws.close(NORMAL_CLOSURE, tomb.reason);
+        return;
+      }
     }
 
     if (!sessions.has(session)) {
@@ -553,7 +644,33 @@ export function startStandinRelay(opts = {}) {
       }
     };
 
-    ws.on("close", teardown);
+    // DELIBERATE BRIDGE END (card 6b2cb8ac) — mirrors the DO's endFromBridge:
+    // a bridge closing 1000 stopped on purpose, so end the session now with
+    // its reason (no grace hold), tell the app, and leave a tombstone.
+    const endFromBridge = (rawReason) => {
+      const reason = rawReason ? sanitizeBridgeEndReason(rawReason) : "pty-exit";
+      legs.bridge = null;
+      clearTimeout(legs.idleTimer);
+      clearTimeout(legs.maxTimer);
+      clearTimeout(legs.graceTimer);
+      const browser = legs.browser;
+      legs.browser = null;
+      if (browser && browser.readyState === browser.OPEN) {
+        try { browser.close(NORMAL_CLOSURE, reason); } catch { /* closing */ }
+      }
+      sessions.delete(session);
+      tombstones.set(session, { reason, at: Date.now(), owner: legs.owner });
+      log("session ended", { why: "bridge-ended", reason, sid: session });
+      try { onSessionClosed(session, "bridge_ended"); } catch { /* test hook */ }
+    };
+
+    ws.on("close", (code, reasonBuf) => {
+      if (role === "bridge" && code === NORMAL_CLOSURE && legs.bridge === ws && sessions.get(session) === legs) {
+        endFromBridge(reasonBuf ? reasonBuf.toString() : "");
+        return;
+      }
+      teardown();
+    });
     ws.on("error", teardown);
   });
 

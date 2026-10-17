@@ -51,6 +51,7 @@ import {
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
   RECONNECT_GRACE_MS,
+  TOMBSTONE_MS,
   idleCloseReason,
   maxCloseReason,
   resolveMs,
@@ -81,10 +82,47 @@ import {
   isAlwaysOnFrame,
   parseAlwaysOnValue,
   encodeOpenTerminalAuthorizedFrame,
+  sanitizeBridgeEndReason,
+  sanitizeMachineList,
 } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
+
+/** Storage keys of the ended-session tombstone. */
+const TOMBSTONE_KEYS = ["tombstoneReason", "tombstoneAt", "tombstoneOwner"];
+
+/**
+ * A helper leg's machine names (card 6b2cb8ac): its `machineLabel` (the Mac's
+ * fixed name on a new helper, the hostname on an old one) plus any
+ * `machineAliases`, lower-cased and de-duplicated, at most 5.
+ * @param {URL} url
+ * @returns {string[]}
+ */
+function helperLegNames(url) {
+  const label = sanitizeMachineLabel(url.searchParams.get("machineLabel"));
+  const raw = [label, ...sanitizeMachineList(url.searchParams.get("machineAliases") ?? "")].filter(Boolean);
+  return sanitizeMachineList(raw);
+}
+
+/** Whether two machine-name lists share a name (both already lower-cased). */
+function namesIntersect(a, b) {
+  return a.some((n) => b.includes(n));
+}
+
+/** A socket's attachment, or {} when it can't be read. */
+function attachmentOf(ws) {
+  try {
+    return ws.deserializeAttachment() || {};
+  } catch {
+    return {};
+  }
+}
+
+/** Per-machine storage key for one helper field (card 6b2cb8ac). */
+function machineKey(name, field) {
+  return `helper:${name}:${field}`;
+}
 
 /**
  * Whether this DO has already told `ws` to close (see TerminalRelay#retire).
@@ -239,6 +277,22 @@ export class TerminalRelay {
     return resolveMs(this.env.TERMINAL_RECONNECT_GRACE_MS, RECONNECT_GRACE_MS);
   }
 
+  /** Ended-session tombstone window in ms (env override → default). Card 6b2cb8ac. */
+  tombstoneMs() {
+    return resolveMs(this.env.TERMINAL_TOMBSTONE_MS, TOMBSTONE_MS);
+  }
+
+  /**
+   * The tombstone left by a deliberate bridge end, when it's still fresh.
+   * @returns {Promise<{ reason: string, at: number, owner: string|null } | null>}
+   */
+  async freshTombstone(now = Date.now()) {
+    const [reason, at, owner] = await Promise.all(TOMBSTONE_KEYS.map((k) => this.state.storage.get(k)));
+    if (typeof reason !== "string" || typeof at !== "number") return null;
+    if (now - at >= this.tombstoneMs()) return null;
+    return { reason, at, owner: owner ?? null };
+  }
+
   /** Activity-persist throttle window in ms (env override → default). MITIGATION 1. */
   activityThrottleMs() {
     return resolveMs(this.env.TERMINAL_ACTIVITY_THROTTLE_MS, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS);
@@ -360,6 +414,14 @@ export class TerminalRelay {
       return jsonResponse({ error: "unauthorized" }, 401);
     }
 
+    // Per-Mac status (card 6b2cb8ac): with `machines`, answer for THAT Mac
+    // only — its newest live leg, else what it last reported. Without it
+    // (an older app), today's account-wide answer below.
+    if (url.searchParams.has("machines")) {
+      const machines = sanitizeMachineList(url.searchParams.get("machines"));
+      return jsonResponse(await this.machineHelperStatus(machines), 200);
+    }
+
     const connected = this.liveSockets("role:helper").length > 0;
     const [version, machineLabel, alwaysOn, uncleanAt, codexInstalled, claudeInstalled] = await Promise.all([
       this.state.storage.get("helperVersion"),
@@ -380,6 +442,65 @@ export class TerminalRelay {
       claudeInstalled: claudeInstalled ?? null,
     });
     return jsonResponse(status, 200);
+  }
+
+  /** Live helper legs (oldest first) whose machine names include one of `machines`. */
+  helperLegsFor(machines) {
+    return this.liveSockets("role:helper").filter((ws) => namesIntersect(attachmentOf(ws).names ?? [], machines));
+  }
+
+  /**
+   * One Mac's helper status (card 6b2cb8ac). `machines` is every name the
+   * asking browser knows for its Mac.
+   * @param {string[]} machines
+   */
+  async machineHelperStatus(machines) {
+    const now = Date.now();
+    const live = this.helperLegsFor(machines);
+    const newest = live[live.length - 1];
+    if (newest) {
+      const att = attachmentOf(newest);
+      return computeHelperStatus({
+        connected: true,
+        version: att.version ?? null,
+        machineLabel: att.machineLabel ?? null,
+        alwaysOn: att.alwaysOn ?? false,
+        uncleanAt: null,
+        now,
+        codexInstalled: att.codexInstalled ?? null,
+        claudeInstalled: att.claudeInstalled ?? null,
+      });
+    }
+    // Nothing live: the last thing this Mac reported, under whichever of its
+    // names has a record.
+    for (const name of machines) {
+      const fields = ["version", "machineLabel", "alwaysOn", "uncleanAt", "codexInstalled", "claudeInstalled"];
+      const values = await Promise.all(fields.map((f) => this.state.storage.get(machineKey(name, f))));
+      if (values.every((v) => v === undefined)) continue;
+      const [version, machineLabel, alwaysOn, uncleanAt, codexInstalled, claudeInstalled] = values;
+      return computeHelperStatus({
+        connected: false,
+        version: version ?? null,
+        machineLabel: machineLabel ?? null,
+        alwaysOn: alwaysOn ?? false,
+        uncleanAt: uncleanAt ?? null,
+        now,
+        codexInstalled: codexInstalled ?? null,
+        claudeInstalled: claudeInstalled ?? null,
+      });
+    }
+    return computeHelperStatus({ connected: false, now });
+  }
+
+  /** Write one helper field under every name of a leg (card 6b2cb8ac). */
+  async putMachineField(names, field, value) {
+    await Promise.all(
+      names.map((name) =>
+        value === null || value === undefined
+          ? this.state.storage.delete(machineKey(name, field))
+          : this.state.storage.put(machineKey(name, field), value),
+      ),
+    );
   }
 
   /**
@@ -415,13 +536,43 @@ export class TerminalRelay {
       return jsonResponse({ error: "bad-value" }, 400);
     }
 
-    const helper = this.liveSockets("role:helper")[0] ?? null;
+    const frame = encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined);
+
+    // Per-Mac commands (card 6b2cb8ac): with `machines`, only that Mac's
+    // helper gets the command — "Update now" must never close another Mac's
+    // helper. Without it (an older app), the newest live leg, as before.
+    if (body?.machines !== undefined) {
+      const machines = sanitizeMachineList(body.machines);
+      if (machines.length === 0) {
+        this.log("helper command: machine unknown", { session, cmd });
+        return jsonResponse({ delivered: false, reason: "machine-unknown" }, 200);
+      }
+      const targets = this.helperLegsFor(machines);
+      let delivered = 0;
+      for (const ws of targets) {
+        try {
+          ws.send(frame);
+          delivered += 1;
+        } catch (e) {
+          this.log("helper command send failed", { session, cmd, err: String(e) });
+        }
+      }
+      if (delivered === 0) {
+        this.log("helper command: no live helper leg on this Mac", { session, cmd });
+        return jsonResponse({ delivered: false, reason: "not-on-this-mac" }, 200);
+      }
+      this.log("helper command delivered", { session, cmd, legs: delivered });
+      return jsonResponse({ delivered: true }, 200);
+    }
+
+    const live = this.liveSockets("role:helper");
+    const helper = live[live.length - 1] ?? null;
     if (!helper) {
       this.log("helper command: no live helper leg", { session, cmd });
       return jsonResponse({ delivered: false }, 200);
     }
     try {
-      helper.send(encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined));
+      helper.send(frame);
     } catch (e) {
       this.log("helper command send failed", { session, cmd, err: String(e) });
       return jsonResponse({ delivered: false }, 200);
@@ -471,16 +622,20 @@ export class TerminalRelay {
     // waiver only accepts a token whose `sub` already matches, and the sid
     // itself is derived from `sub` (helperSessionId), so cross-owner attach
     // would already fail at the token/sid level.
+    //
+    // PER MAC (card 6b2cb8ac): only a leg from the SAME Mac (a shared machine
+    // name) is stale. Another Mac's helper stays connected — one slot per
+    // account used to make two Macs knock each other off, and sent "Update
+    // now" to whichever Mac held the slot. A leg with no names on either side
+    // can't be told apart, so it keeps the old replace-every-leg rule.
+    const names = helperLegNames(url);
     for (const stale of this.liveSockets("role:helper")) {
-      this.retire(stale, CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
+      const staleNames = attachmentOf(stale).names ?? [];
+      if (names.length === 0 || staleNames.length === 0 || namesIntersect(names, staleNames)) {
+        this.retire(stale, CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
+      }
     }
 
-    this.state.acceptWebSocket(server, ["role:helper", `sub:${auth.sub}`]);
-    server.serializeAttachment({ role: "helper", sub: auth.sub, goodbye: false });
-
-    if ((await this.state.storage.get("owner")) === null) {
-      await this.state.storage.put("owner", auth.sub);
-    }
     const version = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
     const machineLabel = sanitizeMachineLabel(url.searchParams.get("machineLabel"));
     const alwaysOn = url.searchParams.get("alwaysOn") === "1";
@@ -492,6 +647,34 @@ export class TerminalRelay {
     const claudeInstalledRaw = url.searchParams.get("claudeInstalled");
     const codexInstalled = codexInstalledRaw === "1" ? true : codexInstalledRaw === "0" ? false : null;
     const claudeInstalled = claudeInstalledRaw === "1" ? true : claudeInstalledRaw === "0" ? false : null;
+
+    this.state.acceptWebSocket(server, ["role:helper", `sub:${auth.sub}`]);
+    server.serializeAttachment({
+      role: "helper",
+      sub: auth.sub,
+      goodbye: false,
+      names,
+      machineLabel,
+      version,
+      alwaysOn,
+      codexInstalled,
+      claudeInstalled,
+      attachedAt: Date.now(),
+    });
+
+    if ((await this.state.storage.get("owner")) === null) {
+      await this.state.storage.put("owner", auth.sub);
+    }
+    // Last-known status per Mac, under every name this Mac reports, so a
+    // status poll from any of its names finds it after the helper quits.
+    await Promise.all([
+      version ? this.putMachineField(names, "version", version) : Promise.resolve(),
+      machineLabel ? this.putMachineField(names, "machineLabel", machineLabel) : Promise.resolve(),
+      this.putMachineField(names, "alwaysOn", alwaysOn),
+      this.putMachineField(names, "codexInstalled", codexInstalled),
+      this.putMachineField(names, "claudeInstalled", claudeInstalled),
+      this.putMachineField(names, "uncleanAt", null),
+    ]);
     await Promise.all([
       version ? this.state.storage.put("helperVersion", version) : Promise.resolve(),
       machineLabel ? this.state.storage.put("helperMachineLabel", machineLabel) : Promise.resolve(),
@@ -550,7 +733,9 @@ export class TerminalRelay {
     } catch { /* attachment may be gone */ }
     this.log("helper detached", { goodbye });
     if (!goodbye) {
-      await this.state.storage.put("helperUncleanAt", Date.now());
+      const at = Date.now();
+      await this.state.storage.put("helperUncleanAt", at);
+      await this.putMachineField(attachmentOf(ws).names ?? [], "uncleanAt", at);
     }
   }
 
@@ -584,7 +769,11 @@ export class TerminalRelay {
     //    same-owner reattach to a LIVE session is accepted even after the token's
     //    TTL lapsed (fix/terminal-expired-reattach) — establishment (no bound
     //    owner) and foreign subs still require an unexpired token.
-    const boundOwner = (await this.state.storage.get("owner")) ?? null;
+    //    A session the bridge ended on purpose has no owner any more, so its
+    //    tombstone's owner stands in (card 6b2cb8ac): the real owner's aged
+    //    browser token still learns the reason instead of a 4006.
+    const tombstone = await this.freshTombstone();
+    const boundOwner = (await this.state.storage.get("owner")) ?? tombstone?.owner ?? null;
     const auth = await authorizeAttach({
       token,
       secret: this.env.TERMINAL_SESSION_SECRET,
@@ -604,6 +793,28 @@ export class TerminalRelay {
     if (auth.expired) {
       // Metadata only — never token material.
       this.log("attach authorized with expired token (reattach waiver)", { session, role });
+    }
+
+    // 1b) ENDED-SESSION TOMBSTONE (card 6b2cb8ac). The bridge ended this
+    //     session on purpose a moment ago. A browser attaching now (reload,
+    //     second tab, a reconnect that lost the race) is told why, with the
+    //     same 1000 + reason the live browser got, and nothing is bound. A
+    //     bridge attaching is a deliberate relaunch: forget the tombstone.
+    if (role === "bridge") {
+      if ((await this.state.storage.get("tombstoneReason")) !== undefined) {
+        await this.state.storage.delete(TOMBSTONE_KEYS);
+      }
+    } else if (
+      role === "browser" &&
+      tombstone &&
+      (tombstone.owner === null || tombstone.owner === auth.sub) &&
+      this.liveSockets("role:bridge").length === 0 &&
+      (await this.state.storage.get("sessionStartedAt")) == null
+    ) {
+      this.log("attach to an ended session — closing with its reason", { session, role, reason: tombstone.reason });
+      server.accept();
+      server.close(NORMAL_CLOSURE, tombstone.reason);
+      return new Response(null, { status: 101, webSocket: client });
     }
 
     // 2) Owner-binding + single-attach (pure), fed from LIVE sockets + durable owner.
@@ -878,6 +1089,7 @@ export class TerminalRelay {
         ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), goodbye: true });
       } catch { /* attachment already gone (socket closing) */ }
       await this.state.storage.delete("helperUncleanAt");
+      await this.putMachineField(attachmentOf(ws).names ?? [], "uncleanAt", null);
       this.log("helper goodbye", { reason });
       return;
     }
@@ -885,6 +1097,10 @@ export class TerminalRelay {
       const value = parseAlwaysOnValue(message);
       if (value === null) return;
       await this.state.storage.put("helperAlwaysOn", value);
+      try {
+        ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), alwaysOn: value });
+      } catch { /* attachment already gone (socket closing) */ }
+      await this.putMachineField(attachmentOf(ws).names ?? [], "alwaysOn", value);
       this.log("helper always-on updated", { value });
       return;
     }
@@ -899,7 +1115,52 @@ export class TerminalRelay {
       await this.handleHelperDetach(ws);
       return;
     }
+    // DELIBERATE BRIDGE END (card 6b2cb8ac, causes E + G). A bridge closes
+    // 1000 only when it stops on purpose (the agent exited, isn't installed,
+    // the folder couldn't be got ready, the helper quit), so there is nothing
+    // to wait 90s for: end the session now, with the bridge's reason. A drop
+    // (1006, 1001, an error) still gets the grace hold below.
+    if (
+      this.roleOf(ws) === "bridge" &&
+      code === NORMAL_CLOSURE &&
+      !isRetired(ws) &&
+      (await this.state.storage.get("sessionStartedAt")) != null
+    ) {
+      await this.endFromBridge(ws, reason);
+      return;
+    }
     await this.handleDetach(ws, "close", { code, wasClean });
+  }
+
+  /**
+   * The bridge ended the session on purpose (card 6b2cb8ac). Close every
+   * other live leg with the same 1000 + reason (the page maps it to the right
+   * "ended" screen), tell the app at once (`bridge_ended`, so the registry row
+   * stops being "active" — a stale active row made the next launch isolate),
+   * release the session, and leave a tombstone so a late browser attach gets
+   * the reason too.
+   * @param {WebSocket} ws the closing bridge leg @param {string} rawReason
+   */
+  async endFromBridge(ws, rawReason) {
+    const reason = rawReason ? sanitizeBridgeEndReason(rawReason) : "pty-exit";
+    const sid = await this.state.storage.get("sid");
+    const owner = (await this.state.storage.get("owner")) ?? null;
+    this.log("session ended", { why: "bridge-ended", reason, sid });
+    for (const other of this.liveSockets()) {
+      if (other === ws) continue;
+      this.retire(other, NORMAL_CLOSURE, reason);
+    }
+    // The bridge's own socket is closing already; mark it so its late events are inert.
+    try {
+      ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), retired: true });
+    } catch { /* attachment already gone */ }
+    await this.notifyAppSessionClosed(sid, "bridge_ended");
+    await this.clearSessionState();
+    const now = Date.now();
+    await this.state.storage.put("tombstoneReason", reason);
+    await this.state.storage.put("tombstoneAt", now);
+    await this.state.storage.put("tombstoneOwner", owner);
+    await this.state.storage.setAlarm(now + this.tombstoneMs());
   }
 
   /** @param {WebSocket} ws @param {unknown} error */
@@ -1037,6 +1298,18 @@ export class TerminalRelay {
     const last = await this.state.storage.get("lastActivityAt");
     const grace = await this.state.storage.get("graceDeadline");
 
+    // Ended-session tombstone (card 6b2cb8ac): with no session running, the
+    // only thing the alarm can be for is forgetting it.
+    if (started == null) {
+      const tombstoneAt = await this.state.storage.get("tombstoneAt");
+      if (typeof tombstoneAt === "number") {
+        const expiresAt = tombstoneAt + this.tombstoneMs();
+        if (now >= expiresAt) await this.state.storage.delete(TOMBSTONE_KEYS);
+        else await this.state.storage.setAlarm(expiresAt);
+        return;
+      }
+    }
+
     if (started != null && now - started >= this.maxMs()) {
       // Card 9fb9fced, Fix 3: sid + which timeout + total duration, on the
       // SAME log line the old version omitted the sid from entirely — a
@@ -1126,7 +1399,7 @@ export class TerminalRelay {
    * elsewhere as a best-effort mirror (design doc §9, R2), so a failed
    * callback here just leaves it exactly as stale as it always could be
    * before this fix, self-correcting on the next lazy reap.
-   * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|"peer_gone"|undefined} reasonCode
+   * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|"peer_gone"|"bridge_ended"|undefined} reasonCode
    */
   async notifyAppSessionClosed(sid, reasonCode) {
     const appUrl = this.env.VIBECODES_APP_URL;
