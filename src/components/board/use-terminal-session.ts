@@ -72,6 +72,8 @@ import {
   encodeResizeMessage,
   initialConnectionState,
   isBridgeVersionFrame,
+  isBridgeCwdFrame,
+  parseBridgeCwdFrame,
   isHeartbeatAckFrame,
   isInputEnabled,
   isPeerDegradedFrame,
@@ -121,7 +123,7 @@ import {
   resolveTerminalPlatform,
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
-import { addMachineIdentity, getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { addMachineIdentity, getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 import {
@@ -928,6 +930,19 @@ export function useTerminalSession(
   // reconnect, etc.) doesn't re-fire the identity PATCH each time — keyed by
   // sessionId so a genuinely NEW session (a fresh mint) always fires again.
   const machineIdentityAnnouncedSidRef = useRef<string | null>(null);
+  // Card 6b2cb8ac: the session whose deep link THIS browser fired — the only
+  // session whose bridge is known to run on this browser's own Mac. Its
+  // announced host is remembered as one of this Mac's names
+  // (addMachineIdentity); an attach to a session started elsewhere (another
+  // Mac's live session, a pop-out hand-off) never adds that Mac's name, or
+  // the page would treat the other Mac's folder as this one's.
+  const launchedHereSidRef = useRef<string | null>(null);
+  // Card 6b2cb8ac (old-helper rule): the session that has shown at least one
+  // PTY byte in this tab, and the helper version it announced — so a bare
+  // `pty-exit` from a pre-0.3.25 helper before ANY output reads as "stopped
+  // straight away" rather than a normal end.
+  const ptyBytesSeenSidRef = useRef<string | null>(null);
+  const helperVersionRef = useRef<string | null>(null);
   // Exact-conversation Resume (rework 5, card cbe60db5): the SAME once-per-
   // session pattern for the claude conversation id the bridge announces
   // (relay `bridge-version` frame's `conv` field) — keyed by sessionId so a
@@ -1444,11 +1459,11 @@ export function useTerminalSession(
       // The launch-time re-read (refreshRecordedPaths) wins over the
       // descriptor's page-load snapshot when it has run for THIS idea.
       recordedPaths: fresh && fresh.ideaId === ideaId ? fresh.paths : recordedProjectPaths,
-      // Read fresh rather than captured: this runs at launch time, and a bridge
-      // may have announced this machine's hostname earlier in THIS session (see
-      // setMachineIdentity below) — the button's render-time snapshot can't see
-      // that, but a launch fired afterwards should.
-      realHostname: getMachineIdentity(),
+      // Read fresh rather than captured: this runs at launch time, and a
+      // session launched from this browser may have announced this Mac's
+      // name since (see addMachineIdentity below). Only folders saved under
+      // one of these names are used (card 6b2cb8ac).
+      machineNames: getMachineIdentities(),
     });
     const s = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, effectiveTarget);
     const essentials = buildCompactPromptEssentials({
@@ -1626,6 +1641,9 @@ export function useTerminalSession(
       },
     ) => {
       const trigger = opts?.trigger ?? "connect";
+      // Card 6b2cb8ac: this link goes to THIS Mac's helper — see
+      // launchedHereSidRef's doc.
+      launchedHereSidRef.current = sessionId;
       // Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
       // resume launch carries no bootstrap prompt at all — a minimal link
       // with `resumeId` (exact-conversation, rework 5) or the legacy
@@ -2063,13 +2081,24 @@ export function useTerminalSession(
             // reattach relaunch must not fire (it would fork a 2nd bridge and
             // kill this one).
             cancelPendingRelaunch("bridge-version");
+            // Card 6b2cb8ac (cause F): the bridge's hello is proof the helper
+            // on this Mac answered — clear the 8s "Couldn't reach the helper"
+            // timer now. It used to be cleared only by PTY bytes, so an agent
+            // that died at once (0 bytes) showed that message although the
+            // helper had answered.
+            clearHelperTimer();
+            removeLaunchIframe();
+            setLaunchPhase("idle");
             // The bridge announced its helper version (2a) — never written to the
             // xterm; the dock decides whether it's stale enough to nudge
             // (src/lib/terminal/helper-version.ts). A malformed `v` parses to null,
             // which leaves helperVersion at whatever it already was (never
             // regresses a known-good value to "unknown").
             const v = parseBridgeVersionFrame(ev.data);
-            if (v) setHelperVersion(v);
+            if (v) {
+              setHelperVersion(v);
+              helperVersionRef.current = v;
+            }
             // Machine identity (Nick's sign-off change 2): the SAME frame
             // optionally carries the bridge's hostname. Recorded once per
             // session (see machineIdentityAnnouncedSidRef's doc) — (1) ADDED
@@ -2087,7 +2116,10 @@ export function useTerminalSession(
             const host = parseBridgeVersionHost(ev.data);
             if (host && machineIdentityAnnouncedSidRef.current !== sessionId) {
               machineIdentityAnnouncedSidRef.current = sessionId;
-              addMachineIdentity(host);
+              // Card 6b2cb8ac: only a session launched from this browser runs
+              // on this browser's Mac (see launchedHereSidRef). The registry
+              // PATCH below still records every session's machine.
+              if (launchedHereSidRef.current === sessionId) addMachineIdentity(host);
               void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -2140,6 +2172,14 @@ export function useTerminalSession(
                 /* already closing */
               }
             }
+            return;
+          }
+          if (isBridgeCwdFrame(ev.data)) {
+            // Card 6b2cb8ac: the bridge resolved the project folder on the Mac
+            // (and already recorded it server-side) — this tab's folder for
+            // Resume and the header. No PATCH needed.
+            const cwd = parseBridgeCwdFrame(ev.data);
+            if (cwd) setSessionCwd(cwd);
             return;
           }
           if (isPeerDegradedFrame(ev.data)) {
@@ -2195,6 +2235,7 @@ export function useTerminalSession(
         // reconnect/degrade timer + budget so a later drop starts a fresh window.
         const markLinkHealthyAndWrite = (plaintext: Uint8Array) => {
           cancelPendingRelaunch("pty-bytes");
+          ptyBytesSeenSidRef.current = sessionId;
           clearHelperTimer();
           removeLaunchIframe();
           setLaunchPhase("idle");
@@ -2272,7 +2313,15 @@ export function useTerminalSession(
           reconnectDeadlineRef.current > 0
             ? Math.max(0, Date.now() - (reconnectDeadlineRef.current - RECONNECT_GRACE_MS))
             : 0;
-        dispatch({ type: "closed", code: ev.code, reason: ev.reason, sinceDisconnectMs });
+        dispatch({
+          type: "closed",
+          code: ev.code,
+          reason: ev.reason,
+          sinceDisconnectMs,
+          // Card 6b2cb8ac old-helper rule inputs (connection.ts reducer).
+          ptyBytesSeen: ptyBytesSeenSidRef.current === sessionId,
+          helperVersion: helperVersionRef.current,
+        });
         // Grace-window reconnect: a transient drop AFTER a live stream (PEER_GONE /
         // abnormal 1006) is recoverable → keep reattaching within the window. Any
         // terminal / clean-end code maps to a non-disconnected state and stops here.
@@ -2509,6 +2558,7 @@ export function useTerminalSession(
     // A brand-new session draws its own first screen — no redraw nudge.
     redrawOnConnectedRef.current = false;
     setHelperVersion(null);
+    helperVersionRef.current = null;
     dispatch({ type: "connect" });
 
     // Hook-initiated launch (no payload carried from the launch button, which
@@ -2744,6 +2794,7 @@ export function useTerminalSession(
       // nothing, so make the agent repaint once connected (card e5a062a3).
       redrawOnConnectedRef.current = true;
       setHelperVersion(null);
+      helperVersionRef.current = null;
       // Two dispatches back-to-back, no await between them — React folds them
       // through the reducer IN ORDER against the queued (not the stale
       // closure) state, so "session-created"'s `state.status !== "connecting"`

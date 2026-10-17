@@ -29,7 +29,7 @@
 // worst-first summary, and the B10 dedupe check without lifting this session's
 // full state out of the component that actually owns it.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CircleDot,
   Loader2,
@@ -86,6 +86,9 @@ import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
+import { endedCopy, endedReasonAllowsResume, type EndedCopy } from "@/lib/terminal/ended-copy";
+import { parseRepoFromGithubUrl, slugifyIdeaTitle } from "@/lib/launch-claude-code";
+import { CODEX_INSTALL_GUIDE_URL } from "./launch-claude-code-button";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -244,7 +247,7 @@ interface TerminalSessionViewProps {
   /**
    * Live sessions across the dock (any tab that's connected / connecting /
    * waiting / reconnecting) — drives the helper-update flow's confirm copy
-   * ("Your N running sessions will end first"). Falls back to this tab's
+   * ("Your N running sessions on this Mac will end first"). Falls back to this tab's
    * own liveness when a caller doesn't pass it.
    */
   liveSessionCount?: number;
@@ -547,15 +550,54 @@ export function TerminalSessionView({
   // an exhausted reconnect) is the whole point of this fix — the user didn't
   // choose to stop, so a "Resume this conversation" primary action beats a
   // blind fresh mint. A deliberate `endedReason === "user"` end keeps the
-  // original single "Launch again" action untouched (excluded per the QA
+  // single "Start again" action (renamed from "Launch again", card 6b2cb8ac) (excluded per the QA
   // root-cause: only the involuntary endings need the resume path). `cwd` is
   // REQUIRED to resume anything (legacy `--continue` still needs a folder);
   // `claudeSessionId` is optional — its absence just falls back to
   // `--continue` (same graceful degrade the chooser's own Resume already
   // does for a pre-rework-5 row, or a session whose bridge never announced
   // one, e.g. pre-0.3.3).
+  // Card 6b2cb8ac: never for a session that never started (the agent wasn't
+  // installed, the folder wasn't there, the download failed, it stopped
+  // straight away) — there is no conversation to reopen, and today's Resume
+  // there just died again.
   const canResume =
-    view === "session-ended" && state.endedReason !== "user" && !!sessionCwd && !!onResumeEndedSession;
+    view === "session-ended" &&
+    endedReasonAllowsResume(state.endedReason) &&
+    !!sessionCwd &&
+    !!onResumeEndedSession;
+  // Card 6b2cb8ac: the agent THIS tab launches. Recorded on the tab when it
+  // was created from a launch (terminal-dock.tsx); `agent` (the dock-wide
+  // remembered pick) is only a fallback for a tab that never recorded one.
+  // The Setup / Timeout panels' Connect use this; only the Ready panel, which
+  // shows the picker, uses the picker's `agent`.
+  const launchAgent: LaunchAgent = entry.agent ?? agent ?? "claude";
+  // Card 6b2cb8ac: what the ended panel says (approved mock, sections 2-4b).
+  // The board's repo and new-folder name only when this tab belongs to the
+  // board currently open (a cross-board tab's descriptor is another board's).
+  const sameBoard = !entry.ideaId || entry.ideaId === descriptor.ideaId;
+  const repoSlug = sameBoard ? parseRepoFromGithubUrl(descriptor.ideaGithubUrl) : null;
+  const repo = repoSlug ? { owner: repoSlug.split("/")[0], name: repoSlug.split("/")[1] } : null;
+  const ended: EndedCopy = endedCopy({
+    reason: state.endedReason,
+    detail: state.endedDetail,
+    agent: launchAgent,
+    folder: sessionCwd ? homeShortPath(sessionCwd) : null,
+    repo,
+    newFolder: !sameBoard
+      ? null
+      : repo
+        ? `~/projects/${repo.name}`
+        : boardIdentity.ideaTitle
+          ? `~/projects/${slugifyIdeaTitle(boardIdentity.ideaTitle)}`
+          : null,
+  });
+  // "Show what happened" (mock 3e): hide the message for THIS ended session
+  // so the terminal lines underneath can be read; a one-line bar keeps
+  // Start again one click away.
+  const [endedDetailsShownFor, setEndedDetailsShownFor] = useState<string | null>(null);
+  const endedSid = pair?.sessionId ?? "";
+  const endedDetailsShown = view === "session-ended" && endedDetailsShownFor === endedSid;
   // Sleep/resume routing fix (card dccd6c95): the generic error panel (view
   // === "error", not the same-owner "Taken over" branch) used to be a dead
   // end — its only action re-mints an unrelated session via "Try again". If
@@ -941,7 +983,7 @@ export function TerminalSessionView({
             ref={containerRef}
             className={cn("h-full w-full px-3 py-2", state.status === "disconnected" && "opacity-45")}
           />
-          {!showStream && (
+          {!showStream && !endedDetailsShown && (
             <StateOverlay
               view={view}
               state={state}
@@ -953,6 +995,9 @@ export function TerminalSessionView({
               canResumeFromError={canResumeFromError}
               pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true, agent })}
+              onConnectSetup={() => void actions.connect({ autoLaunch: true, agent: launchAgent })}
+              ended={ended}
+              onShowEndedDetails={() => setEndedDetailsShownFor(endedSid)}
               onDownloadHelper={helperUpdate.start}
               agent={agent}
               onAgentChange={onAgentChange}
@@ -967,7 +1012,7 @@ export function TerminalSessionView({
                 // reducer sets alongside session-created).
                 const sid = pair?.sessionId;
                 if (sid && onRetryReconnect) onRetryReconnect(sid);
-                else void actions.connect({ autoLaunch: true });
+                else void actions.connect({ autoLaunch: true, agent: launchAgent });
               }}
               onLaunchAgain={actions.beginBrowserLaunch}
               onResume={handleResume}
@@ -978,6 +1023,31 @@ export function TerminalSessionView({
               onBrowseSessions={onBrowseSessions}
               onCapExceeded={onCapExceeded}
             />
+          )}
+          {endedDetailsShown && (
+            // Mock 3e: the message shrunk to a one-line grey bar in the
+            // reconnecting bar's place, so the terminal lines above it can be
+            // read and Start again is still one click away.
+            <div
+              className="absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-zinc-700 bg-zinc-800/60 px-3 py-2 text-[11px] text-zinc-300"
+              data-testid="ended-details-bar"
+            >
+              <b>{ended.barText}</b>
+              <Button
+                size="xs"
+                className="bg-emerald-500 font-semibold text-emerald-950 hover:bg-emerald-400"
+                onClick={actions.beginBrowserLaunch}
+              >
+                <TerminalIcon className="h-3 w-3" /> Start again
+              </Button>
+              <button
+                type="button"
+                className="text-[11px] text-zinc-400 underline hover:text-zinc-200"
+                onClick={() => setEndedDetailsShownFor(null)}
+              >
+                Show the message
+              </button>
+            </div>
           )}
           {state.status === "disconnected" && (
             <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
@@ -1094,6 +1164,9 @@ function StateOverlay({
   canResumeFromError,
   pairingTimedOut,
   onConnect,
+  onConnectSetup,
+  ended,
+  onShowEndedDetails,
   onRetry,
   onLaunchAgain,
   onResume,
@@ -1128,7 +1201,14 @@ function StateOverlay({
    * current value.
    */
   pairingTimedOut: boolean;
+  /** The Ready panel's Connect (launches the picker's agent). */
   onConnect: () => void;
+  /** Card 6b2cb8ac: the Setup panel's Connect (launches the tab's own agent). */
+  onConnectSetup: () => void;
+  /** Card 6b2cb8ac: what the ended panel says (src/lib/terminal/ended-copy.ts). */
+  ended: EndedCopy;
+  /** Card 6b2cb8ac: "Show what happened" — swap the message for the one-line bar. */
+  onShowEndedDetails: () => void;
   onRetry: () => void;
   onLaunchAgain: () => void;
   onResume: () => void;
@@ -1156,7 +1236,7 @@ function StateOverlay({
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       {view === "coming-soon" && <ComingSoonPanel />}
 
-      {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} onDownload={onDownloadHelper} />}
+      {view === "setup" && <SetupPanel platform={platform} onConnect={onConnectSetup} onDownload={onDownloadHelper} />}
 
       {view === "ready" && (
         <ReadyPanel
@@ -1216,8 +1296,23 @@ function StateOverlay({
       {view === "session-ended" && (
         <>
           <Square className="h-7 w-7 text-zinc-400" />
-          <div className="text-base font-semibold text-zinc-300">{endedTitle(state)}</div>
-          <p className="max-w-md text-[13px] text-zinc-400">{endedMessage(state)}</p>
+          {/* Card 6b2cb8ac: title + message per ending, from the approved
+              mock (src/lib/terminal/ended-copy.ts). */}
+          <div className="text-base font-semibold text-zinc-300">{ended.title}</div>
+          <p className="max-w-md text-[13px] text-zinc-400">
+            {ended.body.map((part, i) =>
+              part.code !== undefined ? (
+                <code
+                  key={i}
+                  className="break-all rounded border border-zinc-700 bg-zinc-800/80 px-1 font-mono text-[12px] text-zinc-200"
+                >
+                  {part.code}
+                </code>
+              ) : (
+                <Fragment key={i}>{part.text}</Fragment>
+              ),
+            )}
+          </p>
           {/* Task 5c8969cc (Nick, 10 Oct 2026): a Remote Control launch that
               stopped straight away — likely an old Claude Code whose own
               "unknown option" error is hidden under this panel (live check V3). */}
@@ -1226,16 +1321,36 @@ function StateOverlay({
               {REMOTE_CONTROL_EARLY_EXIT_HINT}
             </p>
           )}
-          {/* Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a
-              timed-out/dropped session's only option used to be this ONE
-              blind-new-mint button — no path back to the conversation that
-              was running. When we know where to resume it (`canResume`),
-              that becomes the primary action; the blind mint stays as an
-              explicit, clearly-labelled fallback so it's never confused with
-              resuming. A deliberate user End (or a session we have no
-              cwd/claudeSessionId for — legacy pre-0.3.3) keeps the original
-              single "Launch again" button. */}
-          {canResume ? (
+          {/* Card 6b2cb8ac (mock 2b/2c): the agent isn't installed on this Mac. */}
+          {ended.installLink && (
+            <a
+              href={ended.installLink.agent === "codex" ? CODEX_INSTALL_GUIDE_URL : CLAUDE_CODE_INSTALL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-100"
+            >
+              {ended.installLink.label}
+            </a>
+          )}
+          {/* Card cbe60db5 rework 9 (Bug A): when we know where to resume a
+              session that really ran (`canResume`), Resume is the primary
+              action and a fresh session the clearly-labelled fallback.
+              Card 6b2cb8ac: the old-helper screen (mock 2e) puts the shared
+              "Update now" first, because updating is the fix there; every
+              other ending gets one "Start again" (renamed from "Launch
+              again", decision 7). */}
+          {ended.showUpdate ? (
+            <div className="flex flex-wrap justify-center gap-2.5">
+              <HelperUpdateButton onClick={onDownloadHelper} className="h-9 px-4 text-sm font-semibold" />
+              <Button
+                variant="outline"
+                className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+                onClick={onLaunchAgain}
+              >
+                <TerminalIcon className="h-4 w-4" /> Start again
+              </Button>
+            </div>
+          ) : ended.primary === "resume" && canResume ? (
             <div className="flex flex-wrap justify-center gap-2.5">
               <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onResume}>
                 <RefreshCw className="h-4 w-4" /> Resume this conversation
@@ -1250,23 +1365,35 @@ function StateOverlay({
             </div>
           ) : (
             <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunchAgain}>
-              <TerminalIcon className="h-4 w-4" /> Launch again
+              <TerminalIcon className="h-4 w-4" /> Start again
             </Button>
           )}
-          {/* Bug cbe60db5-followup-2 (low-medium): the ended panel used to be
-              a dead end for anyone wanting their other sessions. Tertiary, so
-              it never competes with the primary Resume/Launch-again action
-              above. Opens the CHOOSER (live + resumable recent), not the
-              running-only "My sessions" panel it originally shared with
-              onCapExceeded — see onBrowseSessions' doc. */}
-          {onBrowseSessions && (
-            <button
-              type="button"
-              className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
-              onClick={onBrowseSessions}
-            >
-              View my other sessions
-            </button>
+          {/* Bug cbe60db5-followup-2: tertiary links, never competing with the
+              primary action above. "View my other sessions" opens the CHOOSER
+              (live + resumable recent). Card 6b2cb8ac: "Show what happened"
+              (mock 2d/3) hides this message so the terminal lines under it can
+              be read. */}
+          {(ended.showDetails || onBrowseSessions) && (
+            <div className="flex flex-wrap justify-center gap-x-3.5 gap-y-1">
+              {ended.showDetails && (
+                <button
+                  type="button"
+                  className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
+                  onClick={onShowEndedDetails}
+                >
+                  Show what happened
+                </button>
+              )}
+              {onBrowseSessions && (
+                <button
+                  type="button"
+                  className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
+                  onClick={onBrowseSessions}
+                >
+                  View my other sessions
+                </button>
+              )}
+            </div>
           )}
         </>
       )}
@@ -1604,31 +1731,14 @@ function ComingSoonPanel() {
   );
 }
 
-function endedTitle(state: TerminalConnectionState): string {
-  switch (state.endedReason) {
-    case "user":
-      return "You ended the session";
-    case "idle":
-      return "Ended after being idle";
-    case "max-duration":
-      return "Reached the session time limit";
-    case "reconnect-failed":
-      return "This session ended";
-    default:
-      return "Session ended";
-  }
-}
+/** Card 6b2cb8ac (mock 2b): where to install Claude Code. */
+const CLAUDE_CODE_INSTALL_URL = "https://docs.claude.com/en/docs/claude-code";
 
-function endedMessage(state: TerminalConnectionState): string {
-  switch (state.endedReason) {
-    case "idle":
-    case "max-duration":
-      return "We closed the session to keep things tidy and safe. Nothing went wrong — your work on your machine is untouched.";
-    case "reconnect-failed":
-      return "We couldn't reattach in time after the connection dropped. Your saved work is safe — start a new session to pick things back up.";
-    default:
-      return "Claude Code on your machine stopped. The scrollback above is kept.";
-  }
+/** `/Users/<you>/x` → `~/x` for display (the mock's folder wording). */
+function homeShortPath(path: string): string {
+  const m = /^\/(?:Users|home)\/[^/]+(\/.*)?$/.exec(path.trim());
+  if (!m) return path.trim();
+  return m[1] ? `~${m[1]}` : "~";
 }
 
 function errorTitle(state: TerminalConnectionState): string {

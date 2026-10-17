@@ -43,13 +43,16 @@ function jsonResponse(body: unknown) {
 }
 
 beforeEach(() => {
+  // Card 6b2cb8ac: the flow targets THIS Mac by name; these tests run as a
+  // browser that has launched a session on "mac-a".
+  window.localStorage.setItem("vc:term:machines", JSON.stringify(["mac-a"]));
   vi.useFakeTimers();
   location = stubLocationAssign();
   statusQueue = [];
   fetchMock = vi.fn((url: string) => {
     if (url === "/api/terminal/session/end") return jsonResponse({});
     if (url === "/api/terminal/helper/command") return jsonResponse({});
-    if (url === "/api/terminal/helper/status") {
+    if (url === "/api/terminal/helper/status" || url.startsWith("/api/terminal/helper/status?")) {
       const next = statusQueue.shift() ?? { connected: true };
       return jsonResponse(next);
     }
@@ -78,7 +81,7 @@ describe("useHelperUpdateFlow", () => {
     expect(result.current.phase).toBe("ready");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/end", expect.anything());
     expect(fetchMock).toHaveBeenCalledWith("/api/terminal/helper/command", expect.objectContaining({
-      body: JSON.stringify({ cmd: "quiesce" }),
+      body: JSON.stringify({ cmd: "quiesce", machines: ["mac-a"] }),
     }));
     expect(location.assign).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
     expect(onSettled).toHaveBeenCalledOnce();
@@ -99,7 +102,7 @@ describe("useHelperUpdateFlow", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/terminal/session/end", expect.objectContaining({
-      body: JSON.stringify({ all: true }),
+      body: JSON.stringify({ all: true, machines: ["mac-a"] }),
     }));
     expect(result.current.phase).toBe("ready");
     expect(location.assign).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
@@ -185,7 +188,7 @@ describe("useHelperUpdateFlow", () => {
   it("delivered:true from the command route -> polls status and settles to 'ready' once disconnected", async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url === "/api/terminal/helper/command") return jsonResponse({ delivered: true });
-      if (url === "/api/terminal/helper/status") return jsonResponse(statusQueue.shift() ?? { connected: true });
+      if (url === "/api/terminal/helper/status?machines=mac-a") return jsonResponse(statusQueue.shift() ?? { connected: true });
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
     });
     statusQueue = [{ connected: true }, { connected: false }];
@@ -225,5 +228,52 @@ describe("useHelperUpdateFlow", () => {
 
     act(() => result.current.resetIfSettled());
     expect(result.current.phase).toBe("confirming");
+  });
+});
+
+// Card 6b2cb8ac (regression test 16, page half): "Update now" / "Download the
+// helper" closes only the helper on THIS Mac. It used to send an account-wide
+// `/session/end {all:true}` (ending every Mac's sessions) and a `quiesce` the
+// relay handed to whichever Mac's helper held the single control slot.
+describe("useHelperUpdateFlow — only this Mac (card 6b2cb8ac)", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("vc:term:machines");
+    window.localStorage.removeItem("vc:term:machine");
+  });
+
+  it("with this Mac's names: ends only its sessions, quiesces only its helper, polls its status", async () => {
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["Nicks-Mac-mini.local", "nicks-mac-mini.home"]));
+    statusQueue = [{ connected: false }];
+    const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 1 }));
+    act(() => result.current.start());
+    await act(async () => {
+      result.current.confirm();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const machines = ["Nicks-Mac-mini.local", "nicks-mac-mini.home"];
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/session/end",
+      expect.objectContaining({ body: JSON.stringify({ all: true, machines }) }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/helper/command",
+      expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce", machines }) }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/terminal/helper/status?machines=${encodeURIComponent(machines.join(","))}`,
+    );
+    expect(result.current.phase).toBe("ready");
+  });
+
+  it("a browser that knows no Mac name: no end call, no quiesce, straight to the download", async () => {
+    window.localStorage.removeItem("vc:term:machines");
+    const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 2 }));
+    await act(async () => {
+      result.current.start();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(location.assign).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+    expect(result.current.phase).toBe("helper-unreachable");
   });
 });

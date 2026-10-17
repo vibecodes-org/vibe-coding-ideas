@@ -86,7 +86,7 @@ export function updateFlowReducer(state: UpdateFlowState, event: UpdateFlowEvent
 
 export const UPDATE_CONFIRM_HEADING = "Update the helper?";
 export function updateConfirmBody(sessionCount: number): string {
-  return `Your ${sessionCount} running session${sessionCount === 1 ? "" : "s"} will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.`;
+  return `Your ${sessionCount} running session${sessionCount === 1 ? "" : "s"} on this Mac will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.`;
 }
 export const UPDATE_CONFIRM_CANCEL_LABEL = "Not now";
 export const UPDATE_CONFIRM_ACCEPT_LABEL = "End sessions & update";

@@ -558,88 +558,63 @@ export interface ChooseLaunchCwdDecision {
 }
 
 /**
- * Choose the cwd to inject into a no-repo launch deep link from the paths
- * recorded for (this user, this idea), given `realHostname` — this browser's
- * actual machine hostname from `getMachineIdentity()`, or null when it isn't
- * known yet (no bridge has ever announced one in this browser).
+ * Choose the cwd to inject into a launch deep link from the paths recorded for
+ * (this user, this idea), given `machineNames` — every name THIS browser's Mac
+ * is known by (`getMachineIdentities()`: its fixed LocalHostName and any
+ * drifting network hostname, all learned from sessions launched from this
+ * browser). Empty when no session has been launched from this browser yet.
  *
- * `idea_project_paths` is keyed on (idea_id, owner_user_id, hostname), so a row
- * carrying THIS machine's hostname is, by the table's own natural key, this
- * machine's folder — but ONLY while that's the only evidence, or every other
- * row agrees with it. `os.hostname()` on the same physical Mac can resolve
- * differently depending on network (`Nicks-MBP.home.local` vs
- * `Nicks-MacBook-Pro.local`), so a freshly-written row under a "new" hostname
- * is not automatically trustworthy just because it's the one THIS browser
- * currently remembers — see the "hostname drift" card this rewrites for.
- * Precedence:
+ * PER-MAC RULE (card 6b2cb8ac). Each Mac uses only its OWN saved folder:
  *
- *  1. `realHostname` known AND a usable row exists under it AND every OTHER
- *     usable row agrees with its path (or there are no other rows) →
- *     **that row's path**, the fast path. Where rule 1 and rule 2 both apply
- *     they agree by definition.
- *  2. Otherwise, 1 distinct path across all usable rows → that path, whether it
- *     came from one row or several (also covers "no `realHostname`" and
- *     "`realHostname` matches no row"). The common same-path-across-machines
- *     case (two hosts both checked out under /Users/nick/projects/<slug>):
- *     whichever machine the browser is on, the folder is at this path.
- *  3. Otherwise — `realHostname`'s own row DISAGREES with at least one other
- *     row (2-way, 3-way, or wider; 0 usable rows also lands here) →
- *     undefined: the safe first-launch flow that asks. This INCLUDES the
- *     case where every other row agrees with each other on one single other
- *     path (a clean 2-way split). A previous version of this function tried
- *     to break that specific 2-way case by `updated_at` recency — the row
- *     written most recently wins. That is unsafe: a hostname-rename
- *     poisoned row (the drift bug this function exists to defend against) is,
- *     by construction, the NEWEST write in the table — it was JUST written by
- *     the confused session — so "most recent wins" picks the poisoned row
- *     every time in the real incident shape (old-hostname row = older +
- *     correct; new-hostname row = newer + wrong). There is no reliable signal
- *     in (hostname, path, timestamp) alone that tells a deliberate folder
- *     move apart from a poisoning write — both look identical: a new row with
- *     a recent timestamp. So a genuine disagreement, of any shape, is never
- *     auto-resolved here; asking again is the correct, safe behaviour. Never
- *     guess a path we can't tie unambiguously to the machine actually running
- *     the launch.
+ *  1. Own rows = usable rows whose hostname is (case-insensitively) one of
+ *     `machineNames`. None → undefined.
+ *  2. One distinct path across the own rows → that path (a Mac with two names
+ *     whose rows agree is one Mac).
+ *  3. Own rows disagree → undefined.
+ *
+ * Another Mac's row is NEVER used. The old rules lent a Mac with no row of its
+ * own another Mac's folder ("whichever machine the browser is on, the folder
+ * is at this path") — the Mac mini got the MacBook's `~/projects/<repo>`,
+ * which doesn't exist there, so the agent died at once — and gave BOTH Macs
+ * nothing as soon as their own rows differed. With no folder, the helper on
+ * the Mac resolves one itself (its saved folder → an existing checkout →
+ * clone → a new folder), and a folder this sends is only a hint the helper
+ * checks on the Mac's own disk.
  *
  * A row is only usable if its absolute_path is a plausible project folder
  * (strict validation, plus not `/`, a home directory, or another top-level
- * landing zone); bad rows are ignored throughout, including under rule 1, so
- * a single corrupt or poisoned record can neither poison the choice nor block
- * a good row from resolving.
+ * landing zone) after the worktree suffix is collapsed; bad rows are ignored.
  */
 export function chooseLaunchCwdDetailed(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined,
-  realHostname: string | null = null
+  machineNames: ReadonlyArray<string> = []
 ): ChooseLaunchCwdDecision {
+  const names = new Set(machineNames.map((n) => n.trim().toLowerCase()).filter(Boolean));
+  if (names.size === 0) return { cwd: undefined };
+
   // Read-side self-heal: a row that was recorded from inside a
   // `claude --worktree` session (see stripClaudeWorktreeSuffix) resolves to
   // the MAIN project folder it hangs off, never the worktree itself.
-  const usable: UsableRow[] = (records ?? [])
+  const own: UsableRow[] = (records ?? [])
+    .filter((r) => names.has(r.hostname.trim().toLowerCase()))
     .map((r) => ({
       hostname: r.hostname,
       absolute_path: stripClaudeWorktreeSuffix(r.absolute_path),
     }))
     .filter((r) => isPlausibleProjectPath(r.absolute_path));
 
-  if (usable.length === 0) return { cwd: undefined };
-
-  const distinctPaths = new Set(usable.map((r) => r.absolute_path));
-  if (distinctPaths.size === 1) return { cwd: usable[0].absolute_path };
-
-  const own = realHostname ? usable.find((r) => r.hostname === realHostname) : undefined;
-  if (!own) return { cwd: undefined };
-
-  // own's row disagrees with at least one other row (distinctPaths.size > 1).
-  // No signal here can safely pick a winner — ask again rather than guess.
+  if (own.length === 0) return { cwd: undefined };
+  const distinctPaths = new Set(own.map((r) => r.absolute_path));
+  if (distinctPaths.size === 1) return { cwd: own[0].absolute_path };
   return { cwd: undefined };
 }
 
 /** See `chooseLaunchCwdDetailed` for the full rule set this wraps. */
 export function chooseLaunchCwd(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined,
-  realHostname: string | null = null
+  machineNames: ReadonlyArray<string> = []
 ): string | undefined {
-  return chooseLaunchCwdDetailed(records, realHostname).cwd;
+  return chooseLaunchCwdDetailed(records, machineNames).cwd;
 }
 
 /**
@@ -703,43 +678,35 @@ export interface ResolveEffectiveLaunchTargetArgs {
    */
   recordedPaths: ReadonlyArray<RecordedProjectPath> | null | undefined;
   /**
-   * This browser's real machine hostname (`getMachineIdentity()`), or null when
-   * no bridge has announced one yet. Lets `chooseLaunchCwd` pick the row keyed
-   * to THIS machine instead of only resolving when every machine agrees on the
-   * path — see its rule 1. Optional so non-browser callers (and tests written
-   * before this existed) keep the hostname-blind behaviour unchanged.
+   * Every name this browser's Mac is known by (`getMachineIdentities()`).
+   * Only rows saved under one of these names are ever used — see
+   * `chooseLaunchCwdDetailed`'s per-Mac rule. Empty/omitted → no folder.
    */
-  realHostname?: string | null;
+  machineNames?: ReadonlyArray<string>;
 }
 
 /**
  * Resolve the effective launch target from the server-recorded paths alone, via
- * `chooseLaunchCwd`: a row keyed to THIS machine's hostname wins outright;
- * failing that, records agreeing on one path dedupe to it even across different
- * hostnames (labelled "This machine — <host>"; a manually-pinned row is just
- * another hostname, `MANUAL_PIN_HOSTNAME`, in that same set). Nothing usable →
- * source "none" (first-launch / repo-slug-resolves-it flow; no path line).
+ * `chooseLaunchCwdDetailed`'s per-Mac rule: only rows saved under one of THIS
+ * Mac's names (`machineNames`) count (labelled "This machine — <host>").
+ * Nothing usable → source "none" (no path line; the helper on the Mac finds
+ * or downloads the folder itself).
  *
- * Callers in the browser MUST pass `realHostname` (`getMachineIdentity()`) —
- * omitting it silently gives up rule 1 and reverts that caller to the old
- * "every machine must agree" behaviour.
+ * Callers in the browser MUST pass `machineNames` (`getMachineIdentities()`)
+ * — omitting it means no folder is ever resolved.
  */
 export function resolveEffectiveLaunchTarget({
   recordedPaths,
-  realHostname = null,
+  machineNames = [],
 }: ResolveEffectiveLaunchTargetArgs): EffectiveLaunchTarget {
-  const { cwd: recordedCwd } = chooseLaunchCwdDetailed(recordedPaths, realHostname);
+  const { cwd: recordedCwd } = chooseLaunchCwdDetailed(recordedPaths, machineNames);
   if (recordedCwd) {
-    // Label from the row we actually resolved FROM where we can: with several
-    // rows sharing the resolved path (rule 2), the one under this machine's own
-    // hostname is the honest thing to name in "This machine — <host>". Falling
-    // back to the first path-match keeps the old label for unknown-identity
-    // browsers rather than dropping to the bare "This machine".
-    const pathMatches = (recordedPaths ?? []).filter(
-      (r) => stripClaudeWorktreeSuffix(r.absolute_path) === recordedCwd
+    const names = new Set(machineNames.map((n) => n.trim().toLowerCase()));
+    const match = (recordedPaths ?? []).find(
+      (r) =>
+        names.has(r.hostname.trim().toLowerCase()) &&
+        stripClaudeWorktreeSuffix(r.absolute_path) === recordedCwd
     );
-    const match =
-      pathMatches.find((r) => r.hostname === realHostname) ?? pathMatches[0];
     return {
       cwd: recordedCwd,
       displayPath: recordedCwd,

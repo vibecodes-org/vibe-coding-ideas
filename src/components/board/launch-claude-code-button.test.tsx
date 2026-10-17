@@ -153,6 +153,14 @@ function renderMenuItem(
 }
 
 describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item)", () => {
+  // Card 6b2cb8ac: a recorded folder is only used when saved under one of
+  // THIS Mac's names; the fixtures below are this Mac's.
+  beforeEach(() => {
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["nick-mbp", "Nicks-MacBook-Pro.local"]));
+  });
+  afterEach(() => {
+    window.localStorage.removeItem("vc:term:machines");
+  });
   it("renders both items, terminal first, with the Beta pill on the browser item, when the flag is on (desktop)", () => {
     renderMenuItem();
 
@@ -335,6 +343,14 @@ function renderBoardButton(overrides: {
 }
 
 describe("LaunchClaudeCodeButton — board variant dropdown path line", () => {
+  // Card 6b2cb8ac: a recorded folder is only used when saved under one of
+  // THIS Mac's names; the fixtures below are this Mac's.
+  beforeEach(() => {
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["nick-mbp", "Nicks-MacBook-Pro.local"]));
+  });
+  afterEach(() => {
+    window.localStorage.removeItem("vc:term:machines");
+  });
   it("shows the recorded path for a repo-backed idea (fix: cwd is no longer dropped just because a repo is attached)", () => {
     renderBoardButton({
       ideaGithubUrl: "https://github.com/acme/widgets",
@@ -369,6 +385,14 @@ describe("LaunchClaudeCodeButton — board variant dropdown path line", () => {
 // flag from the dock reading `essentials.isolate` — it must NOT also get the
 // redundant text.
 describe("LaunchClaudeCodeButton — isolation advisory only on the claude-cli:// destination", () => {
+  // Card 6b2cb8ac: a recorded folder is only used when saved under one of
+  // THIS Mac's names; the fixtures below are this Mac's.
+  beforeEach(() => {
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["nick-mbp", "Nicks-MacBook-Pro.local"]));
+  });
+  afterEach(() => {
+    window.localStorage.removeItem("vc:term:machines");
+  });
   const recordedProjectPaths = [
     { hostname: "nick-mbp", absolute_path: "/Users/nick/projects/widgets" },
   ];

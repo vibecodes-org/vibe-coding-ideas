@@ -7,7 +7,7 @@
 // (terminalReducer, mapCloseCode, decideResize, …) is unit-tested independently in
 // connection.test.ts and is NOT re-tested here — this file is about the wiring.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import {
   useTerminalSession,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/launch-claude-code";
 import { MAX_LAUNCH_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
+import { clearMachineIdentity, getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { FrameEncryptor, generateSessionKey, DIRECTION_BRIDGE_TO_BROWSER } from "@/lib/terminal/pty-crypto";
 
 // Reattach-without-relaunch (1–2 Sep 2026): a reattach now waits
@@ -218,6 +219,11 @@ function mintResponse(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("useTerminalSession", () => {
   beforeEach(() => {
+    // Card 6b2cb8ac: a recorded folder is only used when it was saved under
+    // one of THIS Mac's names. The fixtures below record theirs under
+    // "nicks-mac", so this browser knows that name (as if a session launched
+    // from it had announced it).
+    window.localStorage.setItem("vc:term:machines", JSON.stringify(["nicks-mac"]));
     mockSockets = [];
     mockTerminals.length = 0;
     toastError.mockClear();
@@ -1966,19 +1972,16 @@ describe("useTerminalSession", () => {
       expect(result.current.cwd).toBe("/Users/nick/projects/recipe-saver");
     });
 
-    // The don't-break-it-for-the-common-case half of the same fix: >1
-    // recorded machines is ambiguous (chooseLaunchCwd's own contract), so it
-    // must still fall through to the "new project" flow exactly like having
-    // none recorded at all — never guess a machine.
-    it("still falls back to 'new project' (no cwd) when the recorded paths are ambiguous (more than one machine)", async () => {
+    // Card 6b2cb8ac rewrote this (it pinned the old "more than one machine
+    // is ambiguous" rule): another Mac's folder is never used, so with only
+    // another machine's row recorded the launch falls through to the
+    // "new project" flow exactly like having none recorded at all.
+    it("still falls back to 'new project' (no cwd) when only another Mac has a recorded folder", async () => {
       const { result } = renderHook(() =>
         useTerminalSession(
           {
             ...descriptor,
-            recordedProjectPaths: [
-              { absolute_path: "/Users/nick/projects/recipe-saver", hostname: "nicks-mac" },
-              { absolute_path: "/home/nick/recipe-saver", hostname: "nicks-linux-box" },
-            ],
+            recordedProjectPaths: [{ absolute_path: "/home/nick/recipe-saver", hostname: "nicks-linux-box" }],
           },
           { enabled: true, expanded: true, requestExpand: vi.fn() },
         ),
@@ -3475,6 +3478,125 @@ describe("reattach-without-relaunch (RELAUNCH_IF_BRIDGE_SILENT_MS)", () => {
     const iframes = document.querySelectorAll("iframe");
     expect(iframes).toHaveLength(1);
     expect(iframes[0].getAttribute("src") ?? "").toContain("session=sid-live-2");
+  });
+});
+
+// ── Card 6b2cb8ac ────────────────────────────────────────────────────────────
+describe("helper answered / machine names (card 6b2cb8ac)", () => {
+  function pairedMac() {
+    window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+    vi.stubGlobal("navigator", {
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      maxTouchPoints: 0,
+    });
+  }
+  async function mount(result: { current: ReturnType<typeof useTerminalSession> }) {
+    result.current.containerRef.current = document.createElement("div");
+    await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+  }
+  beforeEach(() => {
+    clearMachineIdentity();
+  });
+  afterEach(() => {
+    clearMachineIdentity();
+    document.querySelectorAll("iframe").forEach((f) => f.remove());
+  });
+
+  // Regression test 12 (cause F): the 8s "Couldn't reach the helper on this
+  // Mac" timer used to be cleared only by PTY bytes, so an agent that died at
+  // once (0 bytes) showed that message although the helper had answered.
+  it("the bridge's hello (bridge-version) clears the 8s helper timer — no helper-timeout", async () => {
+    pairedMac();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand: vi.fn() }),
+    );
+    await mount(result);
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: true });
+    });
+    expect(result.current.launchPhase).toBe("opening");
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.25" }) }));
+    expect(result.current.launchPhase).toBe("idle");
+    expect(document.querySelectorAll("iframe")).toHaveLength(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_000);
+    });
+    expect(result.current.launchPhase).not.toBe("helper-timeout");
+  });
+
+  // Regression test 18: a name is remembered only for a session launched
+  // from this browser (it fired the deep link to THIS Mac's helper). An
+  // attach to a session running on another Mac used to add that Mac's name,
+  // and the page then treated the other Mac's folder as this one's.
+  it("remembers the Mac's name for a session launched from this browser", async () => {
+    pairedMac();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand: vi.fn() }),
+    );
+    await mount(result);
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: true });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() =>
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.25", host: "Nicks-Mac-mini.local" }) }),
+    );
+    expect(getMachineIdentities()).toContain("Nicks-Mac-mini.local");
+  });
+
+  it("does NOT remember another Mac's name when attaching to its live session (machine_label still recorded)", async () => {
+    // A live bridge answers well inside the relaunch wait, so no deep link
+    // is fired from this browser (see reattach-without-relaunch below).
+    relaunchWait.ms = 3_000;
+    onTestFinished(() => {
+      relaunchWait.ms = 0;
+    });
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand: vi.fn(),
+        autoConnectWhenExpanded: false,
+        attachExisting: { sessionId: "sid-other-mac", browserToken: "b", bridgeToken: "br", helperToken: "h" },
+      }),
+    );
+    await mount(result);
+    act(() => latestSocket().simulateOpen());
+    act(() =>
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.25", host: "Nicks-MacBook-Pro.local" }) }),
+    );
+    expect(getMachineIdentities()).not.toContain("Nicks-MacBook-Pro.local");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/terminal/session/sid-other-mac",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ machineLabel: "Nicks-MacBook-Pro.local" }) }),
+    );
+  });
+
+  it("a bridge-cwd frame sets the session folder without a PATCH", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    vi.mocked(global.fetch).mockClear();
+    act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-cwd", cwd: "/Users/you/code/repo" }) }));
+    expect(result.current.cwd).toBe("/Users/you/code/repo");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("a 1000 pty-exit before any output on an old helper reads as 'stopped straight away'", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.3.24" }) }));
+    act(() => latestSocket().close(1000, "pty-exit"));
+    expect(result.current.state.endedReason).toBe("agent-stopped-early");
+    expect(result.current.state.endedDetail).toBe("old-helper");
   });
 });
 });

@@ -1905,8 +1905,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // dock's own `ideaTitle` prop is this entry's true title.
                 ideaTitle,
                 // Codex support (FR-5): captured alongside ideaId/taskId —
-                // see SessionEntry.agent's doc.
-                agent: payload?.agent,
+                // see SessionEntry.agent's doc. Card 6b2cb8ac: a launch
+                // payload with no agent is a Claude launch — record it, so
+                // this tab's Setup/Timeout Connect can never fall back to the
+                // dock-wide remembered pick and start the wrong agent.
+                agent: payload ? payload.agent ?? "claude" : undefined,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1942,7 +1945,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // Board-switch UX fix (task b70bcbeb): see the reclaim
                 // branch's identical comment above.
                 ideaTitle,
-                agent: payload?.agent,
+                agent: payload ? payload.agent ?? "claude" : undefined,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -1963,8 +1966,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // Board-switch UX fix (task b70bcbeb): see the reclaim branch's
       // identical comment above.
       ideaTitle,
-      // Codex support (FR-5): see SessionEntry.agent's doc.
-      agent: payload?.agent,
+      // Codex support (FR-5): see SessionEntry.agent's doc (card 6b2cb8ac:
+      // a payload with no agent is a Claude launch).
+      agent: payload ? payload.agent ?? "claude" : undefined,
       createdAt: Date.now(),
       launchSeq: 1,
       launchPayload: payload ?? null,

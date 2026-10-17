@@ -59,6 +59,13 @@ import {
   updateConfirmBody,
 } from "@/lib/terminal/helper-update-flow";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
+import { thisMacMachineNames } from "@/lib/terminal/machine-identity";
+
+/** Card 6b2cb8ac: `{ machines }` for a helper command, or nothing when this browser knows no Mac name. */
+function thisMacMachinesField(): { machines?: string[] } {
+  const machines = thisMacMachineNames();
+  return machines.length > 0 ? { machines } : {};
+}
 
 interface ListedSession {
   sid: string;
@@ -315,7 +322,8 @@ export function TerminalMySessionsPanel({
       const res = await fetch("/api/terminal/helper/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cmd: "stop" }),
+        // Card 6b2cb8ac: only THIS Mac's helper (omitted when no name is known).
+        body: JSON.stringify({ cmd: "stop", ...thisMacMachinesField() }),
       });
       const body = (await res.json().catch(() => null)) as { delivered?: boolean } | null;
       if (res.ok && body?.delivered) toast.success(HELPER_ROW_STOP_TOAST);
@@ -336,7 +344,7 @@ export function TerminalMySessionsPanel({
         const res = await fetch("/api/terminal/helper/command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmd: "set-always-on", value }),
+          body: JSON.stringify({ cmd: "set-always-on", value, ...thisMacMachinesField() }),
         });
         const body = (await res.json().catch(() => null)) as { delivered?: boolean } | null;
         if (!res.ok || !body?.delivered) toast.error(HELPER_ROW_STOP_FAILED_TOAST);

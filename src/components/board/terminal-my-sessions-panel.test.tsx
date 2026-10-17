@@ -84,6 +84,9 @@ let statusQueue: HelperStatus[];
 let defaultStatus: HelperStatus;
 
 beforeEach(() => {
+  // Card 6b2cb8ac: the update flow targets THIS Mac by name; this browser
+  // has launched a session on "mac-a".
+  window.localStorage.setItem("vc:term:machines", JSON.stringify(["mac-a"]));
   vi.useFakeTimers();
   originalLocation = window.location;
   assignSpy = vi.fn();
@@ -105,7 +108,7 @@ beforeEach(() => {
     if (url === "/api/terminal/session/list") {
       return Promise.resolve({ ok: true, json: async () => ({ sessions: sessionsResponse }) } as Response);
     }
-    if (url === "/api/terminal/helper/status") {
+    if (url.startsWith("/api/terminal/helper/status")) {
       const next = statusQueue.shift() ?? defaultStatus;
       return Promise.resolve({ ok: true, json: async () => next } as Response);
     }
@@ -170,7 +173,7 @@ describe("TerminalMySessionsPanel — Update now (shared quiesce-then-download f
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/terminal/helper/command",
-      expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce" }) }),
+      expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce", machines: ["mac-a"] }) }),
     );
     expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/end", expect.anything());
     expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
@@ -184,7 +187,7 @@ describe("TerminalMySessionsPanel — Update now (shared quiesce-then-download f
 
     fireEvent.click(screen.getByRole("button", { name: "Update now" }));
     expect(screen.getByText("Update the helper?")).toBeInTheDocument();
-    expect(screen.getByText(/Your 2 running sessions will end first/)).toBeInTheDocument();
+    expect(screen.getByText(/Your 2 running sessions on this Mac will end first/)).toBeInTheDocument();
 
     statusQueue = [helperStatus({ connected: false })]; // the quiesce poll's first check
     const preConfirmCalls = fetchMock.mock.calls.length;
@@ -194,7 +197,7 @@ describe("TerminalMySessionsPanel — Update now (shared quiesce-then-download f
     expect(fetchMock.mock.calls.length).toBeGreaterThan(preConfirmCalls);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/terminal/session/end",
-      expect.objectContaining({ body: JSON.stringify({ all: true }) }),
+      expect.objectContaining({ body: JSON.stringify({ all: true, machines: ["mac-a"] }) }),
     );
     expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
   });
@@ -269,7 +272,7 @@ describe("TerminalMySessionsPanel — mount-time helper check (task 5b2053c9)", 
     renderPanel(false);
     await flush();
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/terminal/helper/status");
+    expect(fetchMock).toHaveBeenCalledWith("/api/terminal/helper/status?machines=mac-a");
   });
 });
 

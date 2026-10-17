@@ -145,6 +145,7 @@ const { resumeEndedOwnSidOverride } = vi.hoisted(() => ({
 vi.mock("./terminal-session-view", () => ({
   TerminalSessionView: ({
     entry,
+    agent,
     onResumeEndedSession,
     onBrowseSessions,
     onReportSummary,
@@ -158,7 +159,8 @@ vi.mock("./terminal-session-view", () => ({
     poppedOut,
     wakeResume,
   }: {
-    entry: { key: string; taskId?: string; ideaId?: string };
+    entry: { key: string; taskId?: string; ideaId?: string; agent?: string };
+    agent?: string;
     onResumeEndedSession?: (
       payload: { cwd?: string; taskId?: string; ideaId?: string; resumeId?: string },
       sid: string | null,
@@ -239,6 +241,8 @@ vi.mock("./terminal-session-view", () => ({
         data-active={isActive ? "true" : "false"}
         data-popped-out={poppedOut ? "true" : "false"}
         data-wake-resume-cwd={wakeResume?.cwd ?? ""}
+        data-entry-agent={entry.agent ?? ""}
+        data-agent-prop={agent ?? ""}
       >
         <button
           data-testid={`resume-ended-${entry.key}`}
@@ -3033,4 +3037,28 @@ describe("TerminalDock — popped-out chip popover (bug a9c37241)", () => {
       expect(view?.dataset.poppedOut).toBe("false");
     });
   }, 10000);
+});
+
+// Card 6b2cb8ac (regression test 13, dock half): a Claude card launch whose
+// payload carries no `agent` must record "claude" on the tab, so the tab's
+// Setup / Timeout "Connect" can't fall back to the dock-wide remembered pick
+// (here Codex) and quietly start the wrong agent.
+describe("TerminalDock — a launched tab records its own agent (card 6b2cb8ac)", () => {
+  it("a Claude card launch with a remembered Codex pick records agent claude on the tab", async () => {
+    const { setViewerTerminalAgentCache } = await import("@/hooks/use-viewer-terminal-agent");
+    setViewerTerminalAgentCache("codex");
+    try {
+      stubFetch(Promise.resolve([]));
+      render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+      await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+      act(() => {
+        requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+      });
+      await waitFor(() => expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9"));
+      expect(screen.getByTestId("session-view").dataset.agentProp).toBe("codex");
+      expect(screen.getByTestId("session-view").dataset.entryAgent).toBe("claude");
+    } finally {
+      setViewerTerminalAgentCache("claude");
+    }
+  });
 });

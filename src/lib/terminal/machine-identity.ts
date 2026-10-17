@@ -127,3 +127,19 @@ export function clearMachineIdentity(): void {
     // Nothing to do — storage unavailable.
   }
 }
+
+/**
+ * Card 6b2cb8ac: the `machines` value for the per-Mac helper routes
+ * (`/api/terminal/helper/command`, `/helper/status`, `/session/end`), so a
+ * helper command reaches only THIS Mac's helper. The 5 most recently added
+ * names (the server and relay keep at most 5). Empty when this browser has
+ * never launched a session, i.e. it doesn't know which Mac it is on.
+ */
+export function thisMacMachineNames(): string[] {
+  return getMachineIdentities().slice(-5);
+}
+
+/** `?machines=a,b` for `/api/terminal/helper/status`, or "" when no name is known. */
+export function thisMacStatusQuery(names: readonly string[] = thisMacMachineNames()): string {
+  return names.length > 0 ? `?machines=${encodeURIComponent(names.join(","))}` : "";
+}

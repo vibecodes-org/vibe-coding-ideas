@@ -834,251 +834,98 @@ describe("stripClaudeWorktreeSuffix", () => {
   });
 });
 
-describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
-  it("returns undefined for 0 records (first-launch / home flow)", () => {
-    expect(chooseLaunchCwd([])).toBeUndefined();
-    expect(chooseLaunchCwd(null)).toBeUndefined();
-    expect(chooseLaunchCwd(undefined)).toBeUndefined();
+// Card 6b2cb8ac rewrote these: the old rules 2 and 3 (one distinct path
+// across ALL machines' rows wins; this Mac's own row loses to a disagreeing
+// row elsewhere) were the bug. Each Mac now uses only its own rows — see the
+// "per-Mac rule" describe at the end of this file for the regression cases.
+describe("chooseLaunchCwd (per-Mac rule — basics)", () => {
+  const ME = ["mine"];
+
+  it("returns undefined for 0 records", () => {
+    expect(chooseLaunchCwd([], ME)).toBeUndefined();
+    expect(chooseLaunchCwd(null, ME)).toBeUndefined();
+    expect(chooseLaunchCwd(undefined, ME)).toBeUndefined();
   });
 
-  it("returns the single record's absolute_path for exactly 1 record", () => {
-    expect(
-      chooseLaunchCwd([
-        { absolute_path: "/Users/nick/projects/vibecodes", hostname: "Nicks-MacBook" },
-      ])
-    ).toBe("/Users/nick/projects/vibecodes");
+  it("returns our single row's path, trimmed", () => {
+    expect(chooseLaunchCwd([{ absolute_path: "/Users/nick/projects/vibecodes", hostname: "mine" }], ME)).toBe(
+      "/Users/nick/projects/vibecodes"
+    );
+    expect(chooseLaunchCwd([{ absolute_path: "  /Users/nick/x  ", hostname: "mine" }], ME)).toBe("/Users/nick/x");
   });
 
-  it("trims the single record's path", () => {
-    expect(
-      chooseLaunchCwd([{ absolute_path: "  /Users/nick/x  ", hostname: "host" }])
-    ).toBe("/Users/nick/x");
+  it("no machine names → undefined, even with a single row (never another Mac's folder)", () => {
+    expect(chooseLaunchCwd([{ absolute_path: "/Users/nick/x", hostname: "host" }])).toBeUndefined();
+    expect(chooseLaunchCwd([{ absolute_path: "/Users/nick/x", hostname: "host" }], [])).toBeUndefined();
   });
 
-  it("returns undefined for >1 records (ambiguous across machines — safe fallback)", () => {
+  it("other machines agreeing on one path are still not ours (old rule 2 was the bug)", () => {
     expect(
-      chooseLaunchCwd([
-        { absolute_path: "/Users/nick/projects/x", hostname: "mac" },
-        { absolute_path: "/home/nick/projects/x", hostname: "linux" },
-      ])
+      chooseLaunchCwd(
+        [
+          { absolute_path: "/Users/nick/x", hostname: "mac-a" },
+          { absolute_path: "/Users/nick/x", hostname: "mac-b" },
+        ],
+        ["some-third-machine"]
+      )
     ).toBeUndefined();
   });
 
-  it("ignores invalid rows; a single VALID row still resolves", () => {
-    expect(
-      chooseLaunchCwd([
-        { absolute_path: "~/projects/x", hostname: "bad" },
-        { absolute_path: "/Users/nick/projects/x", hostname: "good" },
-      ])
-    ).toBe("/Users/nick/projects/x");
-  });
-
-  it("returns undefined when the only row is invalid", () => {
-    expect(
-      chooseLaunchCwd([{ absolute_path: "relative/path", hostname: "bad" }])
-    ).toBeUndefined();
-  });
-
-  // Regression: production data shows a user launching the same idea from two
-  // machines whose project folder happens to live at the identical absolute
-  // path (e.g. two Macs both under /Users/nick/projects/<slug>) — that's 2
-  // records but 0 ambiguity, since either machine opens the same place.
-  it("2 records, same absolute path, different hostnames → dedupes to that one path", () => {
-    expect(
-      chooseLaunchCwd([
-        { absolute_path: "/Users/nickball/projects/balla-bot", hostname: "Nicks-MacBook-Pro.local" },
-        { absolute_path: "/Users/nickball/projects/balla-bot", hostname: "Nicks-MBP.home.local" },
-      ])
-    ).toBe("/Users/nickball/projects/balla-bot");
-  });
-
-  it("2 records, same path after trimming whitespace → still dedupes", () => {
-    expect(
-      chooseLaunchCwd([
-        { absolute_path: "/Users/nick/x", hostname: "mac-a" },
-        { absolute_path: "  /Users/nick/x  ", hostname: "mac-b" },
-      ])
-    ).toBe("/Users/nick/x");
-  });
-
-  it("3 records, 2 sharing a path + 1 different → still >1 DISTINCT paths, undefined", () => {
-    expect(
-      chooseLaunchCwd([
-        { absolute_path: "/Users/nick/x", hostname: "mac-a" },
-        { absolute_path: "/Users/nick/x", hostname: "mac-b" },
-        { absolute_path: "/home/nick/x", hostname: "linux" },
-      ])
-    ).toBeUndefined();
-  });
-
-  // ── rule 1: this machine's own row wins — UNLESS it disagrees with the rest ──
-  // idea_project_paths is keyed (idea_id, owner_user_id, hostname). A row under
-  // THIS browser's real hostname is this machine's folder by that key — but
-  // ONLY as a fast path while nothing disagrees with it. `os.hostname()` can
-  // drift for the same physical machine (network-dependent suffix), so a
-  // freshly-written row under a "new" hostname is not automatically trusted
-  // over an established, disagreeing row elsewhere. A prior version of this
-  // function tried to resolve that disagreement by `updated_at` recency
-  // (rule 1b) — reworked out below because a hostname-drift-poisoned row is,
-  // by construction, the newest write, so "most recent wins" reproduces the
-  // original bug through a different mechanism. See chooseLaunchCwdDetailed's
-  // doc for the full rationale: a genuine disagreement now always asks again.
-  describe("machine-aware read (realHostname)", () => {
-    const twoMachines = [
-      { absolute_path: "/Users/nick/projects/x", hostname: "Nicks-MacBook-Pro.local" },
-      { absolute_path: "/home/nick/code/x", hostname: "linux-box" },
+  it("our row disagreeing with another Mac's row → ours (old rule 3 was the bug)", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/projects/correct", hostname: "old-host" },
+      { absolute_path: "/Users/nick/projects/ours", hostname: "mine" },
     ];
+    expect(chooseLaunchCwd(rows, ME)).toBe("/Users/nick/projects/ours");
+  });
 
-    it("no disagreement (single row) → resolves to OUR path", () => {
-      // Unchanged fast path (rule 1): only one row exists at all, so there's
-      // nothing to disagree with.
-      expect(
-        chooseLaunchCwd([{ absolute_path: "/Users/nick/projects/x", hostname: "Nicks-MacBook-Pro.local" }], "Nicks-MacBook-Pro.local")
-      ).toBe("/Users/nick/projects/x");
+  it("our own rows (two names, one Mac) disagreeing → undefined", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/projects/a", hostname: "Nicks-MBP.home.local" },
+      { absolute_path: "/Users/nick/projects/b", hostname: "Nicks-MacBook-Pro.local" },
+    ];
+    expect(chooseLaunchCwd(rows, ["Nicks-MacBook-Pro.local", "Nicks-MBP.home.local"])).toBeUndefined();
+    expect(chooseLaunchCwdDetailed(rows, ["Nicks-MacBook-Pro.local", "Nicks-MBP.home.local"])).toEqual({
+      cwd: undefined,
     });
+  });
 
-    it("unchanged when the hostname is unknown — same rows still ambiguous", () => {
-      expect(chooseLaunchCwd(twoMachines, null)).toBeUndefined();
-      expect(chooseLaunchCwd(twoMachines)).toBeUndefined();
-    });
+  it("a manual-pin row is not this Mac's unless saved under one of its names", () => {
+    expect(
+      chooseLaunchCwd([{ absolute_path: "/Users/nick/guessed", hostname: MANUAL_PIN_HOSTNAME }], ME)
+    ).toBeUndefined();
+  });
 
-    it("a hostname matching NO row falls through to the dedupe rule, never guesses", () => {
-      expect(chooseLaunchCwd(twoMachines, "some-third-machine")).toBeUndefined();
-      expect(
-        chooseLaunchCwd(
-          [
-            { absolute_path: "/Users/nick/x", hostname: "mac-a" },
-            { absolute_path: "/Users/nick/x", hostname: "mac-b" },
-          ],
-          "some-third-machine"
-        )
-      ).toBe("/Users/nick/x");
-    });
+  it("an INVALID path on our own row doesn't win; another Mac's good row is still not used", () => {
+    expect(
+      chooseLaunchCwd(
+        [
+          { absolute_path: "~/relative", hostname: "mine" },
+          { absolute_path: "/Users/nick/good", hostname: "other" },
+        ],
+        ME
+      )
+    ).toBeUndefined();
+    expect(chooseLaunchCwd([{ absolute_path: "relative/path", hostname: "mine" }], ME)).toBeUndefined();
+  });
 
-    it("our row disagreeing with a manual-pin row asks again, never guesses which is right", () => {
-      expect(
-        chooseLaunchCwd(
-          [
-            { absolute_path: "/Users/nick/guessed", hostname: MANUAL_PIN_HOSTNAME },
-            { absolute_path: "/Users/nick/actual", hostname: "Nicks-MacBook-Pro.local" },
-          ],
-          "Nicks-MacBook-Pro.local"
-        )
-      ).toBeUndefined();
-    });
+  it("an invalid own row doesn't block a valid own row", () => {
+    expect(
+      chooseLaunchCwd(
+        [
+          { absolute_path: "~/relative", hostname: "mine" },
+          { absolute_path: "/Users/nick/good", hostname: "MINE" },
+        ],
+        ME
+      )
+    ).toBe("/Users/nick/good");
+  });
 
-    // ── THE FIX (rework of #233): a genuine disagreement always asks again ──
-    // This is the exact scenario the "hostname drift" card describes, and the
-    // exact scenario QA reproduced against the FIRST attempt at this fix
-    // (#233, commit 7145c1b) to prove it was still broken: one physical Mac
-    // resolves os.hostname() differently depending on network, leaving an
-    // established, correct row under the "old" hostname (kept fresh — every
-    // ordinary launch on that network self-heals it) and a one-off, WRONG row
-    // under a "new" hostname, written back when the drift first happened.
-    // 7145c1b tried to resolve this by `updated_at` recency — but a
-    // freshly-poisoned row is BY CONSTRUCTION the newest write in the table
-    // (it was just written by the confused session), so "most recently
-    // updated wins" picks the wrong row every time in this exact shape. There
-    // is no reliable signal here — hostname, path, and timestamp are all
-    // consistent with either a poisoning write or a deliberate folder move.
-    // The only safe behaviour is to stop guessing and ask again, regardless
-    // of which side happens to be newer.
-    it("QA regression: poisoned row is NEWER than the correct row → still asks, never returns the poisoned path", () => {
-      const rows = [
-        // Established, correct row under the OLD hostname — older updated_at.
-        { absolute_path: "/Users/nick/projects/vibe-coding-ideas", hostname: "Nicks-MBP.home.local" },
-        // Freshly-poisoned WRONG row under the CURRENT/NEW hostname — this is
-        // the row a naive "most recent wins" rule would pick.
-        { absolute_path: "/Users/nick/projects/wrong-checkout", hostname: "Nicks-MacBook-Pro.local" },
-      ];
-      expect(chooseLaunchCwd(rows, "Nicks-MacBook-Pro.local")).toBeUndefined();
-      expect(chooseLaunchCwdDetailed(rows, "Nicks-MacBook-Pro.local")).toEqual({ cwd: undefined });
-    });
-
-    it("poisoned row is OLDER than the correct row → also asks, same safe outcome either way", () => {
-      // The milder ordering (correct row is newer) that 7145c1b's own tests
-      // happened to construct — passing under the old code was a coincidence
-      // of which side won a recency comparison that should never have run.
-      const rows = [
-        { absolute_path: "/Users/nick/projects/old-checkout", hostname: "Nicks-MBP.home.local" },
-        { absolute_path: "/Users/nick/projects/new-checkout", hostname: "Nicks-MacBook-Pro.local" },
-      ];
-      const decision = chooseLaunchCwdDetailed(rows, "Nicks-MacBook-Pro.local");
-      expect(decision.cwd).toBeUndefined();
-    });
-
-    it("a multi-row group on the OTHER side that all agree on one path still just asks, not a tie-break", () => {
-      const rows = [
-        { absolute_path: "/Users/nick/projects/ours", hostname: "mine" },
-        { absolute_path: "/Users/nick/projects/theirs", hostname: "old-1" },
-        { absolute_path: "/Users/nick/projects/theirs", hostname: "old-2" },
-      ];
-      expect(chooseLaunchCwd(rows, "mine")).toBeUndefined();
-    });
-
-    it("other rows disagree WITH EACH OTHER too (3-way split) → same safe fallback, no 3-way tie-break invented", () => {
-      const rows = [
-        { absolute_path: "/Users/nick/projects/mine", hostname: "mine" },
-        { absolute_path: "/Users/nick/projects/b", hostname: "host-b" },
-        { absolute_path: "/Users/nick/projects/c", hostname: "host-c" },
-      ];
-      expect(chooseLaunchCwd(rows, "mine")).toBeUndefined();
-    });
-
-    it("trims our row's path, like every other branch", () => {
-      expect(
-        chooseLaunchCwd([{ absolute_path: "  /Users/nick/x  ", hostname: "mine" }], "mine")
-      ).toBe("/Users/nick/x");
-    });
-
-    it("an INVALID path on our own row doesn't win, and doesn't block a good row", () => {
-      expect(
-        chooseLaunchCwd(
-          [
-            { absolute_path: "~/relative", hostname: "mine" },
-            { absolute_path: "/Users/nick/good", hostname: "other" },
-          ],
-          "mine"
-        )
-      ).toBe("/Users/nick/good");
-    });
-
-    it("hostname match is exact — a near-miss spelling is not our row", () => {
-      expect(chooseLaunchCwd(twoMachines, "Nicks-MacBook-Pro")).toBeUndefined();
-      expect(chooseLaunchCwd(twoMachines, "nicks-macbook-pro.local")).toBeUndefined();
-    });
-
-    it("no rows at all → undefined even with a known hostname", () => {
-      expect(chooseLaunchCwd([], "Nicks-MacBook-Pro.local")).toBeUndefined();
-      expect(chooseLaunchCwd(null, "Nicks-MacBook-Pro.local")).toBeUndefined();
-    });
-
-    // Regression: a poisoned `/` row keyed to the real hostname used to win
-    // outright under rule 1 — every future launch on that machine then opened
-    // at `/`. isPlausibleProjectPath filters it out before rule 1 ever runs.
-    it("a poisoned `/` row for our own hostname is ignored, not returned", () => {
-      expect(
-        chooseLaunchCwd([{ absolute_path: "/", hostname: "Nicks-MacBook-Pro.local" }], "Nicks-MacBook-Pro.local")
-      ).toBeUndefined();
-    });
-
-    it("a poisoned `/` row for our hostname + a good row elsewhere → the good row wins", () => {
-      expect(
-        chooseLaunchCwd(
-          [
-            { absolute_path: "/", hostname: "Nicks-MacBook-Pro.local" },
-            { absolute_path: "/Users/nick/good", hostname: "other-host" },
-          ],
-          "Nicks-MacBook-Pro.local"
-        )
-      ).toBe("/Users/nick/good");
-    });
-
-    it("a home-directory row for our hostname is ignored", () => {
-      expect(
-        chooseLaunchCwd([{ absolute_path: "/Users/nick", hostname: "mine" }], "mine")
-      ).toBeUndefined();
-    });
+  // Regression: a poisoned `/` row keyed to the real hostname used to win —
+  // every future launch on that machine then opened at `/`.
+  it("a poisoned `/` or home-directory row for our own name is ignored", () => {
+    expect(chooseLaunchCwd([{ absolute_path: "/", hostname: "mine" }], ME)).toBeUndefined();
+    expect(chooseLaunchCwd([{ absolute_path: "/Users/nick", hostname: "mine" }], ME)).toBeUndefined();
   });
 });
 
@@ -1091,19 +938,18 @@ describe("chooseLaunchCwd / resolveEffectiveLaunchTarget — worktree rows heal 
   const MAIN = "/Users/nickball/projects/vibe-coding-ideas";
 
   it("a worktree row keyed to this machine resolves to the main folder", () => {
-    expect(chooseLaunchCwd([{ absolute_path: WORKTREE, hostname: "mbp" }], "mbp")).toBe(MAIN);
+    expect(chooseLaunchCwd([{ absolute_path: WORKTREE, hostname: "mbp" }], ["mbp"])).toBe(MAIN);
   });
 
-  it("a lone worktree row (hostname unknown) resolves to the main folder", () => {
-    expect(chooseLaunchCwd([{ absolute_path: WORKTREE, hostname: "mbp" }])).toBe(MAIN);
-  });
-
-  it("a worktree row and a main-folder row on different hosts agree → one distinct path", () => {
+  it("a worktree row and a main-folder row under this Mac's two names agree → one distinct path", () => {
     expect(
-      chooseLaunchCwd([
-        { absolute_path: WORKTREE, hostname: "mbp" },
-        { absolute_path: MAIN, hostname: "imac" },
-      ])
+      chooseLaunchCwd(
+        [
+          { absolute_path: WORKTREE, hostname: "mbp" },
+          { absolute_path: MAIN, hostname: "mbp.home" },
+        ],
+        ["mbp", "mbp.home"]
+      )
     ).toBe(MAIN);
   });
 
@@ -1111,7 +957,7 @@ describe("chooseLaunchCwd / resolveEffectiveLaunchTarget — worktree rows heal 
     const t = resolveEffectiveLaunchTarget({
       hasRepo: true,
       recordedPaths: [{ absolute_path: WORKTREE, hostname: "mbp" }],
-      realHostname: "mbp",
+      machineNames: ["mbp"],
     });
     expect(t.cwd).toBe(MAIN);
     expect(t.displayPath).toBe(MAIN);
@@ -1124,15 +970,10 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH — s
   const recorded = [
     { absolute_path: "/Users/nick/projects/from-db", hostname: "Nicks-MacBook" },
   ];
+  const ME = ["Nicks-MacBook"];
 
-  // The card this rewrites for: resolveEffectiveLaunchTarget used to accept a
-  // `saved` (localStorage pin) arg and let it win over the DB record — two
-  // independent, never-compared stores for the same fact. The pin is now
-  // retired as a read source here entirely: `idea_project_paths` (surfaced as
-  // `recordedPaths` — this includes rows the "Set exact folder" dialog and the
-  // pin migration write, under MANUAL_PIN_HOSTNAME) is the only input.
-  it("resolves from the DB recorded path (no `saved` argument exists anymore)", () => {
-    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: recorded });
+  it("resolves from this Mac's DB recorded path", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: recorded, machineNames: ME });
     expect(t.cwd).toBe("/Users/nick/projects/from-db");
     expect(t.source).toBe("recorded");
     expect(t.displayLabel).toBe("This machine — Nicks-MacBook");
@@ -1141,54 +982,22 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH — s
 
   it("regression: cwd and displayPath are ALWAYS the same value", () => {
     for (const paths of [null, [], recorded]) {
-      const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: paths });
+      const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: paths, machineNames: ME });
       expect(t.displayPath).toBe(t.cwd);
     }
   });
 
-  it("a manually-pinned row (MANUAL_PIN_HOSTNAME) resolves exactly like any other recorded hostname", () => {
-    const t = resolveEffectiveLaunchTarget({
-      hasRepo: false,
-      recordedPaths: [{ absolute_path: "/Users/nick/projects/pinned", hostname: MANUAL_PIN_HOSTNAME }],
-    });
-    expect(t.cwd).toBe("/Users/nick/projects/pinned");
-    expect(t.source).toBe("recorded");
-    expect(t.displayLabel).toBe(`This machine — ${MANUAL_PIN_HOSTNAME}`);
-  });
-
-  it("honours chooseLaunchCwd's >1 → undefined contract (ambiguous machines)", () => {
-    const t = resolveEffectiveLaunchTarget({
-      hasRepo: false,
-      recordedPaths: [
-        { absolute_path: "/Users/nick/x", hostname: "mac" },
-        { absolute_path: "/home/nick/x", hostname: "linux" },
-      ],
-    });
+  it("another Mac's row → 'none' (card 6b2cb8ac: never borrow another Mac's folder)", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: recorded, machineNames: ["mini"] });
     expect(t.cwd).toBeUndefined();
     expect(t.source).toBe("none");
   });
 
-  it("a genuinely ambiguous set stays ambiguous even once realHostname names one of the rows", () => {
-    // Naming one of the disagreeing rows as "ours" is NOT enough to resolve
-    // it — hostname identity alone can't be trusted (that's the drift bug),
-    // and there is no other safe signal (see chooseLaunchCwdDetailed's rule 3).
-    const ambiguous = [
-      { absolute_path: "/Users/nick/x", hostname: "mac" },
-      { absolute_path: "/home/nick/x", hostname: "linux" },
-    ];
-    const t = resolveEffectiveLaunchTarget({
-      hasRepo: false,
-      recordedPaths: ambiguous,
-      realHostname: "linux",
-    });
-    expect(t.cwd).toBeUndefined();
-    expect(t.source).toBe("none");
+  it("omitting machineNames resolves nothing", () => {
+    expect(resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: recorded }).source).toBe("none");
   });
 
-  // The label must name the row we actually resolved FROM. With several rows
-  // sharing the resolved path, that's ours when we know which one is ours —
-  // showing another machine's hostname under "This machine" would be a lie.
-  it("labels with THIS machine's hostname when several rows share the resolved path", () => {
+  it("labels with the own row's hostname even when another Mac shares the path", () => {
     const sharedPath = [
       { absolute_path: "/Users/nick/same", hostname: "old-laptop" },
       { absolute_path: "/Users/nick/same", hostname: "Nicks-MacBook-Pro.local" },
@@ -1197,69 +1006,30 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH — s
       resolveEffectiveLaunchTarget({
         hasRepo: false,
         recordedPaths: sharedPath,
-        realHostname: "Nicks-MacBook-Pro.local",
+        machineNames: ["Nicks-MacBook-Pro.local"],
       }).displayLabel
     ).toBe("This machine — Nicks-MacBook-Pro.local");
-    // Unknown identity keeps the old first-match label rather than degrading.
-    expect(
-      resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: sharedPath }).displayLabel
-    ).toBe("This machine — old-laptop");
   });
 
-  it("omitting realHostname is exactly the old behaviour (default off)", () => {
-    const rows = [
-      { absolute_path: "/Users/nick/x", hostname: "mac" },
-      { absolute_path: "/home/nick/x", hostname: "linux" },
-    ];
-    expect(resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: rows })).toEqual(
-      resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: rows, realHostname: null })
-    );
-  });
-
-  // ── Repo-backed ideas: a known folder wins here too (regression, unchanged) ─
-  // A repo-backed idea with a known folder (recorded or manually pinned)
-  // resolves that folder exactly like a no-repo idea does — `hasRepo` doesn't
-  // gate this function.
-  it("repo-backed idea: a recorded path still resolves, same as no-repo", () => {
-    const t = resolveEffectiveLaunchTarget({ hasRepo: true, recordedPaths: recorded });
+  it("repo-backed idea: this Mac's recorded path still resolves, same as no-repo", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: true, recordedPaths: recorded, machineNames: ME });
     expect(t.cwd).toBe("/Users/nick/projects/from-db");
     expect(t.source).toBe("recorded");
     expect(t.displayLabel).toBe("This machine — Nicks-MacBook");
   });
 
-  // Unchanged: repo-backed with nothing known at all → "none", so
-  // resolveDefaultLaunchState still falls through to the empty-path
-  // fresh-machine flow (repo slug / clone resolves the folder).
   it("repo-backed idea: no recorded path → 'none' (fresh-machine flow, unchanged)", () => {
-    const t = resolveEffectiveLaunchTarget({ hasRepo: true, recordedPaths: [] });
+    const t = resolveEffectiveLaunchTarget({ hasRepo: true, recordedPaths: [], machineNames: ME });
     expect(t.cwd).toBeUndefined();
     expect(t.displayPath).toBeUndefined();
     expect(t.source).toBe("none");
   });
 
   it("returns source 'none' when nothing is usable (first-launch flow)", () => {
-    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: [] });
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, recordedPaths: [], machineNames: ME });
     expect(t.cwd).toBeUndefined();
     expect(t.displayPath).toBeUndefined();
     expect(t.displayLabel).toBeUndefined();
-    expect(t.source).toBe("none");
-  });
-
-  // Hostname-drift disagreement surfaced end to end — the launch button reads
-  // this off resolveEffectiveLaunchTarget, not chooseLaunchCwd directly. This
-  // is the QA-flagged shape: a browser's own (current-hostname) row disagrees
-  // with an established row elsewhere — must fall through to "none"/ask,
-  // never silently pick one (see the rework of #233).
-  it("current-hostname row disagreeing with another machine's row resolves to 'none', not a guess", () => {
-    const t = resolveEffectiveLaunchTarget({
-      hasRepo: false,
-      recordedPaths: [
-        { absolute_path: "/Users/nick/projects/correct", hostname: "old-host" },
-        { absolute_path: "/Users/nick/projects/wrong", hostname: "new-host" },
-      ],
-      realHostname: "new-host",
-    });
-    expect(t.cwd).toBeUndefined();
     expect(t.source).toBe("none");
   });
 });
@@ -1387,46 +1157,22 @@ describe("decidePinMigration (browser-pin → idea_project_paths migration decis
       expect(rows.map((r) => r.hostname)).not.toContain("Nicks-MacBook-Pro.local");
     });
 
-    // End-to-end of the pair: migrate into an ambiguous set, then read back.
-    it("insert then read → the machine's own row disagreeing with a unified 'everyone else' path asks again", () => {
-      // Two other rows sharing ONE path (not two disagreeing paths — see the
-      // next test for that case). A prior version of this function let own's
-      // row win here via `updated_at` recency (rule 1b) — reworked out: see
-      // chooseLaunchCwdDetailed's doc for why that's unsafe. This is now
-      // exactly the same "ask again" outcome as the 3-way split below.
-      const existing = [
-        { absolute_path: "/Users/other/x", hostname: "mac" },
-        { absolute_path: "/Users/other/x", hostname: "linux" },
-      ];
-      const decision = decidePinMigration(existing, "Nicks-MacBook-Pro.local");
-      expect(decision).toEqual({ action: "insert", hostname: "Nicks-MacBook-Pro.local" });
-      // Before our own row exists, both other rows agree on one path (rule 2).
-      expect(chooseLaunchCwd(existing, "Nicks-MacBook-Pro.local")).toBe("/Users/other/x");
-      const after = [
-        ...existing,
-        { absolute_path: "/Users/nick/projects/mine", hostname: "Nicks-MacBook-Pro.local" },
-      ];
-      expect(chooseLaunchCwd(after, "Nicks-MacBook-Pro.local")).toBeUndefined();
-    });
-
-    // Regression (behaviour intentionally CHANGED by the hostname-drift fix):
-    // when the OTHER rows disagree with each other too (a genuine 3-way
-    // split), chooseLaunchCwd no longer lets the current machine's own row
-    // win outright — that would be inventing a 3-way tie-break nobody asked
-    // for. It falls back to the existing safe "ask again" behaviour instead.
-    it("insert then read → a genuine 3-way split (others disagree with each other) still asks again", () => {
+    // End-to-end of the pair: migrate into a set of other Macs' rows, then
+    // read back. Card 6b2cb8ac's per-Mac rule: before our own row exists we
+    // get nothing (never another Mac's folder); once it exists, it wins.
+    it("insert then read → nothing before our row exists, our row after", () => {
       const existing = [
         { absolute_path: "/Users/other/x", hostname: "mac" },
         { absolute_path: "/home/other/x", hostname: "linux" },
       ];
       const decision = decidePinMigration(existing, "Nicks-MacBook-Pro.local");
       expect(decision).toEqual({ action: "insert", hostname: "Nicks-MacBook-Pro.local" });
-      expect(chooseLaunchCwd(existing, "Nicks-MacBook-Pro.local")).toBeUndefined();
+      expect(chooseLaunchCwd(existing, ["Nicks-MacBook-Pro.local"])).toBeUndefined();
       const after = [
         ...existing,
         { absolute_path: "/Users/nick/projects/mine", hostname: "Nicks-MacBook-Pro.local" },
       ];
-      expect(chooseLaunchCwd(after, "Nicks-MacBook-Pro.local")).toBeUndefined();
+      expect(chooseLaunchCwd(after, ["Nicks-MacBook-Pro.local"])).toBe("/Users/nick/projects/mine");
     });
   });
 
@@ -1994,6 +1740,7 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
   // idea's recorded folder dead code — the two resolvers disagreed.
   it("repo-backed idea + a recorded DB path → existing mode at the recorded path", () => {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: true,
       recordedPaths: [{ absolute_path: "/Users/nick/projects/widget", hostname: "Nicks-MacBook" }],
     });
@@ -2005,10 +1752,11 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
   // A manually-pinned row (dialog Save / pin migration) is just another
   // recordedPaths entry now — it resolves through the exact same path as an
   // agent-recorded row, no separate "pin" concept in this resolver anymore.
-  it("repo-backed idea + a manually-pinned row (MANUAL_PIN_HOSTNAME) → existing mode at that path", () => {
+  it("repo-backed idea + a manually-pinned row saved under this Mac's name → existing mode at that path", () => {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: true,
-      recordedPaths: [{ absolute_path: "/Users/nick/projects/pinned-widget", hostname: MANUAL_PIN_HOSTNAME }],
+      recordedPaths: [{ absolute_path: "/Users/nick/projects/pinned-widget", hostname: "Nicks-MacBook" }],
     });
     expect(
       resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
@@ -2020,6 +1768,7 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
   // prompt emits its clone/directory step.
   it("repo-backed idea + effectiveTarget but NO known folder → still the empty-path fresh-machine flow", () => {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: true,
       recordedPaths: [],
     });
@@ -2032,6 +1781,7 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
   // either — same "don't guess which machine" contract as the no-repo case.
   it("repo-backed idea + >1 distinct recorded paths (ambiguous) → still the empty-path flow", () => {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: true,
       recordedPaths: [
         { absolute_path: "/Users/nick/widget", hostname: "mac" },
@@ -2066,6 +1816,7 @@ describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () 
     recordedPaths: { absolute_path: string; hostname: string }[]
   ): string {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: false,
       recordedPaths,
     });
@@ -2087,6 +1838,7 @@ describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () 
 
   it("resolveDefaultLaunchState promotes a recorded no-repo idea to existing mode at that path", () => {
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: false,
       recordedPaths: [{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }],
     });
@@ -2132,6 +1884,7 @@ describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () 
     // worktree-isolation protocol rides the head, so building the link without
     // the clamp (as this test used to) is no longer representative.
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: false,
       recordedPaths: [{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }],
     });
@@ -2174,6 +1927,7 @@ describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () 
   it("pin-and-record-disagree: an EXISTING-mode pin no longer overrides a disagreeing recorded path", () => {
     writeLaunchPath(IDEA_ID, { mode: "existing", path: "/Users/nick/projects/stale-pin-path" });
     const effectiveTarget = resolveEffectiveLaunchTarget({
+      machineNames: ["Nicks-MacBook"],
       hasRepo: false,
       recordedPaths: [{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }],
     });
@@ -3303,5 +3057,69 @@ describe("buildBoundedDeepLink cwdPolicy: keep + the compact work-step rung (Nic
       const out = fitCompactEssentials(legacy, enc(`${head}3. ${work}`) - 1);
       expect(out).toBe(head);
     });
+  });
+});
+
+// Card 6b2cb8ac (regression test 10): each Mac uses ONLY its own saved
+// folder. The old rule 2 lent a Mac with no row of its own another Mac's
+// folder (the Mac mini got the MacBook's ~/projects/<repo>, which doesn't
+// exist there, and Claude died in 20ms); the old rule 3 gave BOTH Macs no
+// folder as soon as their own rows differed. A Mac with two names (its fixed
+// LocalHostName + a drifting DHCP hostname) counts as one Mac.
+describe("chooseLaunchCwdDetailed — per-Mac rule (card 6b2cb8ac)", () => {
+  const MINI = ["Nicks-Mac-mini.local"];
+  const MACBOOK = ["Nicks-MacBook-Pro.local", "Nicks-MBP.home.local"];
+
+  it("the mini has no row of its own → no folder, never the MacBook's", () => {
+    const rows = [{ absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MacBook-Pro.local" }];
+    expect(chooseLaunchCwdDetailed(rows, MINI)).toEqual({ cwd: undefined });
+  });
+
+  it("the mini's own row wins even when the MacBook's row differs", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/repo", hostname: "Nicks-Mac-mini.local" },
+      { absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MacBook-Pro.local" },
+    ];
+    expect(chooseLaunchCwdDetailed(rows, MINI)).toEqual({ cwd: "/Users/nick/repo" });
+    expect(chooseLaunchCwdDetailed(rows, MACBOOK)).toEqual({ cwd: "/Users/nick/projects/repo" });
+  });
+
+  it("the MacBook's two names agreeing → that path", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MacBook-Pro.local" },
+      { absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MBP.home.local" },
+    ];
+    expect(chooseLaunchCwdDetailed(rows, MACBOOK)).toEqual({ cwd: "/Users/nick/projects/repo" });
+  });
+
+  it("the MacBook's own two names disagreeing → no folder (the helper sorts it out)", () => {
+    const rows = [
+      { absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MacBook-Pro.local" },
+      { absolute_path: "/Users/nick/old/repo", hostname: "Nicks-MBP.home.local" },
+    ];
+    expect(chooseLaunchCwdDetailed(rows, MACBOOK)).toEqual({ cwd: undefined });
+  });
+
+  it("names match case-insensitively", () => {
+    const rows = [{ absolute_path: "/Users/nick/repo", hostname: "nicks-mac-mini.local" }];
+    expect(chooseLaunchCwdDetailed(rows, MINI)).toEqual({ cwd: "/Users/nick/repo" });
+  });
+
+  it("a browser that knows no machine name gets no folder", () => {
+    const rows = [{ absolute_path: "/Users/nick/repo", hostname: "Nicks-Mac-mini.local" }];
+    expect(chooseLaunchCwdDetailed(rows, [])).toEqual({ cwd: undefined });
+  });
+
+  it("resolveEffectiveLaunchTarget labels the own row", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      recordedPaths: [
+        { absolute_path: "/Users/nick/projects/repo", hostname: "Nicks-MacBook-Pro.local" },
+        { absolute_path: "/Users/nick/repo", hostname: "Nicks-Mac-mini.local" },
+      ],
+      machineNames: MINI,
+    });
+    expect(t.cwd).toBe("/Users/nick/repo");
+    expect(t.displayLabel).toBe("This machine — Nicks-Mac-mini.local");
   });
 });
