@@ -519,3 +519,102 @@ export function encodeOpenTerminalAuthorizedFrame() {
 export function isOpenTerminalAuthorizedFrame(text) {
   return isControlFrame(text, "open-terminal-authorized");
 }
+
+// ── Card 6b2cb8ac: bridge end reasons, the bridge-cwd frame, machine lists ───
+//
+// BRIDGE END REASONS. A bridge that stops on purpose closes its relay leg with
+// code 1000 and a short reason token. The relay passes it straight through to
+// the browser leg (and ends the session at once, instead of opening the 90s
+// reconnect hold — see relay/src/index.js → endFromBridge). The page maps the
+// token to an ended screen (src/lib/terminal/connection.ts → parseEndedReason).
+// Existing: pty-exit, agent-not-installed, spawn-failed, SIGTERM, SIGINT,
+// helper-gone, reconnect-exhausted, max-duration, connect-timeout,
+// attach-confirm-timeout, e2ee-verify-failed, ws-close, ws-close-terminal,
+// fatal. New: agent-stopped-early:<exitCode>, folder-missing,
+// folder-unavailable, folder-not-allowed, folder-lookup-failed, clone-failed,
+// clone-no-access, git-missing. A close reason is plaintext metadata on the
+// relay, so it never carries a path or an error message — those go into the
+// (encrypted) terminal stream instead.
+
+const END_REASON_RE = /^[A-Za-z0-9:._-]+$/;
+
+/**
+ * A bridge close reason safe to store, log and forward: ≤120 bytes of
+ * `[A-Za-z0-9:._-]`; anything else becomes "ended".
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function sanitizeBridgeEndReason(raw) {
+  if (typeof raw !== "string") return "ended";
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 120 || !END_REASON_RE.test(trimmed)) return "ended";
+  return trimmed;
+}
+
+// BRIDGE-CWD FRAME `{"t":"bridge-cwd","cwd":"/abs/path"}`, bridge → browser
+// TEXT frame, sent once the bridge has resolved the project folder on the Mac
+// (the relay forwards every frame; an old dock ignores unknown text frames).
+// Its own length gate: a folder can be longer than isControlFrame's 200 chars.
+
+const MAX_CWD_LENGTH = 1024;
+
+/** @param {string} cwd @returns {string} */
+export function encodeBridgeCwdFrame(cwd) {
+  return JSON.stringify({ t: "bridge-cwd", cwd });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isBridgeCwdFrame(text) {
+  if (typeof text !== "string" || text.length === 0 || text.length > MAX_CWD_LENGTH + 64) return false;
+  try {
+    const msg = JSON.parse(text);
+    return !!msg && typeof msg === "object" && msg.t === "bridge-cwd";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The folder from a bridge-cwd frame, or null when it's malformed: must be an
+ * absolute POSIX path of at most 1024 characters with no control characters.
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function parseBridgeCwdFrame(text) {
+  if (!isBridgeCwdFrame(text)) return null;
+  try {
+    const cwd = JSON.parse(/** @type {string} */ (text)).cwd;
+    if (typeof cwd !== "string" || !cwd.startsWith("/") || cwd.length > MAX_CWD_LENGTH) return null;
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f\u007f]/.test(cwd)) return null;
+    return cwd;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A list of machine names (a comma-separated query param, or an array from a
+ * JSON body) → at most 5 sanitized, lower-cased, de-duplicated labels. Used to
+ * target one Mac's helper leg (relay) and to scope folder records (app).
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+export function sanitizeMachineList(raw) {
+  /** @type {unknown[]} */
+  let items;
+  if (typeof raw === "string") items = raw.split(",");
+  else if (Array.isArray(raw)) items = raw;
+  else return [];
+  /** @type {string[]} */
+  const out = [];
+  for (const item of items) {
+    const label = sanitizeMachineLabel(item);
+    if (!label) continue;
+    const lower = label.toLowerCase();
+    if (out.includes(lower)) continue;
+    out.push(lower);
+    if (out.length === 5) break;
+  }
+  return out;
+}
