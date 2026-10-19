@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildStepPerformanceReport, median, type ReportCommentRow, type ReportInput, type ReportStepRow } from "./report";
+import { buildStepPerformanceReport, median, templateTitles, type ReportCommentRow, type ReportInput, type ReportStepRow } from "./report";
 
 const BOT = "bot";
 const HUMAN = "human";
@@ -26,8 +26,16 @@ const opus = (step_id: string, run_id: string, read: number, model = "claude-opu
 });
 const done = (...ids: string[]) => ids.map((id) => ({ id, template_id: "t1", status: "completed" }));
 
+/** A run's whole step list, as the database holds it. */
+const runOf = (run: string, ...titles: string[]) => titles.map((title) => ({ run_id: run, title }));
+
+/** Unless a test says otherwise, every run used its template's current steps. */
 function input(o: Partial<ReportInput>): ReportInput {
-  return { steps: [], runs: [], templates: [T_FEATURE], comments: [], botIds: new Set([BOT]), usage: [], singleBoard: true, ...o };
+  const base = { steps: [], runs: [], templates: [T_FEATURE], comments: [], botIds: new Set([BOT]), usage: [], singleBoard: true, ...o };
+  const runSteps =
+    o.runSteps ??
+    base.runs.flatMap((r) => runOf(r.id, ...templateTitles(base.templates.find((t) => t.id === r.template_id)?.steps)));
+  return { ...base, runSteps };
 }
 const rowsOf = (r: ReturnType<typeof buildStepPerformanceReport>, i = 0) => Object.fromEntries(r.templates[i].current.map((s) => [s.title, s]));
 
@@ -80,18 +88,48 @@ describe("buildStepPerformanceReport", () => {
     expect(rows["Build"].rejected).toBe(0);
   });
 
-  it("keeps current steps in template order and moves renamed steps to earlier versions", () => {
+  it("lists every current step in template order and moves runs of an older version to earlier versions", () => {
     const steps = [
       step("r1", "Code review"), step("r1", "Plan"),
       ...["r2", "r3", "r4"].map((run) => step(run, "Requirements", { step_order: 1 })),
       ...["r2", "r3", "r4"].map((run) => step(run, "QA Testing", { step_order: 5 })),
       step("r2", "Old one-off", { step_order: 9 }),
     ];
-    const t = buildStepPerformanceReport(input({ steps, runs: done("r1", "r2", "r3", "r4") })).templates[0];
-    expect(t.current.map((s) => s.title)).toEqual(["Plan", "Code review"]);
+    const runSteps = [
+      ...runOf("r1", "Plan", "Build", "Code review"),
+      ...runOf("r2", "Requirements", "QA Testing", "Old one-off"),
+      ...runOf("r3", "Requirements", "QA Testing"),
+      ...runOf("r4", "Requirements", "QA Testing"),
+    ];
+    const t = buildStepPerformanceReport(input({ steps, runSteps, runs: done("r1", "r2", "r3", "r4") })).templates[0];
+    expect(t.current.map((s) => [s.title, s.ran])).toEqual([["Plan", 1], ["Build", 0], ["Code review", 1]]);
     expect(t.currentRuns).toBe(1);
     // Ran fewer than 3 times, so left out.
     expect(t.earlier.map((s) => s.title)).toEqual(["Requirements", "QA Testing"]);
+    expect(t.earlierRuns).toBe(3);
+  });
+
+  it("puts a run of an older version under earlier versions even where a step kept its name", () => {
+    // The template was rewritten from Requirements → Build → Code review to Plan → Build → Code review.
+    // The old runs' Build and Code review must not count as the new version's.
+    const old = ["r1", "r2", "r3"].flatMap((run) => [
+      step(run, "Requirements", { step_order: 1 }), step(run, "Build", { step_order: 2 }), step(run, "Code review", { step_order: 3 }),
+    ]);
+    const runSteps = [
+      ...["r1", "r2", "r3"].flatMap((run) => runOf(run, "Requirements", "Build", "Code review")),
+      // A run of the new version that hasn't finished a step yet.
+      ...runOf("r4", "Plan", "Build", "Code review"),
+    ];
+    const t = buildStepPerformanceReport(input({
+      steps: [...old, step("r4", "Plan", { status: "pending", started_at: null, completed_at: null })],
+      runSteps,
+      runs: [...done("r1", "r2", "r3"), { id: "r4", template_id: "t1", status: "running" }],
+    })).templates[0];
+    expect(t.current.map((s) => [s.title, s.ran])).toEqual([["Plan", 0], ["Build", 0], ["Code review", 0]]);
+    expect(t.currentRuns).toBe(0);
+    expect(t.currentSince).toBeNull();
+    expect(t.wholeRun).toBeNull();
+    expect(t.earlier.map((s) => [s.title, s.ran])).toEqual([["Requirements", 3], ["Build", 3], ["Code review", 3]]);
     expect(t.earlierRuns).toBe(3);
   });
 
@@ -177,8 +215,8 @@ describe("buildStepPerformanceReport", () => {
     const base = { steps: [s1, s2], templates: [T_FEATURE, other], runs: [{ id: "r1", template_id: "t1", status: "completed" }, { id: "r2", template_id: "t2", status: "completed" }] };
     const all = buildStepPerformanceReport(input({ ...base, singleBoard: false }));
     expect(all.templates).toHaveLength(1);
-    // The more recently edited board's order comes first.
-    expect(all.templates[0].current.map((s) => s.title)).toEqual(["Plan", "Security review"]);
+    // The more recently edited board's order comes first; every step either board has is listed.
+    expect(all.templates[0].current.map((s) => [s.title, s.ran])).toEqual([["Plan", 1], ["Security review", 1], ["Build", 0], ["Code review", 0]]);
     expect(buildStepPerformanceReport(input({ ...base, singleBoard: true })).templates).toHaveLength(2);
   });
 

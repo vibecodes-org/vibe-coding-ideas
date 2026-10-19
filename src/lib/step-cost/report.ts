@@ -1,7 +1,7 @@
 // The admin step report (card ba37039b): what each workflow step contributes
 // — problems it caught, rejections at its gate, rework it needed, time and
-// cost — per template, split into the template's current steps and the steps
-// of its earlier versions. Pure: the server action fetches the rows, this
+// cost — per template, split into runs of the template's current version and
+// runs of its earlier versions. Pure: the server action fetches the rows, this
 // turns them into the report.
 
 import { priceKey, usageCost, type ModelUsage } from "./pricing";
@@ -23,6 +23,8 @@ export interface ReportRunRow { id: string; template_id: string | null; status: 
 export interface ReportTemplateRow { id: string; idea_id: string; name: string; steps: unknown; updated_at: string }
 export interface ReportCommentRow { step_id: string; type: string; author_id: string; created_at: string }
 export interface ReportUsageRow extends ModelUsage { step_id: string; run_id: string | null }
+/** Every step of a run, whatever its status or date: which version of the template the run used. */
+export interface ReportRunStepRow { run_id: string | null; title: string }
 
 export interface ReportInput {
   steps: ReportStepRow[];
@@ -31,6 +33,7 @@ export interface ReportInput {
   comments: ReportCommentRow[];
   botIds: Set<string>;
   usage: ReportUsageRow[];
+  runSteps: ReportRunStepRow[];
   /** One board: templates are kept apart by id. All boards: same-named templates are combined. */
   singleBoard: boolean;
 }
@@ -39,6 +42,7 @@ export type StepChip = "catches" | "never" | null;
 
 export interface StepPerformanceRow {
   title: string;
+  /** 0 for a current step no run of the current version has finished yet. */
   ran: number;
   caught: number;
   rejected: number;
@@ -198,6 +202,22 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     if (sig?.caught) workSentBack++;
   }
 
+  // A run is on the current version only if its steps are exactly its
+  // template's current steps. Matching step by step instead counted old runs
+  // as current wherever a step kept its name through a rewrite.
+  const runTitles = new Map<string, Set<string>>();
+  for (const s of [...input.runSteps, ...input.steps]) {
+    if (!s.run_id) continue;
+    const set = runTitles.get(s.run_id) ?? new Set<string>();
+    set.add(s.title);
+    runTitles.set(s.run_id, set);
+  }
+  const onCurrentVersion = (runId: string): boolean => {
+    const want = new Set(templateTitles(templates.get(runs.get(runId)?.template_id ?? "")?.steps));
+    const have = runTitles.get(runId);
+    return want.size > 0 && !!have && have.size === want.size && [...want].every((t) => have.has(t));
+  };
+
   // Cost per step row (every attempt). A step with any usage from a model that
   // has no price shows no cost rather than a cost that's too low.
   const stepCost = new Map<string, number>();
@@ -226,14 +246,19 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     // recently edited template's order first.
     const byRecent = [...acc.templates.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
     const currentTitles = [...new Set(byRecent.flatMap((t) => templateTitles(t.steps)))];
-    const currentSet = new Set(currentTitles);
 
-    const byTitle = new Map<string, ReportStepRow[]>();
-    for (const r of acc.rows) {
-      const list = byTitle.get(r.title) ?? [];
-      list.push(r);
-      byTitle.set(r.title, list);
-    }
+    const currentRows = acc.rows.filter((r) => onCurrentVersion(r.run_id!));
+    const earlierRows = acc.rows.filter((r) => !onCurrentVersion(r.run_id!));
+    const groupByTitle = (rows: ReportStepRow[]) => {
+      const byTitle = new Map<string, ReportStepRow[]>();
+      for (const r of rows) {
+        const list = byTitle.get(r.title) ?? [];
+        list.push(r);
+        byTitle.set(r.title, list);
+      }
+      return byTitle;
+    };
+    const currentByTitle = groupByTitle(currentRows);
 
     const toRow = (title: string, rows: ReportStepRow[]): StepPerformanceRow => {
       let caught = 0, rejected = 0, redo = 0;
@@ -263,12 +288,11 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       };
     };
 
-    const current = currentTitles.filter((t) => byTitle.has(t)).map((t) => toRow(t, byTitle.get(t)!));
-    const currentRows = acc.rows.filter((r) => currentSet.has(r.title));
-    const earlierRows = acc.rows.filter((r) => !currentSet.has(r.title));
+    // Every current step is listed, so the table matches the template; one that hasn't run yet shows ran 0.
+    const current = currentTitles.map((t) => toRow(t, currentByTitle.get(t) ?? []));
 
-    const earlier = [...byTitle.entries()]
-      .filter(([t, rows]) => !currentSet.has(t) && rows.length >= EARLIER_MIN_RUNS)
+    const earlier = [...groupByTitle(earlierRows).entries()]
+      .filter(([, rows]) => rows.length >= EARLIER_MIN_RUNS)
       .sort((a, b) => Math.min(...a[1].map((r) => r.step_order ?? 0)) - Math.min(...b[1].map((r) => r.step_order ?? 0)))
       .map(([t, rows]) => toRow(t, rows));
 
@@ -299,14 +323,15 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       }
     }
 
+    const currentRuns = new Set(currentRows.map((r) => r.run_id)).size;
     const since = currentRows.map((r) => r.started_at ?? r.completed_at).filter((d): d is string => !!d).sort()[0] ?? null;
     result.push({
       key: acc.key,
       name: byRecent[0].name,
-      currentRuns: new Set(currentRows.map((r) => r.run_id)).size,
+      currentRuns,
       currentSince: since,
       current,
-      wholeRun: current.length > 0 ? { medianMinutes: median(runMinutes), medianCost: median(runCosts) } : null,
+      wholeRun: currentRuns > 0 ? { medianMinutes: median(runMinutes), medianCost: median(runCosts) } : null,
       earlierRuns: new Set(earlierRows.map((r) => r.run_id)).size,
       earlier,
     });
