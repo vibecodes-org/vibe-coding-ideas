@@ -8,6 +8,7 @@ import {
   buildStepPerformanceReport,
   type ReportCommentRow,
   type ReportRunRow,
+  type ReportRunStepRow,
   type ReportStepRow,
   type ReportTemplateRow,
   type ReportUsageRow,
@@ -119,6 +120,13 @@ export async function getStepPerformanceReport(params: {
     db.from("workflow_templates").select("id, idea_id, name, steps, updated_at").order("id").range(from, to)
   );
 
+  // Every step of those runs, unfinished or before the period too: a run's
+  // whole step list is what says which version of its template it used.
+  const runIds = [...new Set(steps.map((s) => s.run_id).filter((id): id is string => !!id))];
+  const runSteps = await readAllByIds<ReportRunStepRow>(runIds, (chunk, from, to) =>
+    db.from("task_workflow_steps").select("run_id, title").in("run_id", chunk).order("id").range(from, to)
+  );
+
   const stepIds = new Set(steps.map((s) => s.id));
   const comments = (
     await readAll<ReportCommentRow>((from, to) => {
@@ -156,7 +164,7 @@ export async function getStepPerformanceReport(params: {
   ).sort((a, b) => a.title.localeCompare(b.title));
 
   return {
-    report: buildStepPerformanceReport({ steps, runs, templates, comments, botIds, usage, singleBoard: !!board }),
+    report: buildStepPerformanceReport({ steps, runs, templates, comments, botIds, usage, runSteps, singleBoard: !!board }),
     boards,
   };
 }

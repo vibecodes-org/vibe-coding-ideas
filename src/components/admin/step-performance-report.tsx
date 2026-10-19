@@ -261,7 +261,8 @@ export function StepPerformanceReportView() {
           period isn&apos;t counted in the whole-run figures.
         </p>
         <p>
-          With All boards, templates with the same name are combined. A step that has run 5+ times and caught a problem in at least 1 in 5 runs is marked
+          A run counts under the current version only if its steps are exactly the template&apos;s steps today; runs of earlier versions are
+          listed under them with all their steps, even ones whose name was kept. With All boards, templates with the same name are combined. A step that has run 5+ times and caught a problem in at least 1 in 5 runs is marked
           &ldquo;Catches problems&rdquo;; one that has run 10+ times with nothing caught or rejected is marked &ldquo;Never caught anything&rdquo;. Earlier-version
           steps that ran fewer than 3 times are left out.
         </p>
@@ -346,27 +347,35 @@ function StepTable({
                   <Chip chip={row.chip} />
                 </div>
               </TableCell>
-              <TableCell className="text-right text-xs">{row.ran}</TableCell>
-              <TableCell className="text-right text-xs">
-                <Count n={row.caught} of={row.ran} strong />
-              </TableCell>
-              <TableCell className="text-right text-xs">
-                <Count n={row.rejected} of={row.ran} />
-              </TableCell>
-              <TableCell className="text-right text-xs">
-                <Count n={row.redo} />
-              </TableCell>
-              <TableCell className="text-right text-xs">{mins(row.medianMinutes)}</TableCell>
-              <TableCell className="text-right text-xs">
-                {row.medianCost === null ? (
-                  <span className="text-muted-foreground">not recorded</span>
-                ) : (
-                  <span title={`Recorded on ${row.costRuns} run${row.costRuns === 1 ? "" : "s"}`}>{money(row.medianCost)}</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <span className="font-mono text-[11px] text-muted-foreground">{row.model ?? "—"}</span>
-              </TableCell>
+              {row.ran === 0 ? (
+                <TableCell colSpan={7} className="text-xs text-muted-foreground">
+                  Not run yet
+                </TableCell>
+              ) : (
+                <>
+                  <TableCell className="text-right text-xs">{row.ran}</TableCell>
+                  <TableCell className="text-right text-xs">
+                    <Count n={row.caught} of={row.ran} strong />
+                  </TableCell>
+                  <TableCell className="text-right text-xs">
+                    <Count n={row.rejected} of={row.ran} />
+                  </TableCell>
+                  <TableCell className="text-right text-xs">
+                    <Count n={row.redo} />
+                  </TableCell>
+                  <TableCell className="text-right text-xs">{mins(row.medianMinutes)}</TableCell>
+                  <TableCell className="text-right text-xs">
+                    {row.medianCost === null ? (
+                      <span className="text-muted-foreground">not recorded</span>
+                    ) : (
+                      <span title={`Recorded on ${row.costRuns} run${row.costRuns === 1 ? "" : "s"}`}>{money(row.medianCost)}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-mono text-[11px] text-muted-foreground">{row.model ?? "—"}</span>
+                  </TableCell>
+                </>
+              )}
             </TableRow>
           ))}
           {wholeRun && (

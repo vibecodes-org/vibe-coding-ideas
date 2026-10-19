@@ -136,9 +136,11 @@ export default function AdminPage() {
             lists every step&apos;s runs, how often its agent caught a problem
             and sent work back, how often a person rejected it at its approval
             gate, how often it had to redo work, its median time, the model it
-            ran on, and its cost per run. Steps from a template&apos;s earlier
-            versions are listed separately, so old and new numbers don&apos;t
-            mix.
+            ran on, and its cost per run. The main table lists every step of
+            the template as it is now, marked &ldquo;Not run yet&rdquo; until
+            one has run, and counts only runs that used exactly those steps.
+            Runs of the template&apos;s earlier versions are listed separately,
+            all their steps included, so old and new numbers don&apos;t mix.
           </p>
           <p className="mb-4 text-muted-foreground">
             Cost is what the tokens would cost at Anthropic API prices. When a
