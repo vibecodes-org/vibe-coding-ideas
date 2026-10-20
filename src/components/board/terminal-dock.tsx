@@ -2002,11 +2002,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   // Session entry chooser (card cbe60db5, F1; rework 11 fixes the gate below).
   // The actual entry point every launch source (toolbar bus event,
-  // task-launch bus event, "+") calls. Always consults `entryDecisionRef`
-  // — NOT gated on whether a local tab already exists — so a launch fired
-  // while another tab is open (or actively connected) still routes through
-  // the chooser instead of blindly minting a duplicate/parallel session
-  // whenever the registry knows about other live/recent sessions.
+  // task-launch bus event, "+") calls. It reads `entryDecisionRef` only as
+  // the "is the list still loading?" guard (null = queue the launch). Whether
+  // to show the chooser or mint is decided at click time by
+  // `hasSessionChoice` over the current list and open tabs (card fb854f9e) —
+  // NOT gated on whether a local tab already exists, so a launch fired while
+  // another tab is open (or actively connected) still routes through the
+  // chooser instead of blindly minting a duplicate/parallel session whenever
+  // the registry knows about other live/recent sessions.
   const deliverLaunch = useCallback(
     (payload: BrowserLaunchPayload | null) => {
       if (entryDecisionRef.current === null) {
@@ -2055,7 +2058,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setExpanded(true);
         setPendingLaunch(payload);
         seedChooserAgentFromLaunch(payload);
-        if (sessionsRef.current.length > 0) setChooserMode("launch");
+        // Also an overlay when the page load chose to reattach (instant-
+        // continue): the reattached tabs may not exist yet, and the body
+        // swap only renders for the "chooser" load decision.
+        if (sessionsRef.current.length > 0 || entryDecisionRef.current.kind !== "chooser") {
+          setChooserMode("launch");
+        }
         return;
       }
       mintAndDeliver(payload);
@@ -2250,13 +2258,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setTaskChoiceOpen(true);
         return;
       }
-      if (hasSessionChoice(registryRows ?? [], ownSessionIds, Date.now())) {
-        // Card fb854f9e: an instant-continue load must still reattach its
-        // sessions; the chooser then shows as an overlay over them.
-        if (entryDecision.kind === "instant-continue" && !instantContinueTriggeredRef.current) {
-          instantContinueTriggeredRef.current = true;
-          for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
-        }
+      // Card fb854f9e: an instant-continue load must still reattach its
+      // sessions, whether the launch then shows the list or mints. Those
+      // sessions are about to be open tabs, so they don't count as
+      // something to choose.
+      const openSids =
+        entryDecision.kind === "instant-continue"
+          ? new Set([...ownSessionIds, ...entryDecision.sids])
+          : ownSessionIds;
+      if (entryDecision.kind === "instant-continue" && !instantContinueTriggeredRef.current) {
+        instantContinueTriggeredRef.current = true;
+        for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
+      }
+      if (hasSessionChoice(registryRows ?? [], openSids, Date.now())) {
         // `deliverLaunch` already expanded the dock and set `pendingLaunch`.
         // With no local tabs, `showingChooser` renders the body-swap chooser
         // from that state alone — nothing else to do. With a tab already
@@ -3681,7 +3695,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           a perfectly valid one that costs nothing and leaves nothing behind.
           A modal with no exit is a trap, not a guarantee. */}
       <Dialog
-        open={chooserOpen && sessions.length > 0 && !inlineBrowse}
+        open={chooserOpen && (sessions.length > 0 || !showingChooser) && !inlineBrowse}
         onOpenChange={(next) => {
           if (!next) handleChooserDismiss();
         }}

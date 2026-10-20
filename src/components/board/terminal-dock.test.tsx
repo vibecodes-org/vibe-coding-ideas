@@ -3138,6 +3138,74 @@ describe("TerminalDock — '+' after an instant-continue page load (card fb854f9
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("rework 1: a launch queued while loading mints directly when the only session in the list is the one being reattached", async () => {
+    seedFreshSnapshot();
+    const reg = deferredRegistryResponse();
+    const reattached: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/terminal/session/list") {
+          return reg.promise.then((sessions) => ({ ok: true, json: async () => ({ sessions }) }));
+        }
+        if (url === "/api/terminal/session/reattach") {
+          const sid = (JSON.parse(String(init?.body)) as { sid: string }).sid;
+          reattached.push(sid);
+          return Promise.resolve({ ok: true, json: async () => ({ sessionId: sid, browserToken: `t-${sid}` }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await act(async () => {
+      reg.resolve([ownRow()]);
+    });
+
+    // Nothing to choose: no dialog, a new session is started, and the
+    // remembered one is still reattached.
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(reattached).toEqual(["own-sid-1"]);
+  });
+
+  it("rework 2: a launch during the reattach gap (list loaded, no tab yet) shows the list, which can be dismissed", async () => {
+    seedFreshSnapshot();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ sessions: [ownRow(), liveElsewhereRow(), recentRowElsewhere()] }),
+          });
+        }
+        // The reattach never answers, so no tab appears.
+        if (url === "/api/terminal/session/reattach") return new Promise(() => {});
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    // Let the list land and the instant-continue reattach start.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/terminal/session/reattach", expect.anything()));
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("a session minted in this pageview becomes known: after it reports its id the list is re-fetched, and '+' shows it", async () => {
     let rows: ChooserRegistryRow[] = [];
     let listCalls = 0;
