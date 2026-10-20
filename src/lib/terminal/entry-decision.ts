@@ -89,3 +89,21 @@ export function decideEntryBehaviour(
 
   return { kind: "empty-launch" };
 }
+
+/**
+ * Card fb854f9e: "+" / "In the browser" ask this at CLICK time (not the
+ * page-load decision, which goes stale after an instant-continue load).
+ * True when there is anything to choose between: any recent (≤48h) ended
+ * row, or any active row whose sid isn't already open as a tab in this
+ * dock. A session already open here is not a choice. Mints directly only
+ * when this is false.
+ */
+export function hasSessionChoice(
+  rows: readonly EntryRegistryRow[],
+  openSids: ReadonlySet<string>,
+  nowMs: number = Date.now(),
+): boolean {
+  return rows.some((r) =>
+    r.status === "active" ? !openSids.has(r.sid) : isRecentEnded(r, nowMs),
+  );
+}

@@ -116,6 +116,10 @@ const { reportEndedSidOverride } = vi.hoisted(() => ({
 // exercises `reconnectIfConversationLive` — without this the payload never
 // carries one, matching every test that predates this fix. Reset in
 // `afterEach` below.
+const { reportConnectedSidOverride } = vi.hoisted(() => ({
+  reportConnectedSidOverride: { current: null as string | null },
+}));
+
 const { resumeEndedConvOverride } = vi.hoisted(() => ({
   resumeEndedConvOverride: { current: undefined as string | undefined },
 }));
@@ -330,7 +334,7 @@ vi.mock("./terminal-session-view", () => ({
           onClick={() =>
             onReportSummary(entry.key, {
               status: "connected",
-              sessionId: `sid-for-${entry.key}`,
+              sessionId: reportConnectedSidOverride.current ?? `sid-for-${entry.key}`,
               errorKind: null,
               launchPhase: "idle",
               platformSupported: true,
@@ -637,6 +641,7 @@ afterEach(() => {
   // never leaks into the next.
   window.sessionStorage.clear();
   reportEndedSidOverride.current = null;
+  reportConnectedSidOverride.current = null;
   resumeEndedConvOverride.current = undefined;
   resumeEndedOwnSidOverride.current = "sid-ended-own-tab";
 });
@@ -3060,5 +3065,175 @@ describe("TerminalDock — a launched tab records its own agent (card 6b2cb8ac)"
     } finally {
       setViewerTerminalAgentCache("claude");
     }
+  });
+});
+
+// Card fb854f9e: "+" / "In the browser" decide chooser-vs-mint at CLICK time
+// from the current list and open tabs, not the page-load decision. After a
+// reload with a fresh saved screen the page-load decision is
+// "instant-continue" and used to stay that way, so every "+" minted directly.
+describe("TerminalDock — '+' after an instant-continue page load (card fb854f9e)", () => {
+  function seedFreshSnapshot() {
+    rememberTabSid("own-sid-1");
+    saveSessionSnapshot("own-sid-1", { data: "one\r\n", truncated: false });
+  }
+  const ownRow = (): ChooserRegistryRow => ({ ...liveHereRow(), sid: "own-sid-1" });
+
+  it("'+' shows the list (no new tab) when the list has other live and recent sessions", async () => {
+    seedFreshSnapshot();
+    stubFetch(Promise.resolve([ownRow(), liveElsewhereRow(), recentRowElsewhere()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+  });
+
+  it("the toolbar's 'In the browser' launch shows the list too", async () => {
+    seedFreshSnapshot();
+    stubFetch(Promise.resolve([ownRow(), liveElsewhereRow(), recentRowElsewhere()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+  });
+
+  it("a launch clicked while the list is still loading, which resolves to instant-continue, shows the list instead of minting", async () => {
+    seedFreshSnapshot();
+    const reg = deferredRegistryResponse();
+    stubFetch(reg.promise);
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+    await act(async () => {
+      reg.resolve([ownRow(), liveElsewhereRow(), recentRowElsewhere()]);
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    // Instant-continue still reattaches the remembered session; nothing new is minted.
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+  });
+
+  it("control: '+' still mints directly when the only session in the list is the one already open here", async () => {
+    seedFreshSnapshot();
+    stubFetch(Promise.resolve([ownRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    reportConnectedSidOverride.current = "own-sid-1";
+    fireEvent.click(screen.getByTestId(/^report-connected-/));
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("rework 1: a launch queued while loading mints directly when the only session in the list is the one being reattached", async () => {
+    seedFreshSnapshot();
+    const reg = deferredRegistryResponse();
+    const reattached: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/terminal/session/list") {
+          return reg.promise.then((sessions) => ({ ok: true, json: async () => ({ sessions }) }));
+        }
+        if (url === "/api/terminal/session/reattach") {
+          const sid = (JSON.parse(String(init?.body)) as { sid: string }).sid;
+          reattached.push(sid);
+          return Promise.resolve({ ok: true, json: async () => ({ sessionId: sid, browserToken: `t-${sid}` }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await act(async () => {
+      reg.resolve([ownRow()]);
+    });
+
+    // Nothing to choose: no dialog, a new session is started, and the
+    // remembered one is still reattached.
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(reattached).toEqual(["own-sid-1"]);
+  });
+
+  it("rework 2: a launch during the reattach gap (list loaded, no tab yet) shows the list, which can be dismissed", async () => {
+    seedFreshSnapshot();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ sessions: [ownRow(), liveElsewhereRow(), recentRowElsewhere()] }),
+          });
+        }
+        // The reattach never answers, so no tab appears.
+        if (url === "/api/terminal/session/reattach") return new Promise(() => {});
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    // Let the list land and the instant-continue reattach start.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith("/api/terminal/session/reattach", expect.anything()));
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("a session minted in this pageview becomes known: after it reports its id the list is re-fetched, and '+' shows it", async () => {
+    let rows: ChooserRegistryRow[] = [];
+    let listCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          listCalls += 1;
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: rows }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+
+    rows = [{ ...liveHereRow(), sid: "minted-sid" }, recentRowElsewhere()];
+    reportConnectedSidOverride.current = "minted-sid";
+    fireEvent.click(screen.getByTestId(/^report-connected-/));
+
+    // The re-fetch lands, so there is now a recent session to choose between.
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+    // Let the re-fetched rows land in state before clicking.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
   });
 });

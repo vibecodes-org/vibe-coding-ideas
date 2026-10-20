@@ -123,7 +123,7 @@ import {
   type ChooserRecentRow,
   type TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
-import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
+import { decideEntryBehaviour, hasSessionChoice, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { computeWakeRecheck, type WakeResumeMaterial, type WakeTabSid } from "@/lib/terminal/wake-recheck";
 import { loadSessionSnapshot, readTabSids, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
@@ -919,6 +919,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   useEffect(() => {
     registryRowsRef.current = registryRows;
   }, [registryRows]);
+  // Card fb854f9e: a synchronous read of the sids open as tabs in this dock,
+  // for `deliverLaunch`'s click-time "is there anything to choose between?".
+  const ownSessionIdsRef = useRef(ownSessionIds);
+  useEffect(() => {
+    ownSessionIdsRef.current = ownSessionIds;
+  }, [ownSessionIds]);
+  // A session minted in this pageview isn't in `registryRows` (fetched at
+  // load). Re-fetch once per such sid so it, and anything that later ends,
+  // is known to the click-time check.
+  const registryRefetchedSidsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (registryRows === null) return;
+    for (const sid of ownSessionIds) {
+      if (registryRefetchedSidsRef.current.has(sid)) continue;
+      if (registryRows.some((r) => r.sid === sid)) continue;
+      registryRefetchedSidsRef.current.add(sid);
+      void refreshRegistry();
+    }
+  }, [ownSessionIds, registryRows, refreshRegistry]);
 
   // Close every open pop-out hand-off channel if the dock itself unmounts
   // (board navigation away) — the popped windows keep running independently
@@ -1983,11 +2002,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   // Session entry chooser (card cbe60db5, F1; rework 11 fixes the gate below).
   // The actual entry point every launch source (toolbar bus event,
-  // task-launch bus event, "+") calls. Always consults `entryDecisionRef`
-  // — NOT gated on whether a local tab already exists — so a launch fired
-  // while another tab is open (or actively connected) still routes through
-  // the chooser instead of blindly minting a duplicate/parallel session
-  // whenever the registry knows about other live/recent sessions.
+  // task-launch bus event, "+") calls. It reads `entryDecisionRef` only as
+  // the "is the list still loading?" guard (null = queue the launch). Whether
+  // to show the chooser or mint is decided at click time by
+  // `hasSessionChoice` over the current list and open tabs (card fb854f9e) —
+  // NOT gated on whether a local tab already exists, so a launch fired while
+  // another tab is open (or actively connected) still routes through the
+  // chooser instead of blindly minting a duplicate/parallel session whenever
+  // the registry knows about other live/recent sessions.
   const deliverLaunch = useCallback(
     (payload: BrowserLaunchPayload | null) => {
       if (entryDecisionRef.current === null) {
@@ -2021,7 +2043,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setTaskChoiceOpen(true);
         return;
       }
-      if (entryDecisionRef.current.kind === "chooser") {
+      // Card fb854f9e: decided at click time from the CURRENT registry and
+      // open tabs, not the page-load decision (which stays "instant-continue"
+      // after a reload with a fresh snapshot and made every "+" mint).
+      if (hasSessionChoice(registryRowsRef.current ?? [], ownSessionIdsRef.current, Date.now())) {
+        void refreshRegistry();
         // Rework 11 (card cbe60db5): no longer gated on
         // `sessionsRef.current.length === 0`. With no local tabs there's
         // nothing to protect, so it's today's unchanged full dock-body swap
@@ -2032,12 +2058,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setExpanded(true);
         setPendingLaunch(payload);
         seedChooserAgentFromLaunch(payload);
-        if (sessionsRef.current.length > 0) setChooserMode("launch");
+        // Also an overlay when the page load chose to reattach (instant-
+        // continue): the reattached tabs may not exist yet, and the body
+        // swap only renders for the "chooser" load decision.
+        if (sessionsRef.current.length > 0 || entryDecisionRef.current.kind !== "chooser") {
+          setChooserMode("launch");
+        }
         return;
       }
       mintAndDeliver(payload);
     },
-    [mintAndDeliver, seedChooserAgentFromLaunch],
+    [mintAndDeliver, seedChooserAgentFromLaunch, refreshRegistry],
   );
 
   // The "In the browser" menu item (board toolbar) and task-card menus fire the
@@ -2227,7 +2258,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         setTaskChoiceOpen(true);
         return;
       }
-      if (entryDecision.kind === "chooser") {
+      // Card fb854f9e: an instant-continue load must still reattach its
+      // sessions, whether the launch then shows the list or mints. Those
+      // sessions are about to be open tabs, so they don't count as
+      // something to choose.
+      const openSids =
+        entryDecision.kind === "instant-continue"
+          ? new Set([...ownSessionIds, ...entryDecision.sids])
+          : ownSessionIds;
+      if (entryDecision.kind === "instant-continue" && !instantContinueTriggeredRef.current) {
+        instantContinueTriggeredRef.current = true;
+        for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
+      }
+      if (hasSessionChoice(registryRows ?? [], openSids, Date.now())) {
         // `deliverLaunch` already expanded the dock and set `pendingLaunch`.
         // With no local tabs, `showingChooser` renders the body-swap chooser
         // from that state alone — nothing else to do. With a tab already
@@ -2237,7 +2280,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // launch agent — the queue-time branch in `deliverLaunch` set
         // `pendingLaunch` before the decision was known and couldn't do it.
         seedChooserAgentFromLaunch(pendingLaunch);
-        if (sessions.length > 0) setChooserMode("launch");
+        if (sessions.length > 0 || entryDecision.kind === "instant-continue") setChooserMode("launch");
         return;
       }
       const payload = pendingLaunch;
@@ -2259,7 +2302,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections, seedChooserAgentFromLaunch]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections, seedChooserAgentFromLaunch, registryRows, ownSessionIds]);
 
   // Cross-board resume fix (bug 62e57071, Sentinel's investigation): a
   // Recent row can belong to ANY board — chooser-data.ts's Recent section is
@@ -3652,7 +3695,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           a perfectly valid one that costs nothing and leaves nothing behind.
           A modal with no exit is a trap, not a guarantee. */}
       <Dialog
-        open={chooserOpen && sessions.length > 0 && !inlineBrowse}
+        open={chooserOpen && (sessions.length > 0 || !showingChooser) && !inlineBrowse}
         onOpenChange={(next) => {
           if (!next) handleChooserDismiss();
         }}
