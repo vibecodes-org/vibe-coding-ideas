@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideEntryBehaviour, type EntryRegistryRow } from "./entry-decision";
+import { decideEntryBehaviour, hasSessionChoice, type EntryRegistryRow } from "./entry-decision";
 import { SNAPSHOT_FRESHNESS_MS } from "./session-snapshot";
 import { RECENT_WINDOW_MS } from "./chooser-data";
 
@@ -127,5 +127,30 @@ describe("decideEntryBehaviour", () => {
   it("empty-launch when there is a snapshot but no rows at all", () => {
     const snapshotInfo = { sid: "live-1", savedAt: NOW - 5000 };
     expect(decideEntryBehaviour([], [snapshotInfo], NOW)).toEqual({ kind: "empty-launch" });
+  });
+});
+
+describe("hasSessionChoice (card fb854f9e)", () => {
+  const none = new Set<string>();
+  const ended = (sid: string, agoMs: number) =>
+    row({ sid, status: "ended", endedAt: new Date(NOW - agoMs).toISOString() });
+
+  it("false for an empty list", () => {
+    expect(hasSessionChoice([], none, NOW)).toBe(false);
+  });
+  it("false when the only active session is already open here", () => {
+    expect(hasSessionChoice([row({ sid: "a" })], new Set(["a"]), NOW)).toBe(false);
+  });
+  it("true for an active session that is not open here", () => {
+    expect(hasSessionChoice([row({ sid: "a" })], new Set(["b"]), NOW)).toBe(true);
+  });
+  it("true for a session that ended within 48h", () => {
+    expect(hasSessionChoice([ended("e", 60_000)], none, NOW)).toBe(true);
+  });
+  it("false for a session that ended more than 48h ago", () => {
+    expect(hasSessionChoice([ended("e", RECENT_WINDOW_MS + 1000)], none, NOW)).toBe(false);
+  });
+  it("true when an open-here session has recently ended (resumable)", () => {
+    expect(hasSessionChoice([ended("a", 60_000)], new Set(["a"]), NOW)).toBe(true);
   });
 });
