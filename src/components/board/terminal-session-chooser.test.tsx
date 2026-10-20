@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach } from "vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act, within } from "@testing-library/react";
 import { TerminalSessionChooser } from "./terminal-session-chooser";
 import type { ChooserSections } from "@/lib/terminal/chooser-data";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION } from "@/lib/terminal/helper-version";
@@ -919,5 +919,81 @@ describe("TerminalSessionChooser — Remote Control label (task 5c8969cc)", () =
     unmount();
     renderChooser({ remoteControlChip: "📱 remote control on", remoteControlReminder: reminder });
     expect(screen.getByText(reminder)).toHaveClass("mt-1", "text-[11px]", "text-zinc-500");
+  });
+});
+
+describe("TerminalSessionChooser — Recent rows follow the agent picker (card 69f2535f)", () => {
+  const recentRow = (sid: string, title: string, agent?: "claude" | "codex") => ({
+    sid,
+    ideaId: "idea-1",
+    ideaTitle: "VibeCodes",
+    taskId: null,
+    taskTitle: title,
+    cwd: "~/projects/vibecodes",
+    machineLabel: "Mac",
+    claudeSessionId: null,
+    endedAt: new Date().toISOString(),
+    displayName: null,
+    agent,
+  });
+  const liveRow = (sid: string, title: string, agent: "claude" | "codex") => ({
+    sid,
+    ideaId: "idea-1",
+    ideaTitle: "VibeCodes",
+    taskId: null,
+    taskTitle: title,
+    machineLabel: "Mac",
+    cwd: "~/projects/vibecodes",
+    createdAt: new Date().toISOString(),
+    wasOpenInThisTab: false,
+    displayName: null,
+    agent,
+  });
+  const mixed = sections({
+    liveHere: [liveRow("l1", "Live claude job", "claude"), liveRow("l2", "Live codex job", "codex")],
+    recentHere: [recentRow("r1", "Recent claude here", "claude"), recentRow("r2", "Recent codex here", "codex")],
+    recentElsewhere: [
+      { ...recentRow("r3", "Recent claude away"), ideaId: "idea-2" },
+      { ...recentRow("r4", "Recent codex away", "codex"), ideaId: "idea-2" },
+    ],
+  });
+  const props = {
+    onReconnectHere: vi.fn(),
+    onOpenBoardAndReconnect: vi.fn(),
+    onResume: vi.fn(),
+    onStartNew: vi.fn(),
+  };
+
+  it("shows only the picked agent's Recent rows in both sections, never filters Running now", () => {
+    const { rerender } = render(
+      <TerminalSessionChooser sections={mixed} {...props} agent="codex" onAgentChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Recent codex here")).toBeInTheDocument();
+    expect(screen.getByText("Recent codex away")).toBeInTheDocument();
+    expect(screen.queryByText("Recent claude here")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent claude away")).not.toBeInTheDocument();
+    expect(screen.getByText("Live claude job")).toBeInTheDocument();
+    expect(screen.getByText("Live codex job")).toBeInTheDocument();
+
+    rerender(<TerminalSessionChooser sections={mixed} {...props} agent="claude" onAgentChange={vi.fn()} />);
+    expect(screen.getByText("Recent claude here")).toBeInTheDocument();
+    expect(screen.getByText("Recent claude away")).toBeInTheDocument();
+    expect(screen.queryByText("Recent codex here")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recent codex away")).not.toBeInTheDocument();
+    expect(screen.getByText("Live codex job")).toBeInTheDocument();
+  });
+
+  it("shows every Recent row when no agent picker is wired", () => {
+    render(<TerminalSessionChooser sections={mixed} {...props} />);
+    for (const t of ["Recent claude here", "Recent codex here", "Recent claude away", "Recent codex away"]) {
+      expect(screen.getByText(t)).toBeInTheDocument();
+    }
+  });
+
+  it("labels every Recent row with its agent chip (no agent counts as Claude Code)", () => {
+    render(<TerminalSessionChooser sections={mixed} {...props} />);
+    const rowOf = (title: string) => screen.getByText(title).closest("div.border-t") as HTMLElement;
+    expect(within(rowOf("Recent claude away")).getByText("Claude Code")).toBeInTheDocument();
+    expect(within(rowOf("Recent codex here")).getByText("Codex")).toBeInTheDocument();
   });
 });

@@ -27,6 +27,7 @@ import { SessionRenameField } from "./terminal-session-rename";
 import {
   findLiveSessionForTask,
   visibleRecentRows,
+  filterRecentByAgent,
   rowAgent,
   type ChooserSections,
   type ChooserLiveRow,
@@ -284,8 +285,11 @@ export function TerminalSessionChooser({
   // and `entry-decision.ts`'s registry read both still need the full set.
   // Board-affiliation split (this card): applied to the already-derived
   // `recentHere`/`recentElsewhere` halves, same as the old single list.
-  const visibleRecentHere = visibleRecentRows(sections.recentHere);
-  const visibleRecentElsewhere = visibleRecentRows(sections.recentElsewhere);
+  // Card 69f2535f: Recent follows the "Run it with" picker (Running now never
+  // does). A chooser without the picker wired keeps the unfiltered list.
+  const recentAgent = agent && onAgentChange ? agent : undefined;
+  const visibleRecentHere = filterRecentByAgent(visibleRecentRows(sections.recentHere), recentAgent);
+  const visibleRecentElsewhere = filterRecentByAgent(visibleRecentRows(sections.recentElsewhere), recentAgent);
 
   const taskMatch = pendingTask ? findLiveSessionForTask(sections, pendingTask.taskId) : null;
   const wasOpenSid =
@@ -702,6 +706,7 @@ function RecentRow({
                 {label}
               </span>
               {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+              <AgentChip agent={rowAgent(row.agent)} />
             </div>
             <div className="truncate font-mono text-[11px] text-zinc-500">
               {row.cwd ?? "no recorded folder"} · ended {formatSessionAge(row.endedAt)} ago
