@@ -86,9 +86,9 @@
 //      be told apart from one another by Resume (it falls back to "most
 //      recent in this folder", the pre-rework-5 behaviour) — so they keep the
 //      old one-per-folder collapse, keeping only the newest such row per
-//      `cwd`.
+//      `cwd` PER AGENT (a Claude row never swallows a Codex row, card 69f2535f).
 //   3. A folder that already has an ID-bearing row shown ALSO gets its single
-//      newest ID-less row shown (not suppressed) — that ID-less row is a
+//      newest ID-less row (per agent) shown (not suppressed) — that ID-less row is a
 //      distinct, older-era conversation pointer (from before the bridge
 //      announced ids, or a bridge too old to ever announce one) that the
 //      ID-bearing rows cannot stand in for. This is the simplest honest rule:
@@ -97,7 +97,7 @@
 //      fix above) has no folder to collapse it against another row by — it
 //      is never deduped away, only ever capped by RECENT_MAX like everything
 //      else.
-//   5. The combined result is capped at RECENT_MAX (raised 5 → 10 for this
+//   5. The combined result is capped at RECENT_MAX PER AGENT (raised 5 → 10 for this
 //      rework — more rows are now legitimately distinct, so the old cap would
 //      truncate real history), newest-ended first.
 
@@ -317,6 +317,8 @@ export function deriveChooserSections(
   // deduped away. `recentCandidates` is already sorted newest-ended-first, so
   // "first row seen per folder" is "newest per folder" for the id-less
   // collapse.
+  // Keyed per agent (card 69f2535f): Codex never reports a conversation id, so
+  // a cwd-only key let a newer id-less Claude row swallow every Codex row.
   const seenIdlessCwd = new Set<string>();
   const selected: (ChooserRegistryRow & { endedAt: string })[] = [];
   for (const r of recentCandidates) {
@@ -329,12 +331,24 @@ export function deriveChooserSections(
       selected.push(r); // no folder to dedupe against — always kept
       continue;
     }
-    if (seenIdlessCwd.has(cwd)) continue; // one id-less row per project folder
-    seenIdlessCwd.add(cwd);
+    const idlessKey = `${rowAgent(r.agent)}\u0000${cwd}`;
+    if (seenIdlessCwd.has(idlessKey)) continue; // one id-less row per project folder per agent
+    seenIdlessCwd.add(idlessKey);
     selected.push(r);
   }
 
-  const recent: ChooserRecentRow[] = selected.slice(0, RECENT_MAX).map((r) => ({
+  // RECENT_MAX applies per agent (newest-ended first, order unchanged) so a
+  // burst of one agent's sessions cannot push the other's out of the list.
+  const keptPerAgent = new Map<LaunchAgent, number>();
+  const capped = selected.filter((r) => {
+    const a = rowAgent(r.agent);
+    const n = keptPerAgent.get(a) ?? 0;
+    if (n >= RECENT_MAX) return false;
+    keptPerAgent.set(a, n + 1);
+    return true;
+  });
+
+  const recent: ChooserRecentRow[] = capped.map((r) => ({
     sid: r.sid,
     ideaId: r.ideaId,
     ideaTitle: r.ideaTitle,
@@ -378,6 +392,23 @@ export function deriveChooserSections(
  */
 export function visibleRecentRows(recent: ChooserRecentRow[]): ChooserRecentRow[] {
   return recent.filter((r) => r.cwd !== null);
+}
+
+/**
+ * Display-only filter for the chooser's Recent lists: keeps the rows of the
+ * agent picked in the "Run it with" picker (a row with no recorded agent
+ * counts as Claude Code). `agent` undefined returns the rows unchanged, which
+ * is what a chooser without a picker shows. Like `visibleRecentRows`, never
+ * apply this to `ChooserSections.recent`/`recentHere`/`recentElsewhere`
+ * themselves: task matching, the ?resume= lookup and the header counts read
+ * the full set.
+ */
+export function filterRecentByAgent(
+  rows: ChooserRecentRow[],
+  agent?: LaunchAgent,
+): ChooserRecentRow[] {
+  if (!agent) return rows;
+  return rows.filter((r) => rowAgent(r.agent) === agent);
 }
 
 /**

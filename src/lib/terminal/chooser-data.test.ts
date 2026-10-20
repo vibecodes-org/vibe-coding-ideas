@@ -11,6 +11,7 @@ import {
   visibleRecentRows,
   partitionRecentByBoard,
   rowAgent,
+  filterRecentByAgent,
   type ChooserRegistryRow,
   type ChooserRecentRow,
 } from "./chooser-data";
@@ -1021,5 +1022,72 @@ describe("deriveChooserSections — agent propagation", () => {
     const sections = deriveChooserSections(rows, IDEA_A, NOW);
     expect(sections.liveHere.find((r) => r.sid === "live-codex")?.agent).toBe("codex");
     expect(sections.recent.find((r) => r.sid === "recent-claude")?.agent).toBe("claude");
+  });
+});
+
+describe("deriveChooserSections — per-agent recent rules (card 69f2535f)", () => {
+  const ended = (minsAgo: number) => new Date(NOW - minsAgo * 60_000).toISOString();
+
+  it("keeps one id-less row per folder PER AGENT: a newer Claude row no longer eats an older Codex row", () => {
+    const rows = [
+      row({ sid: "claude-new", status: "ended", endedAt: ended(1), cwd: "/p/a", agent: "claude" }),
+      row({ sid: "codex-old", status: "ended", endedAt: ended(5), cwd: "/p/a", agent: "codex" }),
+    ];
+    const { recent } = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(recent.map((r) => r.sid)).toEqual(["claude-new", "codex-old"]);
+  });
+
+  it("still collapses two id-less Codex rows in one folder to the newer one", () => {
+    const rows = [
+      row({ sid: "codex-new", status: "ended", endedAt: ended(1), cwd: "/p/a", agent: "codex" }),
+      row({ sid: "codex-old", status: "ended", endedAt: ended(5), cwd: "/p/a", agent: "codex" }),
+    ];
+    const { recent } = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(recent.map((r) => r.sid)).toEqual(["codex-new"]);
+  });
+
+  it("applies RECENT_MAX per agent so a burst of Claude rows cannot push out Codex", () => {
+    const rows = [
+      ...Array.from({ length: RECENT_MAX + 3 }, (_, i) =>
+        row({
+          sid: `claude-${i}`,
+          status: "ended",
+          endedAt: ended(i + 1),
+          cwd: `/p/c${i}`,
+          agent: "claude",
+        }),
+      ),
+      row({ sid: "codex-old", status: "ended", endedAt: ended(100), cwd: "/p/x", agent: "codex" }),
+    ];
+    const { recent } = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(recent.filter((r) => rowAgent(r.agent) === "claude")).toHaveLength(RECENT_MAX);
+    expect(recent.some((r) => r.sid === "codex-old")).toBe(true);
+  });
+});
+
+describe("filterRecentByAgent", () => {
+  const mk = (sid: string, agent?: "claude" | "codex"): ChooserRecentRow => ({
+    sid,
+    ideaId: IDEA_A,
+    ideaTitle: null,
+    taskId: null,
+    taskTitle: null,
+    cwd: "/p",
+    machineLabel: null,
+    claudeSessionId: null,
+    endedAt: new Date(NOW).toISOString(),
+    displayName: null,
+    agent,
+  });
+  const rows = [mk("c1", "claude"), mk("x1", "codex"), mk("u1"), mk("x2", "codex")];
+
+  it("keeps only Codex rows for codex", () => {
+    expect(filterRecentByAgent(rows, "codex").map((r) => r.sid)).toEqual(["x1", "x2"]);
+  });
+  it("treats rows with no agent as Claude Code", () => {
+    expect(filterRecentByAgent(rows, "claude").map((r) => r.sid)).toEqual(["c1", "u1"]);
+  });
+  it("returns every row, same order, when no agent is given", () => {
+    expect(filterRecentByAgent(rows, undefined)).toEqual(rows);
   });
 });
