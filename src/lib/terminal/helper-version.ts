@@ -128,8 +128,13 @@
  *  an agent stopped (a clear ended screen instead of 90 seconds of
  *  "reconnecting"), and reports the Mac's fixed name so "Update now" closes
  *  only this Mac's helper. An older helper on a Mac with no folder of its own
- *  still starts in the wrong place — soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.25";
+ *  still starts in the wrong place — soft nudge.
+ *  0.3.26 (card 5e654dd1, 24 Oct 2026): first helper whose bridge starts new
+ *  and resumed sessions with the chosen memory limit (Claude
+ *  `--autocompact <N>`, Codex `-c model_auto_compact_token_limit=<N>`), read
+ *  from the agents answer it already fetches. An older helper ignores the
+ *  value and the agent tidies up at its own size — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.26";
 
 export type HelperVersionParts = readonly [number, number, number];
 
