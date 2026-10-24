@@ -1356,14 +1356,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "b2004087dec2f9a3ec8199f121ac043590b372484894b69ad0dac9f576fa0d43",
-        "auto/missing": "a7da9f69f39710741ffd4651cfa0d5dab329d5c9dc2e5fca320b8660f2c81374",
-        "cheap/embedded": "c3f6c596bd39745ec19da1069042ec672d6fb0bf7e2d16ddd19b46beae85549a",
-        "cheap/missing": "873bfcce1edf295d0f8bae789eeb36883e4fefad6cbe06f6c59ac6fa08dd674f",
-        "frontier/embedded": "18b6fb39138aa737cb5a572968c160b65896f8f78c7221cf3a0bb10e666c1f27",
-        "frontier/missing": "df7541250951a43e4a133877894845e933c9adc0f48e9d87eba813d165fd1459",
-        "standard/embedded": "8c1c08c3b77446cd675b9f552531cf282f7adf19437c25b54ad2b35d2e0c4d40",
-        "standard/missing": "02b5a2c72023bffd20e6faace7e4340838812ceb4bf7f46e15ff436afb99cf3f",
+        "auto/embedded": "392c56bbf0b5c08e32e62ec518b6655d34bfe5c38668f565ed378779ab53f789",
+        "auto/missing": "cf226bf20e2c9359f3cbba1a5d4e1e793d48a65b3a7ea59a57bc1ad2b8ef659b",
+        "cheap/embedded": "8e3474abe94f6f200661e7178bf1820370eb56248668705df48d92c3fa70c90c",
+        "cheap/missing": "12069073151176e4f508651748fceb0a36ade7adb541a7d16f7718566a6fda75",
+        "frontier/embedded": "157a61bc7ae24536b632c4b35e050f6ed24022de3dccf6aef1716c3f091a400d",
+        "frontier/missing": "7ef04c890cca3848e15c6033e52b87b96385c669382acf08b7ab50ac678c3889",
+        "standard/embedded": "ae5fb6a7c82d275fd5bb35c409510f1fb9020228740034752bf72bab646a9d77",
+        "standard/missing": "3715c2d0baa13115b62381260a09f53fa8a74698ff4562d7d195aa5ceb6e4bfb",
       }
     `);
   });
@@ -1828,7 +1828,7 @@ describe("completeStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
 
     expect(commentInserted).toBe(false);
   });
@@ -1951,7 +1951,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "high" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "high" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("opus");
@@ -1966,7 +1966,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable", reasoning_effort_used: "high" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "fable", reasoning_effort_used: "high" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("fable");
@@ -1980,7 +1980,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("opus");
@@ -1994,7 +1994,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "low" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "low" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("opus");
@@ -2009,7 +2009,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "sonnet" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("sonnet");
@@ -2043,7 +2043,7 @@ describe("completeStep — tier adherence (P2c)", () => {
     // Under this LIVE default, frontier resolves to fable (fallback opus) —
     // "sonnet" is a mismatch either way, but the comment's wording must name
     // "Fable" (the live default), never "Opus" (the seed default).
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "sonnet" });
 
     const comment = getComment() as Record<string, unknown>;
     expect(comment.content as string).toContain("Frontier step defaults to Fable");
@@ -2056,7 +2056,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
 
     const update = getUpdate();
     expect(update.executed_model).toBeNull();
@@ -2071,7 +2071,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "unknown" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "unknown" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("unknown");
@@ -2086,7 +2086,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "sonnet" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("sonnet");
@@ -2105,7 +2105,7 @@ describe("completeStep — tier adherence (P2c)", () => {
     // Override maps frontier -> opus, so opus is now the *resolved* model (not the fallback).
     // The legacy flat override carries no effort, so the platform default's
     // (seed) effort for frontier ("high") still applies.
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus", reasoning_effort_used: "high" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "high" });
 
     const update = getUpdate();
     expect(update.tier_honored).toBe(true);
@@ -2164,7 +2164,7 @@ describe("completeStep — persona attestation", () => {
 
   it("persona_used='verbatim' -> stores persona_used='verbatim', persona_honored=true", async () => {
     const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "verbatim" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", persona_used: "verbatim" });
 
     const update = getUpdate();
     expect(update.persona_used).toBe("verbatim");
@@ -2173,7 +2173,7 @@ describe("completeStep — persona attestation", () => {
 
   it("persona_used='adapted' -> stores persona_used='adapted', persona_honored=false", async () => {
     const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "adapted" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", persona_used: "adapted" });
 
     const update = getUpdate();
     expect(update.persona_used).toBe("adapted");
@@ -2182,7 +2182,7 @@ describe("completeStep — persona attestation", () => {
 
   it("persona_used='none' -> stores persona_used='none', persona_honored=false", async () => {
     const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "none" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", persona_used: "none" });
 
     const update = getUpdate();
     expect(update.persona_used).toBe("none");
@@ -2211,6 +2211,7 @@ describe("completeStep — persona attestation", () => {
     await completeStep(ctx, {
       claim_token: TCT.token,
       step_id: STEP_ID,
+      output: "done",
       skills_used: ["api-design-review", "a11y-audit"],
     });
 
@@ -2219,7 +2220,7 @@ describe("completeStep — persona attestation", () => {
 
   it("skills_used=[] and skills_used omitted -> neither is written", async () => {
     const empty = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
-    await completeStep(empty.ctx, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
+    await completeStep(empty.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", skills_used: [] });
     expect(empty.getUpdate()).not.toHaveProperty("skills_used");
 
     const omitted = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
@@ -2235,6 +2236,7 @@ describe("completeStep — persona attestation", () => {
     const result = await completeStep(ctx, {
       claim_token: TCT.token,
       step_id: STEP_ID,
+      output: "done",
       persona_used: "verbatim",
       skills_used: ["x"],
     });
@@ -2339,7 +2341,7 @@ describe("completeStep / failStep — compliance notification wiring", () => {
   it("completeStep: tier dishonored -> posts one step_compliance notification to the idea owner", async () => {
     const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "haiku" });
 
     const rows = getNotificationsInserted();
     expect(rows).toHaveLength(1);
@@ -2355,7 +2357,7 @@ describe("completeStep / failStep — compliance notification wiring", () => {
   it("completeStep: tier honored -> no notification, no idea lookup", async () => {
     const { ctx, getNotificationsInserted, getIdeaLookups } = ctxWithIdeaOwner({ stepData, updatedStep });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "fable" });
 
     expect(getNotificationsInserted()).toHaveLength(0);
     expect(getIdeaLookups()).toBe(0);
@@ -2364,7 +2366,7 @@ describe("completeStep / failStep — compliance notification wiring", () => {
   it("completeStep: tier dishonored but owner has compliance_alerts=false -> no notification", async () => {
     const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep, compliancePrefOff: true });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "haiku" });
 
     expect(getNotificationsInserted()).toHaveLength(0);
   });
@@ -2372,7 +2374,7 @@ describe("completeStep / failStep — compliance notification wiring", () => {
   it("completeStep: owner is the caller (self) -> STILL notified (no self-skip for compliance events)", async () => {
     const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep, ownerId: USER_ID });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "haiku" });
 
     expect(getNotificationsInserted()).toHaveLength(1);
   });
@@ -2481,7 +2483,7 @@ describe("claimNextStep — rework instructions", () => {
     pendingStep: ReturnType<typeof makeStepRow>;
     updatedStep: Record<string, unknown>;
     priorSteps: { id: string; title: string; step_order: number; output: string | null }[];
-    reworkComments: { content: string; author_id: string; created_at: string; type: string }[];
+    reworkComments: { content: string; author_id: string; created_at: string; type: string; step_id?: string }[];
   }) {
     const tableCounts: Record<string, number> = {};
 
@@ -2526,6 +2528,7 @@ describe("claimNextStep — rework instructions", () => {
 
   it("includes rework warning and feedback in instruction when rework_instructions present", async () => {
     const step = makeStepRow({ output: "Previous attempt failed", comment_count: 1 });
+    // A saved write-up on a pending/failed step is never a rework source.
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
 
     const ctx = makeClaimContextWithRework({
@@ -2533,8 +2536,8 @@ describe("claimNextStep — rework instructions", () => {
       updatedStep,
       priorSteps: [],
       reworkComments: [
-        { content: "Please fix the validation logic", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure" },
-        { content: "Also handle edge case for empty input", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested" },
+        { content: "Please fix the validation logic", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure", step_id: STEP_ID },
+        { content: "Also handle edge case for empty input", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested", step_id: STEP_ID },
       ],
     });
 
@@ -2542,22 +2545,25 @@ describe("claimNextStep — rework instructions", () => {
     const r = result as { instruction: string };
 
     expect(r.instruction).toContain("REWORK REQUIRED");
-    expect(r.instruction).toContain('"rework_instructions"');
+    expect(r.instruction).toContain("rework_instructions.feedback");
     // Said once (card 5e654dd1): the feedback is in rework_instructions only —
     // not copied into the instruction, and the step object no longer carries output.
     expect(r.instruction).not.toContain("Previous attempt failed");
     expect(r.instruction).not.toContain("Please fix the validation logic");
     const full = result as unknown as {
-      rework_instructions: { previous_failure_output: string; changes_requested: { content: string }[] };
+      rework_instructions: { scope: string; feedback: { from_step: string; content: string }; earlier_rounds: number };
       step: Record<string, unknown>;
     };
-    expect(full.rework_instructions.previous_failure_output).toBe("Previous attempt failed");
-    expect(full.rework_instructions.changes_requested.map((c) => c.content)).toEqual([
-      "Please fix the validation logic",
-      "Also handle edge case for empty input",
-    ]);
+    // Newest round only, plus a count of the older one; the step's own output is not a source.
+    expect(full.rework_instructions.scope).toBe("this_step");
+    expect(full.rework_instructions.feedback.content).toBe("Also handle edge case for empty input");
+    expect(full.rework_instructions.feedback.from_step).toBe("Test Step");
+    expect(full.rework_instructions.earlier_rounds).toBe(1);
+    expect(full.rework_instructions).not.toHaveProperty("previous_failure_output");
+    expect(full.rework_instructions).not.toHaveProperty("changes_requested");
     expect(full.step).not.toHaveProperty("output");
-    expect(JSON.stringify(result).split("Previous attempt failed")).toHaveLength(2);
+    expect(JSON.stringify(result)).not.toContain("Previous attempt failed");
+    expect(JSON.stringify(result)).not.toContain("Please fix the validation logic");
   });
 
   it("does not include rework section when no rework_instructions", async () => {
@@ -2594,7 +2600,7 @@ describe("claimNextStep — rework instructions", () => {
         } else if (callNum === 3) {
           // Tier 2: run-scoped step IDs
           chain.chain.then = (resolve: (val: unknown) => void) =>
-            Promise.resolve({ data: [{ id: step.id }, { id: "sibling-step" }], error: null }).then(resolve);
+            Promise.resolve({ data: [{ id: step.id, title: "Test Step" }, { id: "sibling-step", title: "Sibling" }], error: null }).then(resolve);
         } else if (callNum === 4) {
           // Context query — no prior steps
           chain.chain.then = (resolve: (val: unknown) => void) =>
@@ -2613,8 +2619,8 @@ describe("claimNextStep — rework instructions", () => {
       if (table === "workflow_step_comments") {
         // Tier 2 run-scoped comments query — return failure + changes_requested from sibling steps
         return createChain([
-          { content: "Validation logic is wrong", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure" },
-          { content: "Fix the edge case handling", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested" },
+          { content: "Validation logic is wrong", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure", step_id: "sibling-step" },
+          { content: "Fix the edge case handling", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested", step_id: "sibling-step" },
         ]).chain;
       }
 
@@ -2629,7 +2635,10 @@ describe("claimNextStep — rework instructions", () => {
     const r = result as { instruction: string; rework_instructions: unknown };
 
     expect(r.rework_instructions).not.toBeNull();
-    expect(r.instruction).toContain("REWORK REQUIRED");
+    // A step that was never sent back is told it is background, never "this step failed".
+    expect(r.instruction).not.toContain("REWORK REQUIRED");
+    expect(r.instruction).toContain("rework_instructions.feedback is background");
+    expect(r.rework_instructions).toMatchObject({ scope: "earlier_step", earlier_rounds: 1, feedback: { from_step: "Sibling" } });
     expect(JSON.stringify(r.rework_instructions)).toContain("Fix the edge case handling");
     expect(r.instruction).not.toContain("Fix the edge case handling");
   });
@@ -3981,7 +3990,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     // A pending step showing a failure in its output column reads as broken;
     // the text survives as the failure comment, which is also what
     // claim_next_step hands back as rework_instructions.
-    expect(getUpdate().output).toBeUndefined();
+    expect(getUpdate().output).toBeNull();
     const failure = getComments().find((c) => c.type === "failure");
     expect(failure!.content).toBe("API error: credit balance too low");
   });
@@ -4167,7 +4176,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
     const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
 
     // Seed frontier (claude) resolves to opus, fallback fable.
-    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+    await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
 
     expect("model_unavailable_at" in getUpdate()).toBe(false);
     expect("model_unavailable_model" in getUpdate()).toBe(false);
@@ -4181,7 +4190,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
   it("marks nothing when the agent ran the model it was told to", async () => {
     const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
 
-    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "opus" });
+    await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "opus" });
 
     const update = getUpdate();
     expect("model_unavailable_at" in update).toBe(false);
@@ -4195,7 +4204,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+    await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
 
     expect("model_unavailable_at" in getUpdate()).toBe(false);
     expect(getMarkerWrite()).toBeUndefined();
@@ -4204,7 +4213,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
   it("marks nothing when model_used is omitted", async () => {
     const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
 
-    await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token });
+    await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token });
 
     expect("model_unavailable_at" in getUpdate()).toBe(false);
     expect(getMarkerWrite()).toBeUndefined();
@@ -4218,7 +4227,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
       markerWriteError: { message: "column \"model_unavailable_at\" does not exist" },
     });
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+    const result = await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
 
     expect(getUpdate().status).toBe("completed");
     expect((result as { step: { status: string } }).step.status).toBe("completed");
@@ -4234,7 +4243,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
       markerWriteThrows: true,
     });
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: TCT.token, model_used: "fable" });
+    const result = await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
 
     expect(getUpdate().status).toBe("completed");
     expect((result as { step: { status: string } }).step.status).toBe("completed");
@@ -6020,8 +6029,9 @@ describe("claimNextStep — Codex handoff", () => {
     expect(result.instruction).toContain("spawn_agent");
     // Live test 11 Oct 2026: a Codex child that had the board tools said it
     // had none and couldn't post its comment, so the child is told where they are.
-    expect(result.instruction).toContain("its VibeCodes board tools (add_task_comment, add_step_comment, get_task)");
+    expect(result.instruction).toContain("its VibeCodes board tools (add_task_comment, add_step_comment, get_task, save_step_output)");
     expect(result.instruction).toContain("if it reports having no VibeCodes board tools");
+    expect(result.instruction).toContain("save_step_output (step_id");
     expect(result.instruction).not.toContain("Agent/Task tool");
     expect(result.instruction).not.toContain("Completed inline — no subagent capability.");
     expect(result.instruction).not.toContain("switch this Codex session");
@@ -6808,12 +6818,12 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(8500);
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(9050); // stage 3: +541 for the save line
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
     const r = (await midRunClaim()) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(4600);
+    expect(r.instruction.length).toBeLessThanOrEqual(5050); // stage 3: 4,476 -> 5,013 (+537)
   });
 
   it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {
@@ -6822,7 +6832,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
       pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, systemPrompt: RULE_PERSONA,
     });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(3500);
+    expect(r.instruction.length).toBeLessThanOrEqual(4000); // stage 3: 3,445 -> 3,982 (+537)
   });
 
   it("sends available_agents only when the step has no assigned agent (AC1.4)", async () => {
@@ -6999,5 +7009,63 @@ describe("step cost (card ba37039b)", () => {
     const rejected = vi.fn(() => Promise.resolve({ error: null }));
     await failStep(completionContext("awaiting_approval", rejected), { step_id: STEP_ID, output: "no", usage: USAGE });
     expect(rejected).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage 3 (card 5e654dd1): claims and saved write-ups
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — saved write-up and rework shape (stage 3)", () => {
+  /** Wraps a claim context so the claim's own update payload can be read. */
+  function withUpdateSpy(ctx: McpContext) {
+    const updates: Record<string, unknown>[] = [];
+    const realFrom = ctx.supabase.from.bind(ctx.supabase) as unknown as (t: string) => unknown;
+    (ctx.supabase as { from: unknown }).from = ((table: string) => {
+      const chain = realFrom(table) as Record<string, unknown>;
+      if (table === "task_workflow_steps") {
+        const realUpdate = chain.update as (d: Record<string, unknown>) => unknown;
+        chain.update = (d: Record<string, unknown>) => { updates.push(d); return realUpdate(d); };
+      }
+      return chain;
+    }) as never;
+    return updates;
+  }
+
+  it("clears output when claiming a pending step", async () => {
+    const step = makeStepRow();
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [] });
+    const updates = withUpdateSpy(ctx);
+    await claimNextStep(ctx, { task_id: TASK_ID });
+    expect(updates[0]).toHaveProperty("output", null);
+  });
+
+  it("keeps the saved write-up on a re-claim and says how big it is, with the extra line only then", async () => {
+    const step = makeStepRow({ status: "in_progress", output: "x".repeat(321) });
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep: { ...step }, priorSteps: [] });
+    const updates = withUpdateSpy(ctx);
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as unknown as { saved_output_chars: number; instruction: string; rework_instructions: unknown };
+    expect(updates[0]).not.toHaveProperty("output");
+    expect(r.saved_output_chars).toBe(321);
+    expect(r.instruction).toContain("SAVED WRITE-UP: 321 characters are already saved on this step from the earlier claim.");
+    // the saved write-up is never rework feedback
+    expect(r.rework_instructions).toBeNull();
+    expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
+  });
+
+  it("a normal claim has no saved-write-up fields and no previous_failure_output", async () => {
+    const step = makeStepRow();
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as unknown as { instruction: string };
+    expect(r).not.toHaveProperty("saved_output_chars");
+    expect(r.instruction).not.toContain("SAVED WRITE-UP");
+    expect(JSON.stringify(r)).not.toContain("previous_failure_output");
+  });
+
+  it("the brief carries the save line with the real step id", async () => {
+    const step = makeStepRow();
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [] });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as unknown as { instruction: string };
+    expect(r.instruction).toContain(`save_step_output (step_id "${STEP_ID}", work_token)`);
   });
 });

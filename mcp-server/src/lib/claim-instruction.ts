@@ -69,7 +69,12 @@ export interface ClaimInstructionInput {
   hasWorkToken: boolean;
   gated: boolean;
   priorSteps: PriorStepRef[];
-  hasRework: boolean;
+  /** The step being claimed; written into the helper's save line. */
+  stepId: string;
+  /** null = no rework feedback. this_step = sent back; earlier_step = background. */
+  reworkScope: "this_step" | "earlier_step" | null;
+  /** A re-claim of an in-progress step that already has a saved write-up (0 = none). */
+  savedOutputChars: number;
   /** How many approval notes ride in `approval_notes`. */
   approvalNotesCount: number;
   /** The persona already carries the PROTECT PRIOR WORK rule. */
@@ -94,7 +99,20 @@ const SAVE_POINT_COMMIT =
   `SAVE-POINT COMMIT: Before spawning this step's subagent, if this project is a git repository and a previous step's completed work is still uncommitted, commit it locally now on the branch you are already on. Do not create a branch, worktree or folder for this, and never push. Skip this if there is nothing to commit or the project is not a git repository. Never commit secrets or files covered by \`.gitignore\`.`;
 
 const HUMAN_APPROVAL =
-  `HUMAN APPROVAL REQUIRED: This step requires human approval. After producing your deliverable and calling complete_step, you MUST STOP. Do NOT call approve_step yourself. Present your deliverable to the user and wait for them to explicitly instruct you to approve it.`;
+  `HUMAN APPROVAL REQUIRED: This step requires human approval. After calling complete_step you MUST STOP. Do NOT call approve_step yourself. Show the user the helper's summary (the full write-up is on the board; fetch it with get_task step_ids only if they ask) and wait for them to explicitly instruct you to approve it.`;
+
+/**
+ * The line the session pastes into the helper's brief, with the real step id
+ * filled in (the helper never sees the claim reply). The helper saves its own
+ * full write-up and hands back only a short summary (card 5e654dd1, stage 3).
+ */
+export function saveLine(stepId: string): string {
+  return (
+    `When you finish, save your full write-up with save_step_output (step_id "${stepId}", work_token), ` +
+    `then reply only "Saved N characters" and a summary of at most 2,000 characters: the result, every decision the user must make, ` +
+    `and anything I must do next (such as merge and release steps). If you can't save, say so and hand back the full write-up.`
+  );
+}
 
 const FILE_DELIVERABLE =
   `DELIVERABLE: This step requires file-based output. For each deliverable with a format in parentheses (e.g. "(HTML)", "(JSON)"):\n` +
@@ -119,9 +137,9 @@ function claudeIdentity(i: ClaimInstructionInput): string {
   }
   const brief =
     `Brief: this step's description, the work_token` +
-    (i.hasRework ? `, rework_instructions` : "") +
+    (i.reworkScope ? `, rework_instructions` : "") +
     (i.approvalNotesCount > 0 ? `, approval_notes` : "") +
-    `.`;
+    `. ${saveLine(i.stepId)}`;
   const personaUsed = i.personaEmbeddable ? ` persona_used (verbatim/adapted/none),` : ``;
 
   return (
@@ -133,9 +151,10 @@ function claudeIdentity(i: ClaimInstructionInput): string {
     `2. ${personaLine} ${brief}\n` +
     `3. RELIABILITY: if the helper errors or drops, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
     `4. When it returns, run the usage_command (swap AGENT_ID for the helper's agentId) and pass its JSON line as usage (omit usage on NO_TRANSCRIPT; never let it hold up the step). ` +
-    `Call complete_step with this step's id, the claim_token, the helper's full deliverable as output, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion); on failure call fail_step the same way.\n` +
+    `Call complete_step with this step's id, the claim_token, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion), without output, because the helper saved it. ` +
+    `If the helper reports it couldn't save, pass its full write-up as output. Never pass the summary as output. On failure call fail_step the same way.\n` +
     `EXCEPTION: only if your client has no subagent/Agent tool at all, do the step inline as that persona (persona_prompt, or get_agent_prompt with as_persona true), ` +
-    `pass the work_token on comments, and call complete_step with the claim_token, stating verbatim in your output: "Completed inline — no subagent capability." ` +
+    `pass the work_token on comments, and call complete_step with the claim_token and your full write-up as output (nothing to save), stating verbatim in your output: "Completed inline — no subagent capability." ` +
     `This is the only exception.`
   );
 }
@@ -158,9 +177,9 @@ function codexIdentity(i: ClaimInstructionInput): string {
     pick +
     `1. Keep claim_token in the orchestrator only. Never forward the entire claim response, because it contains this completion credential.\n` +
     personaItem +
-    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, ${priorLine}approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
-    `4. The child does this step's work, comments with work_token, and returns its deliverable and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
-    `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once before failing the step). Complete only after receiving its deliverable, using agent: "codex", claim_token, output, model_used and reasoning_effort_used from the accepted launch, and persona_used (verbatim/adapted/none). Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
+    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, ${priorLine}approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task, save_step_output) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. ${saveLine(i.stepId)} Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
+    `4. The child does this step's work, comments with work_token, saves its deliverable with save_step_output, and returns a short summary and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
+    `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once; if it still has none, take its full deliverable and pass it as output). Complete only after the child reports the save, using agent: "codex", claim_token, no output, model_used and reasoning_effort_used from the accepted launch, and persona_used (verbatim/adapted/none). Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
     `CAPABILITY CHECK: inspect the actual spawn tool schema. If it cannot set both model and effort for a tiered step, or there is no supported subagent capability, do not pretend an inline /model command or a model name in the prompt changes execution. Report the capability gap with a work_token comment and stop before doing the work; do not complete it as a successful tier test. Only report unknown when no accepted launch/runtime configuration is available.\n` +
     `AUTO: when execution.model is null the tier makes no model promise; choose a supported model/effort for the fresh child and record what you actually launched.`
   );
@@ -211,9 +230,19 @@ export function buildClaimInstruction(i: ClaimInstructionInput): string {
 
   if (i.fileDeliverable) blocks.push(FILE_DELIVERABLE);
 
-  if (i.hasRework) {
+  if (i.reworkScope === "this_step") {
     blocks.push(
-      `⚠️ REWORK REQUIRED: this step failed before. Address the feedback in "rework_instructions" before proceeding.`
+      `⚠️ REWORK REQUIRED: this step was sent back. Address rework_instructions.feedback first.`
+    );
+  } else if (i.reworkScope === "earlier_step") {
+    blocks.push(
+      `Earlier in this run, work was sent back; rework_instructions.feedback is background: check it was dealt with.`
+    );
+  }
+
+  if (i.savedOutputChars > 0) {
+    blocks.push(
+      `SAVED WRITE-UP: ${i.savedOutputChars} characters are already saved on this step from the earlier claim. If the helper that wrote it finished, complete the step without output; otherwise run the step as normal (a new save replaces it).`
     );
   }
 

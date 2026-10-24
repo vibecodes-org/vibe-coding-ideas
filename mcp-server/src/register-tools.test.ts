@@ -71,6 +71,7 @@ const EXPECTED_TOOL_NAMES = [
   "apply_workflow_template",
   "claim_next_step",
   "complete_step",
+  "save_step_output",
   "fail_step",
   "skip_step",
   "update_step",
@@ -97,13 +98,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 86 tools", () => {
+  it("registers exactly 87 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(86);
+    expect(server.tool).toHaveBeenCalledTimes(87);
   });
 
   it("declares a result size limit on sync_board_agents so its file isn't saved to disk", () => {

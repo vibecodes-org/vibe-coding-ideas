@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 86 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 87 tools.",
 };
 
 function ToolTable({
@@ -296,7 +296,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">86 tools</strong> across 10
+            <strong className="text-foreground">87 tools</strong> across 10
             categories:
           </p>
 
@@ -338,7 +338,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflows" toolCount={22}>
+            <CollapsibleTools title="Workflows" toolCount={23}>
               <ToolTable
                 tools={[
                   { name: "list_workflow_templates", description: "List workflow templates for an idea (short summary each; pass template_id or include_steps for full steps)" },
@@ -348,7 +348,8 @@ export default function McpIntegrationPage() {
                   { name: "apply_workflow_template", description: "Apply a template to a task, creating a workflow run" },
                   { name: "sync_board_agents", description: "Save a claimed step's agent, and the rest of its run's agents, as Claude Code subagents in your project folder and wait until they are loaded (for sessions VibeCodes didn't launch)" },
                   { name: "claim_next_step", description: "Claim the next pending step for execution (orchestration entry point)" },
-                  { name: "complete_step", description: "Mark a step as complete with optional output" },
+                  { name: "complete_step", description: "Mark a step as complete; the step's saved write-up is stored (pass output only if the helper saved none)" },
+                  { name: "save_step_output", description: "A step's helper saves its own full write-up on the step (helper-only, needs the step's work token)" },
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
                   { name: "skip_step", description: "Skip a pending step that isn't applicable" },
                   { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },

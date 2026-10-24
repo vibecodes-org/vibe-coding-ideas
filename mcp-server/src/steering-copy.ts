@@ -32,7 +32,7 @@ export const COMPACTION_RULES =
  * because Codex does not show server instructions as standing instructions.
  */
 export const STEP_FINISH_RULES =
-  "Finishing a workflow step: call complete_step (or fail_step) with the ct_ claim token and the helper's full deliverable as output. On a step that needs human approval, stop and let the user approve it. Never call approve_step for the user. Never give the claim token to a helper.";
+  "Finishing a workflow step: call complete_step (or fail_step) with the ct_ claim token; the helper saves its own write-up, so pass output only when no helper saved one. On a step that needs human approval, stop and let the user approve it. Never call approve_step for the user. Never give the claim token to a helper.";
 
 /** Surface A — sent as the MCP server's `instructions` on both transports at construction. */
 export const SERVER_INSTRUCTIONS =

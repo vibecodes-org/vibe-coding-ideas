@@ -12,12 +12,14 @@ import {
   type AgentKind,
 } from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
-import { mintClaimToken, mintWorkToken, verifyClaimToken } from "../claim-token";
+import { mintClaimToken, mintWorkToken, verifyClaimToken, hashClaimToken } from "../claim-token";
 import {
   workTokenSchema,
   resolveStepCommentAuthor,
+  verifyStepWorkToken,
   WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE,
 } from "../lib/work-token-auth";
+import { buildReworkInstructions } from "../lib/rework";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { decideStepRematch } from "../../../src/lib/role-matching";
@@ -875,6 +877,10 @@ export async function claimNextStep(
       // VibeCodes' own record of what this claim sends; a re-claim refreshes it
       // and complete_step/fail_step leave it alone.
       skills_used: skillsSection.sent,
+      // A fresh claim starts with no write-up. (Belt and braces: a pending step
+      // should never hold one.) A re-claim of an in-progress step keeps what
+      // the earlier helper saved; the instruction says so.
+      ...(step.status === "pending" ? { output: null } : {}),
     })
     .eq("id", step.id)
     .in("status", ["pending", "in_progress"])
@@ -963,68 +969,46 @@ export async function claimNextStep(
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, params.task_id);
 
-  // Fetch rework instructions if this step was previously failed (retry scenario)
-  // Look for failure output and changes_requested comments
-  let rework_instructions: {
-    previous_failure_output: string | null;
-    changes_requested: Array<{ content: string; author_id: string; created_at: string }>;
-  } | null = null;
+  // Rework feedback, sent once (stage 3): the newest round in full plus a count
+  // of older rounds. Sources are failure / changes_requested COMMENTS only; the
+  // step's own output is never one (it can now hold a helper's saved write-up).
+  type ReworkRow = { content: string; created_at: string; step_id: string };
+  let ownRework: ReworkRow[] = [];
+  const reworkTitles = new Map<string, string>([[step.id, step.title]]);
 
-  if (step.output || step.comment_count > 0) {
+  if (step.comment_count > 0) {
     const { data: reworkComments } = await ctx.supabase
       .from("workflow_step_comments")
-      .select("content, author_id, created_at, type")
+      .select("content, created_at, step_id, type")
       .eq("step_id", step.id)
       .in("type", ["failure", "changes_requested"])
       .order("created_at", { ascending: false })
       .limit(10);
-
-    if (step.output || (reworkComments && reworkComments.length > 0)) {
-      rework_instructions = {
-        previous_failure_output: step.output,
-        changes_requested: (reworkComments ?? []).map((c) => ({
-          content: c.content,
-          author_id: c.author_id,
-          created_at: c.created_at,
-        })),
-      };
-    }
+    ownRework = (reworkComments ?? []) as ReworkRow[];
   }
 
-  // Tier 2: Run-scoped fallback for intermediate cascade-reset steps.
-  // These steps have no local failure/changes_requested comments but the run
-  // has them on sibling steps from the cascade rejection.
-  if (!rework_instructions && step.run_id) {
+  // Run-wide fallback for steps with none of their own (for example the steps
+  // after a cascade reset): their feedback sits on sibling steps.
+  let runRework: ReworkRow[] = [];
+  if (ownRework.length === 0 && step.run_id) {
     const { data: runSteps } = await ctx.supabase
       .from("task_workflow_steps")
-      .select("id")
+      .select("id, title")
       .eq("run_id", step.run_id);
 
     if (runSteps && runSteps.length > 0) {
-      const stepIds = runSteps.map((s: { id: string }) => s.id);
+      for (const s of runSteps as { id: string; title: string }[]) reworkTitles.set(s.id, s.title);
       const { data: runComments } = await ctx.supabase
         .from("workflow_step_comments")
-        .select("content, author_id, created_at, type")
-        .in("step_id", stepIds)
+        .select("content, created_at, step_id, type")
+        .in("step_id", runSteps.map((s: { id: string }) => s.id))
         .in("type", ["failure", "changes_requested"])
         .order("created_at", { ascending: false })
         .limit(10);
-
-      if (runComments && runComments.length > 0) {
-        const latestFailure = runComments.find((c) => c.type === "failure");
-        rework_instructions = {
-          previous_failure_output: latestFailure?.content ?? null,
-          changes_requested: runComments
-            .filter((c) => c.type === "changes_requested")
-            .map((c) => ({
-              content: c.content,
-              author_id: c.author_id,
-              created_at: c.created_at,
-            })),
-        };
-      }
+      runRework = (runComments ?? []) as ReworkRow[];
     }
   }
+  const rework_instructions = buildReworkInstructions(ownRework, runRework, reworkTitles);
 
   const available_agents = (ideaAgents ?? []).map((row) => {
     const bot = (row as Record<string, unknown>).bot as Record<string, unknown> | null;
@@ -1268,7 +1252,9 @@ export async function claimNextStep(
     hasWorkToken: !!workTokenPair,
     gated: !!updated.human_check_required,
     priorSteps: prior_steps,
-    hasRework: !!rework_instructions,
+    stepId: updated.id,
+    reworkScope: rework_instructions?.scope ?? null,
+    savedOutputChars: step.status === "in_progress" && step.output ? step.output.length : 0,
     approvalNotesCount: approval_notes.length,
     personaCarriesProtectRule,
     deliverablesBlock,
@@ -1319,6 +1305,7 @@ export async function claimNextStep(
     instruction,
     // Sent once; the instruction only points at it.
     rework_instructions,
+    ...(step.status === "in_progress" && step.output ? { saved_output_chars: step.output.length } : {}),
     // The pool is only needed to pick an agent for a step with none assigned.
     ...(step.bot_id ? {} : { available_agents }),
     // Earlier steps' write-ups are fetched by the helper: get_task(step_ids).
@@ -1338,7 +1325,7 @@ export const completeStepSchema = z.object({
     .describe(
       "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
     ),
-  output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — later steps read it with get_task and step_ids (claim_next_step lists earlier steps in `prior_steps`). Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
+  output: z.string().max(50000).optional().describe("Omit this when the step's helper saved its write-up with save_step_output (the normal case): the saved write-up is what gets stored, and a pasted one is ignored. Pass it only when nothing was saved (no helper ran the step, an inline run, or the helper could not save). Never pass a summary here. The stored write-up is how later steps receive context: they read it with get_task and step_ids (claim_next_step lists earlier steps in `prior_steps`). Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
   // OQ1 (docs/design-platform-model-defaults.html §5): relaxed from a fixed
   // enum to a free string so a novel platform-default model family (no schema
   // change) can be honestly self-reported. Soft-validated by
@@ -1393,7 +1380,7 @@ export async function completeStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier, output")
     .eq("id", params.step_id)
     .single();
 
@@ -1433,6 +1420,23 @@ export async function completeStep(
       "you'll receive a claim_token to pass to complete_step."
     );
   }
+
+  // Which write-up is stored (card 5e654dd1, stage 3). A helper's saved
+  // write-up (save_step_output) wins over anything pasted here, so a session's
+  // shortened copy can never overwrite the full one. With nothing saved, a
+  // passed output is stored as before (sessions in flight, inline runs, Codex
+  // children without board tools). With neither, refuse before any write: the
+  // step stays in progress and the tokens stay valid.
+  const savedOutput = typeof step.output === "string" && step.output.trim() !== "" ? step.output : null;
+  const passedOutput = typeof params.output === "string" && params.output.trim() !== "" ? params.output : null;
+  if (!savedOutput && !passedOutput) {
+    throw new Error(
+      "Nothing is saved for this step yet. Ask the helper to save its write-up with save_step_output " +
+      "(resume it if it has finished), or pass output if no helper ran this step. Nothing was changed."
+    );
+  }
+  const outputSource: "saved" | "passed" = savedOutput ? "saved" : "passed";
+  const passedOutputIgnored = !!savedOutput && !!passedOutput;
 
   // Attribute the completion to the persona the claim token was minted for.
   const attributedTo = step.bot_id ?? ctx.userId;
@@ -1507,14 +1511,17 @@ export async function completeStep(
     persona_used: personaUsed,
     persona_honored: personaHonored,
   };
-  if (params.output !== undefined) updateFields.output = params.output;
+  if (outputSource === "passed") updateFields.output = passedOutput;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
 
-  const { data: updated, error: updateError } = await ctx.supabase
+  let completeQuery = ctx.supabase
     .from("task_workflow_steps")
     .update(updateFields)
     .eq("id", params.step_id)
-    .eq("status", "in_progress")
+    .eq("status", "in_progress");
+  // Relying on the saved write-up: also require that one is still there.
+  if (outputSource === "saved") completeQuery = completeQuery.not("output", "is", null);
+  const { data: updated, error: updateError } = await completeQuery
     .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
@@ -1614,9 +1621,80 @@ export async function completeStep(
     step: savedStep(updated),
     run_complete: runComplete,
     status: newStatus,
+    output_source: outputSource,
+    ...(passedOutputIgnored && { passed_output_ignored: true }),
     ...(newStatus === "awaiting_approval" && {
-      message: "This step is now awaiting human approval. STOP here — do NOT call approve_step yourself. Present your output to the user and wait for them to explicitly instruct you to approve it.",
+      message: "This step is now awaiting human approval. STOP here — do NOT call approve_step yourself. Show the user the helper's summary (the full write-up is on the board; fetch it with get_task step_ids only if they ask) and wait for them to explicitly instruct you to approve it.",
     }),
+  };
+}
+
+// --- Save Step Output (the helper's own write-up) ---
+
+export const saveStepOutputSchema = z.object({
+  step_id: z.string().uuid().describe("The workflow step ID (the one you are working on)"),
+  work_token: z
+    .string()
+    .min(1)
+    .describe("The wt_… work token you were given for this step. Not the ct_… claim token."),
+  output: z
+    .string()
+    .min(1)
+    .max(50000)
+    .refine((v) => v.trim().length > 0, "output must not be blank")
+    .describe(
+      "Your full write-up for this step, 1 to 50,000 characters. Anything bigger goes in a file under docs/ and you save a summary plus the file path. A second save replaces the first."
+    ),
+});
+
+/**
+ * The helper saves its own full write-up on its step (card 5e654dd1, stage 3),
+ * so it never has to pass through the orchestrating session. Accepted only with
+ * the step's current work_token while the step is in progress; the claim_token
+ * still alone completes, fails or approves a step.
+ */
+export async function saveStepOutput(
+  ctx: McpContext,
+  params: z.infer<typeof saveStepOutputSchema>
+) {
+  const step = await verifyStepWorkToken(ctx, "save_step_output", params.step_id, params.work_token, {
+    withOutput: true,
+  });
+
+  // One guarded write: a re-claim or completion between the check above and
+  // here changes the status or the token hash, so an old helper can't overwrite.
+  const { data: updated, error } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update({ output: params.output })
+    .eq("id", params.step_id)
+    .eq("status", "in_progress")
+    .eq("work_token_hash", hashClaimToken(params.work_token))
+    .select("id, task_id")
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to save the write-up: ${error.message}`);
+  if (!updated) {
+    logger.warn("work token rejected", {
+      tool: "save_step_output",
+      reason: "lost_race_after_check",
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+      ownerUserId: ctx.ownerUserId,
+    });
+    throw new Error(
+      "The step was re-claimed or finished while saving, so nothing was saved. If you are the working " +
+        "subagent, stop and report back to your orchestrator."
+    );
+  }
+
+  // Touch board_tasks so the board refreshes.
+  await touchBoardTask(ctx, updated.task_id);
+
+  return {
+    saved: true,
+    step_id: params.step_id,
+    output_chars: params.output.length,
+    replaced_previous: typeof step.output === "string" && step.output.length > 0,
   };
 }
 
@@ -1631,7 +1709,7 @@ export const failStepSchema = z.object({
       "The one-time claim token returned by claim_next_step for this step. Not needed when rejecting an awaiting_approval step (human gate)."
     ),
   output: z.string().max(10000).optional().describe(
-    "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
+    "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry. On an in-progress step you may omit it when the helper saved its write-up with save_step_output: the saved write-up is then used as the failure text."
   ),
   // OQ1 (docs/design-platform-model-defaults.html §5): relaxed from a fixed
   // enum to a free string so a novel platform-default model family (no schema
@@ -1689,7 +1767,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, output")
     .eq("id", params.step_id)
     .single();
 
@@ -1728,6 +1806,21 @@ export async function failStep(
       );
     }
   }
+
+  // The failure text. A helper's saved write-up (in-progress steps only) stands
+  // in when none is passed; on an awaiting_approval step the saved deliverable
+  // is never used as rejection text.
+  const savedOutput = typeof step.output === "string" && step.output.trim() !== "" ? step.output : null;
+  const failureText: string | undefined =
+    params.output !== undefined
+      ? params.output
+      : step.status === "in_progress" && savedOutput
+        ? savedOutput
+        : undefined;
+  // A different saved write-up is about to be overwritten: keep it as an
+  // 'output' comment first (written after the update succeeds, from this read).
+  const archiveSaved =
+    !!savedOutput && params.output !== undefined && params.output.trim() !== savedOutput.trim();
 
   // Attribute this failure to the persona the claim token was minted for
   // (falls back to the caller for awaiting_approval rejections, where bot_id
@@ -1880,6 +1973,7 @@ export async function failStep(
     // also what claim_next_step hands back as rework_instructions.
     updateFields.started_at = null;
     updateFields.claimed_by = null;
+    updateFields.output = null;
   } else if (params.output !== undefined) {
     updateFields.output = params.output;
   }
@@ -1898,6 +1992,16 @@ export async function failStep(
   // Card ba37039b: the failed attempt still cost tokens. A human rejecting an
   // awaiting_approval step ran no subagent, so only in_progress attempts count.
   if (step.status === "in_progress") await recordStepUsage(ctx, step, "failed", params.usage);
+
+  if (archiveSaved) {
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: step.bot_id ?? ctx.userId,
+      type: "output",
+      content: savedOutput!,
+    });
+  }
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
@@ -1960,13 +2064,13 @@ export async function failStep(
 
   // Auto-create a failure comment so the output is preserved as a comment
   // (especially important before cascade wipes the step's output column)
-  if (params.output) {
+  if (failureText) {
     await ctx.supabase.from("workflow_step_comments").insert({
       step_id: params.step_id,
       idea_id: step.idea_id,
       author_id: attributedTo,
       type: "failure",
-      content: params.output,
+      content: failureText,
     });
   }
 
@@ -2069,7 +2173,7 @@ export async function failStep(
           idea_id: step.idea_id,
           author_id: attributedTo,
           type: "changes_requested",
-          content: params.output || "Rework required — step was rejected and sent back for revision.",
+          content: failureText || "Rework required — step was rejected and sent back for revision.",
         });
       }
     }
