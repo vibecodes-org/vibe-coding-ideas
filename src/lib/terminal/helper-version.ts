@@ -137,12 +137,11 @@
  *  0.3.27 (card 5e654dd1 stage 2b, 24 Oct 2026): the bridge saves the
  *  step-usage script the agents answer now carries, once, into
  *  `${CLAUDE_CONFIG_DIR:-~/.claude}/vibecodes/`, so a workflow hand-off can
- *  send a short line instead of the whole token-counting command. NOT the
- *  minimum on purpose: an older helper only means the step's cost is left
- *  out (the short line prints NO_TRANSCRIPT), and the server keeps sending
- *  the full command until STEP_USAGE_SHORT_COMMAND is switched on after this
- *  helper is out. Raise the minimum only if that ever becomes a hard need. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.26";
+ *  send a short line instead of the whole token-counting command. Made the
+ *  minimum when STEP_USAGE_SHORT_COMMAND was switched on, so a Mac on an
+ *  older helper is nudged to update (otherwise its step costs are left out:
+ *  the short line prints NO_TRANSCRIPT) — soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.27";
 
 export type HelperVersionParts = readonly [number, number, number];
 
