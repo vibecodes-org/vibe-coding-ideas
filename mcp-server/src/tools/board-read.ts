@@ -252,22 +252,48 @@ const outputLength = (s: StepRow) => (typeof s.output === "string" ? s.output.le
 const stepOrderOf = (s: StepRow) => ((s.step_order as number | null) ?? (s.position as number) ?? 0);
 
 /**
- * The run a card's steps are "currently" in: the run of the first step (by
- * step_order) that is still pending, running, awaiting approval or failed;
- * otherwise the run that finished most recently. Steps without a run share
- * one group (key null).
+ * The run a card's steps are "currently" in. Among runs that still have an
+ * unfinished step (pending, running, awaiting approval or failed), the newest
+ * run wins - judged by the latest step created_at in each run - so an
+ * abandoned older run that left failed or pending steps behind never hides a
+ * newer live run. Only when no run has an unfinished step is it the run that
+ * finished most recently. Steps without a run share one group (key null).
  */
 function currentRunKey(steps: StepRow[]): string | null {
-  const ordered = [...steps].sort((a, b) => stepOrderOf(a) - stepOrderOf(b));
-  const active = ordered.find((s) => ACTIVE_STATUSES.has(s.status as string));
-  if (active) return (active.run_id as string | null) ?? null;
-  let latest: StepRow | undefined;
-  for (const s of steps) {
-    const at = (s.completed_at as string | null) ?? (s.created_at as string | null) ?? "";
-    const best = latest ? ((latest.completed_at as string | null) ?? (latest.created_at as string | null) ?? "") : "";
-    if (!latest || at >= best) latest = s;
+  const keyOf = (s: StepRow) => (s.run_id as string | null) ?? null;
+  const createdOf = (s: StepRow) => (s.created_at as string | null) ?? "";
+  const finishedOf = (s: StepRow) => (s.completed_at as string | null) ?? createdOf(s);
+
+  const newestBy = (rows: StepRow[], at: (s: StepRow) => string): string | null => {
+    const latest = new Map<string | null, string>();
+    for (const s of rows) {
+      const k = keyOf(s);
+      const v = at(s);
+      if (!latest.has(k) || v > (latest.get(k) as string)) latest.set(k, v);
+    }
+    let bestKey: string | null = null;
+    let bestAt: string | undefined;
+    for (const [k, v] of latest) {
+      if (bestAt === undefined || v > bestAt) {
+        bestKey = k;
+        bestAt = v;
+      }
+    }
+    return bestKey;
+  };
+
+  const unfinished = steps.filter((s) => ACTIVE_STATUSES.has(s.status as string));
+  if (unfinished.length > 0) {
+    // Newest run among those with unfinished steps; the run's newest step of
+    // ANY status decides its age (a run whose steps were all created later is
+    // the newer run).
+    const runsWithUnfinished = new Set(unfinished.map(keyOf));
+    return newestBy(
+      steps.filter((s) => runsWithUnfinished.has(keyOf(s))),
+      createdOf
+    );
   }
-  return latest ? ((latest.run_id as string | null) ?? null) : null;
+  return newestBy(steps, finishedOf);
 }
 
 export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSchema>) {

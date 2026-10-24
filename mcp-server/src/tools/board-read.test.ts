@@ -549,6 +549,40 @@ describe("getTask - lean default", () => {
     expect(result.earlier_runs).toBe(1);
   });
 
+  it("prefers the newer running run over an abandoned older run with failed and pending steps at the same step numbers", async () => {
+    const old = (n: number, status: string, order: number) =>
+      makeStep({ id: sid(n), run_id: RUN_A, status, position: order, step_order: order, created_at: "2026-09-01T00:00:00Z" });
+    const live = (n: number, status: string, order: number) =>
+      makeStep({ id: sid(n), run_id: RUN_B, status, position: order, step_order: order, created_at: "2026-10-01T00:00:00Z" });
+    const steps = [
+      old(1, "completed", 1),
+      old(2, "failed", 2),
+      old(3, "pending", 3),
+      old(4, "pending", 4),
+      live(5, "completed", 1),
+      live(6, "in_progress", 2),
+      live(7, "pending", 3),
+      live(8, "pending", 4),
+    ];
+    // Same result whichever order the database hands the rows back in.
+    for (const rows of [steps, [...steps].reverse()]) {
+      const result = (await getTask(buildContext({ steps: rows }), lean)) as unknown as Record<string, unknown>;
+      const ids = (result.workflow_steps as Array<Record<string, unknown>>).map((s) => s.id).sort();
+      expect(ids).toEqual([sid(5), sid(6), sid(7), sid(8)]);
+      expect(result.earlier_runs).toBe(1);
+    }
+  });
+
+  it("falls back to the newest unfinished run when only an older run has unfinished steps", async () => {
+    const steps = [
+      makeStep({ id: sid(1), run_id: RUN_A, status: "failed", position: 0, step_order: 0, created_at: "2026-09-01T00:00:00Z" }),
+      makeStep({ id: sid(2), run_id: RUN_B, status: "completed", position: 1, step_order: 0, created_at: "2026-10-01T00:00:00Z", completed_at: "2026-10-02T00:00:00Z" }),
+    ];
+    const result = (await getTask(buildContext({ steps }), lean)) as unknown as Record<string, unknown>;
+    expect((result.workflow_steps as Array<Record<string, unknown>>).map((s) => s.id)).toEqual([sid(1)]);
+    expect(result.earlier_runs).toBe(1);
+  });
+
   it("shows the assignee name only, no email, and leaves out recent activity", async () => {
     const ctx = buildContext({ steps: [] });
     const result = (await getTask(ctx, lean)) as unknown as Record<string, unknown>;

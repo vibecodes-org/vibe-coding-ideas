@@ -1253,10 +1253,13 @@ export async function claimNextStep(
   // the Auto path.
   const instruction = buildClaimInstruction({
     agent: claimingAgent,
+    taskId: updated.task_id,
+    ideaId: updated.idea_id,
     modelTierInstruction,
     personaRef,
     agentIdArg,
-    assigned: !!matchedAgent,
+    // Same condition as sending available_agents (only when no bot is assigned).
+    assigned: !!step.bot_id,
     agentRole: updated.agent_role,
     personaPromptSent,
     personaEmbeddable,

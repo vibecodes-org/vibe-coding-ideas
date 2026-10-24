@@ -457,7 +457,8 @@ describe("claimNextStep", () => {
       "Research & Analysis",
       "Architecture Design",
     ]);
-    expect(r.instruction).toContain("get_task(task_id, idea_id, step_ids: [the step_id values from prior_steps])");
+    expect(r.instruction).toContain(`get_task(task_id "${TASK_ID}", idea_id "${IDEA_ID}", step_ids ["s1", "s2"])`);
+    expect(r.instruction).not.toContain("the step_id values from prior_steps");
     expect(r.instruction).toContain("flag anything your work contradicts");
     expect(r.instruction).toContain("Don't paste or summarise them yourself");
     expect(r.instruction).not.toContain("findings");
@@ -6026,7 +6027,7 @@ describe("claimNextStep — Codex handoff", () => {
     expect(result.instruction).not.toContain("switch this Codex session");
     expect(result.instruction).toContain("actual spawn parameters");
     expect(result.instruction).toContain("Keep claim_token in the orchestrator only");
-    expect(result.instruction).toContain("get_task(task_id, idea_id, step_ids: [the step_id values from prior_steps])");
+    expect(result.instruction).toContain(`get_task(task_id "${TASK_ID}", idea_id "${IDEA_ID}", step_ids ["prior-step"])`);
     expect(result.instruction).toContain("do not paste or summarise them");
     expect(result.instruction).not.toContain("Preserve Claude behavior.");
     expect(result.instruction).toContain("approval_notes, rework_instructions");

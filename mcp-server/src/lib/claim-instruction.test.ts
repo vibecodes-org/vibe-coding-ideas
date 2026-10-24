@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildClaimInstruction, STEP_IDS_PER_CALL, type ClaimInstructionInput } from "./claim-instruction";
+import { buildClaimInstruction, priorStepsLookup, STEP_IDS_PER_CALL, type ClaimInstructionInput } from "./claim-instruction";
 
 // The safety rules in a claim hand-off (card 5e654dd1, stage 2). The fine
 // wording is pinned in workflows.test.ts; this file pins what must never be
@@ -7,6 +7,8 @@ import { buildClaimInstruction, STEP_IDS_PER_CALL, type ClaimInstructionInput } 
 
 const base: ClaimInstructionInput = {
   agent: "claude",
+  taskId: "task-9",
+  ideaId: "idea-7",
   modelTierInstruction: "",
   personaRef: "the Atlas (Full Stack Engineer) persona",
   agentIdArg: '"bot-1"',
@@ -48,11 +50,36 @@ describe("buildClaimInstruction", () => {
     expect(gated).toContain("Do NOT call approve_step yourself");
   });
 
-  it("points the session at get_task step_ids for earlier steps and lists no step titles or write-ups", () => {
-    const text = build({ priorSteps: [{ id: "s1", title: "Secret Title", output_chars: 99 }] as never });
-    expect(text).toContain("get_task(task_id, idea_id, step_ids: [the step_id values from prior_steps])");
+  it("gives the real get_task call (task, idea and step ids) and lists no step titles or write-ups", () => {
+    const text = build({
+      priorSteps: [
+        { step_id: "s1", title: "Secret Title", output_chars: 99 },
+        { step_id: "s2", title: "Other", output_chars: 5 },
+      ],
+    });
+    expect(text).toContain('get_task(task_id "task-9", idea_id "idea-7", step_ids ["s1", "s2"])');
+    expect(text).not.toContain("the step_id values from prior_steps");
     expect(text).not.toContain("Secret Title");
     expect(STEP_IDS_PER_CALL).toBe(10);
+  });
+
+  it("splits more than 10 earlier steps into calls of 10, for Claude and Codex", () => {
+    const ids = Array.from({ length: 12 }, (_, n) => `s${n + 1}`);
+    const lookup = priorStepsLookup("task-9", "idea-7", ids);
+    expect(lookup.split(" and ")).toHaveLength(2);
+    expect(lookup.split(" and ")[1]).toBe('get_task(task_id "task-9", idea_id "idea-7", step_ids ["s11", "s12"])');
+    const priorSteps = ids.map((step_id) => ({ step_id, title: "T", output_chars: 1 }));
+    for (const agent of ["claude", "codex"] as const) {
+      const text = build({ agent, priorSteps });
+      expect(text).toContain(lookup);
+    }
+  });
+
+  it("only tells the session to pick from available_agents when no agent is assigned (the list is sent only then)", () => {
+    expect(build({ assigned: true })).not.toContain("available_agents");
+    expect(build({ assigned: true, agent: "codex" })).not.toContain("available_agents");
+    expect(build({ assigned: false })).toContain("available_agents");
+    expect(build({ assigned: false, agent: "codex" })).toContain("available_agents");
   });
 
   it("only allows inline work when the client has no subagent tool at all", () => {
@@ -66,7 +93,7 @@ describe("buildClaimInstruction", () => {
   });
 
   it("keeps the rework and cascade rules when there is rework or earlier work", () => {
-    const text = build({ hasRework: true, priorSteps: [{ id: "s1", title: "A", output_chars: 1 }] as never });
+    const text = build({ hasRework: true, priorSteps: [{ step_id: "s1", title: "A", output_chars: 1 }] });
     expect(text).toContain("rework_instructions");
     expect(text).toContain("reset_to_step_id");
   });

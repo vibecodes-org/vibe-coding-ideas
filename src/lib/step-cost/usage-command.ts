@@ -129,7 +129,7 @@ const STEP_USAGE_SCRIPT_BODY = `#!/bin/sh
 # VibeCodes: totals one workflow step's token use. Args: <marker> <agent ids>.
 mark=$1
 ids=$2
-case "$mark" in vcu_*[!0-9a-f]*|'') echo "NO_TRANSCRIPT"; exit 0;; esac
+case "$mark" in vcu_*[!0-9a-f]*|vcu_) echo "NO_TRANSCRIPT"; exit 0;; vcu_*) ;; *) echo "NO_TRANSCRIPT"; exit 0;; esac
 case "$ids" in AGENT_I[D]) ids='';; esac
 ${USAGE_BODY}
 `;

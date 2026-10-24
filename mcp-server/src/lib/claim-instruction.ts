@@ -28,8 +28,25 @@ export interface PriorStepRef {
   output_chars: number;
 }
 
+/**
+ * The ready-to-paste lookup the helper runs, with the real values filled in
+ * (the helper never sees the claim reply, so placeholders would be useless).
+ * Above STEP_IDS_PER_CALL ids it becomes several calls of that many each.
+ */
+export function priorStepsLookup(taskId: string, ideaId: string, ids: string[]): string {
+  const groups: string[] = [];
+  for (let n = 0; n < ids.length; n += STEP_IDS_PER_CALL) {
+    const part = ids.slice(n, n + STEP_IDS_PER_CALL).map((id) => `"${id}"`).join(", ");
+    groups.push(`get_task(task_id "${taskId}", idea_id "${ideaId}", step_ids [${part}])`);
+  }
+  return groups.join(" and ");
+}
+
 export interface ClaimInstructionInput {
   agent: AgentKind;
+  /** The card and board ids, written into the earlier-steps lookup line. */
+  taskId: string;
+  ideaId: string;
   /** The MANDATORY MODEL clause (or MODEL SWITCH notice); "" on an Auto step. */
   modelTierInstruction: string;
   /** "the X (Role) persona" or "an appropriate persona for the "Role" role". */
@@ -134,7 +151,7 @@ function codexIdentity(i: ClaimInstructionInput): string {
       : `2. Call get_agent_prompt with agent_id ${i.agentIdArg} to obtain ${i.personaRef}'s full persona instructions.\n`;
   const priorLine =
     i.priorSteps.length > 0
-      ? `earlier steps (tell the child to read them in full with get_task(task_id, idea_id, step_ids: [the step_id values from prior_steps]) before starting; do not paste or summarise them), `
+      ? `earlier steps (tell the child to read them in full with ${priorStepsLookup(i.taskId, i.ideaId, i.priorSteps.map((p) => p.step_id))} before starting; do not paste or summarise them), `
       : ``;
   return (
     `MANDATORY: execute each workflow step in a FRESH SUBAGENT using Codex's native spawn_agent capability (it may be namespaced as collaboration.spawn_agent).\n` +
@@ -182,7 +199,7 @@ export function buildClaimInstruction(i: ClaimInstructionInput): string {
     if (i.agent === "claude") {
       blocks.push(
         `PRIOR STEPS: ${i.priorSteps.length} earlier write-up(s) are listed in "prior_steps" (ids, titles, sizes), not copied. ` +
-          `Put this in the helper's brief: "Before starting, read the earlier steps in full with get_task(task_id, idea_id, step_ids: [the step_id values from prior_steps]${i.priorSteps.length > STEP_IDS_PER_CALL ? `, ${STEP_IDS_PER_CALL} at a time` : ""}); build on them and flag anything your work contradicts." ` +
+          `Put this in the helper's brief: "Before starting, read the earlier steps in full with ${priorStepsLookup(i.taskId, i.ideaId, i.priorSteps.map((p) => p.step_id))}; build on them and flag anything your work contradicts." ` +
           `Don't paste or summarise them yourself.`
       );
     }
