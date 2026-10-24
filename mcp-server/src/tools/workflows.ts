@@ -736,7 +736,7 @@ export async function claimNextStep(
   // and a FAILED step stops the claim - the workflow has stopped.
   const { data: allSteps, error } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at, model_tier")
+    .select("id, task_id, idea_id, run_id, title, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, comment_count, started_at, completed_at, created_at, model_tier")
     .eq("task_id", params.task_id);
 
   if (error) throw new Error(`Failed to fetch pending steps: ${error.message}`);

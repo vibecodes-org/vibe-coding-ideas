@@ -356,8 +356,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
 
   // Workflow instruction for agents (counts cover the live attempt only, the
   // same one claim_next_step works in).
-  const liveRun = pickCurrentRunKey(allSteps);
-  const liveSteps = allSteps.filter((s) => ((s.run_id as string | null) ?? null) === liveRun);
+  const liveSteps = allSteps.filter(inCurrentRun);
   const steps = allSteps;
   const pendingCount = liveSteps.filter((s) => s.status === "pending").length;
   const hasApprovalGates = liveSteps.some(
