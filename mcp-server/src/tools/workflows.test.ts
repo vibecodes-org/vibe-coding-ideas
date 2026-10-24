@@ -275,6 +275,10 @@ describe("workflow schemas", () => {
  */
 function makeClaimContext(opts: {
   pendingStep: ReturnType<typeof makeStepRow>;
+  /** Every step on the card (all attempts, all statuses) for the 1st read. Defaults to [pendingStep]. */
+  allSteps?: Record<string, unknown>[];
+  /** Test-owned array; receives every [column, value] passed to .eq() on the claim write (2nd task_workflow_steps call). */
+  claimWriteEqs?: [string, unknown][];
   updatedStep: Record<string, unknown>;
   priorSteps: { id: string; title: string; step_order: number; output: string | null }[];
   /** users.model_tier_map row returned for the P2b directive-resolution lookup. */
@@ -297,9 +301,14 @@ function makeClaimContext(opts: {
       if (callNum === 1) {
         // 1st: fetch pending steps (awaited directly → thenable)
         chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
+          Promise.resolve({ data: opts.allSteps ?? [opts.pendingStep], error: null }).then(resolve);
       } else if (callNum === 2) {
         // 2nd: claim update (maybeSingle)
+        const originalEq = chain.chain.eq as (col: string, val: unknown) => unknown;
+        chain.chain.eq = vi.fn((col: string, val: unknown) => {
+          opts.claimWriteEqs?.push([col, val]);
+          return originalEq(col, val);
+        });
         chain.chain.maybeSingle = vi.fn(() =>
           Promise.resolve({ data: opts.updatedStep, error: null })
         );
@@ -357,6 +366,109 @@ function makeClaimContext(opts: {
   if (opts.ownerUserId) ctx.ownerUserId = opts.ownerUserId;
   return ctx;
 }
+
+describe("claimNextStep - current attempt only", () => {
+  const OLD_RUN = "00000000-0000-4000-8000-0000000000a1";
+  const NEW_RUN = "00000000-0000-4000-8000-0000000000b2";
+  const oldAt = "2026-10-19T10:00:00Z";
+  const newAt = "2026-10-21T05:40:00Z";
+  const row = (id: string, run: string, order: number, status: string, at: string, extra: Record<string, unknown> = {}) =>
+    makeStepRow({ id, run_id: run, step_order: order, position: order * 1000, status, created_at: at, title: `Step ${order} (${id})`, ...extra });
+
+  // Abandoned attempt A: 1 done, 2 failed, 3 and 4 pending.
+  const abandoned = () => [
+    row("a1", OLD_RUN, 1, "completed", oldAt),
+    row("a2", OLD_RUN, 2, "failed", oldAt),
+    row("a3", OLD_RUN, 3, "pending", oldAt),
+    row("a4", OLD_RUN, 4, "pending", oldAt),
+  ];
+  /** Counts reads/writes on task_workflow_steps; the claim write would be a 2nd call. */
+  const countStepCalls = (ctx: McpContext) => {
+    const counter = { n: 0 };
+    const orig = ctx.supabase.from.bind(ctx.supabase);
+    (ctx.supabase as unknown as { from: unknown }).from = (table: string) => {
+      if (table === "task_workflow_steps") counter.n++;
+      return orig(table as never);
+    };
+    return counter;
+  };
+
+  it("claims the live attempt's step when the abandoned attempt has unfinished steps at the same step numbers (either row order)", async () => {
+    const live = [
+      row("b1", NEW_RUN, 1, "completed", newAt),
+      row("b2", NEW_RUN, 2, "completed", newAt),
+      row("b3", NEW_RUN, 3, "pending", newAt),
+      row("b4", NEW_RUN, 4, "pending", newAt),
+    ];
+    for (const allSteps of [[...abandoned(), ...live], [...live, ...abandoned()]]) {
+      const updatedStep = { ...live[2], status: "in_progress", claimed_by: USER_ID };
+      const claimWriteEqs: [string, unknown][] = [];
+      const ctx = makeClaimContext({ pendingStep: live[2], allSteps, updatedStep, priorSteps: [], claimWriteEqs });
+      await claimNextStep(ctx, { task_id: TASK_ID });
+      expect(claimWriteEqs).toContainEqual(["id", "b3"]);
+    }
+  });
+
+  it("reports done, claims nothing and writes nothing when the live attempt is finished and only the abandoned one has leftovers", async () => {
+    const live = [
+      row("b1", NEW_RUN, 1, "completed", newAt),
+      row("b2", NEW_RUN, 2, "completed", newAt),
+      row("b3", NEW_RUN, 3, "completed", newAt),
+      row("b4", NEW_RUN, 4, "completed", newAt),
+    ];
+    const ctx = makeClaimContext({ pendingStep: abandoned()[2], allSteps: [...abandoned(), ...live], updatedStep: {}, priorSteps: [] });
+    const calls = countStepCalls(ctx);
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    expect(result).toMatchObject({ done: true });
+    expect(result).not.toHaveProperty("claim_token");
+    expect(calls.n).toBe(1);
+  });
+
+  it("stops at a failed step in the live attempt instead of handing out the next one", async () => {
+    const live = [
+      row("b1", NEW_RUN, 1, "completed", newAt),
+      row("b2", NEW_RUN, 2, "completed", newAt),
+      row("b3", NEW_RUN, 3, "failed", newAt),
+      row("b4", NEW_RUN, 4, "pending", newAt),
+    ];
+    const ctx = makeClaimContext({ pendingStep: live[3], allSteps: live, updatedStep: {}, priorSteps: [] });
+    const calls = countStepCalls(ctx);
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+    expect(result.workflow_stopped).toBe(true);
+    expect(result.done).toBe(false);
+    expect(result.failed_step).toMatchObject({ id: "b3", step_order: 3 });
+    expect(String(result.instruction)).toContain("stopped");
+    expect(result).not.toHaveProperty("claim_token");
+    expect(result).not.toHaveProperty("step");
+    expect(calls.n).toBe(1);
+  });
+
+  it("still moves past a step awaiting approval (unchanged behaviour)", async () => {
+    const live = [
+      row("b1", NEW_RUN, 1, "completed", newAt),
+      row("b2", NEW_RUN, 2, "awaiting_approval", newAt),
+      row("b3", NEW_RUN, 3, "pending", newAt),
+    ];
+    const updatedStep = { ...live[2], status: "in_progress", claimed_by: USER_ID };
+    const claimWriteEqs: [string, unknown][] = [];
+    const ctx = makeClaimContext({ pendingStep: live[2], allSteps: live, updatedStep, priorSteps: [], claimWriteEqs });
+    await claimNextStep(ctx, { task_id: TASK_ID });
+    expect(claimWriteEqs).toContainEqual(["id", "b3"]);
+  });
+
+  it("re-claims an in-progress step in the live attempt", async () => {
+    const live = [
+      row("b1", NEW_RUN, 1, "completed", newAt),
+      row("b2", NEW_RUN, 2, "in_progress", newAt),
+      row("b3", NEW_RUN, 3, "pending", newAt),
+    ];
+    const updatedStep = { ...live[1], status: "in_progress", claimed_by: USER_ID };
+    const claimWriteEqs: [string, unknown][] = [];
+    const ctx = makeClaimContext({ pendingStep: live[1], allSteps: [...abandoned(), ...live], updatedStep, priorSteps: [], claimWriteEqs });
+    await claimNextStep(ctx, { task_id: TASK_ID });
+    expect(claimWriteEqs).toContainEqual(["id", "b2"]);
+  });
+});
 
 describe("claimNextStep", () => {
   it("lists prior steps by id, title and length instead of copying their write-ups", async () => {

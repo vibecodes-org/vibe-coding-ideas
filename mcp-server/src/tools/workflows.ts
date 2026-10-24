@@ -24,6 +24,7 @@ import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { decideStepRematch } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
+import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
 import {
@@ -725,20 +726,44 @@ export async function claimNextStep(
   ctx: McpContext,
   params: z.infer<typeof claimNextStepSchema>
 ) {
-  // Find the first claimable step in order: the next pending step, or an
-  // in_progress step being re-claimed. Re-claiming is LAST-CLAIM-WINS — it
-  // overwrites the claim token so lost-token recovery needs no unlock tool
-  // (docs/claim-token-protocol-design.html §3b).
-  const { data: steps, error } = await ctx.supabase
+  // Read every step on the card, then work only inside the card's live attempt
+  // (the newest run - see pickCurrentRunKey, the rule get_task shares). An
+  // abandoned older attempt's leftover steps are never handed out. Within the
+  // live attempt, take the first step that is not completed, skipped or awaiting
+  // approval (approval gates are passed over, as before): a pending step is
+  // claimed, an in_progress step is re-claimed (LAST-CLAIM-WINS, so lost-token
+  // recovery needs no unlock tool - docs/claim-token-protocol-design.html §3b),
+  // and a FAILED step stops the claim - the workflow has stopped.
+  const { data: allSteps, error } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at, model_tier")
-    .eq("task_id", params.task_id)
-    .in("status", ["pending", "in_progress"])
-    .order("step_order", { ascending: true, nullsFirst: false })
-    .order("position", { ascending: true })
-    .limit(1);
+    .select("id, task_id, idea_id, run_id, title, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at, model_tier")
+    .eq("task_id", params.task_id);
 
   if (error) throw new Error(`Failed to fetch pending steps: ${error.message}`);
+
+  const liveRun = pickCurrentRunKey(allSteps ?? []);
+  const nextOpen = (allSteps ?? [])
+    .filter((s) => ((s.run_id as string | null) ?? null) === liveRun)
+    .sort(
+      (a, b) =>
+        (a.step_order ?? Number.POSITIVE_INFINITY) - (b.step_order ?? Number.POSITIVE_INFINITY) ||
+        (a.position ?? 0) - (b.position ?? 0) ||
+        String(a.id).localeCompare(String(b.id))
+    )
+    .find((s) => !["completed", "skipped", "awaiting_approval"].includes(s.status as string));
+
+  if (nextOpen?.status === "failed") {
+    // An active run always wins over suggestions, so this returns before the
+    // suggestion lookup. Mints no token and writes nothing.
+    return {
+      done: false,
+      workflow_stopped: true,
+      failed_step: { id: nextOpen.id, title: nextOpen.title, step_order: nextOpen.step_order },
+      instruction: `Step ${nextOpen.step_order ?? ""} "${nextOpen.title}" failed and this workflow has stopped. Do not start later steps. Tell the user; they can retry the failed step on the card, or send the work back.`,
+    };
+  }
+
+  const steps = nextOpen ? [nextOpen] : [];
 
   if (!steps || steps.length === 0) {
     // FR-2/FR-4: an active run ALWAYS wins (AC-22) — the suggestion lookup ONLY

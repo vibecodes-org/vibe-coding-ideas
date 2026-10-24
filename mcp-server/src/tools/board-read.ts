@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
+import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
 import type { McpContext } from "../context";
 import {
   groupStepComments,
@@ -217,7 +218,6 @@ export const MAX_STEP_OUTPUT_CHARS = 80_000;
 /** Token hashes are secrets-at-rest: never part of any get_task reply. */
 const STEP_HASH_COLUMNS = ["claim_token_hash", "work_token_hash"] as const;
 
-const ACTIVE_STATUSES = new Set(["pending", "in_progress", "awaiting_approval", "failed"]);
 const DETAIL_STATUSES = new Set(["in_progress", "awaiting_approval", "failed"]);
 
 export const getTaskSchema = z.object({
@@ -250,51 +250,6 @@ function withoutHashes(step: StepRow): StepRow {
 
 const outputLength = (s: StepRow) => (typeof s.output === "string" ? s.output.length : 0);
 const stepOrderOf = (s: StepRow) => ((s.step_order as number | null) ?? (s.position as number) ?? 0);
-
-/**
- * The run a card's steps are "currently" in. Among runs that still have an
- * unfinished step (pending, running, awaiting approval or failed), the newest
- * run wins - judged by the latest step created_at in each run - so an
- * abandoned older run that left failed or pending steps behind never hides a
- * newer live run. Only when no run has an unfinished step is it the run that
- * finished most recently. Steps without a run share one group (key null).
- */
-function currentRunKey(steps: StepRow[]): string | null {
-  const keyOf = (s: StepRow) => (s.run_id as string | null) ?? null;
-  const createdOf = (s: StepRow) => (s.created_at as string | null) ?? "";
-  const finishedOf = (s: StepRow) => (s.completed_at as string | null) ?? createdOf(s);
-
-  const newestBy = (rows: StepRow[], at: (s: StepRow) => string): string | null => {
-    const latest = new Map<string | null, string>();
-    for (const s of rows) {
-      const k = keyOf(s);
-      const v = at(s);
-      if (!latest.has(k) || v > (latest.get(k) as string)) latest.set(k, v);
-    }
-    let bestKey: string | null = null;
-    let bestAt: string | undefined;
-    for (const [k, v] of latest) {
-      if (bestAt === undefined || v > bestAt) {
-        bestKey = k;
-        bestAt = v;
-      }
-    }
-    return bestKey;
-  };
-
-  const unfinished = steps.filter((s) => ACTIVE_STATUSES.has(s.status as string));
-  if (unfinished.length > 0) {
-    // Newest run among those with unfinished steps; the run's newest step of
-    // ANY status decides its age (a run whose steps were all created later is
-    // the newer run).
-    const runsWithUnfinished = new Set(unfinished.map(keyOf));
-    return newestBy(
-      steps.filter((s) => runsWithUnfinished.has(keyOf(s))),
-      createdOf
-    );
-  }
-  return newestBy(steps, finishedOf);
-}
 
 export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSchema>) {
   const full = params.full === true;
@@ -332,7 +287,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   }
 
   // Which steps do we describe?
-  const currentRun = currentRunKey(allSteps);
+  const currentRun = pickCurrentRunKey(allSteps);
   const inCurrentRun = (s: StepRow) => ((s.run_id as string | null) ?? null) === currentRun;
   const currentSteps = full ? allSteps : allSteps.filter(inCurrentRun);
   const earlierRuns = new Set(
@@ -399,21 +354,23 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   // never contributes to workflow_step_total.
   const workflow_suggestions = await fetchOpenSuggestions(ctx, params.task_id);
 
-  // Workflow instruction for agents (counts cover the whole card).
+  // Workflow instruction for agents (counts cover the live attempt only, the
+  // same one claim_next_step works in).
+  const liveSteps = allSteps.filter(inCurrentRun);
   const steps = allSteps;
-  const pendingCount = steps.filter((s) => s.status === "pending").length;
-  const hasApprovalGates = steps.some(
+  const pendingCount = liveSteps.filter((s) => s.status === "pending").length;
+  const hasApprovalGates = liveSteps.some(
     (s) => s.human_check_required && s.status !== "completed" && s.status !== "skipped"
   );
 
   let workflow_instruction: string | null = null;
   if (pendingCount > 0) {
     workflow_instruction =
-      `This task has a workflow with ${steps.length} steps (${pendingCount} pending). ` +
+      `This task has a workflow with ${liveSteps.length} steps (${pendingCount} pending). ` +
       `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +
       `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
       (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
-  } else if (steps.length === 0) {
+  } else if (liveSteps.length === 0) {
     if (workflow_suggestions.length > 0) {
       // Open suggestion + no steps (AC-20): suppress the self-assign instruction.
       workflow_instruction =
