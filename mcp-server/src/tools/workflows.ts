@@ -1437,12 +1437,27 @@ export async function completeStep(
   }
   const outputSource: "saved" | "passed" = savedOutput ? "saved" : "passed";
   const passedOutputIgnored = !!savedOutput && !!passedOutput;
+  // A passed write-up that differs from the saved one is not thrown away (for
+  // example a revision handed back after the helper was steered, without a
+  // re-save): keep it as an 'output' comment by the step's agent first.
+  const keepIgnoredPassed =
+    passedOutputIgnored && passedOutput!.trim() !== savedOutput!.trim();
 
   // Attribute the completion to the persona the claim token was minted for.
   const attributedTo = step.bot_id ?? ctx.userId;
 
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
+
+  if (keepIgnoredPassed) {
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "output",
+      content: passedOutput!,
+    });
+  }
 
   // P2c: resolve executed_model/reasoning_effort_used/tier_honored from the
   // self-reported model_used/reasoning_effort_used (Codex model-tier task
@@ -1521,12 +1536,20 @@ export async function completeStep(
     .eq("status", "in_progress");
   // Relying on the saved write-up: also require that one is still there.
   if (outputSource === "saved") completeQuery = completeQuery.not("output", "is", null);
+  // Storing a passed write-up: only if nothing was saved meanwhile.
+  else completeQuery = completeQuery.is("output", null);
   const { data: updated, error: updateError } = await completeQuery
     .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
-  if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
+  if (!updated) {
+    throw new Error(
+      outputSource === "passed"
+        ? "Step is no longer in progress, or the helper saved a write-up while you were completing it — call complete_step again."
+        : "Step is no longer in progress — it may have been modified by another agent"
+    );
+  }
 
   // Card ba37039b: this attempt's token use, for the admin step report.
   await recordStepUsage(ctx, step, newStatus, params.usage);
@@ -1807,20 +1830,7 @@ export async function failStep(
     }
   }
 
-  // The failure text. A helper's saved write-up (in-progress steps only) stands
-  // in when none is passed; on an awaiting_approval step the saved deliverable
-  // is never used as rejection text.
   const savedOutput = typeof step.output === "string" && step.output.trim() !== "" ? step.output : null;
-  const failureText: string | undefined =
-    params.output !== undefined
-      ? params.output
-      : step.status === "in_progress" && savedOutput
-        ? savedOutput
-        : undefined;
-  // A different saved write-up is about to be overwritten: keep it as an
-  // 'output' comment first (written after the update succeeds, from this read).
-  const archiveSaved =
-    !!savedOutput && params.output !== undefined && params.output.trim() !== savedOutput.trim();
 
   // Attribute this failure to the persona the claim token was minted for
   // (falls back to the caller for awaiting_approval rejections, where bot_id
@@ -1954,6 +1964,23 @@ export async function failStep(
       });
     }
   }
+
+  // The failure text. A helper's saved write-up (in-progress steps only, and
+  // never on the model-unavailable rescue, where the model failed rather than
+  // the work) stands in when none is passed; on an awaiting_approval step the
+  // saved deliverable is never used as rejection text.
+  const failureText: string | undefined =
+    params.output !== undefined
+      ? params.output
+      : step.status === "in_progress" && savedOutput && !actuallyRescue
+        ? savedOutput
+        : undefined;
+  // A saved write-up about to be overwritten or cleared (a different passed
+  // text, or the rescue's reset to pending) is kept as an 'output' comment
+  // (written after the update succeeds, from this read).
+  const archiveSaved =
+    !!savedOutput &&
+    (actuallyRescue || (params.output !== undefined && params.output.trim() !== savedOutput.trim()));
 
   const updateFields: Record<string, unknown> = {
     status: actuallyRescue ? "pending" : "failed",

@@ -1274,7 +1274,7 @@ export function registerTools(
 
   server.tool(
     "save_step_output",
-    "Save your full write-up on the workflow step you are working on, so it never has to pass through the session that claimed the step. Helper-only: needs the step's current wt_… work_token (not the ct_… claim token) and the step must be in progress. A second save replaces the first. Max 50,000 characters; anything bigger goes in a file under docs/ and you save a summary plus the path. Does not complete the step.",
+    "Save your full write-up on the step you are working on, so it need not pass through the session that claimed it. Helper-only: needs the step's current wt_… work token (not the ct_… claim token); the step must be in progress. A second save replaces the first. Max 50,000 characters; for more, save a summary plus a docs/ file path. Does not complete the step.",
     saveStepOutputSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

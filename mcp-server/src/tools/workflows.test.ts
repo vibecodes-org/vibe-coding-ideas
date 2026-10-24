@@ -108,6 +108,7 @@ function createChain(resolveWith: unknown = null) {
   });
 
   chain.not = vi.fn(() => chain);
+  chain.is = vi.fn(() => chain);
 
   chain.insert = vi.fn((data: unknown) => {
     captured.inserted = data;
@@ -1356,14 +1357,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "392c56bbf0b5c08e32e62ec518b6655d34bfe5c38668f565ed378779ab53f789",
-        "auto/missing": "cf226bf20e2c9359f3cbba1a5d4e1e793d48a65b3a7ea59a57bc1ad2b8ef659b",
-        "cheap/embedded": "8e3474abe94f6f200661e7178bf1820370eb56248668705df48d92c3fa70c90c",
-        "cheap/missing": "12069073151176e4f508651748fceb0a36ade7adb541a7d16f7718566a6fda75",
-        "frontier/embedded": "157a61bc7ae24536b632c4b35e050f6ed24022de3dccf6aef1716c3f091a400d",
-        "frontier/missing": "7ef04c890cca3848e15c6033e52b87b96385c669382acf08b7ab50ac678c3889",
-        "standard/embedded": "ae5fb6a7c82d275fd5bb35c409510f1fb9020228740034752bf72bab646a9d77",
-        "standard/missing": "3715c2d0baa13115b62381260a09f53fa8a74698ff4562d7d195aa5ceb6e4bfb",
+        "auto/embedded": "d5b3f08ac144decb41493c9befacd7be56ac8b86321d10ac13a67c9e53a7212d",
+        "auto/missing": "8a71456840d0baf752a8d0606f44520a3dafce4b802e9d6719e94dbe8d7eb0ef",
+        "cheap/embedded": "27311d871224a2da45b2be29b8a64246811de8f66ca05f1cdd61495fe16b5072",
+        "cheap/missing": "a646a28985dfade02a59b1dd7bb0e1dfa40243d0d7fc5285cc38cde0d7a610e3",
+        "frontier/embedded": "7ac008c6e592c1dec6e0b30b1c381bd747861bab9dfbfcf54e7e590f64582030",
+        "frontier/missing": "9c39d769a599f3bea934220417da2ebc376301334b62e77b3412b18e10838c20",
+        "standard/embedded": "486f9a09744087c472d90061ad16155726662451364015ad886ff9867b0850fb",
+        "standard/missing": "58c038966bf90e6fbe3707a15046fac95b73ffc99ac873fc41f4437d7bb59bfe",
       }
     `);
   });
@@ -3794,6 +3795,22 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     expect(markerWrite!.model_unavailable_at).not.toBeNull();
   });
 
+  it("on the rescue path the saved write-up is archived as an output comment, never used as failure text", async () => {
+    const { ctx, getComments } = ctxFor({
+      stepData: { ...baseStep, output: "SAVED HELPER WRITE-UP", bot_id: "00000000-0000-4000-a000-0000000000b1" },
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_unavailable: true });
+
+    const all = getComments();
+    expect(all.filter((c) => c.type === "failure")).toEqual([]);
+    expect(all.find((c) => c.type === "output")).toMatchObject({ content: "SAVED HELPER WRITE-UP" });
+    expect(all.some((c) => c.type !== "output" && c.content === "SAVED HELPER WRITE-UP")).toBe(false);
+  });
+
   it("leaves the run running so the workflow carries on rather than stopping dead", async () => {
     const { ctx, getRunUpdates } = ctxFor({
       stepData: baseStep,
@@ -4116,7 +4133,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
         let selectCalled = false;
         let updatedPayload: Record<string, unknown> | undefined;
         const local: Record<string, unknown> = {};
-        for (const m of ["eq", "in"]) {
+        for (const m of ["eq", "in", "is", "not"]) {
           local[m] = vi.fn(() => local);
         }
         local.select = vi.fn(() => {

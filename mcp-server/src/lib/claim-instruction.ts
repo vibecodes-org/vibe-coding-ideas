@@ -99,7 +99,7 @@ const SAVE_POINT_COMMIT =
   `SAVE-POINT COMMIT: Before spawning this step's subagent, if this project is a git repository and a previous step's completed work is still uncommitted, commit it locally now on the branch you are already on. Do not create a branch, worktree or folder for this, and never push. Skip this if there is nothing to commit or the project is not a git repository. Never commit secrets or files covered by \`.gitignore\`.`;
 
 const HUMAN_APPROVAL =
-  `HUMAN APPROVAL REQUIRED: This step requires human approval. After calling complete_step you MUST STOP. Do NOT call approve_step yourself. Show the user the helper's summary (the full write-up is on the board; fetch it with get_task step_ids only if they ask) and wait for them to explicitly instruct you to approve it.`;
+  `HUMAN APPROVAL REQUIRED: This step requires human approval. After calling complete_step you MUST STOP. Do NOT call approve_step yourself. Show the user the helper's summary (fetch the full write-up with get_task step_ids only if they ask) and wait for them to explicitly instruct you to approve it.`;
 
 /**
  * The line the session pastes into the helper's brief, with the real step id
@@ -108,18 +108,18 @@ const HUMAN_APPROVAL =
  */
 export function saveLine(stepId: string): string {
   return (
-    `When you finish, save your full write-up with save_step_output (step_id "${stepId}", work_token), ` +
+    `'When you finish, save your full write-up with save_step_output (step_id "${stepId}", work_token), ` +
     `then reply only "Saved N characters" and a summary of at most 2,000 characters: the result, every decision the user must make, ` +
-    `and anything I must do next (such as merge and release steps). If you can't save, say so and hand back the full write-up.`
+    `and anything I must do next. If you can't save, say so and hand back the full write-up.'`
   );
 }
 
 const FILE_DELIVERABLE =
   `DELIVERABLE: This step requires file-based output. For each deliverable with a format in parentheses (e.g. "(HTML)", "(JSON)"):\n` +
   `1. Write the file to the docs/ directory using a descriptive filename based on the step title (e.g. docs/design-review.html)\n` +
-  `2. Pass a brief summary of what you produced + the file path as the "output" parameter of complete_step\n` +
-  `3. Do NOT paste the full file content into the output parameter — it will be truncated and unreadable\n` +
-  `The output parameter is for a summary and file path reference only.`;
+  `2. Save a brief summary of what you produced + the file path with save_step_output\n` +
+  `3. Do NOT paste the full file content into the saved output — it will be truncated and unreadable\n` +
+  `The saved output is for a summary and file path reference only.`;
 
 function claudeIdentity(i: ClaimInstructionInput): string {
   const pick = i.assigned
@@ -139,7 +139,7 @@ function claudeIdentity(i: ClaimInstructionInput): string {
     `Brief: this step's description, the work_token` +
     (i.reworkScope ? `, rework_instructions` : "") +
     (i.approvalNotesCount > 0 ? `, approval_notes` : "") +
-    `. ${saveLine(i.stepId)}`;
+    `, and this line word for word: ${saveLine(i.stepId)}`;
   const personaUsed = i.personaEmbeddable ? ` persona_used (verbatim/adapted/none),` : ``;
 
   return (
@@ -151,10 +151,10 @@ function claudeIdentity(i: ClaimInstructionInput): string {
     `2. ${personaLine} ${brief}\n` +
     `3. RELIABILITY: if the helper errors or drops, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
     `4. When it returns, run the usage_command (swap AGENT_ID for the helper's agentId) and pass its JSON line as usage (omit usage on NO_TRANSCRIPT; never let it hold up the step). ` +
-    `Call complete_step with this step's id, the claim_token, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion), without output, because the helper saved it. ` +
-    `If the helper reports it couldn't save, pass its full write-up as output. Never pass the summary as output. On failure call fail_step the same way.\n` +
+    `Call complete_step with this step's id, the claim_token, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion), without output, because the helper saved it (after asking it for changes, have it save again first). ` +
+    `If it couldn't save, pass its full write-up as output, never the summary. On failure call fail_step the same way.\n` +
     `EXCEPTION: only if your client has no subagent/Agent tool at all, do the step inline as that persona (persona_prompt, or get_agent_prompt with as_persona true), ` +
-    `pass the work_token on comments, and call complete_step with the claim_token and your full write-up as output (nothing to save), stating verbatim in your output: "Completed inline — no subagent capability." ` +
+    `pass the work_token on comments, and call complete_step with the claim_token and your full write-up as output, stating verbatim in your output: "Completed inline — no subagent capability." ` +
     `This is the only exception.`
   );
 }
@@ -177,7 +177,7 @@ function codexIdentity(i: ClaimInstructionInput): string {
     pick +
     `1. Keep claim_token in the orchestrator only. Never forward the entire claim response, because it contains this completion credential.\n` +
     personaItem +
-    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, ${priorLine}approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task, save_step_output) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. ${saveLine(i.stepId)} Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
+    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, ${priorLine}approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task, save_step_output) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. Include this line in the child's message word for word: ${saveLine(i.stepId)} Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
     `4. The child does this step's work, comments with work_token, saves its deliverable with save_step_output, and returns a short summary and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
     `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once; if it still has none, take its full deliverable and pass it as output). Complete only after the child reports the save, using agent: "codex", claim_token, no output, model_used and reasoning_effort_used from the accepted launch, and persona_used (verbatim/adapted/none). Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
     `CAPABILITY CHECK: inspect the actual spawn tool schema. If it cannot set both model and effort for a tiered step, or there is no supported subagent capability, do not pretend an inline /model command or a model name in the prompt changes execution. Report the capability gap with a work_token comment and stop before doing the work; do not complete it as a successful tier test. Only report unknown when no accepted launch/runtime configuration is available.\n` +

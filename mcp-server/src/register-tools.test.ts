@@ -350,6 +350,13 @@ describe("registerTools", () => {
   // `instruction` field (spawn a subagent; identity-switching is the no-subagent
   // fallback). A client following the description took the inline path that the
   // ec69009 hardening exists to prevent.
+  it("save_step_output's description stays within 400 characters", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+    const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "save_step_output");
+    expect((call![1] as string).length).toBeLessThanOrEqual(400);
+  });
+
   it("claim_next_step's description defers to the instruction field, not set_agent_identity", () => {
     const server = createMockServer();
 

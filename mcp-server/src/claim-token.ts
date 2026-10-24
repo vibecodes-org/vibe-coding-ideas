@@ -21,10 +21,11 @@ import { createHash, randomBytes, timingSafeEqual } from "crypto";
  * Bearer-capability residual (design review Note 1): a work_token is a bearer
  * credential, not bound to a specific holder — anyone who obtains a valid
  * wt_ (e.g. from a log line) can post as the persona until the claim ends.
- * This is accepted risk, bounded on three sides: the capability is
- * comment-only (never completion — see err-6 in the design doc), it is
- * scoped to a single step, and it dies the moment that step completes,
- * fails, or is reset (§1.2). The claim_token carries the same residual today
+ * This is accepted risk, bounded on three sides: the capability is limited
+ * to comments and to saving that one step's own write-up with
+ * save_step_output (never completion, failure or approval — see err-6 in the
+ * design doc), it is scoped to a single step, and it dies the moment that
+ * step completes, fails, or is reset (§1.2). The claim_token carries the same residual today
  * for the single completion call it authorises.
  *
  * Pure module, no Supabase, fully unit-testable.

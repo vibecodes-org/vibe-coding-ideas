@@ -28,6 +28,7 @@ interface Op {
   payload?: unknown;
   eqs: [string, unknown][];
   nots: [string, string, unknown][];
+  iss: [string, unknown][];
   selected?: string;
 }
 
@@ -37,7 +38,7 @@ function fakeDb(answer: (op: Op) => { data: unknown; error?: unknown }) {
   const ctx = {
     supabase: {
       from(table: string) {
-        const op: Op = { table, kind: "select", eqs: [], nots: [] };
+        const op: Op = { table, kind: "select", eqs: [], nots: [], iss: [] };
         const finish = () => {
           if (!ops.includes(op)) ops.push(op);
           const r = answer(op);
@@ -48,6 +49,7 @@ function fakeDb(answer: (op: Op) => { data: unknown; error?: unknown }) {
         chain.select = (f?: string) => { op.selected = f; return chain; };
         chain.eq = (c: string, v: unknown) => { op.eqs.push([c, v]); return chain; };
         chain.not = (c: string, o: string, v: unknown) => { op.nots.push([c, o, v]); return chain; };
+        chain.is = (c: string, v: unknown) => { op.iss.push([c, v]); return chain; };
         chain.update = (d: unknown) => { op.kind = "update"; op.payload = d; return chain; };
         chain.insert = (d: unknown) => { op.kind = "insert"; op.payload = d; ops.push(op); return chain; };
         chain.single = finish;
@@ -114,6 +116,11 @@ describe("saveStepOutput", () => {
     await expect(saveStepOutput(ctx, { step_id: STEP_ID, work_token: CT.token, output: "x" })).rejects.toThrow(/claim_token \(ct_/);
     expect(warn).toHaveBeenCalledWith("work token rejected", expect.objectContaining({ tool: "save_step_output" }));
     warn.mockRestore();
+  });
+
+  it("the claim-token message is specific to the save tool", async () => {
+    const { ctx } = setup();
+    await expect(saveStepOutput(ctx, { step_id: STEP_ID, work_token: CT.token, output: "x" })).rejects.toThrow(/save_step_output takes the work_token \(wt_/);
   });
 
   it("rejects a superseded or other-step token and writes nothing", async () => {
@@ -208,6 +215,27 @@ describe("completeStep — saved write-up", () => {
     expect(r).not.toHaveProperty("passed_output_ignored");
     expect((stepUpdate(ops).payload as Record<string, unknown>).output).toBe("pasted write-up");
     expect(stepUpdate(ops).nots).toEqual([]);
+  });
+
+  it("passed output ignored and different from the saved one: kept as an output comment by the step's agent before completing", async () => {
+    const { ctx, ops } = setup(stepRow({ output: "FULL saved" }));
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: CT.token, output: "  short summary  " });
+    const kept = ops.filter((o) => o.table === "workflow_step_comments" && o.kind === "insert");
+    expect(kept).toHaveLength(1);
+    expect(kept[0].payload).toMatchObject({ type: "output", content: "  short summary  ", author_id: BOT_ID });
+    expect(ops.indexOf(kept[0])).toBeLessThan(ops.indexOf(stepUpdate(ops)));
+  });
+
+  it("passed output equal to the saved one after trimming: no extra comment", async () => {
+    const { ctx, ops } = setup(stepRow({ output: "same text" }));
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: CT.token, output: " same text\n" });
+    expect(ops.some((o) => o.table === "workflow_step_comments" && o.kind === "insert")).toBe(false);
+  });
+
+  it("the passed-output update only lands while nothing is saved (output is null guard)", async () => {
+    const { ctx, ops } = setup(stepRow({ output: null }));
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: CT.token, output: "pasted" });
+    expect(stepUpdate(ops).iss).toContainEqual(["output", null]);
   });
 
   it("keeps the claim token check and the approval stop, with the new wording", async () => {

@@ -49,7 +49,7 @@ export interface WorkTokenAttribution {
 export const WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE =
   "That's a work_token (wt_…) — it can voice comments but can never complete or fail a step. complete_step " +
   "requires the claim_token (ct_…) that the orchestrator kept from claim_next_step. If you are the subagent: " +
-  "you don't complete steps — return your deliverable to the orchestrator instead.";
+  "you don't complete steps — save your write-up with save_step_output and return a short summary to the orchestrator instead.";
 
 export type WorkTokenTool = "add_task_comment" | "add_step_comment" | "save_step_output";
 
@@ -78,6 +78,17 @@ function rejectIfClaimToken(
   extra?: { taskId?: string; stepId?: string }
 ): void {
   if (!token.startsWith("ct_")) return;
+  if (tool === "save_step_output") {
+    rejectWorkToken(
+      ctx,
+      tool,
+      "claim_token_in_save_tool",
+      "That's a claim_token (ct_…), which authorises complete_step/fail_step and stays with the orchestrator. " +
+        "save_step_output takes the work_token (wt_…) from the same claim_next_step response. If you weren't " +
+        "given a wt_… token, tell your orchestrator and hand back your full write-up instead.",
+      extra
+    );
+  }
   rejectWorkToken(
     ctx,
     tool,

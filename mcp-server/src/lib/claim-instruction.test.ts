@@ -44,19 +44,19 @@ describe("buildClaimInstruction", () => {
     expect(text).toContain('save_step_output (step_id "step-5", work_token)');
     expect(text).toContain("a summary of at most 2,000 characters: the result, every decision the user must make");
     expect(text).toContain("without output, because the helper saved it");
-    expect(text).toContain("If the helper reports it couldn't save, pass its full write-up as output. Never pass the summary as output.");
+    expect(text).toContain("If it couldn't save, pass its full write-up as output, never the summary.");
     expect(text).not.toContain("the helper's full deliverable as output");
     expect(text).toContain("fail_step");
   });
 
   it("tells an inline run to pass its own full write-up as output", () => {
-    expect(build()).toContain("your full write-up as output (nothing to save)");
+    expect(build()).toContain("your full write-up as output");
   });
 
   it("shows the summary, not the write-up, at a human approval stop", () => {
     const gated = build({ gated: true });
     expect(gated).toContain("Show the user the helper's summary");
-    expect(gated).toContain("fetch it with get_task step_ids only if they ask");
+    expect(gated).toContain("fetch the full write-up with get_task step_ids only if they ask");
   });
 
   it("words rework by scope and never says a background step failed", () => {
