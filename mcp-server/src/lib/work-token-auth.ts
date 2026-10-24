@@ -49,9 +49,9 @@ export interface WorkTokenAttribution {
 export const WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE =
   "That's a work_token (wt_…) — it can voice comments but can never complete or fail a step. complete_step " +
   "requires the claim_token (ct_…) that the orchestrator kept from claim_next_step. If you are the subagent: " +
-  "you don't complete steps — return your deliverable to the orchestrator instead.";
+  "you don't complete steps — save your write-up with save_step_output and return a short summary to the orchestrator instead.";
 
-type WorkTokenTool = "add_task_comment" | "add_step_comment";
+export type WorkTokenTool = "add_task_comment" | "add_step_comment" | "save_step_output";
 
 function rejectWorkToken(
   ctx: McpContext,
@@ -78,6 +78,17 @@ function rejectIfClaimToken(
   extra?: { taskId?: string; stepId?: string }
 ): void {
   if (!token.startsWith("ct_")) return;
+  if (tool === "save_step_output") {
+    rejectWorkToken(
+      ctx,
+      tool,
+      "claim_token_in_save_tool",
+      "That's a claim_token (ct_…), which authorises complete_step/fail_step and stays with the orchestrator. " +
+        "save_step_output takes the work_token (wt_…) from the same claim_next_step response. If you weren't " +
+        "given a wt_… token, tell your orchestrator and hand back your full write-up instead.",
+      extra
+    );
+  }
   rejectWorkToken(
     ctx,
     tool,
@@ -89,20 +100,30 @@ function rejectIfClaimToken(
   );
 }
 
+/** The step a verified work token belongs to. */
+export interface VerifiedWorkTokenStep {
+  id: string;
+  task_id: string;
+  bot_id: string;
+  /** Only present when the caller asked for it (withOutput). */
+  output?: string | null;
+}
+
 /**
- * add_step_comment path: the step is already known by step_id, so fetch it
- * directly and verify the presented token against ITS work_token_hash
- * (constant-time — reuses verifyClaimToken exactly as complete_step does for
- * claim_token_hash). Returns null when no work_token was presented — the
- * caller's job is to fall back to ctx.userId, byte-identical to today.
+ * The step-level work-token check, shared by add_step_comment and
+ * save_step_output so both apply IDENTICAL rules: ct_ token, step exists,
+ * still in progress, token is the CURRENT one (constant-time), step has an
+ * agent. Read-only; every rejection logs the structured warning with `tool`.
+ * `withOutput` also reads the saved write-up (save_step_output needs to say
+ * whether it replaced one; comments never need it, so they don't fetch it).
  */
-export async function resolveStepCommentAuthor(
+export async function verifyStepWorkToken(
   ctx: McpContext,
+  tool: WorkTokenTool,
   stepId: string,
-  workToken: string | undefined
-): Promise<WorkTokenAttribution | null> {
-  if (!workToken) return null;
-  const tool: WorkTokenTool = "add_step_comment";
+  workToken: string,
+  opts: { withOutput?: boolean } = {}
+): Promise<VerifiedWorkTokenStep> {
   rejectIfClaimToken(ctx, tool, workToken, { stepId });
 
   const { data: step, error } = await ctx.supabase
@@ -119,7 +140,8 @@ export async function resolveStepCommentAuthor(
       tool,
       "step_not_found",
       "No workflow step found for this step_id. If you are the working subagent, stop and report back " +
-        "to your orchestrator. To post as the human account instead, resend without work_token.",
+        "to your orchestrator." +
+        (tool === "save_step_output" ? "" : " To post as the human account instead, resend without work_token."),
       { stepId }
     );
   }
@@ -133,10 +155,14 @@ export async function resolveStepCommentAuthor(
       ctx,
       tool,
       "step_not_in_progress",
-      `Step "${step.title}" is no longer in progress (status: ${step.status}). Its work token was retired ` +
-        "when the claim ended — the agent's voice covers only work under a live claim. If you are the working " +
-        "subagent, stop and report back to your orchestrator. If this note still matters, resend it WITHOUT " +
-        "work_token to post it as the human account.",
+      tool === "save_step_output"
+        ? `Step "${step.title}" is no longer in progress (status: ${step.status}). Its work token was retired ` +
+            "when the claim ended, so nothing can be saved to it now. If you are the working subagent, stop and " +
+            "report back to your orchestrator."
+        : `Step "${step.title}" is no longer in progress (status: ${step.status}). Its work token was retired ` +
+            "when the claim ended — the agent's voice covers only work under a live claim. If you are the working " +
+            "subagent, stop and report back to your orchestrator. If this note still matters, resend it WITHOUT " +
+            "work_token to post it as the human account.",
       { taskId: step.task_id, stepId }
     );
   }
@@ -162,12 +188,42 @@ export async function resolveStepCommentAuthor(
       ctx,
       tool,
       "no_assigned_agent",
-      "This step has no assigned agent, so there is no agent voice to post in. Resend without work_token " +
-        "to comment as the human account.",
+      tool === "save_step_output"
+        ? "This step has no assigned agent, so there is no helper to save a write-up for it. Pass the write-up " +
+            "as output to complete_step instead."
+        : "This step has no assigned agent, so there is no agent voice to post in. Resend without work_token " +
+            "to comment as the human account.",
       { taskId: step.task_id, stepId }
     );
   }
 
+  if (!opts.withOutput) return { id: step.id, task_id: step.task_id, bot_id: step.bot_id };
+
+  // Read only after the token is accepted, so a rejected call never pulls a
+  // large write-up.
+  const { data: saved, error: savedError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("output")
+    .eq("id", stepId)
+    .maybeSingle();
+  if (savedError) throw new Error(`Failed to read the saved write-up: ${savedError.message}`);
+  return { id: step.id, task_id: step.task_id, bot_id: step.bot_id, output: saved?.output ?? null };
+}
+
+/**
+ * add_step_comment path: the step is already known by step_id, so fetch it
+ * directly and verify the presented token against ITS work_token_hash
+ * (constant-time — reuses verifyClaimToken exactly as complete_step does for
+ * claim_token_hash). Returns null when no work_token was presented — the
+ * caller's job is to fall back to ctx.userId, byte-identical to today.
+ */
+export async function resolveStepCommentAuthor(
+  ctx: McpContext,
+  stepId: string,
+  workToken: string | undefined
+): Promise<WorkTokenAttribution | null> {
+  if (!workToken) return null;
+  const step = await verifyStepWorkToken(ctx, "add_step_comment", stepId, workToken);
   return { authorId: step.bot_id, stepId: step.id, taskId: step.task_id };
 }
 

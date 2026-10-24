@@ -18,7 +18,7 @@ export const changelog: ChangelogEntry[] = [
   {
     isoDate: "2026-10-24",
     date: "24 October 2026",
-    title: "Shorter workflow replies",
+    title: "Shorter workflow replies, helpers save their own write-ups",
     items: [
       {
         type: "improvement",
@@ -39,6 +39,21 @@ export const changelog: ChangelogEntry[] = [
         type: "improvement",
         description:
           "`get_agent_prompt` takes `as_persona: true` to return an agent's persona exactly as a hand-off would embed it.",
+      },
+      {
+        type: "feature",
+        description:
+          "New `save_step_output` tool: a step's helper saves its full write-up on the board itself (only with the step's work token, only while the step is running; a second save replaces the first) and hands back a short summary. The write-up no longer passes through the session that runs the workflow.",
+      },
+      {
+        type: "improvement",
+        description:
+          "`complete_step` uses the helper's saved write-up and ignores pasted text when one is saved, so a shortened copy can't overwrite the full one. With nothing saved and no `output`, it refuses and changes nothing. `fail_step` can use the saved write-up as the failure text.",
+      },
+      {
+        type: "fix",
+        description:
+          "Rework feedback now reaches a step once. `rework_instructions` carries the newest round plus a count of older rounds, and steps that weren't sent back see it labelled as background instead of being told they failed.",
       },
     ],
   },

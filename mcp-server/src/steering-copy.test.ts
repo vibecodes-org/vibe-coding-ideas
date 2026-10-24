@@ -55,7 +55,7 @@ describe("steering-copy", () => {
     });
 
     it("carries exactly the four safety rules", () => {
-      expect(STEP_FINISH_RULES).toMatch(/complete_step \(or fail_step\) with the ct_ claim token and the helper's full deliverable as output/);
+      expect(STEP_FINISH_RULES).toMatch(/complete_step \(or fail_step\) with the ct_ claim token; the helper saves its own write-up, so pass output only when no helper saved one/);
       expect(STEP_FINISH_RULES).toMatch(/needs human approval, stop and let the user approve/i);
       expect(STEP_FINISH_RULES).toMatch(/never call approve_step for the user/i);
       expect(STEP_FINISH_RULES).toMatch(/never give the claim token to a helper/i);

@@ -21,7 +21,9 @@ const base: ClaimInstructionInput = {
   hasWorkToken: true,
   gated: false,
   priorSteps: [],
-  hasRework: false,
+  stepId: "step-5",
+  reworkScope: null,
+  savedOutputChars: 0,
   approvalNotesCount: 0,
   personaCarriesProtectRule: false,
   deliverablesBlock: "",
@@ -37,10 +39,53 @@ describe("buildClaimInstruction", () => {
     expect(text).toContain("work_token");
   });
 
-  it("makes the finish rules explicit: full deliverable as output to complete_step, fail_step on failure", () => {
+  it("makes the finish rules explicit: the helper saves, complete_step goes without output, never the summary, fail_step on failure", () => {
     const text = build();
-    expect(text).toContain("the helper's full deliverable as output");
+    expect(text).toContain('save_step_output (step_id "step-5", work_token)');
+    expect(text).toContain("a summary of at most 2,000 characters: the result, every decision the user must make");
+    expect(text).toContain("without output, because the helper saved it");
+    expect(text).toContain("If it couldn't save, pass its full write-up as output, never the summary.");
+    expect(text).not.toContain("the helper's full deliverable as output");
     expect(text).toContain("fail_step");
+  });
+
+  it("tells an inline run to pass its own full write-up as output", () => {
+    expect(build()).toContain("your full write-up as output");
+  });
+
+  it("shows the summary, not the write-up, at a human approval stop", () => {
+    const gated = build({ gated: true });
+    expect(gated).toContain("Show the user the helper's summary");
+    expect(gated).toContain("fetch the full write-up with get_task step_ids only if they ask");
+  });
+
+  it("words rework by scope and never says a background step failed", () => {
+    const own = build({ reworkScope: "this_step" });
+    expect(own).toContain("this step was sent back. Address rework_instructions.feedback first.");
+    expect(own).not.toContain("failed before");
+    const bg = build({ reworkScope: "earlier_step" });
+    expect(bg).toContain("rework_instructions.feedback is background");
+    expect(bg).not.toContain("REWORK REQUIRED");
+    expect(bg).not.toContain("failed");
+    expect(build()).not.toContain("rework_instructions.feedback");
+  });
+
+  it("adds the saved-write-up line only on a re-claim that holds one", () => {
+    expect(build()).not.toContain("SAVED WRITE-UP");
+    const t = build({ savedOutputChars: 1234 });
+    expect(t).toContain("SAVED WRITE-UP: 1234 characters are already saved on this step from the earlier claim.");
+    expect(t).toContain("complete the step without output");
+  });
+
+  it("Codex children save with save_step_output and the orchestrator completes without output", () => {
+    const codex = build({ agent: "codex" });
+    expect(codex).toContain("get_task, save_step_output) come from");
+    expect(codex).toContain('save_step_output (step_id "step-5", work_token)');
+    expect(codex).toContain("saves its deliverable with save_step_output");
+    expect(codex).toContain("Complete only after the child reports the save");
+    expect(codex).toContain("claim_token, no output,");
+    expect(codex).toContain("take its full deliverable and pass it as output");
+    expect(codex).toContain("It must not claim another step, complete/fail this step, or approve anything.");
   });
 
   it("adds the stop-for-approval rule only on a gated step, and never lets the session approve", () => {
@@ -93,7 +138,7 @@ describe("buildClaimInstruction", () => {
   });
 
   it("keeps the rework and cascade rules when there is rework or earlier work", () => {
-    const text = build({ hasRework: true, priorSteps: [{ step_id: "s1", title: "A", output_chars: 1 }] });
+    const text = build({ reworkScope: "this_step", priorSteps: [{ step_id: "s1", title: "A", output_chars: 1 }] });
     expect(text).toContain("rework_instructions");
     expect(text).toContain("reset_to_step_id");
   });

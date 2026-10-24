@@ -168,6 +168,8 @@ import {
   claimNextStepSchema,
   completeStep,
   completeStepSchema,
+  saveStepOutput,
+  saveStepOutputSchema,
   failStep,
   failStepSchema,
   skipStep,
@@ -1244,7 +1246,7 @@ export function registerTools(
 
   server.tool(
     "claim_next_step",
-    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, `available_agents` (only when no bot is assigned), `prior_steps` (id, title and output_chars of earlier steps in this run; their write-ups are not included - the instruction tells the session to have the helper read them with get_task step_ids), the assigned `persona_prompt` only when no native helper is named (otherwise the helper already is the persona; get_agent_prompt with as_persona true fetches it), and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. Also returns a `work_token` — hand it to the executing subagent; comments passing it post in the assigned agent's voice. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
+    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, `available_agents` (only when no bot is assigned), `prior_steps` (id, title and output_chars of earlier steps in this run; their write-ups are not included - the instruction tells the session to have the helper read them with get_task step_ids), the assigned `persona_prompt` only when no native helper is named (otherwise the helper already is the persona; get_agent_prompt with as_persona true fetches it), and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. Also returns a `work_token` — hand it to the executing subagent; comments passing it post in the assigned agent's voice, and save_step_output saves the helper's write-up. `rework_instructions` is the newest round of sent-back feedback (once) plus a count of older rounds. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
     claimNextStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1258,12 +1260,26 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output/deliverable (the reply reports output_chars, not the write-up). Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (later steps read it with get_task step_ids) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
+    "Mark a workflow step as completed (the reply reports output_chars and output_source, not the write-up). The step's helper saves its own full write-up with save_step_output, so normally pass NO `output`: the saved write-up is stored, and a pasted one is ignored (passed_output_ignored). Pass `output` only when nothing was saved (no helper ran the step, inline run, or the helper could not save); with neither, the call is refused and nothing changes. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The write-up is stored on the step's `output` column (later steps read it with get_task step_ids). If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
         return jsonResult(await completeStep(ctx, completeStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "save_step_output",
+    "Save your full write-up on the step you are working on, so it need not pass through the session that claimed it. Helper-only: needs the step's current wt_… work token (not the ct_… claim token); the step must be in progress. A second save replaces the first. Max 50,000 characters; for more, save a summary plus a docs/ file path. Does not complete the step.",
+    saveStepOutputSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await saveStepOutput(ctx, saveStepOutputSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
@@ -1333,7 +1349,7 @@ export function registerTools(
 
   server.tool(
     "add_step_comment",
-    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links. @Full Name mentions of idea team members are detected in the content and notified on the step's PARENT TASK (same exact-match rules as add_task_comment, including single unique first names); mentioned_user_ids works too — given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids rather than guessing a name. This is independent of the `type` field. Results are reported in mentions.{notified,unresolved} and never affect whether the comment posts. Pass the wt_… work_token from claim_next_step to post as the step's assigned agent while the step is in progress.",
+    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of a step's write-up — never use it to communicate with agents; a helper saves its deliverable with save_step_output instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links. @Full Name mentions of idea team members are detected in the content and notified on the step's PARENT TASK (same exact-match rules as add_task_comment, including single unique first names); mentioned_user_ids works too — given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids rather than guessing a name. This is independent of the `type` field. Results are reported in mentions.{notified,unresolved} and never affect whether the comment posts. Pass the wt_… work_token from claim_next_step to post as the step's assigned agent while the step is in progress.",
     addStepCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

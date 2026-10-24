@@ -512,9 +512,12 @@ export default function WorkflowsPage() {
                 </span>
                 <p>
                   <strong className="text-foreground">Complete the step</strong>{" "}
-                  — call <code className="rounded bg-muted px-1.5 py-0.5 text-xs">complete_step</code> with
-                  the output, and with the step&apos;s token use for the admin
-                  cost report. If the step has an approval gate, it pauses for
+                  — the step&apos;s helper saves its full write-up on the board with{" "}
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">save_step_output</code> and
+                  hands back a short summary; the session then calls{" "}
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs">complete_step</code> without
+                  pasting anything (the saved write-up is what gets stored), with the
+                  step&apos;s token use for the admin cost report. If the step has an approval gate, it pauses for
                   human review
                 </p>
               </div>
