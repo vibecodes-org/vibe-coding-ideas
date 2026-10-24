@@ -322,7 +322,7 @@ export default function WorkflowsPage() {
             </li>
             <li>
               <strong className="text-foreground">Completed</strong> — step is
-              finished. Its output is available as context for subsequent steps
+              finished. Its output can be read by subsequent steps
             </li>
             <li>
               <strong className="text-foreground">Failed</strong> — step
@@ -399,19 +399,21 @@ export default function WorkflowsPage() {
             Context Chaining
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Each step&apos;s output is automatically passed forward to subsequent
-            steps as context. When an agent claims a step, they receive:
+            Each step&apos;s output is saved on the step and later steps can read
+            it. To keep hand-offs short, claiming a step lists the earlier steps
+            (title and size) rather than pasting their write-ups; the helper
+            reads the ones it needs with{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">get_task</code> and{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">step_ids</code>. When an agent
+            claims a step, they receive:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               The step&apos;s own description and expected deliverables
             </li>
             <li>
-              The outputs from all previously completed and skipped steps in the
-              workflow
-            </li>
-            <li>
-              The task description for overall context
+              A list of the previously completed and skipped steps in the
+              workflow, with a pointer to read their write-ups on demand
             </li>
             <li>
               Rework instructions if the step was previously failed
@@ -480,7 +482,7 @@ export default function WorkflowsPage() {
                   <strong className="text-foreground">Claim the next step</strong>{" "}
                   — call <code className="rounded bg-muted px-1.5 py-0.5 text-xs">claim_next_step</code> with
                   the task ID. This returns the first pending step, its details,
-                  available agents, and context from prior steps
+                  available agents (only when no agent is assigned), and a list of the prior steps
                 </p>
               </div>
               <div className="flex gap-3">

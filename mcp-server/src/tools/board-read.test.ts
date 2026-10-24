@@ -421,7 +421,8 @@ describe("getTask — workflow_suggestions", () => {
 // ---------------------------------------------------------------------------
 
 describe("getTask — step-level comments", () => {
-  const params = getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID });
+  // The complete shape (every step with its comments) is what `full: true` returns.
+  const params = getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, full: true });
 
   it("attaches comments: [] and comments_truncated: false to a step with no comments", async () => {
     const ctx = buildContext({ steps: [makeStep({ id: "step-1" })], stepComments: [] });
@@ -484,5 +485,152 @@ describe("getTask — step-level comments", () => {
 
     const calls = (ctx.supabase.from as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     expect(calls.some((c) => c[0] === "workflow_step_comments")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTask - lean default, step_ids and full (card 5e654dd1, R3)
+// ---------------------------------------------------------------------------
+
+describe("getTask - lean default", () => {
+  const lean = getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID });
+  const RUN_A = "run-a";
+  const RUN_B = "run-b";
+  const sid = (n: number) => `00000000-0000-4000-a000-0000000001${String(n).padStart(2, "0")}`;
+
+  const runSteps = () => [
+    makeStep({ id: sid(1), run_id: RUN_A, status: "completed", position: 0, step_order: 0, output: "a".repeat(1000), claim_token_hash: "h1", work_token_hash: "h2", completed_at: "2026-10-01T00:00:00Z" }),
+    makeStep({ id: sid(2), run_id: RUN_B, status: "completed", position: 1, step_order: 0, output: "b".repeat(500), completed_at: "2026-10-02T00:00:00Z" }),
+    makeStep({ id: sid(3), run_id: RUN_B, status: "in_progress", position: 2, step_order: 1, description: "Build it", output: null, claim_token_hash: "h3" }),
+    makeStep({ id: sid(4), run_id: RUN_B, status: "pending", position: 3, step_order: 2, description: "Later", output: null }),
+  ];
+
+  it("returns only the current run, with a short line per step and no write-ups or hashes", async () => {
+    const ctx = buildContext({ steps: runSteps() });
+    const result = (await getTask(ctx, lean)) as unknown as Record<string, unknown>;
+    const steps = result.workflow_steps as Array<Record<string, unknown>>;
+
+    expect(steps.map((s) => s.id)).toEqual([sid(2), sid(3), sid(4)]);
+    expect(result.earlier_runs).toBe(1);
+    expect(steps[0].output_chars).toBe(500);
+    for (const s of steps) {
+      expect(s).not.toHaveProperty("output");
+      expect(s).not.toHaveProperty("claim_token_hash");
+      expect(s).not.toHaveProperty("work_token_hash");
+    }
+    expect(JSON.stringify(result)).not.toContain("bbbbbbbb");
+  });
+
+  it("gives the running step its description and latest comments, but not the pending one", async () => {
+    const ctx = buildContext({
+      steps: runSteps(),
+      stepComments: Array.from({ length: 7 }, (_, i) => ({
+        id: `c${i}`, step_id: sid(3), type: "comment", content: `note ${i}`,
+        author_id: "u", created_at: `2026-10-0${i + 1}T00:00:00Z`, users: { full_name: "N" },
+      })),
+    });
+    const result = (await getTask(ctx, lean)) as unknown as Record<string, unknown>;
+    const steps = result.workflow_steps as Array<Record<string, unknown>>;
+    const running = steps.find((s) => s.id === sid(3))!;
+    const pending = steps.find((s) => s.id === sid(4))!;
+
+    expect(running.description).toBe("Build it");
+    expect((running.comments as unknown[]).length).toBe(5);
+    expect(running.comment_count).toBe(7);
+    expect(running.comments_truncated).toBe(true);
+    expect(pending).not.toHaveProperty("description");
+    expect(pending).not.toHaveProperty("comments");
+  });
+
+  it("picks the most recently finished run when nothing is left to do", async () => {
+    const steps = runSteps().map((s) => ({ ...s, status: "completed" }));
+    const result = (await getTask(buildContext({ steps }), lean)) as unknown as Record<string, unknown>;
+    expect((result.workflow_steps as unknown[]).length).toBe(3);
+    expect(result.earlier_runs).toBe(1);
+  });
+
+  it("shows the assignee name only, no email, and leaves out recent activity", async () => {
+    const ctx = buildContext({ steps: [] });
+    const result = (await getTask(ctx, lean)) as unknown as Record<string, unknown>;
+    expect(result.assignee).toEqual({ id: USER_ID, full_name: "Test User" });
+    expect(result).not.toHaveProperty("recent_activity");
+    const calls = (ctx.supabase.from as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls.some((c) => c[0] === "board_task_activity")).toBe(false);
+  });
+
+  it("reports comments_total and limits card comments to 5", async () => {
+    const ctx = buildContext({ steps: [] });
+    const result = (await getTask(ctx, lean)) as unknown as Record<string, unknown>;
+    expect(result.comments_total).toBe(0);
+    const taskCommentsChain = (ctx.supabase.from as unknown as (t: string) => { limit: ReturnType<typeof vi.fn> })("board_task_comments");
+    expect(taskCommentsChain.limit).toHaveBeenCalledWith(5);
+  });
+
+  it("step_ids returns those steps in full (earlier run included), with up to 20 comments", async () => {
+    const ctx = buildContext({ steps: runSteps() });
+    const result = (await getTask(
+      ctx,
+      getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, step_ids: [sid(1)] })
+    )) as unknown as Record<string, unknown>;
+    const steps = result.workflow_steps as Array<Record<string, unknown>>;
+    const full = steps.find((s) => s.id === sid(1))!;
+    expect(full.output).toBe("a".repeat(1000));
+    expect(full).not.toHaveProperty("claim_token_hash");
+    expect(steps.find((s) => s.id === sid(2))).not.toHaveProperty("output");
+    expect(result).not.toHaveProperty("not_included_step_ids");
+  });
+
+  it("step_ids stops at 80,000 characters, keeps at least one, and lists the rest", async () => {
+    const big = (n: number, pos: number) =>
+      makeStep({ id: sid(n), run_id: RUN_A, status: "completed", position: pos, step_order: pos, output: "x".repeat(50_000) });
+    const ctx = buildContext({ steps: [big(1, 0), big(2, 1), big(3, 2)] });
+    const result = (await getTask(
+      ctx,
+      getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, step_ids: [sid(1), sid(2), sid(3)] })
+    )) as unknown as Record<string, unknown>;
+    const withOutput = (result.workflow_steps as Array<Record<string, unknown>>).filter((s) => "output" in s);
+    expect(withOutput.map((s) => s.id)).toEqual([sid(1)]);
+    expect(result.not_included_step_ids).toEqual([sid(2), sid(3)]);
+    expect(String(result.step_ids_note)).toContain("step_ids");
+  });
+
+  it("always returns the first requested step even when it alone is over the limit", async () => {
+    const ctx = buildContext({
+      steps: [makeStep({ id: sid(1), run_id: RUN_A, status: "completed", output: "y".repeat(120_000) })],
+    });
+    const result = (await getTask(
+      ctx,
+      getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, step_ids: [sid(1)] })
+    )) as unknown as Record<string, unknown>;
+    expect((result.workflow_steps as Array<Record<string, unknown>>)[0].output).toHaveLength(120_000);
+    expect(result).not.toHaveProperty("not_included_step_ids");
+  });
+
+  it("rejects a step id that is not on this card", async () => {
+    const ctx = buildContext({ steps: runSteps() });
+    await expect(
+      getTask(ctx, getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, step_ids: [sid(99)] }))
+    ).rejects.toThrow(/not on task/);
+  });
+
+  it("refuses more than 10 step ids", () => {
+    const ids = Array.from({ length: 11 }, (_, i) => sid(i));
+    expect(() => getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, step_ids: ids })).toThrow();
+  });
+
+  it("full: true returns every step with its write-up and recent activity, but never the hashes", async () => {
+    const ctx = buildContext({ steps: runSteps(), activity: [{ id: "a1", users: { full_name: "X" } }] });
+    const result = (await getTask(
+      ctx,
+      getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID, full: true })
+    )) as unknown as Record<string, unknown>;
+    const steps = result.workflow_steps as Array<Record<string, unknown>>;
+    expect(steps).toHaveLength(4);
+    expect(steps[0].output).toBe("a".repeat(1000));
+    for (const s of steps) {
+      expect(s).not.toHaveProperty("claim_token_hash");
+      expect(s).not.toHaveProperty("work_token_hash");
+    }
+    expect((result.recent_activity as unknown[]).length).toBe(1);
   });
 });

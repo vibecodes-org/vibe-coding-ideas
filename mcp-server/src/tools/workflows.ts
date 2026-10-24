@@ -26,7 +26,6 @@ import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
 import {
   buildApprovalNotes,
-  buildApproverGuidanceBlock,
   type ApprovalNote,
   type ApprovalNoteRow,
 } from "../lib/step-comments";
@@ -44,10 +43,13 @@ import {
   secondFailureSentence,
 } from "./model-availability";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
-import { buildSkillsSection, personaWithSkills } from "../../../src/lib/skills-section";
-import { agentPersonaBody, type ToolAccess } from "../../../src/lib/agent-tool-access";
+import { buildSkillsSection } from "../../../src/lib/skills-section";
+import type { ToolAccess } from "../../../src/lib/agent-tool-access";
+import { composePersonaPrompt } from "../lib/persona-prompt";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
-import { newUsageMarker, stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
+import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
+import { buildClaimInstruction } from "../lib/claim-instruction";
+import { stepUsageCommandForClaim } from "../lib/step-usage-delivery";
 import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
@@ -328,20 +330,53 @@ export function deliverableFileFormat(deliverable: string): string | null {
 
 export const listWorkflowTemplatesSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
+  template_id: z.string().uuid().optional()
+    .describe("Return just this template, with all its steps in full."),
+  include_steps: z.boolean().optional()
+    .describe("true returns every template with all its steps in full (large). The default is a short summary per template."),
 });
+
+type TemplateStepLike = { title?: unknown; role?: unknown; model_tier?: unknown; requires_approval?: unknown };
+
+/** The short step list the template write tools hand back instead of the whole template. */
+function compactTemplateSteps(steps: unknown) {
+  return (Array.isArray(steps) ? (steps as TemplateStepLike[]) : []).map((st) => ({
+    title: st.title ?? null,
+    role: st.role ?? null,
+    model_tier: st.model_tier ?? null,
+    requires_approval: st.requires_approval === true,
+  }));
+}
 
 export async function listWorkflowTemplates(
   ctx: McpContext,
   params: z.infer<typeof listWorkflowTemplatesSchema>
 ) {
-  const { data, error } = await ctx.supabase
+  let query = ctx.supabase
     .from("workflow_templates")
     .select("id, name, description, steps, usage_count, created_at")
-    .eq("idea_id", params.idea_id)
-    .order("created_at", { ascending: false });
+    .eq("idea_id", params.idea_id);
+  if (params.template_id) query = query.eq("id", params.template_id);
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) throw new Error(`Failed to list workflow templates: ${error.message}`);
-  return data ?? [];
+  const rows = data ?? [];
+  if (params.template_id) {
+    if (rows.length === 0) throw new Error(`Template not found: ${params.template_id}`);
+    return rows;
+  }
+  if (params.include_steps) return rows;
+  return rows.map((t) => {
+    const steps = Array.isArray(t.steps) ? (t.steps as TemplateStepLike[]) : [];
+    return {
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      usage_count: t.usage_count,
+      step_count: steps.length,
+      step_titles: steps.map((st) => st.title ?? null),
+    };
+  });
 }
 
 // --- Create Workflow Template ---
@@ -369,11 +404,18 @@ export async function createWorkflowTemplate(
       steps: params.steps,
       created_by: ctx.ownerUserId ?? ctx.userId,
     })
-    .select("id, name, description, steps, usage_count, created_at")
+    .select("id, name, description, steps, usage_count, created_at, updated_at")
     .single();
 
   if (error) throw new Error(`Failed to create workflow template: ${error.message}`);
-  return data;
+  // Compact echo (card 5e654dd1): the caller just wrote these steps. Read the
+  // whole template back with list_workflow_templates(template_id) if needed.
+  return {
+    id: data.id,
+    name: data.name,
+    updated_at: data.updated_at,
+    steps: compactTemplateSteps(data.steps),
+  };
 }
 
 // --- Update Workflow Template ---
@@ -419,7 +461,13 @@ export async function updateWorkflowTemplate(
     }
   }
 
-  return { ...data, propagation };
+  return {
+    id: data.id,
+    name: data.name,
+    updated_at: data.updated_at,
+    steps: compactTemplateSteps(data.steps),
+    propagation,
+  };
 }
 
 // --- Resync Workflow Template ---
@@ -796,14 +844,12 @@ export async function claimNextStep(
   } | null;
   const skillRows =
     step.bot_id && matchedBot ? ((await fetchAgentSkills(ctx.supabase, [step.bot_id])).get(step.bot_id) ?? []) : [];
-  const skillsSection = buildSkillsSection(step.bot_id ?? "", skillRows);
-  // A Read-only agent's persona ends with the Tools note, ahead of the Skills
-  // section; Full access is the stored text unchanged. A bot with no persona
-  // text gets no note (so it still falls through to get_agent_prompt).
-  const personaBody = matchedBot?.system_prompt
-    ? agentPersonaBody(matchedBot.system_prompt, matchedBot.tool_access)
-    : (matchedBot?.system_prompt ?? "");
-  const personaPrompt = matchedBot ? personaWithSkills(personaBody, skillsSection.text) : "";
+  // The same function get_agent_prompt(as_persona: true) uses.
+  const composed = matchedBot
+    ? composePersonaPrompt(step.bot_id ?? "", matchedBot, skillRows)
+    : { prompt: "", skills: buildSkillsSection(step.bot_id ?? "", skillRows) };
+  const skillsSection = composed.skills;
+  const personaPrompt = composed.prompt;
 
   // Mint the one-time claim token; only its hash is stored (capability layer
   // verified by complete_step/fail_step).
@@ -990,15 +1036,16 @@ export async function claimNextStep(
     };
   });
 
-  // Fetch context from prior completed/skipped steps in the same run
-  // Reads directly from the step's `output` column (the single source of truth),
-  // not from workflow_step_comments which are a UI display feature only.
-  let context: { step_id: string; step_title: string; output: string }[] = [];
+  // Earlier steps in the same run that have a write-up. Only their ids, titles
+  // and lengths are sent (prior_steps): the helper reads the full text itself
+  // with get_task(step_ids), so a builder never works from a summary. The
+  // outputs are still selected here, for their length only.
   // approval_notes: every type='approval' comment left on a prior step of this
   // run — ALWAYS present on the done:false return, [] when none/no run_id
   // (docs/design-step-comments-api.html §02/D3). Scope is ALL prior steps, not
   // just the ones with output, since an approval caveat is a standing
   // constraint on every downstream step.
+  let prior_steps: { step_id: string; title: string; output_chars: number }[] = [];
   let approval_notes: ApprovalNote[] = [];
   if (step.run_id) {
     const { data: priorSteps } = await ctx.supabase
@@ -1010,9 +1057,9 @@ export async function claimNextStep(
       .order("step_order", { ascending: true });
 
     if (priorSteps && priorSteps.length > 0) {
-      context = priorSteps
+      prior_steps = priorSteps
         .filter((s) => s.output)
-        .map((s) => ({ step_id: s.id, step_title: s.title, output: s.output! }));
+        .map((s) => ({ step_id: s.id, title: s.title, output_chars: s.output!.length }));
 
       const { data: approvalRows, error: approvalError } = await ctx.supabase
         .from("workflow_step_comments")
@@ -1032,8 +1079,6 @@ export async function claimNextStep(
       }
     }
   }
-
-  const expected_deliverables = updated.expected_deliverables ?? [];
 
   const claimingAgent: AgentKind = params.agent ?? "claude";
   // Select the persona independently of the CLI used to execute the step.
@@ -1071,136 +1116,24 @@ export async function claimNextStep(
   // toggle was retired): every step runs in a fresh subagent whose system prompt
   // IS the step's persona. The claim_token authorises completion and step
   // attribution is keyed on step.bot_id (see complete_step), independent of any
-  // ambient identity. A GATED fallback keeps clients that can't spawn subagents
-  // working — phrased so a capable client always prefers spawning.
+  // ambient identity. The wording lives in lib/claim-instruction.ts.
   const personaRef = matchedAgent
     ? `the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona`
     : `an appropriate persona for the "${updated.agent_role}" role`;
   const agentIdArg = matchedAgent ? `"${matchedAgent.bot_id}"` : `the chosen agent's bot_id`;
-  const pickStep = matchedAgent
-    ? ""
-    : `0. Review the available_agents list and pick the best match for the "${updated.agent_role}" role.\n`;
 
-  // personaEmbeddable rewrites steps 2-3 to adopt the embedded persona_prompt
-  // verbatim (no get_agent_prompt round-trip) and adds the persona_used
-  // attestation obligation to the completion-reporting sentence. The
-  // unassigned / persona-less fallback (bot_id null, or an assigned bot with
-  // neither a persona nor skills) is UNTOUCHED — byte-identical to today, still fetching
-  // via get_agent_prompt (persona-attestation design §2/§A2).
-  // Rewritten EXCEPTION per docs/agent-voice-comments-design.html §2.3: a
-  // client with no Agent/Task tool no longer switches identity (there is
-  // nothing left to switch — set_agent_identity is retired). It works
-  // inline on the persona_prompt and gets full agent voice via the
-  // work_token, exactly like a spawned subagent would.
-  const noSubagentException =
-    `EXCEPTION: if your client genuinely has no subagent/Agent tool at all, do the step inline in ` +
-    `this conversation. No identity switch is needed or possible: completion is attributed to ${personaRef} by ` +
-    `the claim_token automatically. Adopt the persona_prompt as your working style, pass the work_token on any ` +
-    `add_task_comment/add_step_comment you make so they post in the persona's voice, and when done call ` +
-    `complete_step with the claim_token, stating verbatim in your output: "Completed inline — no subagent ` +
-    `capability." This is the only exception: if you have an Agent/Task tool, it doesn't apply to you.`;
-
-  // Said once, with the reason (task 3784ead1: newer models over-react to
-  // shouted, repeated rules and generalise better from an explanation). The
-  // rule itself stays — the bypass cards (23f65c41, 59263987) justify it.
-  const freshSubagentRule =
-    `FRESH SUBAGENT: run this step in a fresh subagent that you spawn with your Agent/Task tool, not in this ` +
-    `conversation. The step's persona, model and effort only take effect inside that subagent, and its separate ` +
-    `context keeps this step's work independent of the others, so doing it yourself because it seems simpler, ` +
-    `faster or "only a small step" defeats the point of the step.\n`;
-
-  const claudeIdentityInstruction = personaEmbeddable
-    ? freshSubagentRule +
-      `1. Keep the claim_token from this response and don't pass it to the subagent. (The work_token is the one you pass along.)\n` +
-      `2. Spawn the subagent with the "persona_prompt" field in this response as its system prompt — this is ${personaRef}, already included in full, so there's no need to call get_agent_prompt. Give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
-      `3. When it returns, you (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.\n` +
-      `RELIABILITY: if the subagent errors or its connection drops before returning, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
-      noSubagentException
-    : freshSubagentRule +
-      pickStep +
-      `1. Keep the claim_token from this response and don't pass it to the subagent. (The work_token is the one you pass along.)\n` +
-      `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
-      `3. Spawn the subagent with that persona prompt as its system prompt, and give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
-      `4. When it returns, you (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
-      `RELIABILITY: if the subagent errors or its connection drops before returning, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
-      noSubagentException;
-
-  // Codex has native spawn controls, but not Claude's Task tool or a callable
-  // /model picker, so it gets its own wording; the Claude paths are pinned by
-  // the instruction hashes in workflows.test.
-  const codexIdentityInstruction =
-    `MANDATORY: execute each workflow step in a FRESH SUBAGENT using Codex's native spawn_agent capability (it may be namespaced as collaboration.spawn_agent).\n` +
-    pickStep +
-    `1. Keep claim_token in the orchestrator only. Never forward the entire claim response, because it contains this completion credential.\n` +
-    (personaEmbeddable
-      ? `2. Use persona_prompt verbatim as the child's persona instructions: ${personaRef}. It is already included; do not call get_agent_prompt.\n`
-      : `2. Call get_agent_prompt with agent_id ${agentIdArg} to obtain ${personaRef}'s full persona instructions.\n`) +
-    `3. Start a fresh child: copy execution.model and execution.reasoning_effort into the spawn tool's model and reasoning_effort parameters, and supply a unique task_name and the worker message. Omit null model/effort values on Auto steps. When fork_turns is supported use "none"; otherwise select the client's fresh-context equivalent. Do not pass the entire execution object as tool arguments. In the child's message include the full persona, task requirements from get_task, step title/description/IDs, expected_deliverables, context (prior outputs with step names and IDs), approval_notes, rework_instructions, work_token, and the actual working directory. Tell the child that its VibeCodes board tools (add_task_comment, add_step_comment, get_task) come from the same VibeCodes MCP server you use, so it should look for them in its full tool list, including MCP or deferred tools, before concluding it has none. Preserve human approval constraints and prior-step feedback. Do not forward unrelated conversation history or substitute a persona summary. If the tool has no system-prompt field, put the full persona at the start of its message as instructions; do not claim to have changed the child's system prompt.\n` +
-    `4. The child does this step's work, comments with work_token, and returns its deliverable and any failure/rework request. It must not claim another step, complete/fail this step, or approve anything. The orchestrator owns those transitions.\n` +
-    `5. Wait for that child to finish; retry/resume the same child if interrupted, or if it reports having no VibeCodes board tools (point it at them once before failing the step). Complete only after receiving its deliverable, using agent: "codex", claim_token, output, model_used and reasoning_effort_used from the accepted launch, and persona_used (verbatim/adapted/none). Report launch metadata separately from the child's deliverable; never infer it from the child's prose or from your own session default. On failure use fail_step with the same reporting fields; preserve any requested reset_to_step_id. Respect human_check_required and stop at awaiting_approval.\n` +
-    `CAPABILITY CHECK: inspect the actual spawn tool schema. If it cannot set both model and effort for a tiered step, or there is no supported subagent capability, do not pretend an inline /model command or a model name in the prompt changes execution. Report the capability gap with a work_token comment and stop before doing the work; do not complete it as a successful tier test. Only report unknown when no accepted launch/runtime configuration is available.\n` +
-    `AUTO: when execution.model is null the tier makes no model promise; choose a supported model/effort for the fresh child and record what you actually launched.`;
-  const identityInstruction = claimingAgent === "codex" ? codexIdentityInstruction : claudeIdentityInstruction;
-
-  const contextParts: string[] = [];
-
-  contextParts.push(
-    `CLAIM TOKEN: This response includes a one-time "claim_token" for this step. Keep it and pass it as the "claim_token" parameter of complete_step (or fail_step). If you lose it (e.g. after context compaction), call claim_next_step again to re-claim and receive a fresh one.`
-  );
-
-  // PROTECT PRIOR WORK (task 7d1ca3c1, real incident 7 Sep 2026): a worker
-  // subagent reverted a prior step's approved, uncommitted work because it
-  // looked unexplained. Passed to every claim, on every step, so it reaches
-  // the spawned worker's brief verbatim regardless of persona wording.
-  // Task 3784ead1: every platform persona (00175) and code-role starter
-  // template already carries this rule, so a worker would get it twice — once
-  // in its persona and once in its brief. Send it here only when the persona
-  // doesn't already have it (user-written agents, unassigned steps).
+  // PROTECT PRIOR WORK (task 7d1ca3c1, real incident 7 Sep 2026) goes to every
+  // claim unless the persona already carries it (task 3784ead1: every platform
+  // persona and code-role starter template does, so a worker would get it
+  // twice).
   const personaCarriesProtectRule =
     personaEmbeddable &&
     (matchedBot?.system_prompt ?? "").toLowerCase().includes(
       "unexplained uncommitted changes in the working tree are someone else's intentional prior work"
     );
-  if (!personaCarriesProtectRule) contextParts.push(
-    `PROTECT PRIOR WORK: Include this verbatim in your spawned subagent's brief — 'Never revert, reset, ` +
-    "`git checkout`/`restore`, `git clean`, stash, or delete changes you did not make. Unexplained uncommitted " +
-    `changes in the working tree are someone else's intentional prior work, not a mess to clean up — build on them. ` +
-    `If something looks wrong, conflicting, or unexplained, STOP and report it in your output instead of removing ` +
-    `or resetting it.'`
-  );
 
-  // AGENT VOICE (docs/agent-voice-comments-design.html §1.3.2) — only added
-  // when a work_token was actually minted (an agent is assigned to this
-  // claim). Sits right after CLAIM TOKEN so the two token explanations read
-  // side by side.
-  if (workTokenPair) {
-    contextParts.push(
-      `AGENT VOICE: This response also includes a multi-use "work_token" (wt_…) for ${personaRef}. ` +
-      `Unlike the claim_token, you GIVE this one to the subagent you spawn. Any add_task_comment or ` +
-      `add_step_comment call that passes work_token posts in ${personaRef}'s voice — use it for progress ` +
-      `notes, questions, and findings while the step runs, so the board reads as the agent working, not as ` +
-      `the human. You (the orchestrator) may also pass it on comments you post about this step's work. It ` +
-      `stops working the moment the step completes, fails, or is reset — late comments are rejected with ` +
-      `the reason, never re-attributed. To comment as the human account (e.g. unrelated board chatter), ` +
-      `simply omit work_token.`
-    );
-  }
-
-  if (context.length > 0) {
-    const stepNames = context.map((c) => `"${c.step_title}"`).join(", ");
-    contextParts.push(
-      `CONTEXT CHAINING: the "context" array holds the deliverables of ${context.length} completed prior step(s): ${stepNames}. ` +
-      `Build on them by name rather than repeating them, and call out anything in them that your work contradicts.`
-    );
-  }
-
-  // APPROVER GUIDANCE: only added when a human left approval notes on prior
-  // steps of this run — the empty-notes path leaves `instruction` byte-for-
-  // byte identical to today (docs/design-step-comments-api.html §02/§07).
-  if (approval_notes.length > 0) {
-    contextParts.push(buildApproverGuidanceBlock(approval_notes));
-  }
-
+  const expected_deliverables = updated.expected_deliverables ?? [];
+  let deliverablesBlock = "";
   if (expected_deliverables.length > 0) {
     let anyFormat = false;
     const deliverableLines = expected_deliverables.map((d: string) => {
@@ -1213,94 +1146,18 @@ export async function claimNextStep(
         : "";
       return `- ${d}${formatNote}`;
     });
-    contextParts.push(
+    deliverablesBlock =
       `EXPECTED DELIVERABLES: produce the following:\n${deliverableLines.join("\n")}` +
       (anyFormat
         ? `\nA format in parentheses is part of the deliverable (e.g. "(HTML)" means a valid HTML file, not markdown).`
-        : "")
-    );
+        : "");
   }
-
-  if (updated.human_check_required) {
-    contextParts.push(
-      `HUMAN APPROVAL REQUIRED: This step requires human approval. After producing your deliverable and calling complete_step, you MUST STOP. Do NOT call approve_step yourself. Present your deliverable to the user and wait for them to explicitly instruct you to approve it.`
-    );
-  }
-
-  if (context.length > 0) {
-    const priorStepList = context.map((c) => `- "${c.step_title}" (step_id: ${c.step_id})`).join("\n");
-    contextParts.push(
-      `CASCADE REJECTION: If you find issues with prior work, use fail_step with reset_to_step_id to send work back to the responsible step instead of fixing it yourself. ` +
-      `Prior steps:\n${priorStepList}`
-    );
-
-    // SAVE-POINT COMMIT (task 7d1ca3c1, real incident 7 Sep 2026): the
-    // orchestrator left a completed step's work uncommitted where the next
-    // step's subagent could see it as ambiguous and destroy it. Only shown
-    // when there is prior-step work in this run to protect (context.length >
-    // 0) — a first-step claim has nothing to save-point yet. Exact wording is
-    // binding per Nick's approval comment on this task; do not reword.
-    contextParts.push(
-      `SAVE-POINT COMMIT: Before spawning this step's subagent, if this project is a git repository and a previous step's completed work is still uncommitted, commit it locally now on the branch you are already on. Do not create a branch, worktree or folder for this, and never push. Skip this if there is nothing to commit or the project is not a git repository. Never commit secrets or files covered by \`.gitignore\`.`
-    );
-  }
-
   // Detect file-based format hints from deliverables
   const fileFormats = ["HTML", "JSON", "CSS", "SVG", "XML", "YAML", "CSV", "SQL"];
   const hasFileDeliverable = expected_deliverables.some((d: string) => {
     const formatMatch = d.match(/\(([^)]+)\)\s*$/);
     return formatMatch && fileFormats.some(f => formatMatch[1].toUpperCase().includes(f));
   });
-
-  if (hasFileDeliverable) {
-    contextParts.push(
-      `DELIVERABLE: This step requires file-based output. For each deliverable with a format in parentheses (e.g. "(HTML)", "(JSON)"):\n` +
-      `1. Write the file to the docs/ directory using a descriptive filename based on the step title (e.g. docs/design-review.html)\n` +
-      `2. Pass a brief summary of what you produced + the file path as the "output" parameter of complete_step\n` +
-      `3. Do NOT paste the full file content into the output parameter — it will be truncated and unreadable\n` +
-      `The output parameter is for a summary and file path reference only.`
-    );
-  } else if (expected_deliverables.length > 0) {
-    contextParts.push(
-      `DELIVERABLE FORMAT: Choose the appropriate format based on task complexity:\n` +
-      `- For substantial UI work (new pages, complex forms, multi-step flows, dashboards): write an HTML mockup to the docs/ directory and pass the file path + summary as the "output" parameter of complete_step\n` +
-      `- For simple changes (adding a button, tweaking a dialog, small UI adjustments, config changes): pass a concise markdown description as the "output" parameter of complete_step\n` +
-      `Use your judgement — prefer the lighter format unless visual review adds clear value.`
-    );
-  } else {
-    contextParts.push(
-      `DELIVERABLE: Pass your full deliverable as the "output" parameter of complete_step.`
-    );
-  }
-
-  if (rework_instructions) {
-    const reworkParts: string[] = [
-      `⚠️ REWORK REQUIRED: This step was previously attempted and failed. Address the feedback below before proceeding.`,
-    ];
-    if (rework_instructions.previous_failure_output) {
-      reworkParts.push(`Previous failure: ${rework_instructions.previous_failure_output}`);
-    }
-    for (const cr of rework_instructions.changes_requested) {
-      reworkParts.push(`Feedback: ${cr.content}`);
-    }
-    contextParts.push(reworkParts.join("\n"));
-  }
-
-  contextParts.push(
-    `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
-  );
-
-  // Card ba37039b: the admin step report's cost column. Claude Code only —
-  // Codex keeps its token counts elsewhere (follow-up).
-  if (claimingAgent === "claude") {
-    contextParts.push(
-      `STEP COST: When the step's work is done, run the "usage_command" from this response before complete_step or ` +
-      `fail_step. Replace AGENT_ID with the agentId the Agent tool returned for each subagent that did the work ` +
-      `(space-separated); if you did the work yourself, run it unchanged. It reads this session's local Claude Code ` +
-      `transcripts from this claim on, needs no network and prints one line of JSON: pass it unchanged as the ` +
-      `"usage" parameter. If it prints NO_TRANSCRIPT, omit "usage". Never let this hold up or change the step.`
-    );
-  }
 
   // P2b: MANDATORY MODEL directive, resolved via the claiming user's
   // model_tier_map override AND the live platform-default setting. Both
@@ -1386,17 +1243,55 @@ export async function claimNextStep(
         })()
       : null;
 
+  // The persona rides in this reply only when no native helper is named: a
+  // named helper's definition already is the persona, so repeating it here only
+  // costs every later turn of the session. A session that can't use the helper
+  // fetches the same text with get_agent_prompt(agent_id, as_persona: true).
+  const personaPromptSent = personaEmbeddable && !nativeSubagent;
+
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
-  // the Auto path so .filter(Boolean) drops it and the instruction stays
-  // byte-for-byte identical to today.
-  const instruction = [modelTierInstruction, identityInstruction, nativeSubagent?.instruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
+  // the Auto path.
+  const instruction = buildClaimInstruction({
+    agent: claimingAgent,
+    modelTierInstruction,
+    personaRef,
+    agentIdArg,
+    assigned: !!matchedAgent,
+    agentRole: updated.agent_role,
+    personaPromptSent,
+    personaEmbeddable,
+    nativeInstruction: nativeSubagent?.instruction ?? null,
+    skillsInstruction: personaPromptSent ? skillsInstruction : "",
+    hasWorkToken: !!workTokenPair,
+    gated: !!updated.human_check_required,
+    priorSteps: prior_steps,
+    hasRework: !!rework_instructions,
+    approvalNotesCount: approval_notes.length,
+    personaCarriesProtectRule,
+    deliverablesBlock,
+    fileDeliverable: hasFileDeliverable,
+  });
 
   return {
     done: false,
     // Early in the response: the session transcript must record the marker
     // inside it even if a long claim is cut short there.
-    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommand(newUsageMarker()) } : {}),
-    step: updated,
+    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommandForClaim(newUsageMarker()) } : {}),
+    step: {
+      id: updated.id,
+      task_id: updated.task_id,
+      idea_id: updated.idea_id,
+      run_id: updated.run_id,
+      title: updated.title,
+      description: updated.description,
+      agent_role: updated.agent_role,
+      bot_id: updated.bot_id,
+      human_check_required: updated.human_check_required,
+      status: updated.status,
+      step_order: updated.step_order,
+      started_at: updated.started_at,
+      model_tier: updated.model_tier,
+    },
     claim_token,
     work_token: workTokenPair?.token ?? null,
     ...(claimingAgent === "codex" ? {
@@ -1410,7 +1305,7 @@ export async function claimNextStep(
         reporting_source: "accepted_launch_configuration" as const,
       },
     } : {}),
-    ...(personaEmbeddable
+    ...(personaPromptSent
       ? {
           persona_prompt: personaPrompt,
           persona_name: matchedBot!.name,
@@ -1419,9 +1314,12 @@ export async function claimNextStep(
       : {}),
     ...(nativeSubagent ? { native_subagent: { name: nativeSubagent.name, tag: nativeSubagent.tag } } : {}),
     instruction,
+    // Sent once; the instruction only points at it.
     rework_instructions,
-    available_agents,
-    context,
+    // The pool is only needed to pick an agent for a step with none assigned.
+    ...(step.bot_id ? {} : { available_agents }),
+    // Earlier steps' write-ups are fetched by the helper: get_task(step_ids).
+    prior_steps,
     approval_notes,
     expected_deliverables,
   };
@@ -1437,7 +1335,7 @@ export const completeStepSchema = z.object({
     .describe(
       "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
     ),
-  output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
+  output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — later steps read it with get_task and step_ids (claim_next_step lists earlier steps in `prior_steps`). Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
   // OQ1 (docs/design-platform-model-defaults.html §5): relaxed from a fixed
   // enum to a free string so a novel platform-default model family (no schema
   // change) can be honestly self-reported. Soft-validated by
@@ -1473,6 +1371,16 @@ export const completeStepSchema = z.object({
     ),
   usage: stepUsageParam,
 });
+
+/**
+ * The step row a write tool hands back: everything except the write-up, which
+ * the caller already holds. `output_chars` says how much was saved so the
+ * caller can tell a save worked without receiving it again.
+ */
+export function savedStep<T extends { output?: string | null }>(step: T) {
+  const { output, ...rest } = step;
+  return { ...rest, output_chars: typeof output === "string" ? output.length : 0 };
+}
 
 export async function completeStep(
   ctx: McpContext,
@@ -1700,7 +1608,7 @@ export async function completeStep(
   }
 
   return {
-    step: updated,
+    step: savedStep(updated),
     run_complete: runComplete,
     status: newStatus,
     ...(newStatus === "awaiting_approval" && {
@@ -2173,7 +2081,7 @@ export async function failStep(
       .eq("id", step.run_id);
   }
 
-  return { step: updated, steps_reset: stepsReset };
+  return { step: savedStep(updated), steps_reset: stepsReset };
 }
 
 // --- Skip Step ---
@@ -2220,7 +2128,7 @@ export async function skipStep(
     runComplete = await checkAndCompleteRun(ctx.supabase, step.run_id);
   }
 
-  return { step: updated, run_complete: runComplete };
+  return { step: savedStep(updated), run_complete: runComplete };
 }
 
 // --- Update Step (pending only) ---
@@ -2354,7 +2262,7 @@ export async function approveStep(
     runComplete = await checkAndCompleteRun(ctx.supabase, step.run_id);
   }
 
-  return { step: updated, run_complete: runComplete };
+  return { step: savedStep(updated), run_complete: runComplete };
 }
 
 

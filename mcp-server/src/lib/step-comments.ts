@@ -87,7 +87,8 @@ function shapeStepComment(row: StepCommentRow): ShapedStepComment {
  */
 export function groupStepComments(
   rows: StepCommentRow[],
-  stepIds: string[]
+  stepIds: string[],
+  limit: number = MAX_STEP_COMMENTS
 ): Map<string, StepCommentsForStep> {
   const byStep = new Map<string, StepCommentRow[]>();
   for (const row of rows) {
@@ -100,8 +101,8 @@ export function groupStepComments(
   for (const stepId of stepIds) {
     const stepRows = byStep.get(stepId) ?? [];
     result.set(stepId, {
-      comments: stepRows.slice(0, MAX_STEP_COMMENTS).map(shapeStepComment),
-      comments_truncated: stepRows.length > MAX_STEP_COMMENTS,
+      comments: stepRows.slice(0, limit).map(shapeStepComment),
+      comments_truncated: stepRows.length > limit,
     });
   }
   return result;

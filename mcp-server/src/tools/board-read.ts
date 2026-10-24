@@ -4,7 +4,6 @@ import type { McpContext } from "../context";
 import {
   groupStepComments,
   type StepCommentRow,
-  type StepCommentsForStep,
 } from "../lib/step-comments";
 
 /**
@@ -206,12 +205,75 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
   return { columns: board, labels: (labels ?? []).map((l) => l.name) };
 }
 
+/** Most step ids one get_task call may ask for in full. */
+export const MAX_STEP_IDS_PER_GET_TASK = 10;
+/** Latest comments shown by default (card level, and on the active step). */
+const LEAN_COMMENT_COUNT = 5;
+/** Comments shown per step when the step is asked for by id. */
+const REQUESTED_STEP_COMMENTS = 20;
+/** Most characters of step write-ups one get_task call returns. */
+export const MAX_STEP_OUTPUT_CHARS = 80_000;
+
+/** Token hashes are secrets-at-rest: never part of any get_task reply. */
+const STEP_HASH_COLUMNS = ["claim_token_hash", "work_token_hash"] as const;
+
+const ACTIVE_STATUSES = new Set(["pending", "in_progress", "awaiting_approval", "failed"]);
+const DETAIL_STATUSES = new Set(["in_progress", "awaiting_approval", "failed"]);
+
 export const getTaskSchema = z.object({
   task_id: z.string().uuid().describe("The task ID"),
   idea_id: z.string().uuid().describe("The idea ID (for context)"),
+  step_ids: z
+    .array(z.string().uuid())
+    .max(MAX_STEP_IDS_PER_GET_TASK)
+    .optional()
+    .describe(
+      "Up to 10 step ids from this card to return in full (write-up, description and up to 20 comments). " +
+        "Use it to read earlier steps; the default reply only carries a short line per step."
+    ),
+  full: z
+    .boolean()
+    .optional()
+    .describe(
+      "true returns the complete card: every step in every run with its write-up, recent activity and 10 comments per step. " +
+        "Large; only ask for it when the short reply is not enough."
+    ),
 });
 
+type StepRow = Record<string, unknown>;
+
+function withoutHashes(step: StepRow): StepRow {
+  const copy: StepRow = { ...step };
+  for (const col of STEP_HASH_COLUMNS) delete copy[col];
+  return copy;
+}
+
+const outputLength = (s: StepRow) => (typeof s.output === "string" ? s.output.length : 0);
+const stepOrderOf = (s: StepRow) => ((s.step_order as number | null) ?? (s.position as number) ?? 0);
+
+/**
+ * The run a card's steps are "currently" in: the run of the first step (by
+ * step_order) that is still pending, running, awaiting approval or failed;
+ * otherwise the run that finished most recently. Steps without a run share
+ * one group (key null).
+ */
+function currentRunKey(steps: StepRow[]): string | null {
+  const ordered = [...steps].sort((a, b) => stepOrderOf(a) - stepOrderOf(b));
+  const active = ordered.find((s) => ACTIVE_STATUSES.has(s.status as string));
+  if (active) return (active.run_id as string | null) ?? null;
+  let latest: StepRow | undefined;
+  for (const s of steps) {
+    const at = (s.completed_at as string | null) ?? (s.created_at as string | null) ?? "";
+    const best = latest ? ((latest.completed_at as string | null) ?? (latest.created_at as string | null) ?? "") : "";
+    if (!latest || at >= best) latest = s;
+  }
+  return latest ? ((latest.run_id as string | null) ?? null) : null;
+}
+
 export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSchema>) {
+  const full = params.full === true;
+  const requestedIds = Array.from(new Set(params.step_ids ?? []));
+
   const { data: task, error } = await ctx.supabase
     .from("board_tasks")
     .select(
@@ -224,73 +286,98 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   if (error) throw new Error(`Failed to get task: ${error.message}`);
   if (!task) throw new Error(`Task not found: ${params.task_id}`);
 
-  // Fetch workflow steps
+  // Every step of the card (all runs). Output is read here for its length (and
+  // for the steps asked for in full); the default reply never echoes it.
   const { data: workflowSteps } = await ctx.supabase
     .from("task_workflow_steps")
     .select("*")
     .eq("task_id", params.task_id)
     .order("position");
+  const allSteps = ((workflowSteps ?? []) as StepRow[]).map(withoutHashes);
 
-  // Fetch step-level comments (type != 'output' — the UI mirror of
-  // complete_step's `output` column, which is canonical, see design §00) in
-  // one batched query, then group/clamp/cap per step. `comments` /
-  // `comments_truncated` are ALWAYS present on every step ([] / false when
-  // none); on query error, soft-fail to empty rather than throwing — same
-  // enrichment posture as the comments/activity/attachments fetches below
-  // (docs/design-step-comments-api.html §01/§05).
-  const stepIds = (workflowSteps ?? []).map((s) => s.id);
-  let stepCommentsByStep = new Map<string, StepCommentsForStep>();
-  if (stepIds.length > 0) {
+  // A step id that is not on this card is rejected outright, so a caller can
+  // never read another card's write-ups through this card's id.
+  const onCard = new Set(allSteps.map((s) => s.id as string));
+  const foreign = requestedIds.filter((id) => !onCard.has(id));
+  if (foreign.length > 0) {
+    throw new Error(
+      `Step ${foreign.join(", ")} is not on task ${params.task_id}. Use the step ids listed in this task's workflow_steps.`
+    );
+  }
+
+  // Which steps do we describe?
+  const currentRun = currentRunKey(allSteps);
+  const inCurrentRun = (s: StepRow) => ((s.run_id as string | null) ?? null) === currentRun;
+  const currentSteps = full ? allSteps : allSteps.filter(inCurrentRun);
+  const earlierRuns = new Set(
+    allSteps.filter((s) => !inCurrentRun(s)).map((s) => (s.run_id as string | null) ?? "none")
+  ).size;
+
+  // Which steps need their comments fetched, and how many each?
+  const detailIds = currentSteps
+    .filter((s) => DETAIL_STATUSES.has(s.status as string))
+    .map((s) => s.id as string);
+  const commentStepIds = full
+    ? allSteps.map((s) => s.id as string)
+    : Array.from(new Set([...currentSteps.map((s) => s.id as string), ...requestedIds]));
+
+  // Step-level comments (type != 'output' - the UI mirror of complete_step's
+  // `output`, which is canonical). Soft-fail to none rather than throwing.
+  let commentRows: StepCommentRow[] = [];
+  if (commentStepIds.length > 0) {
     const { data: stepCommentRows, error: stepCommentsError } = await ctx.supabase
       .from("workflow_step_comments")
       .select(
         "id, step_id, type, content, author_id, created_at, users!workflow_step_comments_author_id_fkey(full_name)"
       )
-      .in("step_id", stepIds)
+      .in("step_id", commentStepIds)
       .neq("type", "output")
       .order("created_at", { ascending: false });
+    if (!stepCommentsError) commentRows = (stepCommentRows ?? []) as unknown as StepCommentRow[];
+  }
+  const commentTotals = new Map<string, number>();
+  for (const r of commentRows) commentTotals.set(r.step_id, (commentTotals.get(r.step_id) ?? 0) + 1);
+  const groupedAtFive = groupStepComments(commentRows, commentStepIds, LEAN_COMMENT_COUNT);
+  const groupedAtTwenty = groupStepComments(commentRows, commentStepIds, REQUESTED_STEP_COMMENTS);
+  const groupedAtTen = groupStepComments(commentRows, commentStepIds);
 
-    if (!stepCommentsError) {
-      stepCommentsByStep = groupStepComments(
-        (stepCommentRows ?? []) as unknown as StepCommentRow[],
-        stepIds
-      );
-    }
+  // Card-level comments, newest first.
+  const commentLimit = full ? 20 : LEAN_COMMENT_COUNT;
+  const { data: comments, count: commentsCount } = await ctx.supabase
+    .from("board_task_comments")
+    .select("*, users!board_task_comments_author_id_fkey(id, full_name)", { count: "exact" })
+    .eq("task_id", params.task_id)
+    .order("created_at", { ascending: false })
+    .limit(commentLimit);
+
+  // Recent activity: only when the whole card was asked for.
+  let activity: Array<Record<string, unknown>> | null = null;
+  if (full) {
+    const { data } = await ctx.supabase
+      .from("board_task_activity")
+      .select("*, users!board_task_activity_actor_id_fkey(full_name)")
+      .eq("task_id", params.task_id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    activity = (data ?? []) as Array<Record<string, unknown>>;
   }
 
-  // Fetch comments
-  const { data: comments } = await ctx.supabase
-    .from("board_task_comments")
-    .select("*, users!board_task_comments_author_id_fkey(id, full_name)")
-    .eq("task_id", params.task_id)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  // Fetch recent activity
-  const { data: activity } = await ctx.supabase
-    .from("board_task_activity")
-    .select("*, users!board_task_activity_actor_id_fkey(full_name)")
-    .eq("task_id", params.task_id)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
-  // Fetch attachments (metadata only, no signed URLs — use list_attachments for URLs)
+  // Attachments (metadata only, no signed URLs - use list_attachments for URLs)
   const { data: attachments } = await ctx.supabase
     .from("board_task_attachments")
     .select("id, file_name, file_size, content_type, created_at")
     .eq("task_id", params.task_id)
     .order("created_at");
 
-  // Fetch OPEN workflow suggestions (FR-1, AC-19). A suggestion is not a step —
-  // it blocks pickup but never contributes to workflow_step_total.
+  // OPEN workflow suggestions (FR-1, AC-19). Not a step: blocks pickup but
+  // never contributes to workflow_step_total.
   const workflow_suggestions = await fetchOpenSuggestions(ctx, params.task_id);
 
-  // Compute workflow instruction for agents
-  const steps = workflowSteps ?? [];
-  const pendingCount = steps.filter((s: Record<string, unknown>) => s.status === "pending").length;
+  // Workflow instruction for agents (counts cover the whole card).
+  const steps = allSteps;
+  const pendingCount = steps.filter((s) => s.status === "pending").length;
   const hasApprovalGates = steps.some(
-    (s: Record<string, unknown>) =>
-      s.human_check_required && s.status !== "completed" && s.status !== "skipped"
+    (s) => s.human_check_required && s.status !== "completed" && s.status !== "skipped"
   );
 
   let workflow_instruction: string | null = null;
@@ -303,12 +390,10 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   } else if (steps.length === 0) {
     if (workflow_suggestions.length > 0) {
       // Open suggestion + no steps (AC-20): suppress the self-assign instruction.
-      // Agents cannot resolve suggestions — surface it to a human instead.
       workflow_instruction =
         `This task has an unresolved workflow suggestion. Do NOT begin work or assign yourself. ` +
         `Surface it to a human to Keep / Replace / Remove. Agents cannot resolve suggestions.`;
     } else {
-      // No workflow — instruct the agent to assign itself so the board shows in-progress
       workflow_instruction =
         `This task has no workflow. Before starting work, pick the team agent that best fits it ` +
         `(your .vibecodes config botId, or choose from list_idea_agents) and call update_task with ` +
@@ -317,33 +402,116 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     }
   }
 
-  return {
+  const taskRecord = task as Record<string, unknown>;
+  const assigneeRow = (taskRecord.users ?? null) as Record<string, unknown> | null;
+  const taskBase = {
     ...task,
-    assignee: (task as Record<string, unknown>).users ?? null,
+    assignee: full ? assigneeRow : assigneeRow ? { id: assigneeRow.id, full_name: assigneeRow.full_name } : null,
     users: undefined,
     labels:
-      ((task as Record<string, unknown>).board_task_labels as Array<Record<string, unknown>>)?.map(
+      (taskRecord.board_task_labels as Array<Record<string, unknown>> | undefined)?.map(
         (tl) => tl.board_labels
       ) ?? [],
     board_task_labels: undefined,
-    workflow_steps: steps.map((s) => ({
-      ...s,
-      ...(stepCommentsByStep.get(s.id as string) ?? { comments: [], comments_truncated: false }),
-    })),
+  };
+  const shapedComments =
+    comments?.map((c) => ({
+      ...c,
+      author: (c as Record<string, unknown>).users,
+      users: undefined,
+    })) ?? [];
+
+  if (full) {
+    return {
+      ...taskBase,
+      workflow_steps: steps.map((s) => ({
+        ...s,
+        ...(groupedAtTen.get(s.id as string) ?? { comments: [], comments_truncated: false }),
+      })),
+      workflow_suggestions,
+      workflow_instruction,
+      comments: shapedComments,
+      recent_activity:
+        activity?.map((a) => ({
+          ...a,
+          actor: a.users,
+          users: undefined,
+        })) ?? [],
+      attachments: attachments ?? [],
+    };
+  }
+
+  // Steps asked for by id, in full, within the output budget (always at least
+  // one). The rest are listed so the caller can fetch them next.
+  const requestedSteps = requestedIds
+    .map((id) => allSteps.find((s) => s.id === id))
+    .filter((s): s is StepRow => Boolean(s));
+  const sentFull = new Set<string>();
+  const notIncluded: string[] = [];
+  let budget = 0;
+  for (const s of requestedSteps) {
+    const len = outputLength(s);
+    if (sentFull.size > 0 && budget + len > MAX_STEP_OUTPUT_CHARS) {
+      notIncluded.push(s.id as string);
+      continue;
+    }
+    budget += len;
+    sentFull.add(s.id as string);
+  }
+
+  const leanStep = (s: StepRow) => {
+    const id = s.id as string;
+    const lean: Record<string, unknown> = {
+      id,
+      title: s.title,
+      status: s.status,
+      agent_role: s.agent_role ?? null,
+      bot_id: s.bot_id ?? null,
+      model_tier: s.model_tier ?? null,
+      human_check_required: s.human_check_required,
+      step_order: s.step_order ?? null,
+      output_chars: outputLength(s),
+      comment_count: commentTotals.get(id) ?? 0,
+    };
+    if (sentFull.has(id)) {
+      const { users: _users, ...rest } = s as StepRow;
+      void _users;
+      return {
+        ...rest,
+        output_chars: outputLength(s),
+        comment_count: commentTotals.get(id) ?? 0,
+        ...(groupedAtTwenty.get(id) ?? { comments: [], comments_truncated: false }),
+      };
+    }
+    if (detailIds.includes(id)) {
+      lean.description = s.description ?? null;
+      Object.assign(lean, groupedAtFive.get(id) ?? { comments: [], comments_truncated: false });
+    }
+    return lean;
+  };
+
+  const shownIds = new Set<string>(currentSteps.map((s) => s.id as string));
+  const shownSteps = [
+    ...currentSteps,
+    ...requestedSteps.filter((s) => sentFull.has(s.id as string) && !shownIds.has(s.id as string)),
+  ].sort((a, b) => (a.position as number) - (b.position as number));
+
+  return {
+    ...taskBase,
+    workflow_steps: shownSteps.map(leanStep),
+    earlier_runs: earlierRuns,
+    ...(notIncluded.length > 0
+      ? {
+          not_included_step_ids: notIncluded,
+          step_ids_note:
+            `These write-ups would take the reply past ${MAX_STEP_OUTPUT_CHARS} characters. ` +
+            `Call get_task again with step_ids set to not_included_step_ids to read them next.`,
+        }
+      : {}),
     workflow_suggestions,
     workflow_instruction,
-    comments:
-      comments?.map((c) => ({
-        ...c,
-        author: (c as Record<string, unknown>).users,
-        users: undefined,
-      })) ?? [],
-    recent_activity:
-      activity?.map((a) => ({
-        ...a,
-        actor: (a as Record<string, unknown>).users,
-        users: undefined,
-      })) ?? [],
+    comments: shapedComments,
+    comments_total: commentsCount ?? shapedComments.length,
     attachments: attachments ?? [],
   };
 }

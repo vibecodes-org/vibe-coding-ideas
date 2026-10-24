@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { copyAgentSkills } from "../../../src/lib/copy-agent-skills";
+import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
+import { composePersonaPrompt } from "../lib/persona-prompt";
 
 // --- Schemas ---
 
@@ -18,6 +20,12 @@ export const getBotPromptSchema = z.object({
     .uuid()
     .optional()
     .describe("Agent ID to get the prompt for. Omit to resolve against ctx.userId (a stdio install's configured identity; back-compatible)."),
+  as_persona: z
+    .boolean()
+    .optional()
+    .describe(
+      "true: return the agent's persona exactly as claim_next_step would have sent it as persona_prompt — the system prompt, the read-only Tools note when it applies, and the agent's skills in full — as `persona_prompt`. Use it when claim_next_step named a native vc- helper you can't use. Omit for the raw profile."
+    ),
 });
 
 export const setBotIdentitySchema = z.object({
@@ -145,6 +153,13 @@ export async function getBotPrompt(
 
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Agent profile not found");
+
+  if (args.as_persona) {
+    // Same function and inputs as the claim's persona_prompt (card 5e654dd1).
+    const skillRows = (await fetchAgentSkills(ctx.supabase, [data.id])).get(data.id) ?? [];
+    const { prompt } = composePersonaPrompt(data.id, data, skillRows);
+    return { id: data.id, name: data.name, role: data.role, persona_prompt: prompt };
+  }
 
   return data;
 }

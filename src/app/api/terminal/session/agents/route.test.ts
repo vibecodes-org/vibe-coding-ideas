@@ -3,6 +3,7 @@
 // exactly as before; only auth failures are errors.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { stepUsageScript } from "@/lib/step-cost/usage-command";
 
 const NOW_ISO = "2026-10-10T12:00:00.000Z";
 const SID = "sid-1";
@@ -87,6 +88,24 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
   vi.clearAllMocks();
+});
+
+describe("POST /api/terminal/session/agents — step-usage script (card 5e654dd1, stage 2b)", () => {
+  it("serves the script to a Claude session, exactly as the hand-off's short command expects it", async () => {
+    const body = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "claude" }))).json();
+    expect(body.stepUsageScript).toEqual(stepUsageScript());
+    expect(body.stepUsageScript.file).toMatch(/^step-usage-[0-9a-f]{8}\.sh$/);
+  });
+
+  it("does not serve it to a Codex session", async () => {
+    const body = await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json();
+    expect(body).not.toHaveProperty("stepUsageScript");
+  });
+
+  it("does not serve it for an ended session or a bad token", async () => {
+    tables.terminal_sessions = { data: { ...activeSession, status: "ended" } };
+    expect(await (await POST(req({ sid: SID, token: "t" }))).json()).toEqual({ agents: null });
+  });
 });
 
 describe("POST /api/terminal/session/agents — memory limit (task 5e654dd1)", () => {
@@ -247,7 +266,7 @@ describe("POST /api/terminal/session/agents", () => {
   it("answers null when the board has no claimable agent steps", async () => {
     tables.task_workflow_steps = { data: [] };
     const res = await POST(req({ sid: SID, token: "bridge-tok" }));
-    expect(await res.json()).toEqual({ agents: null });
+    expect(await res.json()).toMatchObject({ agents: null });
   });
 
   it("answers null for an ended or expired session", async () => {

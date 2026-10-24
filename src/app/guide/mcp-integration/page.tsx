@@ -322,7 +322,7 @@ export default function McpIntegrationPage() {
               <ToolTable
                 tools={[
                   { name: "get_board", description: "Kanban board overview with columns and task summaries" },
-                  { name: "get_task", description: "Single task with workflow steps, comments, activity, and attachments" },
+                  { name: "get_task", description: "A card in short form: current workflow steps (one line each), latest comments and attachments. Pass step_ids to read earlier steps in full, or full: true for everything" },
                   { name: "get_my_tasks", description: "Tasks assigned to you, grouped by idea" },
                   { name: "create_task", description: "Create a task on a board column" },
                   { name: "update_task", description: "Update task title, description, assignee, due date, or archive status" },
@@ -341,7 +341,7 @@ export default function McpIntegrationPage() {
             <CollapsibleTools title="Workflows" toolCount={22}>
               <ToolTable
                 tools={[
-                  { name: "list_workflow_templates", description: "List all workflow templates for an idea" },
+                  { name: "list_workflow_templates", description: "List workflow templates for an idea (short summary each; pass template_id or include_steps for full steps)" },
                   { name: "create_workflow_template", description: "Create a new workflow template with steps" },
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },
                   { name: "delete_workflow_template", description: "Delete a workflow template" },

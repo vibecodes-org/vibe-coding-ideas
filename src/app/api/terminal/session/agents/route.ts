@@ -14,6 +14,11 @@
 // The same answer carries `autoCompactWindow` (the owner's memory limit for this
 // CLI, task 5e654dd1) only when one resolves; a read error leaves it out.
 //
+// For a Claude session the answer also carries `stepUsageScript` ({ file, body },
+// card 5e654dd1 stage 2b): the token-counting script the helper saves once, so a
+// workflow hand-off can send a short line that runs it instead of the whole
+// command. The bridge checks the name against the text before saving.
+//
 // Every "nothing to give" outcome is `{ agents: null }`, never an error the
 // bridge has to handle: the session then launches exactly as it did before.
 
@@ -25,6 +30,7 @@ import { authorizeAttach } from "../../../../../../terminal/shared/session-token
 import { isSessionExpired } from "@/lib/terminal/session-registry";
 import { loadBoardSessionAgents } from "@/lib/terminal/board-session-agents";
 import { loadSessionAutoCompactWindow } from "@/lib/terminal/session-auto-compact";
+import { stepUsageScript } from "@/lib/step-cost/usage-command";
 import type { Database } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -93,7 +99,11 @@ export async function POST(req: Request) {
       agent,
       logContext: { sid },
     });
-    return NextResponse.json(autoCompactWindow === undefined ? { agents } : { agents, autoCompactWindow });
+    return NextResponse.json({
+      agents,
+      ...(autoCompactWindow === undefined ? {} : { autoCompactWindow }),
+      ...(agent === "claude" ? { stepUsageScript: stepUsageScript() } : {}),
+    });
   } catch (err) {
     logger.error("Terminal session agents fetch error", {
       error: err instanceof Error ? err.message : String(err),

@@ -266,34 +266,30 @@ export function sessionAgentClaimHint(input: {
       `${tag}, spawn this step's child with agent_type "${name}". Its developer instructions already are this ` +
       `step's persona and its definition already sets this step's model and reasoning effort, which meets the ` +
       `capability check above: don't put persona_prompt in its message. Give it everything else listed above ` +
-      `(task requirements, step details, context, expected_deliverables, work_token, working directory, and where ` +
+      `(task requirements, step details, the earlier-steps pointer, expected_deliverables, work_token, working directory, and where ` +
       `to find its board tools). When ` +
       `completing, report agent "codex", persona_used "verbatim"${reportTier}. If no agent type with that exact ` +
       `name and tag is available, ignore this note and follow the steps above.`;
     return { name, tag, instruction };
   }
+  // The sync's own reply (sync_board_agents, mcp-server/src/tools/agent-sync.ts)
+  // spells out the command, NEW_FOLDER, MISMATCH, NOT_LOADED and the two-sync
+  // limit, so this note keeps only what decides whether to sync at all.
+  const personaFallback =
+    `spawn a general helper instead: call get_agent_prompt with agent_id "${input.bot.id}" and as_persona true, ` +
+    `and give the helper the returned persona_prompt as its system prompt, at the model and effort above.`;
   const syncStep =
     input.ideaId && input.stepId
-      ? `If your Agent tool doesn't offer that exact name and tag: when it offers a subagent with this name ` +
-        `without "${SYNC_MARKER}" at the start of its description, VibeCodes launched this session with its own ` +
-        `copy, which a sync can't replace, so skip the sync, even after a READY one. Otherwise (it isn't offered ` +
-        `at all, or its description starts with "${SYNC_MARKER}", so an earlier session's sync left a stale copy), ` +
-        `if a sync this session already ended READY and printed ${tag} for "${name}", it is loaded, so spawn it ` +
-        `by name even if the listing shows an older tag (the listing is not refreshed), and if the spawn says the ` +
-        `type isn't found run the same sync once more (at most 2 syncs per step). Otherwise call ` +
-        `sync_board_agents (idea_id "${input.ideaId}", step_id "${input.stepId}"), run the command it returns ` +
-        `exactly as its instruction says (in the background, then end your turn), and spawn the subagent when you ` +
-        `wake if the sync ended READY and printed ${tag} for it. One sync saves the whole run's agents and waits ` +
-        `until Claude Code has loaded them, so later steps of the run need no sync. After NEW_FOLDER, MISMATCH, ` +
-        `NOT_LOADED or a failed command, never sync again this session. If the sync is skipped, fails, or ` +
-        `doesn't end READY with that tag, or the spawn still isn't found after the second sync, `
+      ? `If it isn't offered with that tag: when the listing has this name without "${SYNC_MARKER}" at the start of ` +
+        `its description, VibeCodes launched this session with its own copy, so don't sync. Otherwise call ` +
+        `sync_board_agents (idea_id "${input.ideaId}", step_id "${input.stepId}") and do what its instruction ` +
+        `says; once a sync this session has ended READY with that tag, it is loaded, so spawn it by name even if ` +
+        `the listing looks stale. If it still can't be used, `
       : `If no subagent with that exact name and tag is available, `;
   const instruction =
     `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +
-    `${tag}, spawn that subagent type for this step instead of a general-purpose one. Its system prompt already ` +
-    `is this step's persona and its definition already sets this step's model and effort, so don't paste ` +
-    `persona_prompt into its message or pass a model parameter: give it the step brief (description, context, ` +
-    `expected deliverables, work_token). When completing, report persona_used "verbatim"${reportTier}. ` +
-    `${syncStep}ignore this note and follow the steps above.`;
+    `${tag}, spawn it for this step instead of a general-purpose one: its system prompt already is this step's ` +
+    `persona and its definition sets this step's model and effort, so pass no persona text or model parameter. ` +
+    `Report persona_used "verbatim"${reportTier}. ${syncStep}${personaFallback}`;
   return { name, tag, instruction };
 }

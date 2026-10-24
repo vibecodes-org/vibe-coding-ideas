@@ -47,6 +47,7 @@ import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
+import { parseStepUsageScript, saveStepUsageScript, stepUsageScriptDir } from "./step-usage-script.js";
 import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
@@ -1130,6 +1131,20 @@ async function main() {
   // A signal or helper-gone shutdown landed during the fetch: write no role
   // files, spawn nothing and don't dial the relay.
   if (shuttingDown) return;
+  // Card 5e654dd1 (stage 2b): the app serves the step-usage script once; save
+  // it where the short hand-off command reads it. Claude only, never with an
+  // explicit --cmd. Validated and written by step-usage-script.js; never throws
+  // and never delays the launch beyond a tiny local file write.
+  if (AGENT === "claude" && !explicitCmd) {
+    const usageScript = parseStepUsageScript(SESSION_AGENTS_BODY);
+    if (usageScript) {
+      const outcome = saveStepUsageScript(
+        usageScript,
+        stepUsageScriptDir((cachedSpawnEnv = cachedSpawnEnv || resolveSpawnEnv())),
+      );
+      log("info", "step usage script", { outcome, file: usageScript.file });
+    }
+  }
   // The memory limit, whether or not any agents came back. Resumes wait for
   // this fetch before spawning, so a resumed session carries it too.
   if (!term) {
