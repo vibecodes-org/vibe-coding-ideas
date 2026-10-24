@@ -79,6 +79,8 @@ export type Database = {
           terminal_remote_control: boolean;
           /** Task 18a37612 — Claude starting effort (low|medium|high|xhigh|max); null = site default, else none. */
           terminal_effort: string | null;
+          terminal_auto_compact: number | null;
+          terminal_codex_auto_compact: number | null;
           /** Codex support (docs/codex-terminal-requirements.md FR-4a,
            *  implementation slice 1) — the last agent the user picked,
            *  remembered per account (across devices), mirroring
@@ -141,6 +143,8 @@ export type Database = {
           terminal_auto_accept?: boolean;
           terminal_remote_control?: boolean;
           terminal_effort?: string | null;
+          terminal_auto_compact?: number | null;
+          terminal_codex_auto_compact?: number | null;
           terminal_agent?: "claude" | "codex";
           terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;
@@ -186,6 +190,8 @@ export type Database = {
           terminal_auto_accept?: boolean;
           terminal_remote_control?: boolean;
           terminal_effort?: string | null;
+          terminal_auto_compact?: number | null;
+          terminal_codex_auto_compact?: number | null;
           terminal_agent?: "claude" | "codex";
           terminal_agent_toast_seen_at?: string | null;
           is_admin?: boolean;

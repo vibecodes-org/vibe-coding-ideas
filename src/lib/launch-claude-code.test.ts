@@ -514,6 +514,29 @@ describe("buildLaunchCommand", () => {
     expect(cmd).toBe("cd /Users/me/x && claude 'do \"stuff\"'");
   });
 
+  it("adds the memory limit flag for each agent only when a valid value resolves (task 5e654dd1)", () => {
+    expect(buildLaunchCommand({ prompt: "go", cwd: "/x", mode: "existing", autoCompactWindow: 300000 })).toBe(
+      "cd /x && claude --autocompact 300000 'go'"
+    );
+    expect(buildLaunchCommand({ prompt: "go", mode: "existing", agent: "codex", autoCompactWindow: 150000 })).toBe(
+      "codex -c model_auto_compact_token_limit=150000 'go'"
+    );
+    for (const bad of [undefined, null, 0, 5, 1_000_001, 1.5, NaN]) {
+      expect(buildLaunchCommand({ prompt: "go", mode: "existing", autoCompactWindow: bad })).toBe("claude 'go'");
+      expect(buildLaunchCommand({ prompt: "go", mode: "existing", agent: "codex", autoCompactWindow: bad })).toBe("codex 'go'");
+    }
+  });
+
+  it("create-new mode also carries the flag", () => {
+    const cmd = buildLaunchCommand({
+      prompt: "go",
+      mode: "new",
+      newProject: { newProjectPath: "/Users/me/x" },
+      autoCompactWindow: 200000,
+    });
+    expect(cmd.endsWith("&& claude --autocompact 200000 'go'")).toBe(true);
+  });
+
   it("omits cd when no cwd", () => {
     const cmd = buildLaunchCommand({ prompt: "go", mode: "existing" });
     expect(cmd).toBe("claude 'go'");

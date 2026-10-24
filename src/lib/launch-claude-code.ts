@@ -1,4 +1,5 @@
 import { encodePromptParam } from "./terminal/deep-link";
+import { isValidAutoCompactWindow } from "@/lib/terminal/auto-compact";
 import { type LaunchAgent } from "./terminal/agent-launch";
 
 /**
@@ -1958,6 +1959,13 @@ interface ShellCommandArgs {
    * Claude's") — same shell shape, different binary.
    */
   agent?: LaunchAgent;
+  /**
+   * The resolved memory limit (task 5e654dd1): adds `--autocompact N` for
+   * Claude or `-c model_auto_compact_token_limit=N` for Codex. Anything that
+   * is not a whole number from 100,000 to 1,000,000 adds nothing, so the
+   * command stays byte-identical to what it was.
+   */
+  autoCompactWindow?: number | null;
 }
 
 /**
@@ -1968,8 +1976,22 @@ interface ShellCommandArgs {
  * delegated bootstrap (Design §2.4c). `agent` defaults to "claude" — the
  * exact command this produced before Codex existed.
  */
-export function buildLaunchCommand({ prompt, cwd, mode, newProject, repoUrl, agent = "claude" }: ShellCommandArgs): string {
-  const bin = agent === "codex" ? "codex" : "claude";
+export function buildLaunchCommand({
+  prompt,
+  cwd,
+  mode,
+  newProject,
+  repoUrl,
+  agent = "claude",
+  autoCompactWindow,
+}: ShellCommandArgs): string {
+  const binName = agent === "codex" ? "codex" : "claude";
+  const limitFlag = !isValidAutoCompactWindow(autoCompactWindow)
+    ? ""
+    : agent === "codex"
+      ? ` -c model_auto_compact_token_limit=${autoCompactWindow}`
+      : ` --autocompact ${autoCompactWindow}`;
+  const bin = `${binName}${limitFlag}`;
   const quoted = shellSingleQuote(prompt);
   if (mode === "new" && newProject) {
     const repo = parseRepoFromGithubUrl(repoUrl);

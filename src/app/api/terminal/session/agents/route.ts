@@ -11,6 +11,9 @@
 // "bridge"), plus the token's owner must own the session row. Service-role
 // client for the same reason as session/key — there is no Supabase user here.
 //
+// The same answer carries `autoCompactWindow` (the owner's memory limit for this
+// CLI, task 5e654dd1) only when one resolves; a read error leaves it out.
+//
 // Every "nothing to give" outcome is `{ agents: null }`, never an error the
 // bridge has to handle: the session then launches exactly as it did before.
 
@@ -21,6 +24,7 @@ import { logger } from "@/lib/logger";
 import { authorizeAttach } from "../../../../../../terminal/shared/session-token.mjs";
 import { isSessionExpired } from "@/lib/terminal/session-registry";
 import { loadBoardSessionAgents } from "@/lib/terminal/board-session-agents";
+import { loadSessionAutoCompactWindow } from "@/lib/terminal/session-auto-compact";
 import type { Database } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -82,7 +86,14 @@ export async function POST(req: Request) {
       agent,
       logContext: { sid },
     });
-    return NextResponse.json({ agents });
+    // The owner's memory limit rides on this answer so the launch link stays
+    // the same length (task 5e654dd1). Left out when nothing resolves.
+    const autoCompactWindow = await loadSessionAutoCompactWindow(supabase, {
+      userId: session.user_id,
+      agent,
+      logContext: { sid },
+    });
+    return NextResponse.json(autoCompactWindow === undefined ? { agents } : { agents, autoCompactWindow });
   } catch (err) {
     logger.error("Terminal session agents fetch error", {
       error: err instanceof Error ? err.message : String(err),

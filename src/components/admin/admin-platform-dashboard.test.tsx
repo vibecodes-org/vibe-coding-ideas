@@ -24,6 +24,9 @@ const mockGetTerminalForAdmin = vi.fn();
 const mockUpdateTerminal = vi.fn();
 const mockGetEffortForAdmin = vi.fn();
 const mockUpdateEffort = vi.fn();
+const mockGetAutoCompactForAdmin = vi.fn();
+const mockUpdateAutoCompact = vi.fn();
+const mockSetAutoCompactCache = vi.fn();
 const mockGetCodexTerminalForAdmin = vi.fn();
 const mockUpdateCodexTerminal = vi.fn();
 
@@ -34,6 +37,8 @@ vi.mock("@/actions/admin-platform", () => ({
   updatePlatformTerminalModelDefault: (model: string | null) => mockUpdateTerminal(model),
   getPlatformTerminalEffortDefaultForAdmin: () => mockGetEffortForAdmin(),
   updatePlatformTerminalEffortDefault: (effort: string | null) => mockUpdateEffort(effort),
+  getPlatformTerminalAutoCompactDefaultForAdmin: (agent: string) => mockGetAutoCompactForAdmin(agent),
+  updatePlatformTerminalAutoCompactDefault: (agent: string, w: number | null) => mockUpdateAutoCompact(agent, w),
   getPlatformTerminalCodexModelDefaultForAdmin: () => mockGetCodexTerminalForAdmin(),
   updatePlatformTerminalCodexModelDefault: (pair: unknown) => mockUpdateCodexTerminal(pair),
 }));
@@ -49,13 +54,16 @@ const mockSetEffortCache = vi.fn();
 vi.mock("@/hooks/use-platform-terminal-effort-default", () => ({
   setPlatformTerminalEffortDefaultCache: (v: string | null) => mockSetEffortCache(v),
 }));
+vi.mock("@/hooks/use-platform-terminal-auto-compact-default", () => ({
+  setPlatformTerminalAutoCompactDefaultCache: (a: string, v: number | null) => mockSetAutoCompactCache(a, v),
+}));
 vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
   setPlatformTerminalCodexModelDefaultCache: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { AdminPlatformDashboard, AdminTerminalCodexModelCard, AdminTerminalEffortCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminTerminalAutoCompactCard, AdminTerminalCodexModelCard, AdminTerminalEffortCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
@@ -476,6 +484,109 @@ describe("AdminTerminalEffortCard (task 18a37612 — no seed)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Choose a valid Claude effort"));
     expect(screen.getByRole("button", { name: "Max" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("AdminTerminalAutoCompactCard (task 5e654dd1)", () => {
+  const strip = (agent: "claude" | "codex") =>
+    screen.getByRole("group", { name: agent === "claude" ? "Claude memory limit, site default" : "Codex memory limit, site default" });
+
+  it("renders the denied state for a non-super-admin and never fetches", () => {
+    mockGetAutoCompactForAdmin.mockClear();
+    render(<AdminTerminalAutoCompactCard isSuperAdmin={false} agent="claude" />);
+    expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
+    expect(mockGetAutoCompactForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("Claude with nothing saved: five steps, none pressed, the empty-state audit line, Save and Clear disabled", async () => {
+    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
+    await waitFor(() => expect(screen.getByText("No site default: Claude Code decides (about 967,000 tokens).")).toBeInTheDocument());
+    expect(screen.getByText("Claude terminal memory limit")).toBeInTheDocument();
+    expect(screen.getByText("Memory limit")).toBeInTheDocument();
+    const buttons = Array.from(strip("claude").querySelectorAll("button"));
+    expect(buttons.map((b) => b.textContent)).toEqual(["200k", "300k", "400k", "500k", "1M"]);
+    expect(buttons.every((b) => b.getAttribute("aria-pressed") === "false")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
+    expect(mockGetAutoCompactForAdmin).toHaveBeenCalledWith("claude");
+  });
+
+  it("Codex with nothing saved: three steps and its own empty-state line", async () => {
+    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
+    await waitFor(() =>
+      expect(screen.getByText("No site default: Codex decides (about 245,000 tokens on today's Codex models).")).toBeInTheDocument()
+    );
+    expect(screen.getByText("Codex terminal memory limit")).toBeInTheDocument();
+    expect(Array.from(strip("codex").querySelectorAll("button")).map((b) => b.textContent)).toEqual(["100k", "150k", "200k"]);
+  });
+
+  it("shows the saved step and who changed it", async () => {
+    mockGetAutoCompactForAdmin.mockResolvedValue({
+      value: 300000,
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-10-24T00:00:00Z",
+    });
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
+    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "300k" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows an error state with Retry when the fetch fails", async () => {
+    mockGetAutoCompactForAdmin.mockRejectedValueOnce(new Error("boom"));
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
+    await waitFor(() => expect(screen.getByText("Failed to load the Codex terminal memory limit.")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("pick 400k -> Save calls the action, refreshes that agent's cache and toasts", async () => {
+    mockGetAutoCompactForAdmin
+      .mockResolvedValueOnce({ value: null, updatedBy: null, updatedAt: null })
+      .mockResolvedValue({ value: 400000, updatedBy: { id: "u1", full_name: "Nick Ball" }, updatedAt: "2026-10-24T00:00:00Z" });
+    mockUpdateAutoCompact.mockResolvedValue(400000);
+    vi.mocked(toast.success).mockClear();
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "400k" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "400k" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("claude", 400000));
+    await waitFor(() => expect(mockSetAutoCompactCache).toHaveBeenCalledWith("claude", 400000));
+    expect(toast.success).toHaveBeenCalledWith(
+      "Terminal memory limit saved · sessions now tidy up at 400k unless a user picks their own"
+    );
+  });
+
+  it("Codex Clear -> Save sends null and toasts the cleared copy", async () => {
+    mockGetAutoCompactForAdmin
+      .mockResolvedValueOnce({ value: 150000, updatedBy: null, updatedAt: null })
+      .mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    mockUpdateAutoCompact.mockClear();
+    mockUpdateAutoCompact.mockResolvedValue(null);
+    vi.mocked(toast.success).mockClear();
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(mockUpdateAutoCompact).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("codex", null));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Codex terminal memory limit cleared · Codex decides unless a user picks their own"
+      )
+    );
+  });
+
+  it("keeps the staged value and toasts the error when Save fails", async () => {
+    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+    mockUpdateAutoCompact.mockRejectedValue(new Error("Choose a valid memory limit"));
+    vi.mocked(toast.error).mockClear();
+    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "1M" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "1M" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Choose a valid memory limit"));
+    expect(screen.getByRole("button", { name: "1M" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 

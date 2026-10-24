@@ -47,6 +47,8 @@ function makeReply(
       terminal_auto_accept: false,
       terminal_remote_control: false,
       terminal_effort: null,
+      terminal_auto_compact: null,
+      terminal_codex_auto_compact: null,
       terminal_agent: "claude",
       terminal_agent_toast_seen_at: null,
       feed_preferences: {},

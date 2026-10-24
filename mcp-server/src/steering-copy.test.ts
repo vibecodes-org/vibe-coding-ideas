@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SERVER_INSTRUCTIONS, LIVE_DATA_SENTENCE, RESPONSE_REMINDER } from "./steering-copy";
+import { SERVER_INSTRUCTIONS, LIVE_DATA_SENTENCE, RESPONSE_REMINDER, COMPACTION_RULES } from "./steering-copy";
 
 // docs/mcp-usage-steering-design.html §3: one vocabulary across every
 // surface — an agent that has seen any one surface should recognise every
@@ -21,6 +21,31 @@ describe("steering-copy", () => {
 
     it("frames board data as live and shared", () => {
       expect(SERVER_INSTRUCTIONS).toMatch(/live and shared/i);
+    });
+  });
+
+  describe("COMPACTION_RULES (soft landing, task 5e654dd1)", () => {
+    it("is part of the server instructions", () => {
+      expect(SERVER_INSTRUCTIONS).toContain(COMPACTION_RULES);
+    });
+
+    it("keeps the ids, both tokens, running subagents and unwritten decisions verbatim", () => {
+      expect(COMPACTION_RULES).toMatch(/word for word/i);
+      expect(COMPACTION_RULES).toMatch(/card id and step id/i);
+      expect(COMPACTION_RULES).toContain("ct_ claim token");
+      expect(COMPACTION_RULES).toContain("wt_ work token");
+      expect(COMPACTION_RULES).toMatch(/subagents still running/i);
+      expect(COMPACTION_RULES).toMatch(/decisions made in chat that are not yet on the board/i);
+    });
+
+    it("re-checks the card straight after, and re-claims only if the token is lost and no subagent is mid-step", () => {
+      expect(COMPACTION_RULES).toMatch(/call get_task for the card before doing anything else/i);
+      expect(COMPACTION_RULES).toMatch(/only claim a new step if the claim token is truly lost and no subagent is mid-step/i);
+    });
+
+    it("stays within the budget: new text <= 900 chars, whole instructions <= 4,096", () => {
+      expect(COMPACTION_RULES.length).toBeLessThanOrEqual(900);
+      expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(4096);
     });
   });
 

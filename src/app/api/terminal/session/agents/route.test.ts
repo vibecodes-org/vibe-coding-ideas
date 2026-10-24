@@ -89,6 +89,52 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("POST /api/terminal/session/agents — memory limit (task 5e654dd1)", () => {
+  async function ask(agent: "claude" | "codex") {
+    const res = await POST(req({ sid: SID, token: "bridge-tok", agent }));
+    expect(res.status).toBe(200);
+    return res.json();
+  }
+
+  it("leaves the field out when nothing is set", async () => {
+    expect(await ask("claude")).not.toHaveProperty("autoCompactWindow");
+    expect(await ask("codex")).not.toHaveProperty("autoCompactWindow");
+  });
+
+  it("returns the user's own Claude value", async () => {
+    tables.users = { data: { model_tier_map: null, terminal_auto_compact: 400000, terminal_codex_auto_compact: 150000 } };
+    expect((await ask("claude")).autoCompactWindow).toBe(400000);
+  });
+
+  it("returns the user's own Codex value, not Claude's", async () => {
+    tables.users = { data: { model_tier_map: null, terminal_auto_compact: 400000, terminal_codex_auto_compact: 150000 } };
+    expect((await ask("codex")).autoCompactWindow).toBe(150000);
+  });
+
+  it("falls back to the site default when the user has none", async () => {
+    tables.users = { data: { model_tier_map: null, terminal_auto_compact: null, terminal_codex_auto_compact: null } };
+    tables.platform_settings = { data: { value: { window: 300000 } } };
+    expect((await ask("claude")).autoCompactWindow).toBe(300000);
+  });
+
+  it("ignores an invalid saved value", async () => {
+    tables.users = { data: { model_tier_map: null, terminal_auto_compact: 5, terminal_codex_auto_compact: null } };
+    expect(await ask("claude")).not.toHaveProperty("autoCompactWindow");
+  });
+
+  it("a read error leaves the field out and never fails the answer", async () => {
+    tables.users = { data: null, error: { message: "boom" } };
+    const body = await ask("claude");
+    expect(body).not.toHaveProperty("autoCompactWindow");
+    expect(body).toHaveProperty("agents");
+  });
+
+  it("an inactive session still answers { agents: null } with no field", async () => {
+    tables.terminal_sessions = { data: { ...activeSession, status: "ended" } };
+    expect(await ask("claude")).toEqual({ agents: null });
+  });
+});
+
 describe("POST /api/terminal/session/agents", () => {
   it("defines one subagent per agent + tier on the board's claimable steps", async () => {
     const res = await POST(req({ sid: SID, token: "bridge-tok" }));
@@ -104,6 +150,13 @@ describe("POST /api/terminal/session/agents", () => {
     expect(agents["vc-atlas-37e8ffb2-standard"]).toMatchObject({ model: "sonnet", effort: "medium" });
     expect(agents["vc-atlas-37e8ffb2-frontier"].prompt).toContain("### testing\nTest first.");
     expect(agents["vc-lens-87e09eb1"]).not.toHaveProperty("model");
+  });
+
+  it("keeps Claude board agents at full size, and gives Codex role definitions no such key (task 5e654dd1)", async () => {
+    const claude = (await (await POST(req({ sid: SID, token: "bridge-tok" }))).json()).agents;
+    expect(Object.values(claude).every((d) => (d as { autoCompactWindow?: number }).autoCompactWindow === 1_000_000)).toBe(true);
+    const codex = (await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json()).agents;
+    expect(Object.values(codex).some((d) => "autoCompactWindow" in (d as object))).toBe(false);
   });
 
   it("switches file-editing tools off for a read-only agent and leaves a full-access one alone", async () => {

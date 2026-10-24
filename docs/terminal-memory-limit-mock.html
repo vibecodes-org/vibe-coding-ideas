@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Terminal Memory Limit</title>
+<!--
+  Design mock for card 5e654dd1, stage 1: a memory limit (when a session tidies
+  up its memory) for in-browser Claude Code and Codex sessions. Matches
+  Settings -> Model Tiers ("Terminal sessions" group) and the Admin -> Platform
+  terminal cards. Built from model-tier-settings.tsx, admin-platform-dashboard.tsx
+  and effort-segmented-control.tsx at origin/master b08441b; colours are the
+  .dark tokens in src/app/globals.css (zinc, dark default).
+-->
+<style>
+  :root {
+    --background: oklch(0.141 0.005 285.823); --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885); --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067); --primary: oklch(0.92 0.004 286.32);
+    --primary-foreground: oklch(0.21 0.006 285.885); --accent: oklch(0.274 0.006 286.033);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%);
+    --zinc-500: #71717a; --amber: #fbbf24; --violet: #a78bfa;
+    --new: #38bdf8; --new-bg: rgba(56,189,248,.07);
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --background: #ffffff; --foreground: #09090b; --card: #ffffff; --muted: #f4f4f5;
+    --muted-foreground: #71717a; --primary: #18181b; --primary-foreground: #fafafa;
+    --accent: #f4f4f5; --destructive: #dc2626; --border: #e4e4e7; --input: #e4e4e7;
+    --amber: #d97706; --violet: #7c3aed; --new: #0284c7; --new-bg: rgba(2,132,199,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 18px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--new); font-weight: 600; }
+  h1 { font-size: 26px; margin: 6px 0 8px; letter-spacing: -.01em; }
+  h2 { font-size: 19px; margin: 44px 0 6px; }
+  .lede, .note { color: var(--muted-foreground); }
+  .note { font-size: 13.5px; margin: 4px 0 16px; }
+  button.theme { background: var(--muted); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .cap { font-size: 12px; color: var(--zinc-500); margin: 8px 2px 0; }
+
+  /* Model Tiers dialog: sm:max-w-2xl = 672px; phone = 343px */
+  .dialog { width: 100%; max-width: 672px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 24px; box-shadow: 0 16px 48px -20px rgba(0,0,0,.6); }
+  .dialog.phone { max-width: 343px; }
+  .dtitle { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .ddesc { font-size: 14px; color: var(--muted-foreground); margin: 0 0 16px; }
+  .elided { font-size: 12px; color: var(--zinc-500); border: 1px dashed var(--border); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 14px; }
+  .group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); padding-top: 4px; margin: 0 0 10px; }
+  .field { margin: 0 0 16px; }
+  .field > * + * { margin-top: 6px; }
+  .field.dim { opacity: .5; }
+  .label { font-size: 14px; font-weight: 500; line-height: 1.35; }
+  .label .gloss { font-weight: 400; color: var(--muted-foreground); }
+  .select { display: flex; justify-content: space-between; align-items: center; height: 36px; border: 1px solid var(--input); border-radius: 6px; padding: 0 12px; font-size: 14px; }
+  .select::after { content: "\2304"; color: var(--muted-foreground); transform: translateY(-3px); }
+  .help { font-size: 11px; color: var(--muted-foreground); margin: 6px 0 0; }
+
+  /* Same classes as EffortSegmentedControl */
+  .seg { display: flex; overflow: hidden; border: 1px solid var(--input); border-radius: 6px; }
+  .seg span { flex: 1 1 0; min-width: 0; min-height: 36px; display: flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 11px; font-weight: 500; border-right: 1px solid var(--input); padding: 0 4px; cursor: pointer; }
+  .seg span:last-child { border-right: 0; }
+  .seg span:hover { background: var(--accent); }
+  .seg span.on { background: var(--foreground); color: var(--background); }
+  .seg.withdef span { padding-left: 2px; padding-right: 2px; }
+  .seg span.def { flex-grow: 1.5; flex-direction: column; line-height: 1.15; padding-top: 3px; padding-bottom: 3px; }
+  .seg span.def .sub { font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
+  .seg span.def.on .sub { color: var(--background); opacity: .75; }
+
+  .new { border-radius: 8px; outline: 2px dashed var(--new); outline-offset: 6px; background: var(--new-bg); }
+  .newtag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--new); border: 1px solid var(--new); border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 2px; }
+  .switchrow { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  .switch { width: 32px; height: 18px; border-radius: 99px; background: var(--muted); border: 1px solid var(--input); flex: none; }
+  .footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .footer .r { display: flex; gap: 8px; }
+  .btn { height: 32px; padding: 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; border: 1px solid var(--input); }
+  .btn.ghost { border-color: transparent; }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+  .btn.destructive { background: var(--destructive); color: #fff; border-color: transparent; }
+  .btn.off { opacity: .5; }
+  .why { font-size: 11px; color: var(--muted-foreground); text-align: right; margin: 6px 0 0; }
+
+  /* Admin Platform card: rounded-lg border p-6 space-y-6 */
+  .acard { width: 100%; max-width: 900px; border: 1px solid var(--border); border-radius: 10px; padding: 24px; background: var(--background); }
+  .acard + .acard { margin-top: 24px; }
+  .acard h3 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .acard .desc { font-size: 14px; color: var(--muted-foreground); margin: 0 0 24px; }
+  .acard .xs { font-size: 12px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .acard .ctl { max-width: 420px; }
+  .acard.dim { opacity: .5; }
+  .audit { margin-top: 24px; border: 1px solid var(--border); background: color-mix(in oklab, var(--muted) 30%, transparent); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--muted-foreground); }
+  .audit b { color: var(--foreground); }
+  .abar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 24px; }
+  .abar .w { margin-right: auto; font-size: 12px; color: var(--muted-foreground); }
+  .toast { display: inline-flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 6px 0; }
+  .toast i { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; flex: none; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); }
+  .tbl { overflow-x: auto; }
+  ol.dec li { margin-bottom: 8px; }
+  @media (max-width: 520px) { h1 { font-size: 22px; } .acard, .dialog { padding: 16px; } header { flex-direction: column; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="kicker">Design mock · for approval</div>
+      <h1>Choose when a terminal session tidies up its memory</h1>
+      <p class="lede">A new pair of settings, one for Claude and one for Codex. When a session's memory reaches the size you pick, it summarises the conversation so far and carries on, so every later action re-reads less. It applies to new and resumed in-browser sessions. Each new item has a blue dashed outline; everything else is today's screen, unchanged.</p>
+    </div>
+    <button class="theme" id="themeBtn" type="button">Light theme</button>
+  </header>
+
+  <h2>1. Settings → Model Tiers → Terminal sessions <span class="newtag">NEW ROWS</span></h2>
+  <p class="note">Each new row sits straight under its agent's existing rows. It uses the same strip of buttons as "Starting effort", with the same "Default" button first. Default says what it falls back to: the site's choice, or the agent's own size. The dialog's single Save keeps working as it does today. The buttons below are clickable, to try the help line.</p>
+  <div class="row">
+    <div class="dialog">
+      <p class="dtitle">Model tier mapping</p>
+      <p class="ddesc">Choose which model and reasoning effort run each workflow tier, for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>
+      <div class="elided">Frontier / Standard / Cheap tier grid (unchanged)</div>
+      <p class="group">Terminal sessions</p>
+
+      <div class="field dim">
+        <div class="label">Starting model <span class="gloss">— for new in-browser Claude Code sessions</span></div>
+        <div class="select"><span style="color:var(--muted-foreground)">Platform default (Opus)</span></div>
+      </div>
+      <div class="field dim">
+        <div class="label">Starting effort <span class="gloss">— for in-browser Claude Code sessions</span></div>
+        <div class="seg withdef"><span class="def">Default<span class="sub">site: Medium</span></span><span>Low</span><span>Medium</span><span class="on">High</span><span>X-High</span><span>Max</span></div>
+      </div>
+
+      <div class="field new" data-agent="claude">
+        <div class="label">Claude memory limit <span class="gloss">— for in-browser Claude Code sessions</span></div>
+        <div class="seg withdef" role="group" aria-label="Claude memory limit">
+          <span class="def on" data-v="">Default<span class="sub">site: 300k</span></span><span data-v="200000">200k</span><span data-v="300000">300k</span><span data-v="400000">400k</span><span data-v="500000">500k</span><span data-v="1000000">1M</span>
+        </div>
+        <p class="help" data-help>Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents keep their full size. Change it any time by typing /autocompact in the terminal.</p>
+      </div>
+
+      <div class="field dim">
+        <div class="label">Codex starting model <span class="gloss">— for new in-browser Codex sessions</span></div>
+        <div class="select"><span>Use organization default</span></div>
+        <p class="help">Organization Codex terminal pair: gpt-5.6-terra (medium). Resumed sessions keep their existing model.</p>
+      </div>
+
+      <div class="field new" data-agent="codex">
+        <div class="label">Codex memory limit <span class="gloss">— for in-browser Codex sessions</span></div>
+        <div class="seg withdef" role="group" aria-label="Codex memory limit">
+          <span class="def on" data-v="">Default<span class="sub">Codex's own</span></span><span data-v="100000">100k</span><span data-v="150000">150k</span><span data-v="200000">200k</span>
+        </div>
+        <p class="help" data-help>Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions.</p>
+      </div>
+
+      <div class="field dim"><div class="switchrow"><span>Start in auto mode</span><span class="switch"></span></div></div>
+      <div class="field dim"><div class="switchrow"><span>Remote Control</span><span class="switch"></span></div></div>
+
+      <div class="footer">
+        <span class="btn ghost">Reset to defaults</span>
+        <span class="r"><span class="btn">Cancel</span><span class="btn primary off">Save</span></span>
+      </div>
+      <p class="why">Save enables when you change a setting.</p>
+    </div>
+  </div>
+  <p class="cap">Desktop width (the dialog is 672px wide). "Reset to defaults" also puts both new rows back on Default.</p>
+
+  <h2>2. The same rows on a phone (375px)</h2>
+  <p class="note">The strips fit without sideways scrolling: the Claude strip has six buttons, like the effort strip.</p>
+  <div class="row">
+    <div class="dialog phone">
+      <p class="group">Terminal sessions</p>
+      <div class="field new">
+        <div class="label">Claude memory limit <span class="gloss">— for in-browser Claude Code sessions</span></div>
+        <div class="seg withdef"><span class="def">Default<span class="sub">site: 300k</span></span><span>200k</span><span>300k</span><span class="on">400k</span><span>500k</span><span>1M</span></div>
+        <p class="help">New and resumed Claude Code sessions tidy up their memory when it reaches 400,000 tokens (your setting). Board agents keep their full size. Change it any time by typing /autocompact in the terminal.</p>
+      </div>
+      <div class="field new">
+        <div class="label">Codex memory limit <span class="gloss">— for in-browser Codex sessions</span></div>
+        <div class="seg withdef"><span class="def">Default<span class="sub">Codex's own</span></span><span>100k</span><span>150k</span><span class="on">200k</span></div>
+        <p class="help">New and resumed Codex sessions tidy up their memory when it reaches 200,000 tokens (your setting). Takes effect from your next launch or resume.</p>
+      </div>
+    </div>
+  </div>
+  <p class="cap">Shown with a personal choice picked on each row, so you can see the "(your setting)" wording.</p>
+
+  <h2>3. Admin → Platform: two new cards (the site-wide default) <span class="newtag">NEW</span></h2>
+  <p class="note">They go straight under "Claude terminal starting effort" and work like it: one choice, then Clear / Cancel / Save, and a "last changed by" line. Clear means no site default, so the agent decides. Claude starts at 300k because the release sets it; Codex starts with no site default. A user's own choice in Settings always wins.</p>
+  <div class="acard dim">
+    <h3>Claude terminal starting effort</h3>
+    <p class="desc" style="margin:0">Existing card, unchanged.</p>
+  </div>
+  <div class="acard new">
+    <h3>Claude terminal memory limit</h3>
+    <p class="desc">When an in-browser Claude Code session tidies up its memory (summarises the conversation so far), platform-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.</p>
+    <div class="ctl">
+      <span class="xs">Memory limit</span>
+      <div class="seg" role="group" aria-label="Claude memory limit, site default"><span>200k</span><span class="on">300k</span><span>400k</span><span>500k</span><span>1M</span></div>
+    </div>
+    <div class="audit">Last changed by <b>a super-admin</b> · just now</div>
+    <div class="abar"><span class="w">Save enables when you change a value.</span><span class="btn destructive">Clear</span><span class="btn off">Cancel</span><span class="btn primary off">Save</span></div>
+  </div>
+  <div class="acard new">
+    <h3>Codex terminal memory limit</h3>
+    <p class="desc">When an in-browser Codex session tidies up its memory (summarises the conversation so far), platform-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.</p>
+    <div class="ctl">
+      <span class="xs">Memory limit</span>
+      <div class="seg" role="group" aria-label="Codex memory limit, site default"><span>100k</span><span>150k</span><span>200k</span></div>
+    </div>
+    <div class="audit">No site default: Codex decides (about 245,000 tokens on today's Codex models).</div>
+    <div class="abar"><span class="w">Save enables when you change a value.</span><span class="btn destructive off">Clear</span><span class="btn off">Cancel</span><span class="btn primary off">Save</span></div>
+  </div>
+  <p class="note" style="margin-top:14px">What Save says:</p>
+  <div class="toast"><i></i>Terminal memory limit saved · sessions now tidy up at 300k unless a user picks their own</div><br>
+  <div class="toast"><i></i>Codex terminal memory limit cleared · Codex decides unless a user picks their own</div>
+
+  <h2>4. Every help line</h2>
+  <div class="tbl"><table>
+    <tr><th>Row</th><th>When</th><th>Help line under the strip</th></tr>
+    <tr><td>Claude</td><td>Your own choice</td><td>New and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens (your setting). Board agents keep their full size. Change it any time by typing /autocompact in the terminal.</td></tr>
+    <tr><td>Claude</td><td>Default, site has one</td><td>Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents keep their full size. Change it any time by typing /autocompact in the terminal.</td></tr>
+    <tr><td>Claude</td><td>Default, no site value</td><td>Claude Code decides: the size you last saved with /autocompact, otherwise about 967,000 tokens. Applies to new and resumed sessions. Board agents keep their full size.</td></tr>
+    <tr><td>Codex</td><td>Your own choice</td><td>New and resumed Codex sessions tidy up their memory when it reaches 200,000 tokens (your setting). Takes effect from your next launch or resume.</td></tr>
+    <tr><td>Codex</td><td>Default, site has one</td><td>Uses the site default: new and resumed Codex sessions tidy up their memory when it reaches 150,000 tokens. Takes effect from your next launch or resume.</td></tr>
+    <tr><td>Codex</td><td>Default, no site value</td><td>Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions.</td></tr>
+  </table></div>
+
+  <h2>5. Where the two rows differ, and why (your call)</h2>
+  <ol class="dec">
+    <li><b>Codex has fewer steps</b> (100k / 150k / 200k against Claude's 200k to 1M). Today's Codex models hold about 272,000 tokens and already tidy up at about 245,000, so bigger Codex steps would do nothing or run out of room. The effort strips already differ per agent in the same way.</li>
+    <li><b>Only the Claude line mentions a command.</b> Claude Code lets you change the size mid-session with /autocompact. Codex has no such command, so its line says when a change takes effect instead.</li>
+    <li><b>Both new rows name their agent</b> ("Claude memory limit"). The existing Claude rows above don't ("Starting model"). The separate tidy-up card for these settings (fae2ce4f) is the place to fix the old rows.</li>
+    <li><b>Codex gets a Default button here</b>, although its model row has none today. Both new rows work the same way.</li>
+    <li><b>The terminal's "Starts on Opus · High" line doesn't mention the limit.</b> I recommend leaving it out, because that line is already full.</li>
+  </ol>
+</div>
+<script>
+  (function () {
+    var btn = document.getElementById("themeBtn");
+    btn.addEventListener("click", function () {
+      var light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      btn.textContent = light ? "Light theme" : "Dark theme";
+    });
+    function fmt(n) { return Number(n).toLocaleString("en-GB"); }
+    var copy = {
+      claude: {
+        user: function (v) { return "New and resumed Claude Code sessions tidy up their memory when it reaches " + fmt(v) + " tokens (your setting). Board agents keep their full size. Change it any time by typing /autocompact in the terminal."; },
+        def: "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents keep their full size. Change it any time by typing /autocompact in the terminal."
+      },
+      codex: {
+        user: function (v) { return "New and resumed Codex sessions tidy up their memory when it reaches " + fmt(v) + " tokens (your setting). Takes effect from your next launch or resume."; },
+        def: "Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions."
+      }
+    };
+    document.querySelectorAll("[data-agent]").forEach(function (field) {
+      var agent = field.getAttribute("data-agent");
+      var help = field.querySelector("[data-help]");
+      field.querySelectorAll(".seg span[data-v]").forEach(function (seg) {
+        seg.addEventListener("click", function () {
+          field.querySelectorAll(".seg span[data-v]").forEach(function (s) { s.classList.remove("on"); });
+          seg.classList.add("on");
+          var v = seg.getAttribute("data-v");
+          help.textContent = v ? copy[agent].user(v) : copy[agent].def;
+        });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

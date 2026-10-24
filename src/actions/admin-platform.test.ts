@@ -30,6 +30,9 @@ import {
   getPlatformTerminalEffortDefaultAction,
   getPlatformTerminalEffortDefaultForAdmin,
   updatePlatformTerminalEffortDefault,
+  getPlatformTerminalAutoCompactDefaultAction,
+  getPlatformTerminalAutoCompactDefaultForAdmin,
+  updatePlatformTerminalAutoCompactDefault,
   getPlatformTerminalCodexModelDefaultAction,
   updatePlatformTerminalCodexModelDefault,
   getAgentAwarePlatformModelDefaultsAction,
@@ -580,6 +583,77 @@ function asSuperAdmin(extra: Record<string, unknown>) {
     return extra;
   });
 }
+
+describe("platform terminal memory limit (task 5e654dd1)", () => {
+  it("reads null when no row, the window when valid, per agent key", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+    expect(await getPlatformTerminalAutoCompactDefaultAction("claude")).toBeNull();
+    expect(await getPlatformTerminalAutoCompactDefaultForAdmin("codex")).toEqual({ value: null, updatedBy: null, updatedAt: null });
+
+    const keys: string[] = [];
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: (_c: string, key: string) => {
+          keys.push(key);
+          return {
+            maybeSingle: () =>
+              Promise.resolve({
+                data: { value: { window: 300000 }, updated_at: "2026-10-24T00:00:00Z", updated_by: { id: SUPER_ADMIN_ID, full_name: "Nick Ball" } },
+                error: null,
+              }),
+          };
+        },
+      }),
+    }));
+    expect(await getPlatformTerminalAutoCompactDefaultAction("claude")).toBe(300000);
+    expect(await getPlatformTerminalAutoCompactDefaultForAdmin("codex")).toEqual({
+      value: 300000,
+      updatedBy: { id: SUPER_ADMIN_ID, full_name: "Nick Ball" },
+      updatedAt: "2026-10-24T00:00:00Z",
+    });
+    expect(keys).toEqual(["terminal_auto_compact_default", "terminal_codex_auto_compact_default"]);
+  });
+
+  it("update throws for a non-super-admin", async () => {
+    mockSupabase.auth.getUser.mockReset();
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: REGULAR_USER_ID } }, error: null });
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: false }, error: null }) }) }),
+    }));
+    await expect(updatePlatformTerminalAutoCompactDefault("claude", 300000)).rejects.toThrow("Super admin access required");
+  });
+
+  it("rejects values that are not that agent's steps without writing", async () => {
+    const upsert = vi.fn(() => Promise.resolve({ error: null }));
+    asSuperAdmin({ upsert });
+    await expect(updatePlatformTerminalAutoCompactDefault("claude", 100000)).rejects.toThrow("Choose a valid memory limit");
+    await expect(updatePlatformTerminalAutoCompactDefault("codex", 300000)).rejects.toThrow("Choose a valid memory limit");
+    await expect(updatePlatformTerminalAutoCompactDefault("claude", 12345)).rejects.toThrow("Choose a valid memory limit");
+    await expect(updatePlatformTerminalAutoCompactDefault("other" as "claude", 300000)).rejects.toThrow();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("upserts the window under the agent's own key with updated_by", async () => {
+    let row: unknown;
+    asSuperAdmin({ upsert: (r: unknown) => { row = r; return Promise.resolve({ error: null }); } });
+    expect(await updatePlatformTerminalAutoCompactDefault("codex", 150000)).toBe(150000);
+    expect(row).toMatchObject({ key: "terminal_codex_auto_compact_default", value: { window: 150000 }, updated_by: SUPER_ADMIN_ID });
+  });
+
+  it("null deletes only that agent's row", async () => {
+    let deletedKey: string | undefined;
+    asSuperAdmin({ delete: () => ({ eq: (col: string, val: string) => { deletedKey = col === "key" ? val : undefined; return Promise.resolve({ error: null }); } }) });
+    expect(await updatePlatformTerminalAutoCompactDefault("claude", null)).toBeNull();
+    expect(deletedKey).toBe("terminal_auto_compact_default");
+  });
+
+  it("throws a safe message when the upsert fails", async () => {
+    asSuperAdmin({ upsert: () => Promise.resolve({ error: { message: "internal_column_xyz" } }) });
+    await expect(updatePlatformTerminalAutoCompactDefault("claude", 300000)).rejects.toThrow("Failed to save the terminal memory limit — try again");
+  });
+});
 
 describe("getPlatformTerminalEffortDefaultAction / ForAdmin", () => {
   it("reads null when no row, the level when valid", async () => {

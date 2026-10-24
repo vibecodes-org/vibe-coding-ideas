@@ -30,13 +30,17 @@ const SAFE_SETTING = /^[a-z0-9._\-]{1,40}$/i;
 // definition may carry (task 472d5672): tools a Read-only agent can't use.
 const TOOL_NAME = /^[A-Z][A-Za-z0-9_]{0,63}$/;
 const MAX_DISALLOWED_TOOLS = 10;
+// A definition's own memory limit (task 5e654dd1): board agents keep the full
+// size. Mirrors AUTO_COMPACT_MIN / MAX in auto-compact.js.
+const AGENT_WINDOW_MIN = 100_000;
+const AGENT_WINDOW_MAX = 1_000_000;
 
 /**
  * Validate the endpoint's `{ agents }` body. Anything unexpected — wrong
  * shape, a name outside the `vc-` namespace, an oversized payload — returns
  * null, and the session launches exactly as it did before.
  * @param {unknown} body
- * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string, disallowedTools?: string[] }> | null}
+ * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string, disallowedTools?: string[], autoCompactWindow?: number }> | null}
  */
 export function validateSessionAgents(body) {
   const agents = body && typeof body === "object" ? /** @type {any} */ (body).agents : null;
@@ -44,7 +48,7 @@ export function validateSessionAgents(body) {
   const clean = {};
   for (const [name, def] of Object.entries(agents)) {
     if (!AGENT_NAME.test(name) || !def || typeof def !== "object") return null;
-    const { description, prompt, model, effort, disallowedTools } = /** @type {any} */ (def);
+    const { description, prompt, model, effort, disallowedTools, autoCompactWindow } = /** @type {any} */ (def);
     if (typeof description !== "string" || typeof prompt !== "string" || !prompt.trim()) return null;
     if (model !== undefined && (typeof model !== "string" || !SAFE_SETTING.test(model))) return null;
     if (effort !== undefined && (typeof effort !== "string" || !SAFE_SETTING.test(effort))) return null;
@@ -57,12 +61,22 @@ export function validateSessionAgents(body) {
     ) {
       return null;
     }
+    if (
+      autoCompactWindow !== undefined &&
+      (typeof autoCompactWindow !== "number" ||
+        !Number.isInteger(autoCompactWindow) ||
+        autoCompactWindow < AGENT_WINDOW_MIN ||
+        autoCompactWindow > AGENT_WINDOW_MAX)
+    ) {
+      return null;
+    }
     clean[name] = {
       description,
       prompt,
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       ...(disallowedTools ? { disallowedTools } : {}),
+      ...(autoCompactWindow ? { autoCompactWindow } : {}),
     };
   }
   if (Object.keys(clean).length === 0) return null;

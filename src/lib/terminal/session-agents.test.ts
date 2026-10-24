@@ -339,6 +339,32 @@ describe("agentNameLine", () => {
 
 // Task 472d5672: a Read-only agent's session definition switches its file-
 // editing tools off and carries the Tools note; Full access is untouched.
+describe("board agent memory limit (task 5e654dd1)", () => {
+  const key = "vc-atlas-37e8ffb2-frontier";
+
+  it("adds autoCompactWindow to every definition when asked, and nothing else changes", () => {
+    const plain = buildSessionAgents([input()])![key];
+    const withWindow = buildSessionAgents([input()], undefined, { autoCompactWindow: 1_000_000 })![key];
+    expect(withWindow.autoCompactWindow).toBe(1_000_000);
+    const { autoCompactWindow, ...rest } = withWindow;
+    void autoCompactWindow;
+    expect(rest).toEqual(plain);
+    expect(withWindow.description).toBe(plain.description);
+  });
+
+  it("leaves the key out by default (Codex, sync paths)", () => {
+    expect(buildSessionAgents([input()])![key]).not.toHaveProperty("autoCompactWindow");
+  });
+
+  it("is carried by optional agents too", () => {
+    const agents = buildSessionAgents([input()], undefined, {
+      optional: [input({ bot: { ...ATLAS, id: "d799aba2-dc93-4379-8172-786dd8be0246", name: "Planner" } })],
+      autoCompactWindow: 1_000_000,
+    })!;
+    expect(Object.values(agents).every((d) => d.autoCompactWindow === 1_000_000)).toBe(true);
+  });
+});
+
 describe("tool access", () => {
   const READ_ONLY = { ...ATLAS, tool_access: "read_only" as const };
   const NOTE = "## Tools\nYou're read-only: don't create, edit or delete files";
