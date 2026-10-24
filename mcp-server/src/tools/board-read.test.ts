@@ -573,13 +573,13 @@ describe("getTask - lean default", () => {
     }
   });
 
-  it("falls back to the newest unfinished run when only an older run has unfinished steps", async () => {
+  it("always uses the newest run, even when an older run has unfinished leftovers", async () => {
     const steps = [
       makeStep({ id: sid(1), run_id: RUN_A, status: "failed", position: 0, step_order: 0, created_at: "2026-09-01T00:00:00Z" }),
       makeStep({ id: sid(2), run_id: RUN_B, status: "completed", position: 1, step_order: 0, created_at: "2026-10-01T00:00:00Z", completed_at: "2026-10-02T00:00:00Z" }),
     ];
     const result = (await getTask(buildContext({ steps }), lean)) as unknown as Record<string, unknown>;
-    expect((result.workflow_steps as Array<Record<string, unknown>>).map((s) => s.id)).toEqual([sid(1)]);
+    expect((result.workflow_steps as Array<Record<string, unknown>>).map((s) => s.id)).toEqual([sid(2)]);
     expect(result.earlier_runs).toBe(1);
   });
 
