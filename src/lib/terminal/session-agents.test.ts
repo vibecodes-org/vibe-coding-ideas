@@ -201,12 +201,22 @@ describe("sessionAgentClaimHint", () => {
     expect(agents[bare.name].description.endsWith(bare.tag)).toBe(false);
   });
 
-  it("tells the orchestrator to fall back when there's no match, and what to report when there is", () => {
+  it("tells the orchestrator what to report, and to fetch the persona itself when the helper can't be used", () => {
     const { instruction } = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
     expect(instruction).toContain('"vc-atlas-37e8ffb2-frontier"');
     expect(instruction).toContain('persona_used "verbatim"');
     expect(instruction).toContain('model_used "opus", reasoning_effort_used "high"');
-    expect(instruction).toContain("follow the steps above");
+    // The reply no longer carries persona_prompt when this helper is named, so
+    // the fallback fetches the same text (card 5e654dd1).
+    expect(instruction).toContain(`get_agent_prompt with agent_id "${ATLAS.id}" and as_persona true`);
+    expect(instruction.trim().endsWith("at the model and effort above.")).toBe(true);
+  });
+
+  it("is short: about 450 characters without the sync clause, under 1,000 with it", () => {
+    const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
+    expect(sessionAgentClaimHint(base).instruction.length).toBeLessThan(800);
+    const withSync = sessionAgentClaimHint({ ...base, ideaId: "i", stepId: "s" }).instruction;
+    expect(withSync.length).toBeLessThan(1300);
   });
 
   describe("when the session wasn't launched by VibeCodes (cards 7939ee17, b9205d04)", () => {
@@ -215,64 +225,39 @@ describe("sessionAgentClaimHint", () => {
     const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
     const full = { ...base, ideaId: IDEA, stepId: STEP };
 
-    it("tells the orchestrator to sync this step's agent if the subagent isn't offered at all", () => {
+    it("tells the orchestrator to sync this step's agent if the subagent isn't offered", () => {
       const { instruction } = sessionAgentClaimHint(full);
       expect(instruction).toContain(`sync_board_agents (idea_id "${IDEA}", step_id "${STEP}")`);
-      expect(instruction).toContain("in the background, then end your turn");
-      expect(instruction).toContain("when you wake");
+      // The command, background run, wait and the two-sync limit are in the sync's own reply.
+      expect(instruction).toContain("do what its instruction says");
     });
 
-    it("trusts a READY sync for the whole run, allows one retry, and never syncs again after a failure", () => {
-      const { instruction, tag, name } = sessionAgentClaimHint(full);
-      expect(instruction).toContain(`if a sync this session already ended READY and printed ${tag} for "${name}", it is loaded`);
-      expect(instruction).toContain("even if the listing shows an older tag");
-      expect(instruction).toContain("run the same sync once more (at most 2 syncs per step)");
-      expect(instruction).toContain("One sync saves the whole run's agents and waits until Claude Code has loaded them");
-      expect(instruction).toContain("After NEW_FOLDER, MISMATCH, NOT_LOADED or a failed command, never sync again this session.");
-      expect(instruction).not.toContain("at most once per session");
+    it("trusts a READY sync for the whole run even when the listing looks stale", () => {
+      const { instruction, tag } = sessionAgentClaimHint(full);
+      expect(instruction).toContain("once a sync this session has ended READY with that tag, it is loaded");
+      expect(instruction.split(tag)).toHaveLength(2); // the tag is named once
+      expect(instruction).toContain("spawn it by name even if the listing looks stale");
     });
 
-    it("re-syncs a stale copy that carries the sync marker and skips one that doesn't", () => {
+    it("never syncs over an unmarked launch copy", () => {
       const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain(`starts with "${SYNC_MARKER}"`);
-      expect(instruction).toMatch(/starts with "[^"]+", so an earlier session's sync left a stale copy/);
-      expect(instruction).toMatch(/Otherwise call sync_board_agents/);
-      expect(instruction).toMatch(/without "[^"]+" at the start of its description, VibeCodes launched this session.*skip the sync/);
-    });
-
-    it("keeps an unmarked launch copy on the general path even after a READY sync", () => {
-      const { instruction, tag, name } = sessionAgentClaimHint(full);
-      const unmarked = instruction.indexOf("skip the sync, even after a READY one");
-      const ready = instruction.indexOf(`if a sync this session already ended READY and printed ${tag} for "${name}"`);
-      expect(unmarked).toBeGreaterThan(-1);
-      // The launch-copy rule comes first, and the READY clause only covers
-      // "not offered at all" or a marked (sync-saved) stale copy.
-      expect(unmarked).toBeLessThan(ready);
-      expect(instruction).toMatch(/Otherwise \(it isn't offered at all, or its description starts with "[^"]+", so an earlier session's sync left a stale copy\), if a sync this session already ended READY/);
-    });
-
-    it("ignores the note when the sync doesn't end READY with the tag or the spawn is still not found after the second sync", () => {
-      const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain(
-        "If the sync is skipped, fails, or doesn't end READY with that tag, or the spawn still isn't found after the second sync, ignore this note and follow the steps above.",
+      expect(instruction).toMatch(
+        new RegExp(`without "${SYNC_MARKER}" at the start of its description, VibeCodes launched this session with its own copy, so don't sync`),
       );
-      expect(instruction).not.toContain("still isn't offered with that tag");
+      // The launch-copy rule comes before the instruction to sync.
+      expect(instruction.indexOf("don't sync")).toBeLessThan(instruction.indexOf("call sync_board_agents"));
+    });
+
+    it("falls back to the persona fetch as the last word, in one paragraph", () => {
+      const { instruction } = sessionAgentClaimHint(full);
+      expect(instruction).toContain("If it still can't be used, spawn a general helper instead");
+      expect(instruction.trim().endsWith("at the model and effort above.")).toBe(true);
       expect(instruction).not.toContain("\n");
     });
 
-    it("only trusts the subagent after the sync if its tag matches", () => {
+    it("only trusts the subagent if its tag matches", () => {
       const { instruction, tag } = sessionAgentClaimHint(full);
       expect(instruction).toContain(`ends with ${tag}`);
-      expect(instruction).toMatch(/doesn't end READY with that tag/);
-    });
-
-    it("keeps the general-path fallback as the last word", () => {
-      const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction.trim().endsWith("follow the steps above.")).toBe(true);
-    });
-
-    it("is one paragraph, so the pinned instruction hashes in workflows.test.ts hold", () => {
-      expect(sessionAgentClaimHint(full).instruction).not.toContain("\n");
     });
 
     it("says nothing about syncing without both ids, or for Codex", () => {

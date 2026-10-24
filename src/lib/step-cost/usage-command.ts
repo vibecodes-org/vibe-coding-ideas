@@ -28,7 +28,7 @@
 // scripts/lib/step-usage-backfill.mjs applies the same rules to past runs;
 // keep the two in step.
 
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 /** The placeholder the session replaces with the Agent tool's agentId(s). */
 export const USAGE_COMMAND_PLACEHOLDER = "AGENT_ID";
@@ -78,16 +78,10 @@ export function newUsageMarker(): string {
  * agentId of each subagent that did the step's work (space-separated) and
  * runs it, or runs it unchanged when it did the work itself.
  */
-export function stepUsageCommand(marker: string, agentIds: string = USAGE_COMMAND_PLACEHOLDER): string {
-  if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
-  // AGENT_I[D] keeps the placeholder's text out of the test, so swapping
-  // AGENT_ID for real ids can't rewrite it too. A forked session's transcript
-  // repeats the claim, so the newest file holding the marker is this session's.
-  return `(
-ids='${agentIds}'
-mark='${marker}'
-case "$ids" in AGENT_I[D]) ids='';; esac
-root="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+// Everything after the marker and ids are known. Shared by the long command
+// below and by the script file the helper saves (stepUsageScript), so the two
+// can't drift.
+const USAGE_BODY = `root="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
 main=$(find "$root" -type f -name '*.jsonl' ! -path '*/subagents/*' -mmin -720 -exec grep -lF "$mark" {} + 2>/dev/null |
   { m=''; while IFS= read -r f; do if [ -z "$m" ] || [ "$f" -nt "$m" ]; then m=$f; fi; done; printf '%s' "$m"; })
 set --
@@ -99,6 +93,65 @@ for id in $(printf '%s\n' "$ids"); do
   set -- "$@" "$f"
 done
 [ $# -gt 0 ] || { echo "NO_TRANSCRIPT"; exit 0; }
-LC_ALL=C awk -v mark="$mark" -v main="$main" '${AWK_PROGRAM}' "$@"
+LC_ALL=C awk -v mark="$mark" -v main="$main" '${AWK_PROGRAM}' "$@"`;
+
+/**
+ * The usage command with AGENT_ID still in it. The session swaps in the
+ * agentId of each subagent that did the step's work (space-separated) and
+ * runs it, or runs it unchanged when it did the work itself.
+ */
+export function stepUsageCommand(marker: string, agentIds: string = USAGE_COMMAND_PLACEHOLDER): string {
+  if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
+  // AGENT_I[D] keeps the placeholder's text out of the test, so swapping
+  // AGENT_ID for real ids can't rewrite it too. A forked session's transcript
+  // repeats the claim, so the newest file holding the marker is this session's.
+  return `(
+ids='${agentIds}'
+mark='${marker}'
+case "$ids" in AGENT_I[D]) ids='';; esac
+${USAGE_BODY}
 )`;
+}
+
+// ---- The saved-script form (card 5e654dd1, stage 2b) -----------------------
+// The long command is about 3,000 characters and rides in every hand-off. The
+// helper app can save it once as a file instead, and the hand-off then carries
+// a command of about 200 characters that runs the file. The file is the same
+// logic, taking the marker and the agent ids as arguments, so it never changes
+// per claim: its name carries the first 8 hex digits of its own SHA-256, so a
+// changed script gets a new name and an old copy is never run by mistake.
+
+/** The file name the helper accepts: step-usage-<8 hex>.sh, nothing else. */
+export const STEP_USAGE_SCRIPT_NAME = /^step-usage-[0-9a-f]{8}$/;
+export const STEP_USAGE_SCRIPT_FILE = /^step-usage-[0-9a-f]{8}\.sh$/;
+
+const STEP_USAGE_SCRIPT_BODY = `#!/bin/sh
+# VibeCodes: totals one workflow step's token use. Args: <marker> <agent ids>.
+mark=$1
+ids=$2
+case "$mark" in vcu_*[!0-9a-f]*|vcu_) echo "NO_TRANSCRIPT"; exit 0;; vcu_*) ;; *) echo "NO_TRANSCRIPT"; exit 0;; esac
+case "$ids" in AGENT_I[D]) ids='';; esac
+${USAGE_BODY}
+`;
+
+/** The script the helper saves: its file name and its text. */
+export function stepUsageScript(): { file: string; body: string } {
+  const sha8 = createHash("sha256").update(STEP_USAGE_SCRIPT_BODY).digest("hex").slice(0, 8);
+  return { file: `step-usage-${sha8}.sh`, body: STEP_USAGE_SCRIPT_BODY };
+}
+
+/**
+ * The short command: runs the saved script, or prints NO_TRANSCRIPT no-script
+ * when it isn't there (a session the helper didn't launch, or an older
+ * helper). The session already treats NO_TRANSCRIPT as "omit usage", so a
+ * missing file never blocks a step.
+ */
+export function stepUsageShortCommand(
+  marker: string,
+  file: string = stepUsageScript().file,
+  agentIds: string = USAGE_COMMAND_PLACEHOLDER,
+): string {
+  if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
+  if (!STEP_USAGE_SCRIPT_FILE.test(file)) throw new Error("bad usage script name");
+  return `f="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes/${file}"; [ -s "$f" ] && sh "$f" '${marker}' '${agentIds}' || echo "NO_TRANSCRIPT no-script"`;
 }

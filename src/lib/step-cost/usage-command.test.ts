@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newUsageMarker, stepUsageCommand, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, stepUsageCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 
 // One transcript line per content block, shaped like Claude Code 2.1.300's.
 function line(o: { id: string; model: string; block: object; input?: number; read?: number; write?: number; write1h?: number; out?: number; main?: boolean }) {
@@ -207,5 +209,80 @@ describe("stepUsageCommand", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// Card 5e654dd1, stage 2b: the script the helper saves, and the short command
+// that runs it.
+describe("saved step-usage script and the short command", () => {
+  const { file, body } = stepUsageScript();
+
+  const mainAfterClaim = [
+    line({ id: "msg_m1", model: "claude-opus-5-5", block: text("x".repeat(35)), read: 1000, main: true }),
+    line({ id: "msg_m2", model: "claude-opus-5-5", block: text("x".repeat(35)), read: 2000, main: true }),
+  ];
+
+  function withScript(contents: string | null) {
+    const root = sandbox({ a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("s".repeat(70)), read: 10, out: 4 })] }, [claimLine, ...mainAfterClaim]);
+    if (contents !== null) {
+      mkdirSync(join(root, "vibecodes"), { recursive: true });
+      writeFileSync(join(root, "vibecodes", file), contents);
+    }
+    return root;
+  }
+
+  it("names the file after its own text, and keeps to what the helper accepts", () => {
+    expect(file).toMatch(STEP_USAGE_SCRIPT_FILE);
+    expect(file).toBe(`step-usage-${createHash("sha256").update(body).digest("hex").slice(0, 8)}.sh`);
+    expect(body.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(Buffer.byteLength(body)).toBeLessThan(16 * 1024);
+    expect(stepUsageScript()).toEqual({ file, body });
+  });
+
+  it("the helper's own checks accept the real script (same file name rule, hash and size)", () => {
+    const bridge = resolve(__dirname, "../../../terminal/bridge/src/step-usage-script.js");
+    const r = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", `import { parseStepUsageScript } from ${JSON.stringify(bridge)}; const a = JSON.parse(process.argv[1]); process.stdout.write(JSON.stringify(parseStepUsageScript({ stepUsageScript: a })));`, JSON.stringify({ file, body })],
+      { encoding: "utf8" },
+    );
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ file, body });
+  });
+
+  it("the short command is about 200 characters and carries the marker, not the program", () => {
+    const command = stepUsageShortCommand(MARK);
+    expect(command.length).toBeLessThan(260);
+    expect(command).toContain(MARK);
+    expect(command).toContain(`ids='${USAGE_COMMAND_PLACEHOLDER}'`.replace("ids=", ""));
+    expect(command).not.toContain("awk");
+  });
+
+  it("gives the same totals as the long command, with the placeholder and with real agent ids", () => {
+    const root = withScript(body);
+    try {
+      expect(runCommand(root, stepUsageShortCommand(MARK))).toBe(runCommand(root, stepUsageCommand(MARK)));
+      expect(runCommand(root, stepUsageShortCommand(MARK, file, "a1"))).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+      expect(JSON.parse(runCommand(root, stepUsageShortCommand(MARK, file, "a1"))).models[0].calls).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prints NO_TRANSCRIPT no-script when the file is missing or empty (the step is never blocked)", () => {
+    for (const contents of [null, ""]) {
+      const root = withScript(contents);
+      try {
+        expect(runCommand(root, stepUsageShortCommand(MARK))).toBe("NO_TRANSCRIPT no-script");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("refuses a bad marker or script name", () => {
+    expect(() => stepUsageShortCommand("vcu_'; rm -rf ~; '")).toThrow();
+    expect(() => stepUsageShortCommand(MARK, "../evil.sh")).toThrow();
+    expect(() => stepUsageShortCommand(MARK, "step-usage-xyz.sh")).toThrow();
   });
 });

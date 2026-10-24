@@ -358,7 +358,7 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    `Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries its own \`comments\` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's \`output\` field is canonical). If a step's \`comments_truncated\` is true, older comments exist beyond the 10 returned; \`comment_count\` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI. ${LIVE_DATA_SENTENCE}`,
+    `Get a card: basics, full description, assignee name, labels, attachments, the latest 5 comments (comments_total says how many exist) and the CURRENT workflow run's steps as one short line each (status, role, model tier, output_chars, comment_count; earlier_runs says how many older runs exist). The step in progress, awaiting approval or failed also carries its description and latest 5 comments. To read earlier steps' write-ups pass step_ids (up to 10 step ids, returned in full with up to 20 comments; the reply is capped near 80,000 characters of write-ups and lists not_included_step_ids to fetch next). full: true returns every step of every run with write-ups plus recent activity (large; use sparingly). If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Step comments are the step's discussion, failure reports and approval notes (newest first; type 'output' mirrors are excluded because the step's \`output\` field is canonical). If a step's \`comments_truncated\` is true, older comments exist beyond those returned. ${LIVE_DATA_SENTENCE}`,
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -981,7 +981,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
+    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Pass as_persona: true to get `persona_prompt` instead: the persona exactly as a workflow hand-off would embed it (system prompt, tools note and skills), for a session that has to run a step inline.",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1158,7 +1158,7 @@ export function registerTools(
 
   server.tool(
     "list_workflow_templates",
-    "List workflow templates for an idea. Templates define reusable step sequences that can be applied to tasks.",
+    "List workflow templates for an idea. Templates define reusable step sequences that can be applied to tasks. By default returns a short summary per template (id, name, description, usage_count, step_count, step_titles). Pass template_id for one template with all its steps in full, or include_steps: true for every template in full (large).",
     listWorkflowTemplatesSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1244,7 +1244,7 @@ export function registerTools(
 
   server.tool(
     "claim_next_step",
-    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, the assigned `persona_prompt` when there is one, and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. Also returns a `work_token` — hand it to the executing subagent; comments passing it post in the assigned agent's voice. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
+    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, `available_agents` (only when no bot is assigned), `prior_steps` (id, title and output_chars of earlier steps in this run; their write-ups are not included - the instruction tells the session to have the helper read them with get_task step_ids), the assigned `persona_prompt` only when no native helper is named (otherwise the helper already is the persona; get_agent_prompt with as_persona true fetches it), and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. Also returns a `work_token` — hand it to the executing subagent; comments passing it post in the assigned agent's voice. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
     claimNextStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1258,7 +1258,7 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output/deliverable. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
+    "Mark a workflow step as completed with optional output/deliverable (the reply reports output_chars, not the write-up). Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (later steps read it with get_task step_ids) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1544,7 +1544,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_skill_content",
-    "Re-read the full SKILL.md instructions for a specific skill attached to an agent. A workflow step already includes its agent's skills in full inside the claim_next_step persona_prompt, so you don't need this to start a step; use it to re-read a skill on demand, or to load a skill that persona_prompt names as too large to include. Pass the optional agent_id (a bot_id) of the agent that owns the skill. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
+    "Re-read the full SKILL.md instructions for a specific skill attached to an agent. A workflow step's helper already carries its agent's skills in full (in its definition, or in the claim_next_step persona_prompt when one is sent), so you don't need this to start a step; use it to re-read a skill on demand, or to load a skill that persona_prompt names as too large to include. Pass the optional agent_id (a bot_id) of the agent that owns the skill. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getAgentSkillContentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

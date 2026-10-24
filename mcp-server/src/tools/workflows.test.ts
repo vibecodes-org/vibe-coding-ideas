@@ -3,6 +3,7 @@ import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { createHash } from "node:crypto";
 import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
+import { getBotPrompt } from "./bots";
 import { sessionAgentClaimHint } from "../../../src/lib/terminal/session-agents";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
 
@@ -357,7 +358,7 @@ function makeClaimContext(opts: {
 }
 
 describe("claimNextStep", () => {
-  it("populates context from prior completed steps' output column", async () => {
+  it("lists prior steps by id, title and length instead of copying their write-ups", async () => {
     const step = makeStepRow({ step_order: 3 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const priorSteps = [
@@ -368,25 +369,27 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    expect(result).toHaveProperty("context");
-    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
-    expect(r.context).toHaveLength(2);
-    expect(r.context[0]).toEqual({ step_id: "s1", step_title: "Step 1", output: "Output from step 1" });
-    expect(r.context[1]).toEqual({ step_id: "s2", step_title: "Step 2", output: "Output from step 2" });
+    expect(result).not.toHaveProperty("context");
+    const r = result as { prior_steps: { step_id: string; title: string; output_chars: number }[] };
+    expect(r.prior_steps).toEqual([
+      { step_id: "s1", title: "Step 1", output_chars: "Output from step 1".length },
+      { step_id: "s2", title: "Step 2", output_chars: "Output from step 2".length },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("Output from step 1");
   });
 
-  it("returns empty context for first step (no prior steps)", async () => {
+  it("returns empty prior_steps for first step (no prior steps)", async () => {
     const step = makeStepRow({ step_order: 1 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
 
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
-    expect(r.context).toEqual([]);
+    const r = result as { prior_steps: unknown[] };
+    expect(r.prior_steps).toEqual([]);
   });
 
-  it("includes skipped steps with output in context", async () => {
+  it("includes skipped steps with output in prior_steps", async () => {
     const step = makeStepRow({ step_order: 3 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const priorSteps = [
@@ -397,12 +400,12 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
-    expect(r.context).toHaveLength(2);
-    expect(r.context[1]).toEqual({ step_id: "s2", step_title: "Skipped Step", output: "Skipped: not applicable" });
+    const r = result as { prior_steps: { step_id: string; title: string; output_chars: number }[] };
+    expect(r.prior_steps).toHaveLength(2);
+    expect(r.prior_steps[1]).toEqual({ step_id: "s2", title: "Skipped Step", output_chars: "Skipped: not applicable".length });
   });
 
-  it("excludes completed steps with null output from context", async () => {
+  it("excludes completed steps with null output from prior_steps", async () => {
     const step = makeStepRow({ step_order: 3 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const priorSteps = [
@@ -413,12 +416,12 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
-    expect(r.context).toHaveLength(1);
-    expect(r.context[0].step_title).toBe("Step 1");
+    const r = result as { prior_steps: { title: string }[] };
+    expect(r.prior_steps).toHaveLength(1);
+    expect(r.prior_steps[0].title).toBe("Step 1");
   });
 
-  it("preserves step_order in context", async () => {
+  it("preserves step_order in prior_steps", async () => {
     const step = makeStepRow({ step_order: 4 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const priorSteps = [
@@ -430,12 +433,11 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
-    expect(r.context).toHaveLength(3);
-    expect(r.context.map((c) => c.step_title)).toEqual(["First", "Second", "Third"]);
+    const r = result as { prior_steps: { title: string }[] };
+    expect(r.prior_steps.map((c) => c.title)).toEqual(["First", "Second", "Third"]);
   });
 
-  it("includes prior step titles in context chaining instruction", async () => {
+  it("tells the session to put a get_task(step_ids) line in the helper's brief, and not to paste the steps", async () => {
     const step = makeStepRow({ step_order: 3 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const priorSteps = [
@@ -447,13 +449,22 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).toContain("CONTEXT CHAINING");
-    expect(r.instruction).toContain('"Research & Analysis"');
-    expect(r.instruction).toContain('"Architecture Design"');
-    expect(r.instruction).toContain("Build on them by name");
+    expect(r.instruction).toContain("PRIOR STEPS");
+    // Titles and write-ups travel in prior_steps / get_task, never in the instruction.
+    expect(r.instruction).not.toContain("Research & Analysis");
+    expect(r.instruction).not.toContain("Architecture Design");
+    expect((result as unknown as { prior_steps: Array<{ title: string }> }).prior_steps.map((p) => p.title)).toEqual([
+      "Research & Analysis",
+      "Architecture Design",
+    ]);
+    expect(r.instruction).toContain(`get_task(task_id "${TASK_ID}", idea_id "${IDEA_ID}", step_ids ["s1", "s2"])`);
+    expect(r.instruction).not.toContain("the step_id values from prior_steps");
+    expect(r.instruction).toContain("flag anything your work contradicts");
+    expect(r.instruction).toContain("Don't paste or summarise them yourself");
+    expect(r.instruction).not.toContain("findings");
   });
 
-  it("omits context chaining instruction when no prior steps", async () => {
+  it("omits the prior-steps line when there are none", async () => {
     const step = makeStepRow({ step_order: 1 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
 
@@ -461,7 +472,7 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).not.toContain("CONTEXT CHAINING");
+    expect(r.instruction).not.toContain("PRIOR STEPS");
     expect(r.instruction).not.toContain("CASCADE REJECTION");
   });
 
@@ -480,10 +491,9 @@ describe("claimNextStep", () => {
     expect(r.instruction).toContain("CASCADE REJECTION");
     expect(r.instruction).toContain("fail_step");
     expect(r.instruction).toContain("reset_to_step_id");
-    expect(r.instruction).toContain("step_id: s1");
-    expect(r.instruction).toContain("step_id: s2");
-    expect(r.instruction).toContain('"Implementation"');
-    expect(r.instruction).toContain('"Unit Tests"');
+    // The ids are in prior_steps, not repeated in the text.
+    expect(r.instruction).toContain('"prior_steps"');
+    expect((result as unknown as { prior_steps: { step_id: string }[] }).prior_steps.map((p) => p.step_id)).toEqual(["s1", "s2"]);
   });
 
   it("includes PROTECT PRIOR WORK on a first-step claim (Claude) — no prior work to save-point yet", async () => {
@@ -603,7 +613,7 @@ describe("claimNextStep", () => {
     expect(r.instruction).toContain(
       "EXPECTED DELIVERABLES: produce the following:\n" +
         "- Verification note (repro re-run, test checked, nearby behaviour)\n" +
-        "- Follow-up cards (if any)\n\n",
+        "- Follow-up cards (if any)",
     );
     expect(r.instruction).not.toContain("write this as");
     expect(r.instruction).not.toContain("A format in parentheses");
@@ -681,8 +691,11 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).toContain("DELIVERABLE FORMAT: Choose the appropriate format");
-    expect(r.instruction).toContain("Use your judgement");
+    // Personas own the format choice; the old "choose a format" paragraph and
+    // the generic "pass your full deliverable" line are gone (card 5e654dd1).
+    expect(r.instruction).not.toContain("DELIVERABLE FORMAT");
+    expect(r.instruction).not.toContain("Use your judgement");
+    expect(r.instruction).toContain("EXPECTED DELIVERABLES");
   });
 
   it("returns done when no pending steps", async () => {
@@ -909,6 +922,7 @@ function makeSkillsClaimContext(opts: {
   toolAccess?: "full" | "read_only";
   skillsError?: string;
   ideaAgentsError?: string;
+  priorSteps?: { id: string; title: string; step_order: number; output: string | null }[];
 }) {
   const tableCounts: Record<string, number> = {};
   let claimChain: ReturnType<typeof createChain> | null = null;
@@ -933,7 +947,7 @@ function makeSkillsClaimContext(opts: {
           Promise.resolve({ data: [{ id: opts.pendingStep.id }], error: null }).then(resolve);
       } else if (callNum === 4) {
         chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ data: [], error: null }).then(resolve);
+          Promise.resolve({ data: opts.priorSteps ?? [], error: null }).then(resolve);
       }
       return chain.chain;
     }
@@ -1007,24 +1021,34 @@ describe("claimNextStep — agent skills", () => {
     available_skills?: unknown;
   };
 
-  it("appends each skill's stored text to persona_prompt, in order, trimmed (AC1)", async () => {
+  // The persona text itself is built by composePersonaPrompt (tested in
+  // lib/persona-prompt.test.ts) and is what get_agent_prompt(as_persona) returns.
+  // A claim that names a native helper no longer repeats it (card 5e654dd1).
+  it("leaves persona_prompt out when a native helper is named, and points at the fallback instead", async () => {
     const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
-    expect(r.persona_prompt).toBe(
-      `${SKILL_PERSONA}\n\n## Skills\nThese are your reference skills. Apply the ones relevant to this step.\n\n` +
-        `### api-design-review\nCheck REST contracts first.\n\n### a11y-audit\nRun a WCAG 2.2 AA pass.`,
-    );
+    expect(r.native_subagent).toBeDefined();
+    expect(r).not.toHaveProperty("persona_prompt");
+    expect(r).not.toHaveProperty("persona_name");
+    expect(r.instruction).toContain('get_agent_prompt with agent_id');
+    expect(r.instruction).toContain("as_persona true");
+    // The skills paragraph talks about persona_prompt, which isn't here.
+    expect(r.instruction).not.toContain("SKILLS:");
   });
 
-  it("names the included skills and never tells anyone to fetch them (AC3)", async () => {
-    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+  it("sends persona_prompt with the skills in full when the agent has skills but no persona text (no native helper)", async () => {
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, systemPrompt: null });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
+    expect(r.native_subagent).toBeUndefined();
+    expect(r.persona_prompt).toBe(
+      "## Skills\nThese are your reference skills. Apply the ones relevant to this step.\n\n" +
+        "### api-design-review\nCheck REST contracts first.\n\n### a11y-audit\nRun a WCAG 2.2 AA pass.",
+    );
     expect(r.instruction).toContain("SKILLS: this agent's skills (api-design-review, a11y-audit) are included in full");
     expect(r.instruction).toContain("use it unchanged with the skills in it");
     expect(r.instruction).not.toContain("get_agent_skill_content");
-    expect(r.instruction).not.toContain("EXCEPTION — if your spawned subagent");
     expect(r.instruction).not.toContain("skills_used");
     expect(r).not.toHaveProperty("available_skills");
   });
@@ -1041,7 +1065,7 @@ describe("claimNextStep — agent skills", () => {
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
     expect(claimUpdate().skills_used).toEqual([]);
-    expect(r.persona_prompt).toBe(SKILL_PERSONA);
+    expect(r).not.toHaveProperty("persona_prompt");
     expect(r.instruction).not.toContain("SKILLS:");
     expect(r).not.toHaveProperty("available_skills");
   });
@@ -1051,7 +1075,7 @@ describe("claimNextStep — agent skills", () => {
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
     expect(r.persona_prompt!.startsWith("## Skills\n")).toBe(true);
-    expect(r.instruction).toContain('Spawn the subagent with the "persona_prompt" field');
+    expect(r.instruction).toContain('Spawn it with the "persona_prompt" field');
     expect(r.instruction).not.toContain("Call get_agent_prompt with agent_id");
     expect(claimUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
     // No persona text means no in-app definition exists to name.
@@ -1064,6 +1088,7 @@ describe("claimNextStep — agent skills", () => {
       pendingStep: step,
       updatedStep,
       skills: [SKILLS[0], { name: "huge", content: big }, { name: "after-huge", content: "short" }],
+      systemPrompt: null, // no persona text: no native helper, so persona_prompt is sent
     });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
@@ -1126,7 +1151,7 @@ describe("claimNextStep — agent skills", () => {
 
   it("names skills beyond the 50-skill cap instead of dropping them", async () => {
     const many = Array.from({ length: 52 }, (_, i) => ({ name: `skill-${i + 1}`, content: `body ${i + 1}` }));
-    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: many });
+    const { ctx, claimUpdate } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: many, systemPrompt: null });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
     expect(r.persona_prompt).toContain("### skill-50\nbody 50");
@@ -1134,27 +1159,6 @@ describe("claimNextStep — agent skills", () => {
     expect(r.persona_prompt).toContain("Not included here (over the size limit): skill-51, skill-52.");
     expect(r.persona_prompt).toContain(`get_agent_skill_content (agent_id "${SKILL_BOT_ID}")`);
     expect(claimUpdate().skills_used).toHaveLength(50);
-  });
-
-  // Task 472d5672: a Read-only agent's persona ends with the Tools note, ahead
-  // of the Skills section; a Full-access agent's persona is unchanged.
-  it("puts the read-only Tools note at the end of the persona, before the Skills section", async () => {
-    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, toolAccess: "read_only" });
-    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
-
-    const note = "## Tools\nYou're read-only: don't create, edit or delete files";
-    const personaPart = r.persona_prompt!.split("\n\n## Skills\n")[0];
-    expect(personaPart.startsWith(SKILL_PERSONA)).toBe(true);
-    expect(personaPart).toContain(note);
-    expect(personaPart.endsWith("Say what should change instead.")).toBe(true);
-    expect(r.persona_prompt).toContain("### api-design-review");
-  });
-
-  it("adds no Tools note for a Full-access agent", async () => {
-    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [], toolAccess: "full" });
-    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
-
-    expect(r.persona_prompt).toBe(SKILL_PERSONA);
   });
 
   it("the read-only claim's native-subagent tag differs from the full-access one (the note is fingerprinted)", async () => {
@@ -1183,10 +1187,10 @@ describe("claimNextStep — agent skills", () => {
   });
 
   it("Codex claims carry the same persona-with-skills text and don't forward a skills list (AC11)", async () => {
-    const claude = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const claude = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, systemPrompt: null });
     const claudeResult = (await claimNextStep(claude.ctx, { task_id: TASK_ID })) as SkillClaim;
 
-    const codex = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
+    const codex = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS, systemPrompt: null });
     const r = (await claimNextStep(codex.ctx, { task_id: TASK_ID, agent: "codex" })) as SkillClaim;
 
     expect(r.persona_prompt).toBe(claudeResult.persona_prompt);
@@ -1226,6 +1230,8 @@ function makePersonaClaimContext(opts: {
   systemPrompt: string | null;
   /** Auto-switch (card 5d0665a2): model_unavailable_model the marker lookup returns. Omitted -> no marker. */
   unavailableModel?: string;
+  /** Skill rows the agent_skills read returns (default none). */
+  skills?: Array<{ bot_id: string; name: string; content: string }>;
 }) {
   const tableCounts: Record<string, number> = {};
 
@@ -1277,7 +1283,7 @@ function makePersonaClaimContext(opts: {
       return chain.chain;
     }
 
-    if (table === "agent_skills") return createChain([]).chain;
+    if (table === "agent_skills") return createChain(opts.skills ?? []).chain;
     if (table === "workflow_runs" || table === "workflow_step_comments") {
       return createChain([]).chain;
     }
@@ -1321,7 +1327,9 @@ describe("claimNextStep — persona embedding", () => {
   // Pins the COMPLETE Claude instruction, including Auto and missing-persona
   // paths, without eight large text snapshots. First captured before the Codex
   // handoff fix; re-pinned deliberately on 10 Oct 2026 when task 3784ead1
-  // calmed the wording (same rules, said once with their reasons).
+  // calmed the wording (same rules, said once with their reasons); re-pinned
+  // again on card 5e654dd1 (stage 2) when the hand-off was slimmed: the
+  // instruction now comes from buildClaimInstruction.
   it("preserves pre-fix Claude instruction bytes for every tier and persona path", async () => {
     const hashes: Record<string, string> = {};
     for (const tier of [null, "frontier", "standard", "cheap"]) {
@@ -1348,14 +1356,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "66f733bf78c10f27d198c77138253e73cf40653a1cbf94efacfdc983dc202be3",
-        "auto/missing": "fd25a65f455c28a61f321de3ed858865c57015a90d12268f4d0c3fba2bb6ce21",
-        "cheap/embedded": "5311923171719f06d248f887e8e5412cda14c44fcfae351ef8e5d50875fd02af",
-        "cheap/missing": "6711193777d7e967cfd5449dd1a9d74063ed55c3a4c18c1f5cf6bdf65ea0ab45",
-        "frontier/embedded": "c5ea3b23c5d859785e96049b2c9282c7570b9da42b0361a8dbce3c30ca65cdfe",
-        "frontier/missing": "ac0aef7d02a6c44a027e22e097dd6a88a41f3deca290a1986a8b2271191019b6",
-        "standard/embedded": "bfbd8d70d16af8545cd4ccebdb9b2a2b04f3186d73164bc976f33b2044607e3b",
-        "standard/missing": "fb0d687e3170e9eea11d5c38d73764d8db1bb9302bedf8ce63eb86b0faa7d746",
+        "auto/embedded": "b2004087dec2f9a3ec8199f121ac043590b372484894b69ad0dac9f576fa0d43",
+        "auto/missing": "a7da9f69f39710741ffd4651cfa0d5dab329d5c9dc2e5fca320b8660f2c81374",
+        "cheap/embedded": "c3f6c596bd39745ec19da1069042ec672d6fb0bf7e2d16ddd19b46beae85549a",
+        "cheap/missing": "873bfcce1edf295d0f8bae789eeb36883e4fefad6cbe06f6c59ac6fa08dd674f",
+        "frontier/embedded": "18b6fb39138aa737cb5a572968c160b65896f8f78c7221cf3a0bb10e666c1f27",
+        "frontier/missing": "df7541250951a43e4a133877894845e933c9adc0f48e9d87eba813d165fd1459",
+        "standard/embedded": "8c1c08c3b77446cd675b9f552531cf282f7adf19437c25b54ad2b35d2e0c4d40",
+        "standard/missing": "02b5a2c72023bffd20e6faace7e4340838812ceb4bf7f46e15ff436afb99cf3f",
       }
     `);
   });
@@ -1472,7 +1480,7 @@ describe("claimNextStep — persona embedding", () => {
     });
   });
 
-  it("embeds persona_prompt/persona_name/persona_role when the matched bot has a system_prompt", async () => {
+  it("names the native helper and leaves persona_prompt out when the matched bot has a system_prompt", async () => {
     const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
     const systemPrompt = "You are Atlas, a Full Stack Engineer on the VibeCodes team.";
@@ -1480,28 +1488,71 @@ describe("claimNextStep — persona embedding", () => {
     const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep, systemPrompt });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as {
-      instruction: string;
-      persona_prompt?: string;
-      persona_name?: string;
-      persona_role?: string;
-    };
-
-    expect(r.persona_prompt).toBe(systemPrompt);
-    expect(r.persona_name).toBe("Atlas");
-    expect(r.persona_role).toBe("Full Stack Engineer");
-
-    // Adopt-verbatim replaces the get_agent_prompt round-trip.
-    expect(r.instruction).toContain('Spawn the subagent with the "persona_prompt" field in this response as its system prompt');
-    expect(r.instruction).not.toContain("Call get_agent_prompt");
+    const r = result as { instruction: string; native_subagent?: { name: string }; persona_prompt?: string };
+    expect(r.native_subagent?.name).toMatch(/^vc-atlas-/);
+    // The helper's definition already is the persona (card 5e654dd1).
+    expect(r).not.toHaveProperty("persona_prompt");
+    expect(JSON.stringify(result)).not.toContain(systemPrompt);
+    expect(r.instruction).toContain("NATIVE SUBAGENT");
+    expect(r.instruction).toContain('as_persona true');
     // Attestation obligation on the completion-reporting sentence.
     expect(r.instruction).toContain("persona_used");
-    expect(r.instruction).toContain('"verbatim" if the subagent ran on persona_prompt unchanged');
-    expect(r.instruction).toContain("not verified, and never blocks completion");
+    expect(r.instruction).toContain("persona_used (verbatim/adapted/none)");
+    expect(r.instruction).toContain("never blocks completion");
     // Untouched surrounding clauses.
     expect(r.instruction).toContain("FRESH SUBAGENT");
     expect(r.instruction).toContain("RELIABILITY");
     expect(r.instruction).toContain("This is the only exception");
+  });
+
+  it("get_agent_prompt(as_persona) returns byte-for-byte the persona_prompt a claim would send (card 5e654dd1, AC4.1)", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const systemPrompt = "You are Atlas, a Full Stack Engineer on the VibeCodes team.";
+    const skills = [
+      { bot_id: PERSONA_BOT_ID, name: "api-design-review", content: "  Check REST contracts first.\n" },
+      { bot_id: PERSONA_BOT_ID, name: "a11y-audit", content: "Run a WCAG 2.2 AA pass." },
+    ];
+
+    // A model switch is active, so the claim carries persona_prompt.
+    const claimCtx = makePersonaClaimContext({ pendingStep: step, updatedStep, systemPrompt, unavailableModel: "opus", skills });
+    const claimed = (await claimNextStep(claimCtx, { task_id: TASK_ID })) as { persona_prompt?: string };
+    expect(claimed.persona_prompt).toContain("### api-design-review");
+
+    const botCtx = makeContext(((table: string) => {
+      if (table === "bot_profiles") {
+        return createChain({ id: PERSONA_BOT_ID, name: "Atlas", role: "Full Stack Engineer", system_prompt: systemPrompt, tool_access: "full" }).chain;
+      }
+      if (table === "agent_skills") return createChain(skills).chain;
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+    const viaTool = (await getBotPrompt(botCtx, { agent_id: PERSONA_BOT_ID, as_persona: true })) as { persona_prompt: string };
+
+    expect(viaTool.persona_prompt).toBe(claimed.persona_prompt);
+    // Without as_persona the reply is the unchanged raw profile.
+    const raw = (await getBotPrompt(botCtx, { agent_id: PERSONA_BOT_ID })) as Record<string, unknown>;
+    expect(raw).not.toHaveProperty("persona_prompt");
+    expect(raw.system_prompt).toBe(systemPrompt);
+  });
+
+  it("embeds persona_prompt/persona_name/persona_role when no native helper is named (a model switch)", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const systemPrompt = "You are Atlas, a Full Stack Engineer on the VibeCodes team.";
+
+    // While a switch is active the native helper (pinned to the unavailable
+    // model) is left out, so the persona must ride in the reply.
+    const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep, systemPrompt, unavailableModel: "opus" });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as {
+      instruction: string; native_subagent?: unknown; persona_prompt?: string; persona_name?: string; persona_role?: string;
+    };
+
+    expect(r.native_subagent).toBeUndefined();
+    expect(r.persona_prompt).toBe(systemPrompt);
+    expect(r.persona_name).toBe("Atlas");
+    expect(r.persona_role).toBe("Full Stack Engineer");
+    expect(r.instruction).toContain('Spawn it with the "persona_prompt" field in this response as its system prompt');
+    expect(r.instruction).not.toContain("Call get_agent_prompt");
   });
 
   it("omits persona fields and keeps the get_agent_prompt fallback when the step is unassigned", async () => {
@@ -1530,7 +1581,7 @@ describe("claimNextStep — persona embedding", () => {
     expect(r).not.toHaveProperty("persona_name");
     expect(r).not.toHaveProperty("persona_role");
     expect(r.instruction).toContain("Call get_agent_prompt");
-    expect(r.instruction).not.toContain("persona_used");
+    expect(r.instruction).not.toContain("persona_used (");
   });
 });
 
@@ -2491,9 +2542,22 @@ describe("claimNextStep — rework instructions", () => {
     const r = result as { instruction: string };
 
     expect(r.instruction).toContain("REWORK REQUIRED");
-    expect(r.instruction).toContain("Previous failure: Previous attempt failed");
-    expect(r.instruction).toContain("Feedback: Please fix the validation logic");
-    expect(r.instruction).toContain("Feedback: Also handle edge case for empty input");
+    expect(r.instruction).toContain('"rework_instructions"');
+    // Said once (card 5e654dd1): the feedback is in rework_instructions only —
+    // not copied into the instruction, and the step object no longer carries output.
+    expect(r.instruction).not.toContain("Previous attempt failed");
+    expect(r.instruction).not.toContain("Please fix the validation logic");
+    const full = result as unknown as {
+      rework_instructions: { previous_failure_output: string; changes_requested: { content: string }[] };
+      step: Record<string, unknown>;
+    };
+    expect(full.rework_instructions.previous_failure_output).toBe("Previous attempt failed");
+    expect(full.rework_instructions.changes_requested.map((c) => c.content)).toEqual([
+      "Please fix the validation logic",
+      "Also handle edge case for empty input",
+    ]);
+    expect(full.step).not.toHaveProperty("output");
+    expect(JSON.stringify(result).split("Previous attempt failed")).toHaveLength(2);
   });
 
   it("does not include rework section when no rework_instructions", async () => {
@@ -2566,7 +2630,8 @@ describe("claimNextStep — rework instructions", () => {
 
     expect(r.rework_instructions).not.toBeNull();
     expect(r.instruction).toContain("REWORK REQUIRED");
-    expect(r.instruction).toContain("Feedback: Fix the edge case handling");
+    expect(JSON.stringify(r.rework_instructions)).toContain("Fix the edge case handling");
+    expect(r.instruction).not.toContain("Fix the edge case handling");
   });
 
   it("no false positives when run has no cascade comments", async () => {
@@ -2760,10 +2825,13 @@ describe("claimNextStep — approval_notes", () => {
     const r = result as { instruction: string };
 
     expect(r.instruction).toContain("APPROVER GUIDANCE");
-    expect(r.instruction).toContain("BINDING constraint");
-    expect(r.instruction).toContain(
-      '- After "Requirements" (Nick Ball, 2026-07-10T18:03:55Z): Approved — but rename the field to retry_count.'
-    );
+    expect(r.instruction).toContain("BINDING requirement");
+    expect(r.instruction).toContain('(see "approval_notes")');
+    // Said once: the note text is in approval_notes, not copied into the instruction.
+    expect(r.instruction).not.toContain("rename the field to retry_count");
+    expect(
+      (result as unknown as { approval_notes: { content: string; step_title: string }[] }).approval_notes[0],
+    ).toMatchObject({ content: "Approved — but rename the field to retry_count.", step_title: "Requirements" });
   });
 
   it("returns approval_notes: [] and omits the guidance block when no approval comments exist", async () => {
@@ -2875,6 +2943,9 @@ describe("approveStep", () => {
 
     const result = await approveStep(ctx, { step_id: STEP_ID });
     expect(result.step).toMatchObject({ status: "completed" });
+    // Saved replies (card 5e654dd1): the write-up is not echoed back.
+    expect(result.step).not.toHaveProperty("output");
+    expect(result.step).toMatchObject({ output_chars: "output".length });
   });
 
   // Design Review condition 2 (agent-voice-comments-design.html §1.2, §7):
@@ -3026,6 +3097,9 @@ describe("failStep", () => {
     // Should have .gte for step_order
     expect(cascadeResetChain!.captured.gtes).toEqual([["step_order", 2]]);
     expect(result.steps_reset).toBe(2);
+    // Saved replies (card 5e654dd1): the write-up is not echoed back.
+    expect(result.step).not.toHaveProperty("output");
+    expect(result.step.output_chars).toBe("Needs rework".length);
   });
 
   it("sets run to running when cascade is used", async () => {
@@ -5313,7 +5387,10 @@ describe("skipStep — never clears or names the auto-switch marker (AC-9)", () 
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await skipStep(ctx, { step_id: STEP_ID });
+    const skipped = await skipStep(ctx, { step_id: STEP_ID });
+    // Saved replies (card 5e654dd1): the write-up is not echoed back.
+    expect(skipped.step).not.toHaveProperty("output");
+    expect(skipped.step.output_chars).toBe("n/a".length);
 
     expect(captured).not.toBeNull();
     expect("model_unavailable_at" in captured!).toBe(false);
@@ -5501,7 +5578,7 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     const instruction = (result as { instruction: string }).instruction;
 
     // No convenience escape hatch — the only exception is a genuine capability gap.
-    expect(instruction).toContain('"only a small step" defeats the point of the step');
+    expect(instruction).toContain("don't do it yourself because it seems simpler");
     expect(instruction).toContain("This is the only exception");
     expect(instruction).toContain("no subagent/Agent tool");
   });
@@ -5935,8 +6012,10 @@ describe("claimNextStep — Codex handoff", () => {
       model, reasoning_effort: effort, fallback_model: fallback,
       reporting_source: "accepted_launch_configuration",
     });
-    expect(result.context).toEqual([
-      { step_id: "prior-step", step_title: "Requirements", output: "Preserve Claude behavior." },
+    // Earlier steps ride as ids; the child reads them with get_task(step_ids).
+    expect(result).not.toHaveProperty("context");
+    expect(result.prior_steps).toEqual([
+      { step_id: "prior-step", title: "Requirements", output_chars: "Preserve Claude behavior.".length },
     ]);
     expect(result.instruction).toContain("spawn_agent");
     // Live test 11 Oct 2026: a Codex child that had the board tools said it
@@ -5948,7 +6027,9 @@ describe("claimNextStep — Codex handoff", () => {
     expect(result.instruction).not.toContain("switch this Codex session");
     expect(result.instruction).toContain("actual spawn parameters");
     expect(result.instruction).toContain("Keep claim_token in the orchestrator only");
-    expect(result.instruction).toContain("context (prior outputs with step names and IDs)");
+    expect(result.instruction).toContain(`get_task(task_id "${TASK_ID}", idea_id "${IDEA_ID}", step_ids ["prior-step"])`);
+    expect(result.instruction).toContain("do not paste or summarise them");
+    expect(result.instruction).not.toContain("Preserve Claude behavior.");
     expect(result.instruction).toContain("approval_notes, rework_instructions");
     expect(result.instruction).toContain("actual working directory");
     expect(result.instruction).toContain("It must not claim another step, complete/fail this step, or approve anything");
@@ -5977,12 +6058,18 @@ describe("claimNextStep — Codex handoff", () => {
         pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt,
       }), { task_id: TASK_ID, agent: "codex" });
       if (!("execution" in result)) throw new Error("Expected a Codex claim");
-      expect(result.persona_prompt).toBe(systemPrompt ?? undefined);
+      // A named native agent type already carries the persona, so it isn't repeated.
+      if (systemPrompt) {
+        expect(result).not.toHaveProperty("persona_prompt");
+        expect(result.native_subagent).toBeDefined();
+      } else {
+        expect(result).not.toHaveProperty("persona_prompt");
+      }
       expect(result.work_token).toMatch(/^wt_/);
       expect(result.claim_token).toMatch(/^ct_/);
       expect(result.instruction).not.toContain("Agent/Task tool");
       expect(result.instruction).toContain(systemPrompt
-        ? "Use persona_prompt verbatim"
+        ? `get_agent_prompt with agent_id "${PERSONA_BOT_ID}" and as_persona true`
         : `Call get_agent_prompt with agent_id "${PERSONA_BOT_ID}"`);
       expect(result.instruction).toContain("HUMAN APPROVAL REQUIRED");
       expect(result.instruction).toContain("do not claim to have changed the child's system prompt");
@@ -6682,13 +6769,146 @@ describe("rematchWorkflowAgents — stale exact agents", () => {
 // complete_step / fail_step store the totals the session passes back.
 // ---------------------------------------------------------------------------
 
+describe("slim hand-off (card 5e654dd1, stage 2)", () => {
+  const big = (n: number) => "x".repeat(n);
+  const priorSteps = [1, 2, 3].map((n) => ({ id: `prior-${n}`, title: `Earlier step ${n}`, step_order: n, output: big(20_000) }));
+  const SKILLS = [
+    { name: "api-design-review", content: "Check REST contracts first." },
+    { name: "a11y-audit", content: "Run a WCAG 2.2 AA pass." },
+  ];
+
+  // AC1.9 asked for 7,000 (reply) and 2,800 (instruction). Measured on this
+  // build: the instruction is about 4,400 characters for this step, because
+  // the approved MANDATORY MODEL text (770), SAVE-POINT COMMIT (410) and the
+  // native-helper note (1,180) are kept word for word. The 7,000 reply target
+  // is met once the short usage command is switched on (stage 2b); with the
+  // long one the reply is about 3,000 characters larger. These ceilings pin
+  // today's size so it can't creep back up.
+  const RULE_PERSONA =
+    "Unexplained uncommitted changes in the working tree are someone else's intentional prior work.";
+
+  async function midRunClaim() {
+    const step = makeStepRow({ step_order: 4, bot_id: SKILL_BOT_ID, model_tier: "frontier" });
+    const { ctx } = makeSkillsClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, priorSteps, systemPrompt: RULE_PERSONA,
+    });
+    return claimNextStep(ctx, { task_id: TASK_ID });
+  }
+
+  it("a frontier step with a native helper, skills and 3 earlier 20k write-ups: no write-up text, reply within 7,000 with the short usage command", async () => {
+    vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
+    try {
+      const r = await midRunClaim();
+      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7000);
+      expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
+    const r = await midRunClaim();
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(8500);
+  });
+
+  it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
+    const r = (await midRunClaim()) as { instruction: string };
+    expect(r.instruction.length).toBeLessThanOrEqual(4600);
+  });
+
+  it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID, model_tier: "frontier" });
+    const { ctx } = makeSkillsClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, systemPrompt: RULE_PERSONA,
+    });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(r.instruction.length).toBeLessThanOrEqual(3500);
+  });
+
+  it("sends available_agents only when the step has no assigned agent (AC1.4)", async () => {
+    const assigned = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
+    const a = await claimNextStep(
+      makeSkillsClaimContext({ pendingStep: assigned, updatedStep: { ...assigned, status: "in_progress" }, skills: [] }).ctx,
+      { task_id: TASK_ID },
+    );
+    expect(a).not.toHaveProperty("available_agents");
+    const loose = makeStepRow({ step_order: 1, bot_id: null });
+    const b = await claimNextStep(
+      makeClaimContext({ pendingStep: loose, updatedStep: { ...loose, status: "in_progress" }, priorSteps: [] }),
+      { task_id: TASK_ID },
+    );
+    expect(b).toHaveProperty("available_agents");
+  });
+
+  it("the step object carries no output, expected deliverables, counts or timestamps beyond started_at (AC1.5)", async () => {
+    const step = makeStepRow({ step_order: 1, output: "old", expected_deliverables: ["Plan"] });
+    const r = (await claimNextStep(
+      makeClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress", output: "old" }, priorSteps: [] }),
+      { task_id: TASK_ID },
+    )) as { step: Record<string, unknown>; expected_deliverables: string[] };
+    for (const k of ["output", "expected_deliverables", "comment_count", "position", "created_at", "completed_at", "claimed_by"]) {
+      expect(r.step).not.toHaveProperty(k);
+    }
+    // Expected deliverables are sent once, at the top level.
+    expect(r.expected_deliverables).toEqual(["Plan"]);
+  });
+
+  it("no longer asks the session to append a summary to the task description (R8)", async () => {
+    const step = makeStepRow({ step_order: 4, bot_id: SKILL_BOT_ID });
+    const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: [], priorSteps });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    expect(r.instruction).not.toContain("TASK DESCRIPTION");
+    expect(r.instruction).not.toContain("update_task");
+  });
+
+  it("keeps every safety rule in a mid-run gated claim (AC1.8)", async () => {
+    const step = makeStepRow({ step_order: 4, bot_id: SKILL_BOT_ID, model_tier: "frontier", human_check_required: true });
+    const { ctx } = makeSkillsClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, priorSteps,
+    });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
+    const t = r.instruction;
+    // model, effort, fallback and reporting
+    expect(t).toContain("MANDATORY MODEL");
+    expect(t).toContain("model_used");
+    expect(t).toContain("reasoning_effort_used");
+    // fresh helper with its reason
+    expect(t).toContain("FRESH SUBAGENT");
+    expect(t).toContain("keeps this step independent of the others");
+    // claim token stays; work token goes to the helper
+    expect(t).toContain("never give it to the helper");
+    expect(t).toContain("the helper gets the work_token");
+    // human approval
+    expect(t).toContain("you MUST STOP. Do NOT call approve_step yourself");
+    // cascade rejection, save point, protect prior work (persona lacks the rule)
+    expect(t).toContain("fail_step with reset_to_step_id");
+    expect(t).toContain("SAVE-POINT COMMIT: Before spawning this step's subagent");
+    expect(t).toContain("PROTECT PRIOR WORK: Include this verbatim in your spawned subagent's brief");
+    // retry / resume, inline exception, usage
+    expect(t).toContain("retry or resume it");
+    expect(t).toContain("Completed inline — no subagent capability.");
+    expect(t).toContain("run the usage_command");
+    expect(t).toContain("pass its JSON line as usage");
+  });
+
+  it("the model switch notice still comes first and the native helper is left out (AC1.10)", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID, model_tier: "frontier" });
+    const ctx = makePersonaClaimContext({
+      pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: "You are Atlas.", unavailableModel: "opus",
+    });
+    const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string; native_subagent?: unknown };
+    expect(r.instruction).toMatch(/^MODEL SWITCH:/);
+    expect(r.native_subagent).toBeUndefined();
+  });
+});
+
 describe("step cost (card ba37039b)", () => {
   const USAGE = {
     models: [{ model: "claude-opus-5-5", calls: 3, input_tokens: 6, output_tokens: 900, cache_read_tokens: 40000, cache_write_5m_tokens: 9000, cache_write_1h_tokens: 0 }],
     output_estimated: true,
   };
 
-  it("gives a Claude claim the usage command and the STEP COST paragraph, and a Codex claim neither", async () => {
+  it("gives a Claude claim the usage command and the run-it step in its finish item, and a Codex claim neither", async () => {
     const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "standard" });
     const ctx = () => makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: "You are Atlas." });
     const claude = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command?: string; instruction?: string };
@@ -6696,11 +6916,27 @@ describe("step cost (card ba37039b)", () => {
     expect(claude.usage_command).toMatch(/mark='vcu_[0-9a-f]{24}'/);
     // Near the top, so the session transcript holds the marker even if a long claim is cut short.
     expect(Object.keys(claude).slice(0, 2)).toEqual(["done", "usage_command"]);
-    expect(claude.instruction).toContain("\n\nSTEP COST: When the step's work is done, run the \"usage_command\"");
-    expect(claude.instruction).toContain("if you did the work yourself, run it unchanged");
+    expect(claude.instruction).toContain("run the usage_command (swap AGENT_ID for the helper's agentId)");
+    expect(claude.instruction).toContain("omit usage on NO_TRANSCRIPT; never let it hold up the step");
     const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
     expect(codex).not.toHaveProperty("usage_command");
-    expect(codex.instruction).not.toContain("STEP COST:");
+    expect(codex.instruction).not.toContain("usage_command");
+  });
+
+  it("sends the short usage command only when STEP_USAGE_SHORT_COMMAND is on (stage 2b)", async () => {
+    const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "standard" });
+    const ctx = () => makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: "You are Atlas." });
+    const off = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string };
+    expect(off.usage_command).toContain("awk");
+    vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
+    try {
+      const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string };
+      expect(on.usage_command).not.toContain("awk");
+      expect(on.usage_command).toContain("NO_TRANSCRIPT no-script");
+      expect(on.usage_command.length).toBeLessThan(260);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   function completionContext(stepStatus: string, usageInsert: ReturnType<typeof vi.fn>) {
@@ -6721,6 +6957,14 @@ describe("step cost (card ba37039b)", () => {
       return chain.chain;
     }) as unknown as McpContext["supabase"]["from"]);
   }
+
+  it("complete_step reports output_chars instead of echoing the write-up", async () => {
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    const result = await completeStep(completionContext("in_progress", insert), { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
+    expect(result.step).not.toHaveProperty("output");
+    expect(result.step.output_chars).toBe(4);
+    expect(result.status).toBe("completed");
+  });
 
   it("complete_step stores the reported usage against the step", async () => {
     const insert = vi.fn(() => Promise.resolve({ error: null }));

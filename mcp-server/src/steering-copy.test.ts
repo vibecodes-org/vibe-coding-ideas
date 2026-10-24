@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SERVER_INSTRUCTIONS, LIVE_DATA_SENTENCE, RESPONSE_REMINDER, COMPACTION_RULES } from "./steering-copy";
+import { SERVER_INSTRUCTIONS, LIVE_DATA_SENTENCE, RESPONSE_REMINDER, COMPACTION_RULES, STEP_FINISH_RULES } from "./steering-copy";
 
 // docs/mcp-usage-steering-design.html §3: one vocabulary across every
 // surface — an agent that has seen any one surface should recognise every
@@ -45,6 +45,25 @@ describe("steering-copy", () => {
 
     it("stays within the budget: new text <= 900 chars, whole instructions <= 4,096", () => {
       expect(COMPACTION_RULES.length).toBeLessThanOrEqual(900);
+      expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(4096);
+    });
+  });
+
+  describe("STEP_FINISH_RULES (slim hand-off, card 5e654dd1)", () => {
+    it("is part of the server instructions", () => {
+      expect(SERVER_INSTRUCTIONS).toContain(STEP_FINISH_RULES);
+    });
+
+    it("carries exactly the four safety rules", () => {
+      expect(STEP_FINISH_RULES).toMatch(/complete_step \(or fail_step\) with the ct_ claim token and the helper's full deliverable as output/);
+      expect(STEP_FINISH_RULES).toMatch(/needs human approval, stop and let the user approve/i);
+      expect(STEP_FINISH_RULES).toMatch(/never call approve_step for the user/i);
+      expect(STEP_FINISH_RULES).toMatch(/never give the claim token to a helper/i);
+    });
+
+    it("stays short (<= 400 chars) and the whole instructions fit Claude Code's 4,096 cut", () => {
+      expect(STEP_FINISH_RULES.length).toBeLessThanOrEqual(400);
+      expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(1700); // the team's own budget
       expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(4096);
     });
   });

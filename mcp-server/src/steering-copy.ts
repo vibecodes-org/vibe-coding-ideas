@@ -25,10 +25,21 @@
 export const COMPACTION_RULES =
   "When your conversation is summarised to free up memory, keep these word for word: the card id and step id you are working on, the ct_ claim token and the wt_ work token, any subagents still running, and any decisions made in chat that are not yet on the board. Straight after a summary, call get_task for the card before doing anything else. If the claim token was lost, call claim_next_step to re-claim the same step only when no subagent is still working on it: a re-claim issues new tokens and the running subagent's work token stops working.";
 
+/**
+ * The four safety rules for finishing a workflow step (card 5e654dd1, stage 2).
+ * Standing text in every connected session, so the per-claim hand-off for a
+ * Claude session can stay short. Codex hand-offs keep their own full rulebook
+ * because Codex does not show server instructions as standing instructions.
+ */
+export const STEP_FINISH_RULES =
+  "Finishing a workflow step: call complete_step (or fail_step) with the ct_ claim token and the helper's full deliverable as output. On a step that needs human approval, stop and let the user approve it. Never call approve_step for the user. Never give the claim token to a helper.";
+
 /** Surface A — sent as the MCP server's `instructions` on both transports at construction. */
 export const SERVER_INSTRUCTIONS =
   "VibeCodes board data is live and shared: humans and other agents change it while your session runs. Every board tool response is a snapshot stamped with generated_at — treat it as already aging. Before acting on board state (choosing, moving, or completing anything), call the tool again for current state. Never re-read an earlier response from your transcript, never save responses to files for later, and never write scripts to parse tool output — present it directly. Tool calls are cheap; stale reads cause double-claimed tasks and lost work. " +
-  COMPACTION_RULES;
+  COMPACTION_RULES +
+  " " +
+  STEP_FINISH_RULES;
 
 /** Surface B — appended to the descriptions of get_board, get_task, and get_my_tasks only. */
 export const LIVE_DATA_SENTENCE =

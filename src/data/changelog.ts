@@ -16,6 +16,33 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    isoDate: "2026-10-24",
+    date: "24 October 2026",
+    title: "Shorter workflow replies",
+    items: [
+      {
+        type: "improvement",
+        description:
+          "Claiming a workflow step now sends a much shorter hand-off. The earlier steps are listed instead of pasted in; the helper reads the ones it needs with `get_task` and `step_ids`. The assigned agent is no longer repeated when the helper already carries it.",
+      },
+      {
+        type: "improvement",
+        description:
+          "`get_task` returns a short card by default: the current run's steps as one line each, the latest 5 comments and no activity log. Pass `step_ids` to read earlier steps in full, or `full: true` for everything.",
+      },
+      {
+        type: "improvement",
+        description:
+          "`complete_step`, `fail_step`, `skip_step` and `approve_step` report `output_chars` instead of echoing the write-up back. `list_workflow_templates` returns a summary unless you ask for one template or `include_steps`, and template edits reply with a compact step list.",
+      },
+      {
+        type: "improvement",
+        description:
+          "`get_agent_prompt` takes `as_persona: true` to return an agent's persona exactly as a hand-off would embed it.",
+      },
+    ],
+  },
+  {
     isoDate: "2026-06-29",
     date: "29 June 2026",
     title: "MCP server naming",
