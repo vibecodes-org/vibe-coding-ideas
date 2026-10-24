@@ -30,6 +30,7 @@ import {
   updateTerminalCodexModel,
   updateTerminalPreferences,
   getTerminalEffort,
+  getTerminalAutoCompact,
   getTerminalAutoAccept,
   getTerminalRemoteControl,
   updateTerminalAutoAccept,
@@ -464,6 +465,8 @@ describe("updateTerminalPreferences", () => {
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
       terminalEffort: "xhigh",
+      terminalAutoCompact: 300_000,
+      terminalCodexAutoCompact: 150_000,
       terminalAutoAccept: true,
       terminalRemoteControl: true,
     })).resolves.toMatchObject({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high", terminalRemoteControl: true });
@@ -474,6 +477,8 @@ describe("updateTerminalPreferences", () => {
       terminal_codex_model: "gpt-6-astra",
       terminal_codex_effort: "high",
       terminal_effort: "xhigh",
+      terminal_auto_compact: 300_000,
+      terminal_codex_auto_compact: 150_000,
       terminal_auto_accept: true,
       terminal_remote_control: true,
     });
@@ -488,6 +493,8 @@ describe("updateTerminalPreferences", () => {
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: null,
       terminalEffort: null,
+      terminalAutoCompact: null,
+      terminalCodexAutoCompact: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     })).rejects.toThrow(/model and reasoning effort/i);
@@ -497,7 +504,7 @@ describe("updateTerminalPreferences", () => {
   it("rejects unauthenticated callers without writing another user's row", async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
     await expect(updateTerminalPreferences({
-      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoAccept: false, terminalRemoteControl: false,
+      agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoCompact: null, terminalCodexAutoCompact: null, terminalAutoAccept: false, terminalRemoteControl: false,
     })).rejects.toThrow("Not authenticated");
     expect(mockSupabase.from).not.toHaveBeenCalled();
   });
@@ -505,7 +512,7 @@ describe("updateTerminalPreferences", () => {
   it("rejects a non-boolean terminalRemoteControl ('yes', undefined, 1) before any write (task 5c8969cc)", async () => {
     for (const terminalRemoteControl of ["yes", undefined, 1]) {
       await expect(updateTerminalPreferences({
-        agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoAccept: false,
+        agentAwareModelTierMap: {}, terminalModel: null, terminalCodexModel: null, terminalCodexEffort: null, terminalEffort: null, terminalAutoCompact: null, terminalCodexAutoCompact: null, terminalAutoAccept: false,
         terminalRemoteControl: terminalRemoteControl as unknown as boolean,
       })).rejects.toThrow("Invalid terminal preferences");
     }
@@ -519,6 +526,8 @@ describe("updateTerminalPreferences — Claude effort (task 18a37612)", () => {
     terminalModel: null,
     terminalCodexModel: null,
     terminalCodexEffort: null,
+    terminalAutoCompact: null,
+    terminalCodexAutoCompact: null,
     terminalAutoAccept: false,
     terminalRemoteControl: false,
   };
@@ -545,6 +554,64 @@ describe("updateTerminalPreferences — Claude effort (task 18a37612)", () => {
       expect(updatedWith?.terminal_effort).toBe(terminalEffort);
       expect(result.terminalEffort).toBe(terminalEffort);
     }
+  });
+});
+
+describe("updateTerminalPreferences — memory limits (task 5e654dd1)", () => {
+  const base = {
+    agentAwareModelTierMap: {},
+    terminalModel: null,
+    terminalCodexModel: null,
+    terminalCodexEffort: null,
+    terminalEffort: null,
+    terminalAutoAccept: false,
+    terminalRemoteControl: false,
+  };
+
+  it("rejects values that are not that agent's steps, before any write", async () => {
+    for (const v of [100_000, 250_000, 5, "300000", 1.5]) {
+      await expect(
+        updateTerminalPreferences({ ...base, terminalAutoCompact: v as number, terminalCodexAutoCompact: null })
+      ).rejects.toThrow("Choose a valid Claude memory limit");
+    }
+    for (const v of [300_000, 250_000, 5, "150000", 1.5]) {
+      await expect(
+        updateTerminalPreferences({ ...base, terminalAutoCompact: null, terminalCodexAutoCompact: v as number })
+      ).rejects.toThrow("Choose a valid Codex memory limit");
+    }
+    expect(mockSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("stores both values in the same single row update, and null for Default", async () => {
+    const updates: Record<string, unknown>[] = [];
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: Record<string, unknown>) => ({
+        eq: () => {
+          updates.push(data);
+          return Promise.resolve({ error: null });
+        },
+      }),
+    }));
+    const a = await updateTerminalPreferences({ ...base, terminalAutoCompact: 1_000_000, terminalCodexAutoCompact: 100_000 });
+    expect(a).toMatchObject({ terminalAutoCompact: 1_000_000, terminalCodexAutoCompact: 100_000 });
+    const b = await updateTerminalPreferences({ ...base, terminalAutoCompact: null, terminalCodexAutoCompact: null });
+    expect(b).toMatchObject({ terminalAutoCompact: null, terminalCodexAutoCompact: null });
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toMatchObject({ terminal_auto_compact: 1_000_000, terminal_codex_auto_compact: 100_000 });
+    expect(updates[1]).toMatchObject({ terminal_auto_compact: null, terminal_codex_auto_compact: null });
+  });
+});
+
+describe("getTerminalAutoCompact (task 5e654dd1)", () => {
+  it("returns both stored values, or nulls", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { terminal_auto_compact: 300_000, terminal_codex_auto_compact: null }, error: null }) }) }),
+    }));
+    expect(await getTerminalAutoCompact()).toEqual({ claude: 300_000, codex: null });
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }));
+    expect(await getTerminalAutoCompact()).toEqual({ claude: null, codex: null });
   });
 });
 

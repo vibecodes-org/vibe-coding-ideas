@@ -67,7 +67,15 @@ import {
   type ReasoningEffort,
 } from "@/lib/codex-models";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS, type AgentAwareUserModelTierMap, type AgentKind, type AgentTierEntry } from "@/lib/platform-model-defaults";
-import { EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
+import { EffortSegmentedControl, AutoCompactSegmentedControl } from "@/components/shared/effort-segmented-control";
+import { usePlatformTerminalAutoCompactDefault } from "@/hooks/use-platform-terminal-auto-compact-default";
+import { setViewerTerminalAutoCompactCache } from "@/hooks/use-viewer-terminal-auto-compact";
+import {
+  autoCompactDefaultAriaLabel,
+  autoCompactDefaultSubLabel,
+  autoCompactHelp,
+  isAutoCompactStep,
+} from "@/lib/terminal/auto-compact";
 
 // Radix Select can't use "" as an item value, so "follow the platform
 // default" uses this sentinel (unset key in the staged map).
@@ -111,6 +119,10 @@ interface ModelTierSettingsProps {
   terminalCodexEffort?: string | null;
   /** The signed-in user's terminal_effort (task 18a37612): Claude starting effort, null = Default. */
   terminalEffort?: string | null;
+  /** The signed-in user's terminal_auto_compact (task 5e654dd1): Claude memory limit, null = Default. */
+  terminalAutoCompact?: number | null;
+  /** The signed-in user's terminal_codex_auto_compact (task 5e654dd1): Codex memory limit, null = Default. */
+  terminalCodexAutoCompact?: number | null;
   /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
   terminalAutoAccept: boolean;
   /** The signed-in user's terminal_remote_control preference (task 5c8969cc), fetched server-side. */
@@ -307,6 +319,8 @@ export function ModelTierSettings({
   terminalCodexModel = null,
   terminalCodexEffort = null,
   terminalEffort = null,
+  terminalAutoCompact = null,
+  terminalCodexAutoCompact = null,
   terminalAutoAccept,
   terminalRemoteControl = false,
   open: controlledOpen,
@@ -323,6 +337,8 @@ export function ModelTierSettings({
   const platformTerminalDefault = usePlatformTerminalModelDefault();
   const platformTerminalCodexDefault = usePlatformTerminalCodexModelDefault();
   const platformTerminalEffort = usePlatformTerminalEffortDefault();
+  const platformTerminalAutoCompact = usePlatformTerminalAutoCompactDefault("claude");
+  const platformTerminalCodexAutoCompact = usePlatformTerminalAutoCompactDefault("codex");
 
   // Terminal sessions group state — null = platform default; the sentinel
   // string = "my machine's default"; anything else = a known alias or a
@@ -333,6 +349,9 @@ export function ModelTierSettings({
   const [terminalCodexEffortStaged, setTerminalCodexEffortStaged] = useState<string | null>(terminalCodexEffort);
   // Claude starting effort (task 18a37612) — null = Default (site level, else Claude's own).
   const [terminalEffortStaged, setTerminalEffortStaged] = useState<string | null>(terminalEffort);
+  // Memory limits (task 5e654dd1) — null = Default (site level, else the agent's own).
+  const [autoCompactStaged, setAutoCompactStaged] = useState<number | null>(terminalAutoCompact);
+  const [codexAutoCompactStaged, setCodexAutoCompactStaged] = useState<number | null>(terminalCodexAutoCompact);
   // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
   // escape hatch: the only two legal states are on/off (design AC-6 —
   // "no dropdown, no free text, ever").
@@ -345,6 +364,8 @@ export function ModelTierSettings({
     terminalCodexModel,
     terminalCodexEffort,
     terminalEffort,
+    terminalAutoCompact,
+    terminalCodexAutoCompact,
     terminalAutoAccept,
     terminalRemoteControl,
   });
@@ -360,6 +381,8 @@ export function ModelTierSettings({
       setTerminalCodexStaged(savedValues.terminalCodexModel);
       setTerminalCodexEffortStaged(savedValues.terminalCodexEffort);
       setTerminalEffortStaged(savedValues.terminalEffort);
+      setAutoCompactStaged(savedValues.terminalAutoCompact);
+      setCodexAutoCompactStaged(savedValues.terminalCodexAutoCompact);
       setAutoAcceptStaged(savedValues.terminalAutoAccept);
       setRemoteControlStaged(savedValues.terminalRemoteControl);
     }
@@ -372,12 +395,16 @@ export function ModelTierSettings({
   const isRemoteControlDirty = remoteControlStaged !== savedValues.terminalRemoteControl;
   const isCodexTerminalDirty = terminalCodexStaged !== savedValues.terminalCodexModel || terminalCodexEffortStaged !== savedValues.terminalCodexEffort;
   const isEffortDirty = terminalEffortStaged !== savedValues.terminalEffort;
-  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty || isRemoteControlDirty || isEffortDirty;
+  const isAutoCompactDirty =
+    autoCompactStaged !== savedValues.terminalAutoCompact || codexAutoCompactStaged !== savedValues.terminalCodexAutoCompact;
+  const isDirty = isTierDirty || isTerminalDirty || isCodexTerminalDirty || isAutoAcceptDirty || isRemoteControlDirty || isEffortDirty || isAutoCompactDirty;
   const hasAnyOverride =
     Object.keys(staged).length > 0 ||
     terminalStaged !== null ||
     terminalCodexStaged !== null ||
     terminalEffortStaged !== null ||
+    autoCompactStaged !== null ||
+    codexAutoCompactStaged !== null ||
     autoAcceptStaged ||
     remoteControlStaged;
 
@@ -482,6 +509,8 @@ export function ModelTierSettings({
     setTerminalCodexStaged(null);
     setTerminalCodexEffortStaged(null);
     setTerminalEffortStaged(null);
+    setAutoCompactStaged(null);
+    setCodexAutoCompactStaged(null);
     setAutoAcceptStaged(false);
     setRemoteControlStaged(false);
   }
@@ -497,12 +526,15 @@ export function ModelTierSettings({
           terminalCodexModel: terminalCodexStaged,
           terminalCodexEffort: terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? null : terminalCodexEffortStaged,
           terminalEffort: terminalEffortStaged,
+          terminalAutoCompact: autoCompactStaged,
+          terminalCodexAutoCompact: codexAutoCompactStaged,
           terminalAutoAccept: autoAcceptStaged,
           terminalRemoteControl: remoteControlStaged,
         });
         setViewerAgentAwareModelTierMapCache(saved.agentAwareModelTierMap ?? {});
         setViewerTerminalModelCache(saved.terminalModel);
         setViewerTerminalEffortCache(saved.terminalEffort);
+        setViewerTerminalAutoCompactCache({ claude: saved.terminalAutoCompact, codex: saved.terminalCodexAutoCompact });
         setViewerTerminalAutoAcceptCache(saved.terminalAutoAccept);
         setViewerTerminalRemoteControlCache(saved.terminalRemoteControl);
         setSavedValues({
@@ -511,6 +543,8 @@ export function ModelTierSettings({
           terminalCodexModel: saved.terminalCodexModel,
           terminalCodexEffort: saved.terminalCodexEffort,
           terminalEffort: saved.terminalEffort,
+          terminalAutoCompact: saved.terminalAutoCompact,
+          terminalCodexAutoCompact: saved.terminalCodexAutoCompact,
           terminalAutoAccept: saved.terminalAutoAccept,
           terminalRemoteControl: saved.terminalRemoteControl,
         });
@@ -777,6 +811,28 @@ export function ModelTierSettings({
           </div>
 
           <div className="space-y-1.5">
+            <Label id="terminal-claude-auto-compact-label" className="block text-sm leading-snug">
+              Claude memory limit <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
+            </Label>
+            <AutoCompactSegmentedControl
+              agent="claude"
+              value={isAutoCompactStep("claude", autoCompactStaged) ? autoCompactStaged : null}
+              onChange={setAutoCompactStaged}
+              disabled={isPending}
+              describedById="terminal-claude-auto-compact-help"
+              groupLabel="Claude memory limit"
+              defaultOption={{
+                onSelect: () => setAutoCompactStaged(null),
+                subLabel: autoCompactDefaultSubLabel("claude", platformTerminalAutoCompact),
+                ariaLabel: autoCompactDefaultAriaLabel("claude", platformTerminalAutoCompact),
+              }}
+            />
+            <p id="terminal-claude-auto-compact-help" className="text-[11px] text-muted-foreground">
+              {autoCompactHelp({ agent: "claude", userValue: autoCompactStaged, platformValue: platformTerminalAutoCompact })}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="terminal-codex-starting-model" className="text-sm">
               Codex starting model <span className="font-normal text-muted-foreground">— for new in-browser Codex sessions</span>
             </Label>
@@ -811,6 +867,28 @@ export function ModelTierSettings({
                   ? "No valid Codex terminal default is available"
                   : `${terminalCodexResolution.source === "user" ? "Your saved Codex pair" : terminalCodexResolution.source === "platform" ? "Organization Codex terminal pair" : "Standard Codex fallback"}: ${terminalCodexResolution.pair.model} (${terminalCodexResolution.pair.effort}).`}
               {" "}Resumed sessions keep their existing model.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label id="terminal-codex-auto-compact-label" className="block text-sm leading-snug">
+              Codex memory limit <span className="font-normal text-muted-foreground">— for in-browser Codex sessions</span>
+            </Label>
+            <AutoCompactSegmentedControl
+              agent="codex"
+              value={isAutoCompactStep("codex", codexAutoCompactStaged) ? codexAutoCompactStaged : null}
+              onChange={setCodexAutoCompactStaged}
+              disabled={isPending}
+              describedById="terminal-codex-auto-compact-help"
+              groupLabel="Codex memory limit"
+              defaultOption={{
+                onSelect: () => setCodexAutoCompactStaged(null),
+                subLabel: autoCompactDefaultSubLabel("codex", platformTerminalCodexAutoCompact),
+                ariaLabel: autoCompactDefaultAriaLabel("codex", platformTerminalCodexAutoCompact),
+              }}
+            />
+            <p id="terminal-codex-auto-compact-help" className="text-[11px] text-muted-foreground">
+              {autoCompactHelp({ agent: "codex", userValue: codexAutoCompactStaged, platformValue: platformTerminalCodexAutoCompact })}
             </p>
           </div>
 

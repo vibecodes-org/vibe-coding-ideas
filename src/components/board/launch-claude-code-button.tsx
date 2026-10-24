@@ -16,6 +16,9 @@ import {
 import { usePostHog } from "posthog-js/react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useViewerTerminalAgent, persistViewerTerminalAgent } from "@/hooks/use-viewer-terminal-agent";
+import { useViewerTerminalAutoCompact } from "@/hooks/use-viewer-terminal-auto-compact";
+import { usePlatformTerminalAutoCompactDefault } from "@/hooks/use-platform-terminal-auto-compact-default";
+import { resolveTerminalAutoCompact } from "@/lib/terminal/auto-compact";
 import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
 import { type LaunchAgent } from "@/lib/terminal/agent-launch";
 import {
@@ -328,6 +331,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
   const posthog = usePostHog();
 
+  // The copied command carries the same memory limit an in-app launch would
+  // (task 5e654dd1): the user's own, else the site default, per agent.
+  const viewerAutoCompact = useViewerTerminalAutoCompact();
+  const platformClaudeAutoCompact = usePlatformTerminalAutoCompactDefault("claude");
+  const platformCodexAutoCompact = usePlatformTerminalAutoCompactDefault("codex");
+
   const copyCommand = useCallback(
     async (state: LaunchPathState, agent: LaunchAgent = "claude") => {
       const prompt = buildPrompt(state);
@@ -339,6 +348,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         newProject: state.mode === "new" ? { newProjectPath: state.path } : undefined,
         repoUrl: ideaGithubUrl,
         agent,
+        autoCompactWindow: resolveTerminalAutoCompact({
+          userValue: agent === "codex" ? viewerAutoCompact?.codex : viewerAutoCompact?.claude,
+          platformValue: agent === "codex" ? platformCodexAutoCompact : platformClaudeAutoCompact,
+        }).window,
       });
       // Copying the command = the user fell back from the one-click deep link to
       // the terminal — a key signal of local-launch friction (desktop/mobile via
@@ -351,7 +364,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         toast.error("Couldn't copy the launch command");
       }
     },
-    [buildPrompt, ideaGithubUrl, posthog]
+    [buildPrompt, ideaGithubUrl, posthog, viewerAutoCompact, platformClaudeAutoCompact, platformCodexAutoCompact]
   );
 
   const openInClaudeCode = useCallback(

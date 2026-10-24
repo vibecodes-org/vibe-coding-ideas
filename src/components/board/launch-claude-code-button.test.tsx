@@ -70,6 +70,18 @@ const mockRememberedAgent = vi.fn<() => "claude" | "codex" | undefined>(() => "c
 const mockPersistViewerTerminalAgent = vi.fn(
   async (agent: "claude" | "codex", _opts?: { source?: "picker" | "footer" | "undo" }) => agent
 );
+const mockViewerAutoCompact = vi.fn((): { claude: number | null; codex: number | null } | undefined => ({ claude: null, codex: null }));
+vi.mock("@/hooks/use-viewer-terminal-auto-compact", () => ({
+  useViewerTerminalAutoCompact: () => mockViewerAutoCompact(),
+}));
+const mockPlatformAutoCompact = vi.fn((agent: string): number | null | undefined => {
+  void agent;
+  return null;
+});
+vi.mock("@/hooks/use-platform-terminal-auto-compact-default", () => ({
+  usePlatformTerminalAutoCompactDefault: (agent: string) => mockPlatformAutoCompact(agent),
+}));
+
 vi.mock("@/hooks/use-viewer-terminal-agent", () => ({
   useViewerTerminalAgent: () => mockRememberedAgent(),
   persistViewerTerminalAgent: (agent: "claude" | "codex", opts?: { source?: "picker" | "footer" | "undo" }) =>
@@ -856,6 +868,31 @@ describe("LaunchClaudeCodeButton — board menu: remembered-agent group order + 
     await waitFor(() => expect(writeText).toHaveBeenCalled());
     const command = writeText.mock.calls[0][0] as string;
     expect(command).toMatch(/(^|&& )codex /);
+  });
+
+  it("Copy launch command carries the resolved memory limit for each agent (task 5e654dd1)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mockPlatformAutoCompact.mockImplementation((agent: string) => (agent === "claude" ? 300_000 : null));
+    mockViewerAutoCompact.mockReturnValue({ claude: null, codex: 150_000 });
+
+    mockRememberedAgent.mockReturnValue("claude");
+    renderBoardButton();
+    openBoardMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy launch command/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0][0]).toMatch(/(^|&& )claude --autocompact 300000 '/);
+
+    cleanup();
+    mockRememberedAgent.mockReturnValue("codex");
+    renderBoardButton();
+    openBoardMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy launch command/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText.mock.calls[1][0]).toMatch(/(^|&& )codex -c model_auto_compact_token_limit=150000 '/);
+
+    mockPlatformAutoCompact.mockImplementation(() => null);
+    mockViewerAutoCompact.mockReturnValue({ claude: null, codex: null });
   });
 
   it("Install guide is agent-aware with sub-lines and opens in a new tab", () => {

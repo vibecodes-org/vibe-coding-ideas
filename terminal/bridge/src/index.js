@@ -46,7 +46,8 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
-import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
+import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
+import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -429,6 +430,29 @@ async function fetchSessionAgents() {
   }
 }
 
+// ── Claude Code's version, for the memory-limit flag (task 5e654dd1) ─────────
+// `claude --autocompact` stops the launch on a Claude Code that doesn't know
+// it, so the flag is added only when the installed version is read and is
+// 2.1.221 or newer. Bounded, never throws: null on any failure (no flag).
+const CLAUDE_VERSION_TIMEOUT_MS = 3000;
+
+/** @returns {Promise<string | null>} the `claude --version` output, or null */
+function probeClaudeVersion(env) {
+  if (AGENT !== "claude" || explicitCmd) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      require("node:child_process").execFile(
+        file,
+        ["--version"],
+        { encoding: "utf8", timeout: CLAUDE_VERSION_TIMEOUT_MS, env, windowsHide: true },
+        (err, stdout) => resolve(err ? null : String(stdout || "")),
+      );
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 // ── This board's project folder on this Mac (card 6b2cb8ac) ─────────────────
 // Same off-relay channel and token as the key/agents fetches. The app answers
 // with the board's repo (clone address built server-side), the folder names,
@@ -584,7 +608,12 @@ let [file, ...cmdArgs] = shellSplit(CMD);
 // `attached` frame (which comes after the fetch), and a promptless resume
 // waits for the fetch itself; see buildSpawnArgs.
 let sessionAgentFlags = [];
-let spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
+// The memory limit (task 5e654dd1): `--autocompact N` / `-c model_auto_compact_token_limit=N`,
+// computed right after the same fetch (whether or not agents came back) and
+// placed before the agents flags, with the prompt still last.
+let autoCompactFlags = [];
+const launchFlags = () => [...autoCompactFlags, ...sessionAgentFlags];
+let spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
 
 /**
  * Build the final launch for a FRESH session once its folder is known:
@@ -608,7 +637,7 @@ function prepareLaunch(folder, { isolateHere }) {
   }
   ({ cmd: CMD } = computeLaunch(wantWorktree && eligibility.eligible));
   [file, ...cmdArgs] = shellSplit(CMD);
-  spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
+  spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
 }
 
 /** The real path of the page's hint, or null (for "did the bridge pick another folder?"). */
@@ -1087,19 +1116,47 @@ async function main() {
   // SESSION_AGENTS_FETCH_TIMEOUT_MS, no agents on any failure).
   // Card 6b2cb8ac: a fresh launch also asks the app where this board's
   // project lives on this Mac, in parallel (bounded, null on any failure).
-  const [E2EE_KEY, SESSION_AGENTS_BODY, WORKSPACE] = await Promise.all([
+  // Task 5e654dd1: for Claude, `claude --version` is read in the same wait
+  // (the memory-limit flag needs 2.1.221 or newer). The spawn env is computed
+  // once and shared with the install check below.
+  const [E2EE_KEY, SESSION_AGENTS_BODY, WORKSPACE, CLAUDE_VERSION_TEXT] = await Promise.all([
     fetchE2eeSessionKey(),
     fetchSessionAgents(),
     MODE === "fresh" ? fetchWorkspace() : Promise.resolve(null),
+    AGENT === "claude" && !explicitCmd
+      ? probeClaudeVersion((cachedSpawnEnv = cachedSpawnEnv || resolveSpawnEnv()))
+      : Promise.resolve(null),
   ]);
   // A signal or helper-gone shutdown landed during the fetch: write no role
   // files, spawn nothing and don't dial the relay.
   if (shuttingDown) return;
+  // The memory limit, whether or not any agents came back. Resumes wait for
+  // this fetch before spawning, so a resumed session carries it too.
+  if (!term) {
+    const window = parseAutoCompactWindow(SESSION_AGENTS_BODY);
+    const { flags, skipped } = autoCompactArgs({
+      agent: AGENT,
+      explicitCmd,
+      window,
+      claudeVersionText: CLAUDE_VERSION_TEXT,
+    });
+    autoCompactFlags = flags;
+    if (flags.length > 0) {
+      spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+      log("info", "auto-compact applied", { agent: AGENT, window });
+    } else if (window !== null || skipped === "claude-too-old-or-unknown") {
+      log("info", "auto-compact skipped", { agent: AGENT, reason: skipped });
+    }
+  }
   if (SESSION_AGENTS_BODY && !term) {
-    const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
+    // An older (or unreadable) Claude Code might reject the memory-limit key
+    // inside --agents, so it is stripped unless the version check passed.
+    const agentsBody =
+      AGENT === "claude" ? agentsForClaudeVersion(SESSION_AGENTS_BODY, CLAUDE_VERSION_TEXT) : SESSION_AGENTS_BODY;
+    const agentArgs = sessionAgentArgs(agentsBody);
     if (agentArgs.length > 0) {
       sessionAgentFlags = agentArgs;
-      spawnArgs = buildSpawnArgs(cmdArgs, sessionAgentFlags, PROMPT);
+      spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }

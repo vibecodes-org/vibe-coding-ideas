@@ -70,6 +70,12 @@ describe("renderAgentFile / parseAgentFile", () => {
     expect(renderAgentFile(...atlas)).not.toContain("disallowedTools");
   });
 
+  it("ignores a definition's autoCompactWindow: the synced file is byte-identical (task 5e654dd1)", () => {
+    const [name, def] = Object.entries(AGENTS).find(([n]) => n.startsWith("vc-atlas"))!;
+    expect(renderAgentFile(name, { ...def, autoCompactWindow: 1_000_000 })).toBe(renderAgentFile(name, def));
+    expect(renderAgentFile(name, { ...def, autoCompactWindow: 1_000_000 })).not.toContain("autoCompactWindow");
+  });
+
   it("omits model and effort on an Auto step", () => {
     const auto = buildSessionAgents([input(ATLAS, { tier: null, model: null, effort: null })])!;
     const [name, def] = Object.entries(auto)[0];

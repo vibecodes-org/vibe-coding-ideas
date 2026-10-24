@@ -7,6 +7,7 @@ import { validateBio, validateAvatarUrl } from "@/lib/validation";
 import { encrypt } from "@/lib/encryption";
 import { MODEL_ALIASES, modelTierLabel, capitalizeModelName, type ModelTierMap, type ModelAlias } from "@/lib/constants";
 import { MACHINE_DEFAULT_TERMINAL_MODEL, validateTerminalModelValue } from "@/lib/terminal/model-resolution";
+import { isAutoCompactStep } from "@/lib/terminal/auto-compact";
 import { normalizeAgent, type LaunchAgent } from "@/lib/terminal/agent-launch";
 import {
   normalizeUserModelTierMap,
@@ -332,6 +333,10 @@ export interface TerminalPreferencesInput {
   terminalCodexEffort: string | null;
   /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
   terminalEffort: string | null;
+  /** Claude memory limit (users.terminal_auto_compact); null = Default. */
+  terminalAutoCompact: number | null;
+  /** Codex memory limit (users.terminal_codex_auto_compact); null = Default. */
+  terminalCodexAutoCompact: number | null;
   terminalAutoAccept: boolean;
   terminalRemoteControl: boolean;
 }
@@ -343,6 +348,10 @@ export interface TerminalPreferences {
   terminalCodexEffort: string | null;
   /** Claude starting effort (users.terminal_effort); null = Default (site level, else Claude's own). */
   terminalEffort: string | null;
+  /** Claude memory limit (users.terminal_auto_compact); null = Default. */
+  terminalAutoCompact: number | null;
+  /** Codex memory limit (users.terminal_codex_auto_compact); null = Default. */
+  terminalCodexAutoCompact: number | null;
   terminalAutoAccept: boolean;
   terminalRemoteControl: boolean;
 }
@@ -444,6 +453,16 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     throw new Error("Choose a valid Claude effort");
   }
 
+  // Task 5e654dd1: memory limits, each whitelisted to its agent's steps.
+  const terminalAutoCompact = input.terminalAutoCompact ?? null;
+  if (terminalAutoCompact !== null && !isAutoCompactStep("claude", terminalAutoCompact)) {
+    throw new Error("Choose a valid Claude memory limit");
+  }
+  const terminalCodexAutoCompact = input.terminalCodexAutoCompact ?? null;
+  if (terminalCodexAutoCompact !== null && !isAutoCompactStep("codex", terminalCodexAutoCompact)) {
+    throw new Error("Choose a valid Codex memory limit");
+  }
+
   const agentAwareModelTierMap = Object.keys(normalizedMap).length > 0 ? normalizedMap : null;
   const { error } = await supabase.from("users").update({
     model_tier_map: agentAwareModelTierMap,
@@ -451,6 +470,8 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     terminal_codex_model: terminalCodexModel,
     terminal_codex_effort: terminalCodexEffort,
     terminal_effort: terminalEffort,
+    terminal_auto_compact: terminalAutoCompact,
+    terminal_codex_auto_compact: terminalCodexAutoCompact,
     terminal_auto_accept: input.terminalAutoAccept,
     terminal_remote_control: input.terminalRemoteControl,
   }).eq("id", user.id);
@@ -462,6 +483,8 @@ export async function updateTerminalPreferences(input: TerminalPreferencesInput)
     terminalCodexModel,
     terminalCodexEffort,
     terminalEffort,
+    terminalAutoCompact,
+    terminalCodexAutoCompact,
     terminalAutoAccept: input.terminalAutoAccept,
     terminalRemoteControl: input.terminalRemoteControl,
   };
@@ -511,6 +534,29 @@ export async function getTerminalEffort(): Promise<string | null> {
   if (error) throw new Error(error.message);
 
   return data?.terminal_effort ?? null;
+}
+
+/** The viewer's own memory limits (users.terminal_auto_compact / terminal_codex_auto_compact), null = Default. */
+export async function getTerminalAutoCompact(): Promise<{ claude: number | null; codex: number | null }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_auto_compact, terminal_codex_auto_compact")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return {
+    claude: data?.terminal_auto_compact ?? null,
+    codex: data?.terminal_codex_auto_compact ?? null,
+  };
 }
 
 /**

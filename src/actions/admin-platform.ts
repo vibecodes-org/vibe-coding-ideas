@@ -27,6 +27,12 @@ import {
   isValidPlatformTerminalEffortDefault,
   TERMINAL_EFFORT_DEFAULT_KEY,
 } from "@/lib/terminal/platform-terminal-effort";
+import {
+  getPlatformTerminalAutoCompactDefault,
+  isValidPlatformAutoCompactDefault,
+  TERMINAL_AUTO_COMPACT_DEFAULT_KEYS,
+} from "@/lib/terminal/platform-terminal-auto-compact";
+import { isAutoCompactStep, type AutoCompactAgent } from "@/lib/terminal/auto-compact";
 import { validateTerminalModelValue } from "@/lib/terminal/model-resolution";
 import { validateCodexModelValue } from "@/lib/codex-models";
 import {
@@ -413,6 +419,92 @@ export async function updatePlatformTerminalEffortDefault(effort: string | null)
   }
 
   return effort;
+}
+
+// ── Admin-configurable terminal memory-limit default (task 5e654dd1) ────────
+// Site-wide memory limit (auto-compact window) per agent. One platform_settings
+// key per agent so Clear on one never wipes the other. Cleared = nothing is
+// sent (the agent decides). A user's own setting overrides it.
+
+export type PlatformTerminalAutoCompactAudit = {
+  /** null = no site default: the agent decides. */
+  value: number | null;
+  updatedBy: { id: string; full_name: string | null } | null;
+  updatedAt: string | null;
+};
+
+function assertAutoCompactAgent(agent: unknown): AutoCompactAgent {
+  if (agent !== "claude" && agent !== "codex") throw new Error("Choose Claude or Codex");
+  return agent;
+}
+
+/** Any authenticated user can call this (RLS read is open). */
+export async function getPlatformTerminalAutoCompactDefaultAction(agent: AutoCompactAgent): Promise<number | null> {
+  const supabase = await createClient();
+  return getPlatformTerminalAutoCompactDefault(supabase, assertAutoCompactAgent(agent));
+}
+
+/** Admin "Platform" tab read, with the who/when audit line. */
+export async function getPlatformTerminalAutoCompactDefaultForAdmin(
+  agent: AutoCompactAgent
+): Promise<PlatformTerminalAutoCompactAudit> {
+  const checked = assertAutoCompactAgent(agent);
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value, updated_at, updated_by:users!platform_settings_updated_by_fkey(id, full_name)")
+    .eq("key", TERMINAL_AUTO_COMPACT_DEFAULT_KEYS[checked])
+    .maybeSingle();
+
+  if (!data) {
+    return { value: null, updatedBy: null, updatedAt: null };
+  }
+
+  const value = isValidPlatformAutoCompactDefault(data.value) ? data.value.window : null;
+  const updatedBy = Array.isArray(data.updated_by) ? data.updated_by[0] ?? null : data.updated_by ?? null;
+
+  return { value, updatedBy, updatedAt: data.updated_at };
+}
+
+/**
+ * Save (or clear) the site-wide memory limit for one agent. Super-admin-only
+ * (here AND by the platform_settings RLS write policy). `null` DELETEs the
+ * row. Only that agent's offered steps are accepted.
+ */
+export async function updatePlatformTerminalAutoCompactDefault(
+  agent: AutoCompactAgent,
+  window: number | null
+): Promise<number | null> {
+  const { supabase, userId } = await requireSuperAdmin();
+  const checked = assertAutoCompactAgent(agent);
+  const key = TERMINAL_AUTO_COMPACT_DEFAULT_KEYS[checked];
+
+  if (window === null) {
+    const { error } = await supabase.from("platform_settings").delete().eq("key", key);
+    if (error) {
+      logger.error("Failed to clear platform terminal memory limit default", { error: error.message, userId, agent: checked });
+      throw new Error("Failed to clear the terminal memory limit — try again");
+    }
+    return null;
+  }
+
+  if (!isAutoCompactStep(checked, window)) {
+    throw new Error("Choose a valid memory limit");
+  }
+
+  const { error } = await supabase.from("platform_settings").upsert({
+    key,
+    value: { window },
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    logger.error("Failed to save platform terminal memory limit default", { error: error.message, userId, agent: checked });
+    throw new Error("Failed to save the terminal memory limit — try again");
+  }
+
+  return window;
 }
 
 export type PlatformTerminalCodexModelAudit = {

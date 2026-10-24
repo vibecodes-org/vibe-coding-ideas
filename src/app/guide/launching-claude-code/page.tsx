@@ -457,6 +457,30 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">Memory limit</h2>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              A long session slows down and costs more as its conversation grows,
+              so a session tidies up its memory at a size you choose: it
+              summarises the conversation so far and carries on. Pick the size
+              for Claude Code and for Codex under{" "}
+              <strong className="text-foreground">
+                Settings → Model Tiers → Terminal sessions
+              </strong>
+              . <strong className="text-foreground">Default</strong> uses the
+              site&apos;s choice, or the agent&apos;s own size if the site has
+              none. It applies to new and resumed in-browser sessions from your
+              next launch or resume, and the copied launch command carries it
+              too. In a Claude Code session you can change it any time by typing{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                /autocompact
+              </code>
+              . Board agents keep their full size.
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">Troubleshooting</h2>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">

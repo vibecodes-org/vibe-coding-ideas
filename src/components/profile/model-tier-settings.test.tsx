@@ -41,6 +41,18 @@ vi.mock("@/hooks/use-viewer-terminal-effort", () => ({
   setViewerTerminalEffortCache: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-viewer-terminal-auto-compact", () => ({
+  setViewerTerminalAutoCompactCache: vi.fn(),
+}));
+
+const mockUsePlatformAutoCompact = vi.fn((agent: string): number | null | undefined => {
+  void agent;
+  return null;
+});
+vi.mock("@/hooks/use-platform-terminal-auto-compact-default", () => ({
+  usePlatformTerminalAutoCompactDefault: (agent: string) => mockUsePlatformAutoCompact(agent),
+}));
+
 const mockUsePlatformTerminalEffortDefault = vi.fn((): string | null | undefined => null);
 vi.mock("@/hooks/use-platform-terminal-effort-default", () => ({
   usePlatformTerminalEffortDefault: () => mockUsePlatformTerminalEffortDefault(),
@@ -244,6 +256,8 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalCodexModel: null,
       terminalCodexEffort: null,
       terminalEffort: null,
+      terminalAutoCompact: null,
+      terminalCodexAutoCompact: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     });
@@ -266,6 +280,8 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
       terminalCodexModel: "gpt-6-astra",
       terminalCodexEffort: "high",
       terminalEffort: null,
+      terminalAutoCompact: null,
+      terminalCodexAutoCompact: null,
       terminalAutoAccept: false,
       terminalRemoteControl: false,
     });
@@ -397,6 +413,8 @@ describe("ModelTierSettings — Remote Control switch (task 5c8969cc)", () => {
       terminalCodexModel: null,
       terminalCodexEffort: null,
       terminalEffort: null,
+      terminalAutoCompact: null,
+      terminalCodexAutoCompact: null,
       terminalAutoAccept: false,
       terminalRemoteControl: true,
     });
@@ -443,6 +461,9 @@ describe("ModelTierSettings — Claude starting effort (task 18a37612)", () => {
     terminalModel: null,
     terminalCodexModel: null,
     terminalCodexEffort: null,
+    terminalEffort: null,
+    terminalAutoCompact: null,
+    terminalCodexAutoCompact: null,
     terminalAutoAccept: false,
     terminalRemoteControl: false,
   };
@@ -469,7 +490,7 @@ describe("ModelTierSettings — Claude starting effort (task 18a37612)", () => {
     mockUsePlatformTerminalEffortDefault.mockReturnValue(null);
     const second = renderDialog();
     expect(within(effortGroup()).getByText("Claude's own")).toBeInTheDocument();
-    expect(screen.getByText(/Claude Code decides:/)).toBeInTheDocument();
+    expect(screen.getByText(/Claude Code decides: the level you last saved with \/effort/)).toBeInTheDocument();
     second.unmount();
 
     mockUsePlatformTerminalEffortDefault.mockReturnValue(undefined);
@@ -508,5 +529,122 @@ describe("ModelTierSettings — Claude starting effort (task 18a37612)", () => {
     await waitFor(() =>
       expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalEffort: null }))
     );
+  });
+});
+
+
+describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
+  beforeEach(() => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
+    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue(null);
+    mockUsePlatformTerminalEffortDefault.mockReturnValue(null);
+    mockUsePlatformAutoCompact.mockReset();
+    mockUsePlatformAutoCompact.mockImplementation((agent: string) => (agent === "claude" ? 300_000 : null));
+    vi.mocked(updateTerminalPreferences).mockClear();
+  });
+
+  const savedResult = {
+    agentAwareModelTierMap: null,
+    terminalModel: null,
+    terminalCodexModel: null,
+    terminalCodexEffort: null,
+    terminalEffort: null,
+    terminalAutoCompact: null,
+    terminalCodexAutoCompact: null,
+    terminalAutoAccept: false,
+    terminalRemoteControl: false,
+  };
+
+  const claudeGroup = () => screen.getByRole("group", { name: "Claude memory limit" });
+  const codexGroup = () => screen.getByRole("group", { name: "Codex memory limit" });
+
+  it("renders both rows with the approved steps and a leading Default button", () => {
+    renderDialog();
+    expect(screen.getByText("Claude memory limit")).toBeInTheDocument();
+    expect(screen.getByText("Codex memory limit")).toBeInTheDocument();
+    const claude = within(claudeGroup()).getAllByRole("button").map((b) => b.textContent);
+    expect(claude).toEqual(["Defaultsite: 300k", "200k", "300k", "400k", "500k", "1M"]);
+    const codex = within(codexGroup()).getAllByRole("button").map((b) => b.textContent);
+    expect(codex).toEqual(["DefaultCodex's own", "100k", "150k", "200k"]);
+    expect(within(claudeGroup()).getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(codexGroup()).getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("sits under its agent's existing rows", () => {
+    renderDialog();
+    const order = (el: HTMLElement) => el;
+    const effort = order(screen.getByRole("group", { name: "Claude starting effort" }));
+    const limit = order(claudeGroup());
+    const codexModel = screen.getByRole("combobox", { name: /Codex starting model/ });
+    const codexLimit = codexGroup();
+    expect(effort.compareDocumentPosition(limit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(limit.compareDocumentPosition(codexModel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(codexModel.compareDocumentPosition(codexLimit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the Default help lines, and the user's own wording after a pick", () => {
+    renderDialog();
+    expect(screen.getByText(/Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens/)).toBeInTheDocument();
+    expect(screen.getByText(/Codex decides: about 245,000 tokens/)).toBeInTheDocument();
+    fireEvent.click(within(claudeGroup()).getByRole("button", { name: "400k" }));
+    expect(screen.getByText(/reaches 400,000 tokens \(your setting\)\. Board agents keep their full size/)).toBeInTheDocument();
+    fireEvent.click(within(codexGroup()).getByRole("button", { name: "200k" }));
+    expect(screen.getByText(/reaches 200,000 tokens \(your setting\)\. Takes effect from your next launch or resume/)).toBeInTheDocument();
+  });
+
+  it("picking both then Save writes both in the same call and refreshes the cache", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult, terminalAutoCompact: 400_000, terminalCodexAutoCompact: 150_000 });
+    renderDialog();
+    fireEvent.click(within(claudeGroup()).getByRole("button", { name: "400k" }));
+    fireEvent.click(within(codexGroup()).getByRole("button", { name: "150k" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(
+        expect.objectContaining({ terminalAutoCompact: 400_000, terminalCodexAutoCompact: 150_000 })
+      )
+    );
+    expect(updateTerminalPreferences).toHaveBeenCalledTimes(1);
+  });
+
+  it("Save stays disabled until a memory limit changes, then Default sends null", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult });
+    renderDialog({ terminalAutoCompact: 500_000 });
+    expect(screen.getByRole("button", { name: /^Save$/i })).toBeDisabled();
+    expect(within(claudeGroup()).getByRole("button", { name: "500k" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(claudeGroup()).getByRole("button", { name: /^Default/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(expect.objectContaining({ terminalAutoCompact: null }))
+    );
+  });
+
+  it("Reset to defaults clears both saved limits before Save", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult });
+    renderDialog({ terminalAutoCompact: 200_000, terminalCodexAutoCompact: 100_000 });
+    fireEvent.click(screen.getByRole("button", { name: /Reset to defaults/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(
+        expect.objectContaining({ terminalAutoCompact: null, terminalCodexAutoCompact: null })
+      )
+    );
+  });
+
+  it("Cancel/reopen discards a staged pick", () => {
+    render(<ModelTierSettings agentAwareMap={{}} terminalModel={null} terminalAutoAccept={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    fireEvent.click(within(claudeGroup()).getByRole("button", { name: "200k" }));
+    expect(within(claudeGroup()).getByRole("button", { name: "200k" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(claudeGroup(), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    expect(within(claudeGroup()).getByRole("button", { name: "200k" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("hides the site sub-label while the site default is still loading", () => {
+    mockUsePlatformAutoCompact.mockImplementation(() => undefined);
+    renderDialog();
+    expect(within(claudeGroup()).queryByText(/site:/)).not.toBeInTheDocument();
+    expect(within(claudeGroup()).queryByText("Claude's own")).not.toBeInTheDocument();
   });
 });

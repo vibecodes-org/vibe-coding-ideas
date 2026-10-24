@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
+import { BOARD_AGENT_AUTO_COMPACT_WINDOW } from "@/lib/terminal/auto-compact";
 import {
   buildSessionAgents,
   sessionAgentName,
@@ -167,7 +168,12 @@ export async function loadBoardSessionAgents(
   const waitingInputs = toInputs(waiting);
   const optionalInputs = toInputs(optional);
 
-  const agents = buildSessionAgents(waitingInputs, undefined, { optional: optionalInputs });
+  // Claude board agents keep the full-size memory whatever the session's own
+  // limit is (task 5e654dd1). Codex role files never carry it.
+  const agents = buildSessionAgents(waitingInputs, undefined, {
+    optional: optionalInputs,
+    ...(agent === "claude" ? { autoCompactWindow: BOARD_AGENT_AUTO_COMPACT_WINDOW } : {}),
+  });
   const delivered = agents ? Object.keys(agents) : [];
   const waitingDelivered = waitingInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;
   const optionalDelivered = optionalInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;

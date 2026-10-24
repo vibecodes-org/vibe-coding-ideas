@@ -30,11 +30,21 @@ import {
   getPlatformTerminalEffortDefaultForAdmin,
   updatePlatformTerminalEffortDefault,
   type PlatformTerminalEffortAudit,
+  getPlatformTerminalAutoCompactDefaultForAdmin,
+  updatePlatformTerminalAutoCompactDefault,
+  type PlatformTerminalAutoCompactAudit,
 } from "@/actions/admin-platform";
 import { setPlatformAgentAwareModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
 import { setPlatformTerminalModelDefaultCache } from "@/hooks/use-platform-terminal-model-default";
 import { setPlatformTerminalEffortDefaultCache } from "@/hooks/use-platform-terminal-effort-default";
 import { EFFORT_LABELS, isClaudeEffort } from "@/lib/terminal/claude-effort";
+import { setPlatformTerminalAutoCompactDefaultCache } from "@/hooks/use-platform-terminal-auto-compact-default";
+import {
+  AUTO_COMPACT_OWN_SIZE_TEXT,
+  autoCompactShortLabel,
+  isAutoCompactStep,
+  type AutoCompactAgent,
+} from "@/lib/terminal/auto-compact";
 import { setPlatformTerminalCodexModelDefaultCache } from "@/hooks/use-platform-terminal-codex-model-default";
 import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
@@ -45,7 +55,7 @@ import {
 import { MODEL_TIER_WHEN_TO_USE, capitalizeModelName, tierResolutionLine, type ModelTierValue } from "@/lib/constants";
 import { validateTerminalModelValue, capitalizeTerminalModelName } from "@/lib/terminal/model-resolution";
 import { KNOWN_CODEX_MODELS, isKnownCodexModel, validateCodexModelValue, type ReasoningEffort } from "@/lib/codex-models";
-import { EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
+import { AutoCompactSegmentedControl, EffortSegmentedControl } from "@/components/shared/effort-segmented-control";
 
 // The 4 aliases the per-user Models dialog already offers (model-tier-settings.tsx's
 // MODEL_OPTIONS) — "known" here means "selectable with one tap, no typo-guard needed".
@@ -984,6 +994,180 @@ export function AdminTerminalEffortCard({ isSuperAdmin }: { isSuperAdmin: boolea
           onClick={handleSave}
           disabled={saving || !isDirty}
           aria-describedby={!isDirty ? "platform-terminal-effort-save-why" : undefined}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const AUTO_COMPACT_CARD_COPY: Record<
+  AutoCompactAgent,
+  { title: string; savedPrefix: string; decides: string; loadError: string; label: string; groupLabel: string }
+> = {
+  claude: {
+    title: "Claude terminal memory limit",
+    savedPrefix: "Terminal memory limit",
+    decides: "Claude Code decides",
+    loadError: "Failed to load the Claude terminal memory limit.",
+    label: "platform-terminal-claude-auto-compact",
+    groupLabel: "Claude memory limit, site default",
+  },
+  codex: {
+    title: "Codex terminal memory limit",
+    savedPrefix: "Codex terminal memory limit",
+    decides: "Codex decides",
+    loadError: "Failed to load the Codex terminal memory limit.",
+    label: "platform-terminal-codex-auto-compact",
+    groupLabel: "Codex memory limit, site default",
+  },
+};
+
+/**
+ * Site-wide memory limit (auto-compact window) for one agent (task 5e654dd1).
+ * A structural copy of AdminTerminalEffortCard: no Default segment (nothing
+ * pressed = no site default), an audit line, Clear / Cancel / Save.
+ */
+export function AdminTerminalAutoCompactCard({ isSuperAdmin, agent }: { isSuperAdmin: boolean; agent: AutoCompactAgent }) {
+  const copy = AUTO_COMPACT_CARD_COPY[agent];
+  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+  const [reloadToken, setReloadToken] = useState(0);
+  const [audit, setAudit] = useState<PlatformTerminalAutoCompactAudit | null>(null);
+  // null = no site default (nothing pressed in the strip).
+  const [persisted, setPersisted] = useState<number | null>(null);
+  const [staged, setStaged] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    setLoadState("loading");
+    getPlatformTerminalAutoCompactDefaultForAdmin(agent)
+      .then((result) => {
+        if (cancelled) return;
+        setAudit(result);
+        setPersisted(result.value);
+        setStaged(result.value);
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperAdmin, agent, reloadToken]);
+
+  if (!isSuperAdmin) return <PlatformAccessDenied />;
+
+  if (loadState === "loading") {
+    return (
+      <div className="space-y-4 rounded-lg border p-6">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-4 w-full max-w-md" />
+        <div className="max-w-[420px] space-y-1.5">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+        <p className="text-sm text-red-400">{copy.loadError}</p>
+        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const isDirty = staged !== persisted;
+  const agentName = agent === "claude" ? "Claude Code" : "Codex";
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await updatePlatformTerminalAutoCompactDefault(agent, staged);
+      const fresh = await getPlatformTerminalAutoCompactDefaultForAdmin(agent);
+      setAudit(fresh);
+      setPersisted(fresh.value);
+      setStaged(fresh.value);
+      setPlatformTerminalAutoCompactDefaultCache(agent, fresh.value);
+      toast.success(
+        saved !== null
+          ? `${copy.savedPrefix} saved · sessions now tidy up at ${autoCompactShortLabel(saved)} unless a user picks their own`
+          : `${copy.savedPrefix} cleared · ${copy.decides} unless a user picks their own`
+      );
+    } catch (err) {
+      // Staged value is retained on error so the super-admin can retry.
+      toast.error(err instanceof Error ? err.message : "Failed to save the terminal memory limit — try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6 rounded-lg border p-6">
+      <div>
+        <h3 className="font-semibold">{copy.title}</h3>
+        <p className="text-sm text-muted-foreground">
+          When an in-browser {agentName} session tidies up its memory (summarises the conversation so far),
+          platform-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running
+          sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.
+        </p>
+      </div>
+
+      <div className="max-w-[420px] space-y-1.5">
+        <span id={`${copy.label}-label`} className="block text-xs font-medium">
+          Memory limit
+        </span>
+        <AutoCompactSegmentedControl
+          agent={agent}
+          value={isAutoCompactStep(agent, staged) ? staged : null}
+          disabled={saving}
+          onChange={setStaged}
+          groupLabel={copy.groupLabel}
+        />
+      </div>
+
+      {audit && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {audit.value === null ? (
+            <span>
+              No site default: {copy.decides} ({AUTO_COMPACT_OWN_SIZE_TEXT[agent]}).
+            </span>
+          ) : (
+            <span>
+              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
+              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        {!isDirty && (
+          <span id={`${copy.label}-save-why`} className="mr-auto text-xs text-muted-foreground">
+            Save enables when you change a value.
+          </span>
+        )}
+        <Button type="button" variant="destructive" size="sm" onClick={() => setStaged(null)} disabled={saving || staged === null}>
+          Clear
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setStaged(persisted)} disabled={saving || !isDirty}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          aria-describedby={!isDirty ? `${copy.label}-save-why` : undefined}
         >
           {saving ? "Saving…" : "Save"}
         </Button>

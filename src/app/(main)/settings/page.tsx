@@ -34,6 +34,8 @@ type OwnProfileSettings = Pick<
   | "terminal_auto_accept"
   | "terminal_remote_control"
   | "terminal_effort"
+  | "terminal_auto_compact"
+  | "terminal_codex_auto_compact"
 >;
 
 export default async function SettingsPage() {
@@ -42,7 +44,7 @@ export default async function SettingsPage() {
   const { data: settings } = await supabase
     .from("users")
     .select(
-      "id, full_name, avatar_url, bio, github_username, contact_info, notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept, terminal_remote_control, terminal_effort"
+      "id, full_name, avatar_url, bio, github_username, contact_info, notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model, terminal_codex_model, terminal_codex_effort, terminal_auto_accept, terminal_remote_control, terminal_effort, terminal_auto_compact, terminal_codex_auto_compact"
     )
     .eq("id", user.id)
     .single();
@@ -108,6 +110,8 @@ export default async function SettingsPage() {
                 terminalAutoAccept={ownSettings.terminal_auto_accept}
                 terminalRemoteControl={ownSettings.terminal_remote_control}
                 terminalEffort={ownSettings.terminal_effort}
+                terminalAutoCompact={ownSettings.terminal_auto_compact}
+                terminalCodexAutoCompact={ownSettings.terminal_codex_auto_compact}
               />
             }
           />

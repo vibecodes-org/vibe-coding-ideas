@@ -100,6 +100,13 @@ export type ClaudeCodeAgentDefinition = {
   effort?: string;
   /** Claude Code tools switched off for this agent (a Read-only agent can't edit files). */
   disallowedTools?: string[];
+  /**
+   * The subagent's own memory limit (task 5e654dd1). Board agents keep the full
+   * size (BOARD_AGENT_AUTO_COMPACT_WINDOW) so the session's smaller limit never
+   * makes a workflow step tidy up mid-job. Claude launches only; not part of
+   * the `[vc …]` tag, so it never triggers a re-sync.
+   */
+  autoCompactWindow?: number;
 };
 
 /** "You are Atlas, the Full Stack Engineer on this VibeCodes board." */
@@ -111,7 +118,11 @@ export function agentNameLine(bot: { name: string; role: string | null }): strin
     : `You are ${name}, an agent on this VibeCodes board.`;
 }
 
-function definitionFor(input: SessionAgentInput, withSkillContent: boolean): ClaudeCodeAgentDefinition {
+function definitionFor(
+  input: SessionAgentInput,
+  withSkillContent: boolean,
+  autoCompactWindow?: number,
+): ClaudeCodeAgentDefinition {
   const { bot, tier, model, effort, skills } = input;
   const role = bot.role ? ` (${bot.role})` : "";
   const scope = tier ? `${tier}-tier` : "untiered";
@@ -150,14 +161,19 @@ function definitionFor(input: SessionAgentInput, withSkillContent: boolean): Cla
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(disallowedTools ? { disallowedTools } : {}),
+    ...(autoCompactWindow ? { autoCompactWindow } : {}),
   };
 }
 
-function build(inputs: SessionAgentInput[], withSkillContent: boolean): Record<string, ClaudeCodeAgentDefinition> {
+function build(
+  inputs: SessionAgentInput[],
+  withSkillContent: boolean,
+  autoCompactWindow?: number,
+): Record<string, ClaudeCodeAgentDefinition> {
   const agents: Record<string, ClaudeCodeAgentDefinition> = {};
   for (const input of inputs) {
     if (!input.bot.system_prompt.trim()) continue;
-    agents[sessionAgentName(input.bot, input.tier)] = definitionFor(input, withSkillContent);
+    agents[sessionAgentName(input.bot, input.tier)] = definitionFor(input, withSkillContent, autoCompactWindow);
   }
   return agents;
 }
@@ -177,12 +193,13 @@ function sizeOf(agents: Record<string, ClaudeCodeAgentDefinition>): number {
 export function buildSessionAgents(
   inputs: SessionAgentInput[],
   maxBytes: number = SESSION_AGENTS_MAX_BYTES,
-  options: { optional?: SessionAgentInput[] } = {},
+  options: { optional?: SessionAgentInput[]; autoCompactWindow?: number } = {},
 ): Record<string, ClaudeCodeAgentDefinition> | null {
   type Agents = Record<string, ClaudeCodeAgentDefinition>;
+  const window = options.autoCompactWindow;
   let fitted: Agents | null = null;
   for (const withSkillContent of [true, false]) {
-    const candidate = build(inputs, withSkillContent);
+    const candidate = build(inputs, withSkillContent, window);
     if (Object.keys(candidate).length === 0) break;
     if (sizeOf(candidate) <= maxBytes) {
       fitted = candidate;
@@ -191,16 +208,16 @@ export function buildSessionAgents(
   }
 
   let agents: Agents = fitted ?? {};
-  if (!fitted && Object.keys(build(inputs, false)).length > 0) {
+  if (!fitted && Object.keys(build(inputs, false, window)).length > 0) {
     // Even names-only is over: keep as many waiting agents as fit, in order.
     for (const input of inputs) {
-      const next: Agents = { ...agents, ...build([input], true) };
+      const next: Agents = { ...agents, ...build([input], true, window) };
       if (sizeOf(next) <= maxBytes) agents = next;
     }
   }
 
   for (const input of options.optional ?? []) {
-    const one = build([input], true);
+    const one = build([input], true, window);
     const [name] = Object.keys(one);
     if (!name || name in agents) continue;
     const next: Agents = { ...agents, ...one };
