@@ -38,9 +38,9 @@ describe("steering-copy", () => {
       expect(COMPACTION_RULES).toMatch(/decisions made in chat that are not yet on the board/i);
     });
 
-    it("re-checks the card straight after, and re-claims only if the token is lost and no subagent is mid-step", () => {
+    it("re-checks the card straight after, and re-claims the same step only if the token is lost and no subagent is still working on it", () => {
       expect(COMPACTION_RULES).toMatch(/call get_task for the card before doing anything else/i);
-      expect(COMPACTION_RULES).toMatch(/only claim a new step if the claim token is truly lost and no subagent is mid-step/i);
+      expect(COMPACTION_RULES).toMatch(/if the claim token was lost, call claim_next_step to re-claim the same step only when no subagent is still working on it: a re-claim issues new tokens and the running subagent's work token stops working/i);
     });
 
     it("stays within the budget: new text <= 900 chars, whole instructions <= 4,096", () => {

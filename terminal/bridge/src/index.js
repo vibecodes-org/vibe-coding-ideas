@@ -47,7 +47,7 @@ import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
-import { buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
+import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -1149,7 +1149,11 @@ async function main() {
     }
   }
   if (SESSION_AGENTS_BODY && !term) {
-    const agentArgs = sessionAgentArgs(SESSION_AGENTS_BODY);
+    // An older (or unreadable) Claude Code might reject the memory-limit key
+    // inside --agents, so it is stripped unless the version check passed.
+    const agentsBody =
+      AGENT === "claude" ? agentsForClaudeVersion(SESSION_AGENTS_BODY, CLAUDE_VERSION_TEXT) : SESSION_AGENTS_BODY;
+    const agentArgs = sessionAgentArgs(agentsBody);
     if (agentArgs.length > 0) {
       sessionAgentFlags = agentArgs;
       spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);

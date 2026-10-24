@@ -36,7 +36,7 @@ const SECRET = "auto-compact-test-secret";
 const RESUME_ID = "99999999-8888-7777-6666-555555555555";
 const PROMPT = "Reply with exactly COMPACT-PROMPT-OK";
 const AGENT_NAME = "vc-probe-1234abcd-frontier";
-const AGENTS = { [AGENT_NAME]: { description: "probe", prompt: "You are the probe.", model: "opus", effort: "high" } };
+const AGENTS = { [AGENT_NAME]: { description: "probe", prompt: "You are the probe.", model: "opus", effort: "high", autoCompactWindow: 1000000 } };
 
 function makeFakeAgentBin(claudeVersion = "2.1.221 (Claude Code)") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-agents-"));
@@ -233,4 +233,16 @@ test("an agents body is still delivered alongside the flag (Claude)", { timeout:
   const app = await startFakeApp({ extra: { autoCompactWindow: WINDOW } }); t.after(app.close);
   const argv = await launch(t, { prompt: PROMPT }, { appUrl: app.url });
   assert.deepEqual(Object.keys(agentsJsonOf(argv) ?? {}), [AGENT_NAME]);
+});
+
+test("board agents keep autoCompactWindow on a supported Claude, lose it on an old or unreadable one", { timeout: 60000 }, async (t) => {
+  const app = await startFakeApp(); t.after(app.close);
+  const ok = await launch(t, { prompt: PROMPT }, { appUrl: app.url });
+  assert.equal(agentsJsonOf(ok)[AGENT_NAME].autoCompactWindow, 1000000, JSON.stringify(ok));
+  for (const claudeVersion of ["2.1.220 (Claude Code)", "no idea"]) {
+    const argv = await launch(t, { prompt: PROMPT }, { appUrl: app.url, claudeVersion });
+    const def = agentsJsonOf(argv)[AGENT_NAME];
+    assert.ok(def && !("autoCompactWindow" in def), `${claudeVersion}: ${JSON.stringify(argv)}`);
+    assert.equal(def.model, "opus");
+  }
 });

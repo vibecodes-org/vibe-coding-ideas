@@ -23,7 +23,7 @@
  * instructions at 4,096 characters in total.
  */
 export const COMPACTION_RULES =
-  "When your conversation is summarised to free up memory, keep these word for word: the card id and step id you are working on, the ct_ claim token and the wt_ work token, any subagents still running, and any decisions made in chat that are not yet on the board. Straight after a summary, call get_task for the card before doing anything else. Only claim a new step if the claim token is truly lost and no subagent is mid-step.";
+  "When your conversation is summarised to free up memory, keep these word for word: the card id and step id you are working on, the ct_ claim token and the wt_ work token, any subagents still running, and any decisions made in chat that are not yet on the board. Straight after a summary, call get_task for the card before doing anything else. If the claim token was lost, call claim_next_step to re-claim the same step only when no subagent is still working on it: a re-claim issues new tokens and the running subagent's work token stops working.";
 
 /** Surface A — sent as the MCP server's `instructions` on both transports at construction. */
 export const SERVER_INSTRUCTIONS =

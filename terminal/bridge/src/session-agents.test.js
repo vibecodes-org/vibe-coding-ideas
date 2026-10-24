@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  agentsForClaudeVersion,
   buildSpawnArgs,
   codexAgentConfigArgs,
   codexAgentFiles,
@@ -158,4 +159,18 @@ test("every Claude or Codex launch asks for agents, resumed ones included", () =
   );
   assert.equal(wantsSessionAgents({ ...launch, agent: "bash" }), false);
   assert.equal(wantsSessionAgents({ ...launch, explicitCmd: "bash" }), false);
+});
+
+test("autoCompactWindow is removed for an old or unreadable Claude, kept for a supported one", () => {
+  const body = { agents: { "vc-atlas-37e8ffb2-frontier": { ...ATLAS, autoCompactWindow: 1_000_000 } } };
+  const win = (b) => JSON.parse(serializeSessionAgents(b))["vc-atlas-37e8ffb2-frontier"].autoCompactWindow;
+  assert.equal(win(agentsForClaudeVersion(body, "2.1.221 (Claude Code)")), 1_000_000);
+  assert.equal(win(agentsForClaudeVersion(body, "2.2.0")), 1_000_000);
+  assert.equal(win(agentsForClaudeVersion(body, "2.1.220 (Claude Code)")), undefined);
+  assert.equal(win(agentsForClaudeVersion(body, "no idea")), undefined);
+  assert.equal(win(agentsForClaudeVersion(body, null)), undefined);
+  // other fields survive, and the input is not changed
+  const stripped = JSON.parse(serializeSessionAgents(agentsForClaudeVersion(body, null)));
+  assert.equal(stripped["vc-atlas-37e8ffb2-frontier"].model, "opus");
+  assert.equal(body.agents["vc-atlas-37e8ffb2-frontier"].autoCompactWindow, 1_000_000);
 });

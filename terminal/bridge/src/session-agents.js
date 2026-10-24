@@ -25,6 +25,8 @@
 export const SESSION_AGENTS_MAX_BYTES = 200_000;
 
 const AGENT_NAME = /^vc-[a-z0-9-]{1,80}$/;
+import { parseClaudeVersion, supportsAutocompact } from "./auto-compact.js";
+
 const SAFE_SETTING = /^[a-z0-9._\-]{1,40}$/i;
 // A Claude Code tool name (Edit, Write, NotebookEdit …). The only extra field a
 // definition may carry (task 472d5672): tools a Read-only agent can't use.
@@ -81,6 +83,37 @@ export function validateSessionAgents(body) {
   }
   if (Object.keys(clean).length === 0) return null;
   return Buffer.byteLength(JSON.stringify(clean), "utf8") <= SESSION_AGENTS_MAX_BYTES ? clean : null;
+}
+
+/**
+ * Drop each definition's `autoCompactWindow`. Used for a Claude Code that is
+ * too old (or unreadable) to be trusted with that key in `--agents`. Pure: the
+ * input is not changed.
+ * @param {unknown} body
+ * @returns {unknown}
+ */
+export function stripAgentWindows(body) {
+  const agents = body && typeof body === "object" ? /** @type {any} */ (body).agents : null;
+  if (!agents || typeof agents !== "object" || Array.isArray(agents)) return body;
+  const out = {};
+  for (const [name, def] of Object.entries(agents)) {
+    if (def && typeof def === "object" && !Array.isArray(def)) {
+      const { autoCompactWindow: _dropped, ...rest } = /** @type {any} */ (def);
+      out[name] = rest;
+    } else out[name] = def;
+  }
+  return { ...(/** @type {any} */ (body)), agents: out };
+}
+
+/**
+ * The agents body to hand to Claude Code: unchanged when `claude --version`
+ * was read and is new enough, otherwise without `autoCompactWindow`.
+ * @param {unknown} body
+ * @param {string | null | undefined} claudeVersionText
+ * @returns {unknown}
+ */
+export function agentsForClaudeVersion(body, claudeVersionText) {
+  return supportsAutocompact(parseClaudeVersion(claudeVersionText)) ? body : stripAgentWindows(body);
 }
 
 /**
