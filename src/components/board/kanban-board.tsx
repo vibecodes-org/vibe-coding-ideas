@@ -62,6 +62,7 @@ import type {
   BotProfile,
   BoardSuggestionIndicator,
 } from "@/types";
+import { isLayoutEchoHop, type ColumnHop } from "./drag-column-hop";
 
 // Context for auto-open state — bypasses memo chain so task cards can react to URL navigation
 export const TaskAutoOpenContext = createContext<{
@@ -362,6 +363,8 @@ export function KanbanBoard({
   const [activeColumn, setActiveColumn] = useState<BoardColumnWithTasks | null>(null);
   const dragSourceColumnRef = useRef<string | null>(null);
   const dragCurrentColumnRef = useRef<string | null>(null);
+  // Last cross-column hop of the current drag (see drag-column-hop.ts)
+  const lastColumnHopRef = useRef<ColumnHop | null>(null);
   const [dragTargetColumnName, setDragTargetColumnName] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   // Snapshot of columns at drag start — used for immediate revert on cancel
@@ -887,6 +890,7 @@ export function KanbanBoard({
       }
       dragSourceColumnRef.current = colId;
       dragCurrentColumnRef.current = colId;
+      lastColumnHopRef.current = null;
     }
   }, []);
 
@@ -922,6 +926,18 @@ export function KanbanBoard({
       if (!activeColumnId) return;
 
       if (activeColumnId === overColumnId) return;
+
+      // Ignore a hop straight back that the pointer did not cause: the page
+      // shrank under it when the card left a tall column (see drag-column-hop.ts)
+      if (isLayoutEchoHop(lastColumnHopRef.current, overColumnId, event.delta.x, event.delta.y)) {
+        return;
+      }
+      lastColumnHopRef.current = {
+        fromColumnId: activeColumnId,
+        toColumnId: overColumnId,
+        pointerX: event.delta.x,
+        pointerY: event.delta.y,
+      };
 
       // Update our tracking ref (replaces mutating active.data.current)
       dragCurrentColumnRef.current = overColumnId;
