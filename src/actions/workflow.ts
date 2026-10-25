@@ -115,6 +115,21 @@ export async function updateWorkflowStep(
       throw new Error(`Invalid effort — expected ${STEP_EFFORT_LEVELS.join(", ")}`);
     }
     patch.effort_override = updates.effort;
+    // An effort needs a tier: Auto promises no model, so it has no level to adjust.
+    if (updates.effort !== null) {
+      let resultingTier: string | null | undefined = updates.model_tier;
+      if (resultingTier === undefined) {
+        const { data: current } = await supabase
+          .from("task_workflow_steps")
+          .select("model_tier")
+          .eq("id", stepId)
+          .maybeSingle();
+        resultingTier = current?.model_tier ?? null;
+      }
+      if (resultingTier === null) {
+        throw new Error("An effort needs a model tier — set a tier on the step first");
+      }
+    }
   }
 
   const { data, error } = await supabase

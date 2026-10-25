@@ -2337,6 +2337,22 @@ export async function updateStep(
     throw new Error("No fields to update — provide at least one field to change");
   }
 
+  // An effort needs a tier: Auto promises no model, so it has no level to adjust.
+  if (params.effort != null) {
+    let resultingTier: string | null | undefined = params.model_tier;
+    if (resultingTier === undefined) {
+      const { data: current } = await ctx.supabase
+        .from("task_workflow_steps")
+        .select("model_tier")
+        .eq("id", params.step_id)
+        .maybeSingle();
+      resultingTier = (current as { model_tier?: string | null } | null)?.model_tier ?? null;
+    }
+    if (resultingTier === null) {
+      throw new Error("An effort needs a model tier — set a tier on the step first (Auto has no effort)");
+    }
+  }
+
   const { data: updated, error } = await ctx.supabase
     .from("task_workflow_steps")
     .update(patch)

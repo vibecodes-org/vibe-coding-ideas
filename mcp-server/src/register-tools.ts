@@ -1174,7 +1174,7 @@ export function registerTools(
 
   server.tool(
     "create_workflow_template",
-    "Create a workflow template with ordered steps. Each step has a title, role (BA, UX, Dev, QA, Human), an optional approval gate, and an optional model_tier (frontier | standard | cheap; omit for Auto) and an optional effort (low | medium | high | xhigh | max; needs a tier; omit for the tier's own). Steps with a tier run on the tier's mapped model (frontier→fable, standard→sonnet, cheap→haiku by default, per-user overridable) via a mandatory directive at claim time.",
+    "Create a workflow template with ordered steps. Each step has a title, role (BA, UX, Dev, QA, Human), an optional approval gate, and an optional model_tier (frontier | standard | cheap; omit for Auto) and an optional effort (low | medium | high | xhigh | max; needs a tier; omit for the tier's own). Steps with a tier run on the model the tier resolves to from the user's Models settings (per agent, with site defaults) via a mandatory directive at claim time.",
     createWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

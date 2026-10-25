@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { HelpLink } from "@/components/shared/help-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -142,16 +142,16 @@ function StepRow({
 
 interface StepEditorProps {
   steps: WorkflowTemplateStep[];
-  onChange: (steps: WorkflowTemplateStep[]) => void;
+  // Accepts a functional updater so several edits in one click compose.
+  onChange: Dispatch<SetStateAction<WorkflowTemplateStep[]>>;
   ideaId?: string;
   poolRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
   userRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
 }
 
-function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
+export function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
-    const next = steps.map((s, i) => (i === idx ? { ...s, ...patch } : s));
-    onChange(next);
+    onChange((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
 
   function removeStep(idx: number) {

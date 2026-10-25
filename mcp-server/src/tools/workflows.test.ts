@@ -7291,7 +7291,7 @@ describe("per-step effort", () => {
         patches.push(data as Record<string, unknown>);
         return chain.chain;
       });
-      chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: { id: STEP_ID, status: "pending" }, error: null }));
+      chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: { id: STEP_ID, status: "pending", model_tier: "frontier" }, error: null }));
       return chain.chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
@@ -7304,6 +7304,24 @@ describe("per-step effort", () => {
       { model_tier: null, effort_override: null },
     ]);
     expect(updateStepSchema.safeParse({ step_id: STEP_ID, effort: "turbo" }).success).toBe(false);
+  });
+
+  it("update_step rejects an effort when the resulting tier is Auto", async () => {
+    const update = vi.fn();
+    const mk = (tier: string | null) => makeContext((() => {
+      const chain = createChain(null);
+      chain.chain.update = update.mockReturnValue(chain.chain);
+      chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: { id: STEP_ID, status: "pending", model_tier: tier }, error: null }));
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    // Step currently on Auto, effort only.
+    await expect(updateStep(mk(null), { step_id: STEP_ID, effort: "high" })).rejects.toThrow(/needs a model tier/);
+    // Tier cleared and effort set in the same call.
+    await expect(updateStep(mk("frontier"), { step_id: STEP_ID, model_tier: null, effort: "high" })).rejects.toThrow(/needs a model tier/);
+    expect(update).not.toHaveBeenCalled();
+    // Tier given together with effort is fine.
+    await expect(updateStep(mk(null), { step_id: STEP_ID, model_tier: "frontier", effort: "high" })).resolves.toBeTruthy();
   });
 
   it("a template step may carry an effort only with a tier", () => {
