@@ -1630,7 +1630,7 @@ describe("realistic Codex launch fits the same URL budget as Claude (FR-6, cwdPo
   const relay = "wss://vibecodes-terminal-relay.nickball.workers.dev";
   const session = "3960fe51-6010-44e8-9e77-a3c5882afffd";
   const realToken = "x".repeat(283);
-  const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const realPath = "/Users/devuser1/projects/household-budgeting-and-expense-planning";
   const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
   const realTitle = "Household budgeting and planning review and reporting";
   const CAP = 2048;
@@ -2856,7 +2856,7 @@ describe("buildBoundedDeepLink cwdPolicy: keep + the compact work-step rung (Nic
   const relay = "wss://vibecodes-terminal-relay.nickball.workers.dev";
   const session = "3960fe51-6010-44e8-9e77-a3c5882afffd";
   const realToken = "x".repeat(283); // measured length of a real HMAC-signed token
-  const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const realPath = "/Users/devuser1/projects/household-budgeting-and-expense-planning";
   const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
   const realTitle = "Household budgeting and planning review and reporting";
   const CAP = 2048;

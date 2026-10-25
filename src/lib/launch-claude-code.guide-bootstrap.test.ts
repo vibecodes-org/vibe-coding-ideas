@@ -121,14 +121,14 @@ function expectCompleteBootstrap(url: string, essentials: CompactPromptEssential
 
 type Shape = "known-folder" | "new-project" | "repo-no-folder" | "repo-known-folder";
 const SHAPES: Shape[] = ["known-folder", "new-project", "repo-no-folder", "repo-known-folder"];
-const REPO = "https://github.com/nicholasmball/personal-spending-and-financial-analysis";
+const REPO = "https://github.com/nicholasmball/household-budgeting-and-expense-planning";
 
 function shapeArgs(
   shape: Shape,
   agent: Agent,
   opts: { title: string; taskId?: string; folder?: string }
 ): { args: CompactBootstrapArgs; cwd: string | undefined } {
-  const folder = opts.folder ?? "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const folder = opts.folder ?? "/Users/devuser1/projects/household-budgeting-and-expense-planning";
   const base = {
     appUrl: APP_URL,
     ideaId: IDEA_ID,

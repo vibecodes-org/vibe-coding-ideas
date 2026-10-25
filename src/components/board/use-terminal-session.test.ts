@@ -2593,7 +2593,7 @@ describe("useTerminalSession", () => {
       // dozen chars and only the compact work step rode. Since 3 Sep 2026
       // the prompt's spaces ride as `+` (encodePromptParam), which frees
       // ~340 chars — the folder stays AND the full work step fits.
-      const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
+      const realPath = "/Users/devuser1/projects/household-budgeting-and-expense-planning";
       const { result } = renderHook(() =>
         useTerminalSession(
           {

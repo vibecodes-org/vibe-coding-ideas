@@ -60,7 +60,7 @@ describe("parseMentionTokens — worked examples (design §4.5)", () => {
   });
 
   it("4. email guard: @ preceded by alnum never triggers", () => {
-    const result = tokensOf("mail me at ballathesenior@gmail.com");
+    const result = tokensOf("mail me at user@gmail.com");
     expect(result).toEqual([]);
   });
 
