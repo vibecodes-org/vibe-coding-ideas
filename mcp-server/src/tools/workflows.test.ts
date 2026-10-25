@@ -7343,3 +7343,86 @@ describe("per-step effort", () => {
     expect(bad.success).toBe(false);
   });
 });
+
+describe("updateStep — role change puts the right agent on the step (card a5ecfbd6)", () => {
+  // Stateful fake: one pending step row, an agent pool, and the rematch's reads/writes.
+  function setup(row: { agent_role: string | null; bot_id: string | null; match_tier: string | null }, rematchTo: { botId: string | null; tier: string }) {
+    const state = { ...row, id: STEP_ID, task_id: TASK_ID, status: "pending" };
+    vi.mocked(matchRolesWithAiOrFuzzy).mockResolvedValue({ "Code Reviewer": rematchTo } as never);
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "task_workflow_steps") {
+          return {
+            select: () => {
+              const q: Record<string, unknown> = {};
+              q.eq = () => q;
+              q.maybeSingle = () => Promise.resolve({ data: { ...state }, error: null });
+              // rematch read: .eq().eq().not()
+              q.not = () => Promise.resolve({ data: [{ ...state }], error: null });
+              return q;
+            },
+            update: (patch: Record<string, unknown>) => {
+              const q: Record<string, unknown> = {};
+              q.eq = () => q;
+              q.select = () => q;
+              q.maybeSingle = () => {
+                Object.assign(state, patch);
+                return Promise.resolve({ data: { ...state }, error: null });
+              };
+              // rematch writes are awaited directly
+              q.then = (res: (v: unknown) => void) => {
+                Object.assign(state, patch);
+                res({ error: null });
+              };
+              return q;
+            },
+          };
+        }
+        if (table === "board_tasks") {
+          return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { idea_id: IDEA_ID }, error: null }) }) }) };
+        }
+        return {
+          select: () => ({
+            eq: () =>
+              Promise.resolve({
+                data: [
+                  { bot_id: "sentinel", bot: { id: "sentinel", name: "Sentinel", role: "QA Engineer" } },
+                  { bot_id: "lens", bot: { id: "lens", name: "Lens", role: "Code Reviewer" } },
+                ],
+                error: null,
+              }),
+          }),
+        };
+      }),
+    };
+    return { ctx: { supabase, userId: USER_ID } as unknown as McpContext, state };
+  }
+
+  it("moves an exact-matched step to the new role's agent", async () => {
+    const { ctx, state } = setup({ agent_role: "QA Engineer", bot_id: "sentinel", match_tier: "exact" }, { botId: "lens", tier: "exact" });
+    await updateStep(ctx, { step_id: STEP_ID, agent_role: "Code Reviewer" });
+    expect(state.agent_role).toBe("Code Reviewer");
+    expect(state.bot_id).toBe("lens");
+    expect(state.match_tier).toBe("exact");
+  });
+
+  it("drops a hand-picked agent when the role changes", async () => {
+    const { ctx, state } = setup({ agent_role: "QA Engineer", bot_id: "sentinel", match_tier: "manual" }, { botId: "lens", tier: "exact" });
+    await updateStep(ctx, { step_id: STEP_ID, agent_role: "Code Reviewer" });
+    expect(state.bot_id).toBe("lens");
+  });
+
+  it("leaves no agent (not the old one) when nothing fits the new role", async () => {
+    const { ctx, state } = setup({ agent_role: "QA Engineer", bot_id: "sentinel", match_tier: "exact" }, { botId: null, tier: "none" });
+    await updateStep(ctx, { step_id: STEP_ID, agent_role: "Code Reviewer" });
+    expect(state.bot_id).toBeNull();
+    expect(state.match_tier).toBeNull();
+  });
+
+  it("keeps a hand-picked agent when the role is unchanged", async () => {
+    const { ctx, state } = setup({ agent_role: "QA Engineer", bot_id: "sentinel", match_tier: "manual" }, { botId: "lens", tier: "exact" });
+    await updateStep(ctx, { step_id: STEP_ID, agent_role: " qa engineer ", title: "Renamed" });
+    expect(state.bot_id).toBe("sentinel");
+    expect(state.match_tier).toBe("manual");
+  });
+});

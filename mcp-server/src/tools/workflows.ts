@@ -23,7 +23,7 @@ import {
 import { buildReworkInstructions } from "../lib/rework";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
-import { decideStepRematch } from "../../../src/lib/role-matching";
+import { decideStepRematch, sameRole } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
 import { pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import { logActivity } from "../activity";
@@ -2353,6 +2353,22 @@ export async function updateStep(
     }
   }
 
+  // A new role makes the stored agent (and how it was matched, even a hand-pick)
+  // wrong for the step: drop it and rematch below. An unchanged role keeps it.
+  let roleChanged = false;
+  if (params.agent_role !== undefined) {
+    const { data: before } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("agent_role")
+      .eq("id", params.step_id)
+      .maybeSingle();
+    if (before && !sameRole((before as { agent_role: string | null }).agent_role, params.agent_role)) {
+      roleChanged = true;
+      patch.bot_id = null;
+      patch.match_tier = null;
+    }
+  }
+
   const { data: updated, error } = await ctx.supabase
     .from("task_workflow_steps")
     .update(patch)
@@ -2363,6 +2379,18 @@ export async function updateStep(
 
   if (error) throw new Error(`Failed to update step: ${error.message}`);
   if (!updated) throw new Error("Step not found or is no longer pending — only pending steps can be edited");
+
+  if (roleChanged && updated.agent_role) {
+    try {
+      await rematchWorkflowAgents(ctx, { task_id: updated.task_id });
+    } catch (err) {
+      // The role edit is saved; the step just has no agent until a rematch runs.
+      logger.warn("update_step: rematch after role change failed", {
+        stepId: params.step_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   return updated;
 }

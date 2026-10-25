@@ -39,6 +39,11 @@ vi.mock("@/lib/workflow-helpers", () => ({
   checkAndCompleteRun: vi.fn().mockResolvedValue(false),
 }));
 
+const mockRematch = vi.fn().mockResolvedValue({ matched: 1, unmatched: 0, upgraded: 0, matches: {} });
+vi.mock("./workflow-templates", () => ({
+  rematchWorkflowAgentsWithClient: (...args: unknown[]) => mockRematch(...args),
+}));
+
 import { completeWorkflowStep, failWorkflowStep, removeWorkflow, updateWorkflowStep } from "./workflow";
 
 describe("completeWorkflowStep — manual UI submission", () => {
@@ -191,5 +196,46 @@ describe("updateWorkflowStep - effort needs a tier", () => {
     mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s1" }, error: null });
     await updateWorkflowStep("s1", { model_tier: "frontier", effort: "high" });
     expect(mockUpdate).toHaveBeenCalledWith({ model_tier: "frontier", effort_override: "high" });
+  });
+});
+
+describe("updateWorkflowStep - role change (card a5ecfbd6)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("clears the old agent and rematches the task when the role changes", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { agent_role: "QA Engineer" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "s1", task_id: "t1", agent_role: "Code Reviewer" }, error: null });
+    await updateWorkflowStep("s1", { agent_role: "Code Reviewer" });
+    expect(mockUpdate).toHaveBeenCalledWith({ agent_role: "Code Reviewer", bot_id: null, match_tier: null });
+    expect(mockRematch).toHaveBeenCalledWith(expect.anything(), HUMAN_USER_ID, "t1");
+  });
+
+  it("drops a hand-picked agent too when the role changes", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { agent_role: "QA Engineer" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "s1", task_id: "t1", agent_role: "Code Reviewer" }, error: null });
+    await updateWorkflowStep("s1", { agent_role: "Code Reviewer" });
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ bot_id: null, match_tier: null });
+  });
+
+  it("keeps the agent and skips the rematch when the role is unchanged", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { agent_role: "QA Engineer" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "s1", task_id: "t1", agent_role: "QA Engineer" }, error: null });
+    await updateWorkflowStep("s1", { agent_role: " qa engineer ", title: "Renamed" });
+    expect(mockUpdate.mock.calls[0][0]).toEqual({ agent_role: "qa engineer", title: "Renamed" });
+    expect(mockRematch).not.toHaveBeenCalled();
+  });
+
+  it("keeps an agent picked in the same edit as the role change", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { agent_role: "QA Engineer" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "s1", task_id: "t1", agent_role: "Code Reviewer" }, error: null });
+    await updateWorkflowStep("s1", { agent_role: "Code Reviewer", bot_id: "bot-9" });
+    expect(mockUpdate.mock.calls[0][0]).toEqual({ agent_role: "Code Reviewer", bot_id: "bot-9" });
+    expect(mockRematch).not.toHaveBeenCalled();
   });
 });
