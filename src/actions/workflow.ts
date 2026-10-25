@@ -488,11 +488,20 @@ export async function removeWorkflow(runId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Delete run — steps cascade via FK ON DELETE CASCADE
+  const { data: run, error: runError } = await supabase
+    .from("workflow_runs")
+    .select("task_id")
+    .eq("id", runId)
+    .maybeSingle();
+  if (runError) throw new Error(runError.message);
+  if (!run) throw new Error("Workflow not found");
+
+  // Delete every run on the card (not just this one) so an earlier run can't
+  // reappear as the current one. Steps cascade via FK ON DELETE CASCADE.
   const { error } = await supabase
     .from("workflow_runs")
     .delete()
-    .eq("id", runId);
+    .eq("task_id", run.task_id);
 
   if (error) throw new Error(error.message);
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
-import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
+import { pickCurrentRunKey, pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import type { McpContext } from "../context";
 import {
   groupStepComments,
@@ -363,8 +363,24 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     (s) => s.human_check_required && s.status !== "completed" && s.status !== "skipped"
   );
 
+  const nextOpen = pickNextOpenStep(
+    allSteps as unknown as Array<{
+      id: string;
+      run_id: string | null;
+      created_at: string | null;
+      status: string;
+      step_order: number | null;
+      position: number | null;
+      title: string;
+    }>
+  );
+
   let workflow_instruction: string | null = null;
-  if (pendingCount > 0) {
+  if (nextOpen?.status === "failed") {
+    workflow_instruction =
+      `This task's workflow has stopped: step ${nextOpen.step_order ?? ""} "${nextOpen.title}" failed. ` +
+      `Do NOT claim further steps or begin implementation. Tell the user; they can retry the failed step on the card, or send the work back.`;
+  } else if (pendingCount > 0) {
     workflow_instruction =
       `This task has a workflow with ${liveSteps.length} steps (${pendingCount} pending). ` +
       `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +

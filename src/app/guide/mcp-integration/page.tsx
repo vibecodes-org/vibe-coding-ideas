@@ -356,7 +356,7 @@ export default function McpIntegrationPage() {
                   { name: "add_step_comment", description: "Add a comment to a workflow step" },
                   { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent team" },
                   { name: "reset_workflow", description: "Reset all steps to pending and restart the workflow" },
-                  { name: "remove_workflow", description: "Delete a workflow run and all its steps" },
+                  { name: "remove_workflow", description: "Delete a task's workflow, including any earlier runs, and all their steps" },
                   { name: "list_workflow_auto_rules", description: "List workflow triggers that map labels to templates" },
                   { name: "create_workflow_auto_rule", description: "Create a workflow trigger (label → template)" },
                   { name: "update_workflow_auto_rule", description: "Update a workflow trigger's template mapping" },

@@ -301,6 +301,36 @@ describe("getTask — workflow_instruction", () => {
     expect(result.workflow_instruction).toContain("2 pending");
   });
 
+  it("says the workflow has stopped when the next open step is failed (pending steps after it)", async () => {
+    const ctx = buildContext({
+      steps: [
+        makeStep({ id: "s1", status: "completed", step_order: 1 }),
+        makeStep({ id: "s2", status: "completed", step_order: 2 }),
+        makeStep({ id: "s3", title: "Build", status: "failed", step_order: 3 }),
+        makeStep({ id: "s4", status: "pending", step_order: 4 }),
+      ],
+    });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).toContain("has stopped");
+    expect(result.workflow_instruction).toContain("step 3");
+    expect(result.workflow_instruction).not.toContain("Use claim_next_step");
+  });
+
+  it("says the workflow has stopped when the failed step is the last open one", async () => {
+    const ctx = buildContext({
+      steps: [
+        makeStep({ id: "s1", status: "completed", step_order: 1 }),
+        makeStep({ id: "s2", status: "failed", step_order: 2 }),
+      ],
+    });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).toContain("has stopped");
+  });
+
   it("omits workflow_instruction when all steps are completed", async () => {
     const ctx = buildContext({
       steps: [

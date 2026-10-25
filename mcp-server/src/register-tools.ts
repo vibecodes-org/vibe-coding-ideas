@@ -1391,7 +1391,7 @@ export function registerTools(
 
   server.tool(
     "remove_workflow",
-    "Remove an active workflow from a task entirely. Deletes the run and all its steps. Use when the wrong template was applied.",
+    "Remove an active workflow from a task entirely. Deletes the run, any earlier runs on the card, and all their steps. Use when the wrong template was applied.",
     removeWorkflowSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

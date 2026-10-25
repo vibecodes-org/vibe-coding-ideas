@@ -24,7 +24,7 @@ import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { decideStepRematch } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
-import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
+import { pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
 import {
@@ -741,16 +741,9 @@ export async function claimNextStep(
 
   if (error) throw new Error(`Failed to fetch pending steps: ${error.message}`);
 
-  const liveRun = pickCurrentRunKey(allSteps ?? []);
-  const nextOpen = (allSteps ?? [])
-    .filter((s) => ((s.run_id as string | null) ?? null) === liveRun)
-    .sort(
-      (a, b) =>
-        (a.step_order ?? Number.POSITIVE_INFINITY) - (b.step_order ?? Number.POSITIVE_INFINITY) ||
-        (a.position ?? 0) - (b.position ?? 0) ||
-        String(a.id).localeCompare(String(b.id))
-    )
-    .find((s) => !["completed", "skipped", "awaiting_approval"].includes(s.status as string));
+  const nextOpen = pickNextOpenStep(
+    (allSteps ?? []) as Array<NonNullable<typeof allSteps>[number] & { status: string }>
+  );
 
   if (nextOpen?.status === "failed") {
     // An active run always wins over suggestions, so this returns before the
@@ -2729,15 +2722,16 @@ export async function removeWorkflow(
   if (runError) throw new Error(`Failed to find workflow run: ${runError.message}`);
   if (!run) throw new Error("No active workflow found on this task");
 
-  // Delete run — steps cascade via FK ON DELETE CASCADE
+  // Delete every run on the card, not just the active one: otherwise an earlier
+  // run would become the card's current run. Steps cascade via ON DELETE CASCADE.
   const { error } = await ctx.supabase
     .from("workflow_runs")
     .delete()
-    .eq("id", run.id);
+    .eq("task_id", params.task_id);
 
   if (error) throw new Error(`Failed to remove workflow: ${error.message}`);
 
-  return { success: true, run_id: run.id, message: "Workflow removed — all steps deleted" };
+  return { success: true, run_id: run.id, message: "Workflow removed — all runs and steps deleted" };
 }
 
 // ============================================================
