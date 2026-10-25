@@ -170,7 +170,7 @@ export async function loadBoardSessionAgents(
   const waitingInputs = toInputs(waiting);
   const optionalInputs = toInputs(optional);
 
-  // Claude board agents keep the full-size memory whatever the session's own
+  // Claude board agents get their own memory limit whatever the session's own
   // limit is (task 5e654dd1). Codex role files never carry it.
   const agents = buildSessionAgents(waitingInputs, undefined, {
     optional: optionalInputs,
@@ -221,7 +221,7 @@ export async function loadStepSessionAgent(
   const effort = normalizeStepEffort(tier, step.effort_override);
   const inputs = toInputs([{ botId: step.bot_id, tier, effort, uses: 1 }]);
   if (inputs.length === 0) return null;
-  const agents = buildSessionAgents(inputs);
+  const agents = buildSessionAgents(inputs, undefined, { autoCompactWindow: BOARD_AGENT_AUTO_COMPACT_WINDOW });
   const name = sessionAgentName(inputs[0].bot, tier, effort);
   const def = agents?.[name];
   return def ? { name, def } : null;
@@ -312,7 +312,7 @@ export async function loadRunSessionAgents(
     seen.add(name);
     // One agent per build, like a single claim, so the size packing of a
     // many-agent payload can never change a tag.
-    const def = buildSessionAgents([input])?.[name];
+    const def = buildSessionAgents([input], undefined, { autoCompactWindow: BOARD_AGENT_AUTO_COMPACT_WINDOW })?.[name];
     if (!def) {
       if (index === 0) return null;
       continue;

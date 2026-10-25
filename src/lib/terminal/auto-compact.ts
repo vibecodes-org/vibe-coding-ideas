@@ -10,8 +10,11 @@ export type AutoCompactAgent = "claude" | "codex";
 export const AUTO_COMPACT_MIN = 100_000;
 export const AUTO_COMPACT_MAX = 1_000_000;
 
-/** Board agents (Claude --agents definitions) keep the full-size memory. */
-export const BOARD_AGENT_AUTO_COMPACT_WINDOW = 1_000_000;
+/**
+ * Board agents (Claude --agents definitions and synced agent files) tidy up at
+ * 400k: only the biggest builds ever reach it (task 5e654dd1, stage 9).
+ */
+export const BOARD_AGENT_AUTO_COMPACT_WINDOW = 400_000;
 
 /** What the Settings and Admin strips offer. */
 export const AUTO_COMPACT_STEPS: Record<AutoCompactAgent, readonly number[]> = {
@@ -86,7 +89,7 @@ export function autoCompactDefaultAriaLabel(agent: AutoCompactAgent, platformVal
       : "Default, Codex decides";
 }
 
-const BOARD_FULL = "Board agents keep their full size.";
+const BOARD_FULL = `Board agents tidy up at ${autoCompactTokens(BOARD_AGENT_AUTO_COMPACT_WINDOW)} tokens.`;
 const TYPE_AUTOCOMPACT = "Change it any time by typing /autocompact in the terminal.";
 const NEXT_LAUNCH = "Takes effect from your next launch or resume.";
 

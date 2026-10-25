@@ -475,7 +475,7 @@ export default function LaunchingClaudeCodePage() {
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 /autocompact
               </code>
-              . Board agents keep their full size.
+              . Board agents tidy up at 400,000 tokens.
             </p>
           </div>
         </section>

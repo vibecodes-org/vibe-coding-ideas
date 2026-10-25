@@ -70,10 +70,14 @@ describe("renderAgentFile / parseAgentFile", () => {
     expect(renderAgentFile(...atlas)).not.toContain("disallowedTools");
   });
 
-  it("ignores a definition's autoCompactWindow: the synced file is byte-identical (task 5e654dd1)", () => {
+  it("writes autoCompactWindow when the definition has it, and round-trips it (task 5e654dd1 stage 9)", () => {
     const [name, def] = Object.entries(AGENTS).find(([n]) => n.startsWith("vc-atlas"))!;
-    expect(renderAgentFile(name, { ...def, autoCompactWindow: 1_000_000 })).toBe(renderAgentFile(name, def));
-    expect(renderAgentFile(name, { ...def, autoCompactWindow: 1_000_000 })).not.toContain("autoCompactWindow");
+    const withWindow = { ...def, autoCompactWindow: 400_000 };
+    const file = renderAgentFile(name, withWindow);
+    expect(file).toContain("\nautoCompactWindow: 400000\n");
+    expect(parseAgentFile(file)).toEqual({ name, def: withWindow, synced: false });
+    expect(renderAgentFile(name, def)).not.toContain("autoCompactWindow");
+    expect(agentFileFingerprint(file)).not.toBe(agentFileFingerprint(renderAgentFile(name, def)));
   });
 
   it("omits model and effort on an Auto step", () => {

@@ -110,9 +110,9 @@ export type ClaudeCodeAgentDefinition = {
   /** Claude Code tools switched off for this agent (a Read-only agent can't edit files). */
   disallowedTools?: string[];
   /**
-   * The subagent's own memory limit (task 5e654dd1). Board agents keep the full
-   * size (BOARD_AGENT_AUTO_COMPACT_WINDOW) so the session's smaller limit never
-   * makes a workflow step tidy up mid-job. Claude launches only; not part of
+   * The subagent's own memory limit (task 5e654dd1). Board agents get their own
+   * limit (BOARD_AGENT_AUTO_COMPACT_WINDOW, 400k) whatever the session's limit
+   * is. Claude only (the launch flag and synced agent files); not part of
    * the `[vc …]` tag, so it never triggers a re-sync.
    */
   autoCompactWindow?: number;
