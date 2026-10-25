@@ -2,6 +2,9 @@
   "enabledPlugins": {
     "github@claude-plugins-official": true,
     "playwright@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
-  }
+    "code-review@claude-plugins-official": true,
+    "bigdata-com@synced": false,
+    "design@synced": false
+  },
+  "disableClaudeAiConnectors": true
 }
