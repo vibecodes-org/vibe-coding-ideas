@@ -1632,7 +1632,7 @@ describe("realistic Codex launch fits the same URL budget as Claude (FR-6, cwdPo
   const realToken = "x".repeat(283);
   const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
   const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
-  const realTitle = "Personal spending and financial analysis and tracking";
+  const realTitle = "Household budgeting and planning review and reporting";
   const CAP = 2048;
 
   function realVibecodesLink(parts: { prompt: string; cwd?: string }): string {
@@ -2844,8 +2844,8 @@ describe("FIX A: buildBoundedDeepLink (cwd param unclamped, QA BUG A)", () => {
 });
 
 // ── Nick, 29 Aug 2026: the in-browser launch never trades the folder away ──
-// A brand-new browser session on the "Personal spending and financial analysis
-// and tracking" board started in the VibeCodes checkout. Its launch link was
+// A brand-new browser session on the "Household budgeting and planning review
+// and reporting" board started in the VibeCodes checkout. Its launch link was
 // 2021/2048 chars with NO cwd= param: the fixed overhead (relay + session +
 // two 283-char tokens + cols/rows/model/permissionMode = 763 chars) plus the
 // 78-char folder param left the full prompt 56 encoded chars over budget, so
@@ -2858,7 +2858,7 @@ describe("buildBoundedDeepLink cwdPolicy: keep + the compact work-step rung (Nic
   const realToken = "x".repeat(283); // measured length of a real HMAC-signed token
   const realPath = "/Users/nickball/projects/personal-spending-and-financial-analysis";
   const realIdeaId = "10a56f30-da8b-46a6-b989-646496d2dc12";
-  const realTitle = "Personal spending and financial analysis and tracking";
+  const realTitle = "Household budgeting and planning review and reporting";
   const CAP = 2048;
 
   /** Mirrors buildLaunchDeepLink's real param set and order (drift-tested there). */

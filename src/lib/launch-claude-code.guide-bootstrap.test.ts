@@ -332,7 +332,7 @@ describe("the packed form keeps every required instruction (semantic equivalence
 describe("the guide policy survives the real URL budget", () => {
   const TITLES = [
     "VibeCodes",
-    "Personal spending and financial analysis and tracking",
+    "Household budgeting and planning review and reporting",
     "A".repeat(80) + " past the header cap",
   ];
 
@@ -371,7 +371,7 @@ describe("the guide policy survives the real URL budget", () => {
     for (const agent of GUIDE_AGENTS) {
       for (const shape of SHAPES) {
         for (const taskId of [TASK_ID, undefined]) {
-          for (const title of ["Personal spending", "A".repeat(80) + " past the header cap"]) {
+          for (const title of ["Household budgets", "A".repeat(80) + " past the header cap"]) {
             const { args, cwd } = shapeArgs(shape, agent, { title, taskId });
             const essentials = buildCompactPromptEssentials(args);
             const label = `${agent}/${shape}/${taskId ? "task" : "board"}/title=${title.length}`;
@@ -418,7 +418,7 @@ describe("the guide policy survives the real URL budget", () => {
     for (const agent of GUIDE_AGENTS) {
       for (const shape of SHAPES) {
         for (const taskId of [TASK_ID, undefined]) {
-          const { args, cwd } = shapeArgs(shape, agent, { title: "Personal spending", taskId });
+          const { args, cwd } = shapeArgs(shape, agent, { title: "Household budgets", taskId });
           const essentials = buildCompactPromptEssentials(args);
           for (let cap = 1200; cap <= MAX_LAUNCH_URL_LENGTH; cap += 37) {
             const result = boundedBrowserLink(essentials, cwd, agent, undefined, cap);
@@ -472,7 +472,7 @@ describe("the exact launch-cap boundary: cap-1 refuses, cap and cap+1 fire whole
     for (const shape of SHAPES) {
       for (const taskId of [TASK_ID, undefined]) {
         it(`${agent} · ${shape} · ${taskId ? "task" : "board"}`, () => {
-          const { args, cwd } = shapeArgs(shape, agent, { title: "Personal spending", taskId });
+          const { args, cwd } = shapeArgs(shape, agent, { title: "Household budgets", taskId });
           const essentials = buildCompactPromptEssentials(args);
           let minCap = -1;
           for (let cap = 900; cap <= MAX_LAUNCH_URL_LENGTH; cap++) {
@@ -528,7 +528,7 @@ describe("Claude Code browser launches carry no guide step", () => {
   it("every realistic Claude browser launch fits, keeps the folder, and carries connect + record + a work step whole", () => {
     for (const shape of SHAPES) {
       for (const taskId of [TASK_ID, undefined]) {
-        for (const title of ["VibeCodes", "Personal spending and financial analysis and tracking", "A".repeat(80) + " past the header cap"]) {
+        for (const title of ["VibeCodes", "Household budgeting and planning review and reporting", "A".repeat(80) + " past the header cap"]) {
           const { args, cwd } = shapeArgs(shape, "claude", { title, taskId });
           const essentials = buildCompactPromptEssentials(args);
           const label = `claude/${shape}/${taskId ? "task" : "board"}/title=${title.length}`;
@@ -554,7 +554,7 @@ describe("Claude Code browser launches carry no guide step", () => {
   it("a tight budget never drops the folder from a Claude launch: it fires with the folder or refuses", () => {
     let fired = 0;
     for (const shape of SHAPES) {
-      const { args, cwd } = shapeArgs(shape, "claude", { title: "Personal spending", taskId: TASK_ID });
+      const { args, cwd } = shapeArgs(shape, "claude", { title: "Household budgets", taskId: TASK_ID });
       const essentials = buildCompactPromptEssentials(args);
       for (let cap = 1200; cap <= MAX_LAUNCH_URL_LENGTH; cap += 37) {
         const result = boundedBrowserLink(essentials, cwd, "claude", undefined, cap);

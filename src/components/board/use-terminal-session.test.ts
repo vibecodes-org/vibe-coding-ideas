@@ -2598,7 +2598,7 @@ describe("useTerminalSession", () => {
         useTerminalSession(
           {
             ...descriptor,
-            ideaTitle: "Personal spending and financial analysis and tracking",
+            ideaTitle: "Household budgeting and planning review and reporting",
             recordedProjectPaths: [{ absolute_path: realPath, hostname: "nicks-mac" }],
           },
           { enabled: true, expanded: true, requestExpand: vi.fn() },
