@@ -77,17 +77,17 @@ describe("labels", () => {
 describe("autoCompactHelp (the six lines from the approved mock)", () => {
   it("claude, own choice", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: 300_000, platformValue: null })).toBe(
-      "New and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens (your setting). Board agents tidy up at 400,000 tokens. Change it any time by typing /autocompact in the terminal."
+      "New and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens (your setting). Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower. Change it any time by typing /autocompact in the terminal."
     );
   });
   it("claude, site default", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: null, platformValue: 300_000 })).toBe(
-      "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents tidy up at 400,000 tokens. Change it any time by typing /autocompact in the terminal."
+      "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower. Change it any time by typing /autocompact in the terminal."
     );
   });
   it("claude, nothing", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: null, platformValue: null })).toBe(
-      "Claude Code decides: the size you last saved with /autocompact, otherwise about 967,000 tokens. Applies to new and resumed sessions. Board agents tidy up at 400,000 tokens."
+      "Claude Code decides: the size you last saved with /autocompact, otherwise about 967,000 tokens. Applies to new and resumed sessions. Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower."
     );
   });
   it("codex, own choice", () => {

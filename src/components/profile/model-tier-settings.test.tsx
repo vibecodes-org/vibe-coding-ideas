@@ -588,7 +588,7 @@ describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
     expect(screen.getByText(/Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens/)).toBeInTheDocument();
     expect(screen.getByText(/Codex decides: about 245,000 tokens/)).toBeInTheDocument();
     fireEvent.click(within(claudeGroup()).getByRole("button", { name: "400k" }));
-    expect(screen.getByText(/reaches 400,000 tokens \(your setting\)\. Board agents tidy up at 400,000 tokens/)).toBeInTheDocument();
+    expect(screen.getByText(/reaches 400,000 tokens \(your setting\)\. Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower/)).toBeInTheDocument();
     fireEvent.click(within(codexGroup()).getByRole("button", { name: "200k" }));
     expect(screen.getByText(/reaches 200,000 tokens \(your setting\)\. Takes effect from your next launch or resume/)).toBeInTheDocument();
   });

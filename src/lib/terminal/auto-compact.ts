@@ -12,7 +12,9 @@ export const AUTO_COMPACT_MAX = 1_000_000;
 
 /**
  * Board agents (Claude --agents definitions and synced agent files) tidy up at
- * 400k: only the biggest builds ever reach it (task 5e654dd1, stage 9).
+ * 400k, or sooner when the session's own limit is lower: a helper's limit can
+ * only make it tidy up earlier than its session, never later (proved on Claude
+ * Code 2.1.310). Only the biggest builds reach it (task 5e654dd1, stage 9).
  */
 export const BOARD_AGENT_AUTO_COMPACT_WINDOW = 400_000;
 
@@ -89,7 +91,7 @@ export function autoCompactDefaultAriaLabel(agent: AutoCompactAgent, platformVal
       : "Default, Codex decides";
 }
 
-const BOARD_FULL = `Board agents tidy up at ${autoCompactTokens(BOARD_AGENT_AUTO_COMPACT_WINDOW)} tokens.`;
+const BOARD_FULL = `Board agents tidy up at ${autoCompactTokens(BOARD_AGENT_AUTO_COMPACT_WINDOW)} tokens, or sooner if your memory limit is lower.`;
 const TYPE_AUTOCOMPACT = "Change it any time by typing /autocompact in the terminal.";
 const NEXT_LAUNCH = "Takes effect from your next launch or resume.";
 
