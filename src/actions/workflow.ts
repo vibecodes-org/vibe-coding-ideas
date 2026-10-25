@@ -2,6 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { checkAndCompleteRun } from "@/lib/workflow-helpers";
+import { sameRole } from "@/lib/role-matching";
+import { logger } from "@/lib/logger";
+import { rematchWorkflowAgentsWithClient } from "./workflow-templates";
 import {
   validateTitle,
   validateOptionalDescription,
@@ -132,6 +135,23 @@ export async function updateWorkflowStep(
     }
   }
 
+  // A new role makes the stored agent (and how it was matched, even a hand-pick)
+  // wrong for the step: drop it and rematch below. An unchanged role keeps it,
+  // and so does an agent chosen in this same edit.
+  let roleChanged = false;
+  if (updates.agent_role !== undefined && updates.bot_id === undefined) {
+    const { data: before } = await supabase
+      .from("task_workflow_steps")
+      .select("agent_role")
+      .eq("id", stepId)
+      .maybeSingle();
+    if (before && !sameRole(before.agent_role, patch.agent_role as string | null)) {
+      roleChanged = true;
+      patch.bot_id = null;
+      patch.match_tier = null;
+    }
+  }
+
   const { data, error } = await supabase
     .from("task_workflow_steps")
     .update(patch)
@@ -142,6 +162,18 @@ export async function updateWorkflowStep(
 
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Step not found or is no longer pending");
+
+  if (roleChanged && data.agent_role) {
+    try {
+      await rematchWorkflowAgentsWithClient(supabase, user.id, data.task_id);
+    } catch (err) {
+      // The role edit is saved; the step just has no agent until a rematch runs.
+      logger.warn("updateWorkflowStep: rematch after role change failed", {
+        stepId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   return data;
 }
