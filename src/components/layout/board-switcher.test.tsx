@@ -34,7 +34,7 @@ const FAKE_USER = {
 };
 
 const SAMPLE_BOARDS = [
-  { ideaId: "balla-bot", title: "Balla Bot board", lastActivity: "2026-05-06T12:00:00Z" },
+  { ideaId: "basil-bot", title: "Basil Bot board", lastActivity: "2026-05-06T12:00:00Z" },
   { ideaId: "vibecodes", title: "VibeCodes", lastActivity: "2026-05-05T12:00:00Z" },
   { ideaId: "padel", title: "Padel Game Organiser", lastActivity: "2026-05-01T12:00:00Z" },
 ];

@@ -144,14 +144,14 @@ describe("buildClaudeDeepLink", () => {
       repo: "https://github.com/o/n",
     });
     expect(link).toContain("cwd=%2FUsers%2Fme%2Fmy%20project");
-    // The handler wants the slug, NOT the full URL (this was the balla-bot bug).
+    // The handler wants the slug, NOT the full URL (this was the basil-bot bug).
     expect(link).toContain("repo=o%2Fn");
     expect(link).not.toContain("github.com");
   });
 
   it("leaves an owner/name slug repo as-is", () => {
-    const link = buildClaudeDeepLink({ prompt: "p", repo: "nicholasmball/balla-bot" });
-    expect(link).toContain("repo=nicholasmball%2Fballa-bot");
+    const link = buildClaudeDeepLink({ prompt: "p", repo: "nicholasmball/basil-bot" });
+    expect(link).toContain("repo=nicholasmball%2Fbasil-bot");
   });
 
   it("drops a repo value that can't be reduced to a slug (e.g. non-github URL)", () => {

@@ -31,7 +31,7 @@ describe("createGithubRepo — name sanitisation", () => {
   });
 
   it("kebab-cases idea titles into valid repo names", () => {
-    expect(toRepoName("Balla Bot — Home Assistant!")).toBe("balla-bot-home-assistant");
+    expect(toRepoName("Basil Bot — Home Assistant!")).toBe("basil-bot-home-assistant");
   });
 
   it("caps at GitHub's 100-char limit", () => {
