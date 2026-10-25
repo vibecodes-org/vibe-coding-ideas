@@ -53,6 +53,7 @@ export function renderAgentFile(
   if (def.model) lines.push(`model: ${def.model}`);
   if (def.effort) lines.push(`effort: ${def.effort}`);
   if (def.disallowedTools?.length) lines.push(`disallowedTools: ${def.disallowedTools.join(DISALLOWED_SEPARATOR)}`);
+  if (def.autoCompactWindow) lines.push(`autoCompactWindow: ${def.autoCompactWindow}`);
   lines.push("---", "");
   return lines.join("\n") + def.prompt.replace(/\n+$/, "") + "\n";
 }
@@ -74,6 +75,7 @@ export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAge
   const model = fields.get("model");
   const effort = fields.get("effort");
   const disallowed = fields.get("disallowedTools");
+  const window = Number(fields.get("autoCompactWindow"));
   const parsed = JSON.parse(description) as string;
   const synced = parsed.startsWith(`${SYNC_MARKER} `);
   const def: ClaudeCodeAgentDefinition = {
@@ -82,6 +84,7 @@ export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAge
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(disallowed ? { disallowedTools: disallowed.split(DISALLOWED_SEPARATOR) } : {}),
+    ...(Number.isInteger(window) && window > 0 ? { autoCompactWindow: window } : {}),
   };
   return { name, def, synced };
 }

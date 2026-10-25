@@ -3,6 +3,7 @@ import {
   AUTO_COMPACT_MAX,
   AUTO_COMPACT_MIN,
   AUTO_COMPACT_STEPS,
+  BOARD_AGENT_AUTO_COMPACT_WINDOW,
   autoCompactDefaultAriaLabel,
   autoCompactDefaultSubLabel,
   autoCompactHelp,
@@ -76,17 +77,17 @@ describe("labels", () => {
 describe("autoCompactHelp (the six lines from the approved mock)", () => {
   it("claude, own choice", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: 300_000, platformValue: null })).toBe(
-      "New and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens (your setting). Board agents keep their full size. Change it any time by typing /autocompact in the terminal."
+      "New and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens (your setting). Board agents tidy up at 400,000 tokens. Change it any time by typing /autocompact in the terminal."
     );
   });
   it("claude, site default", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: null, platformValue: 300_000 })).toBe(
-      "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents keep their full size. Change it any time by typing /autocompact in the terminal."
+      "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches 300,000 tokens. Board agents tidy up at 400,000 tokens. Change it any time by typing /autocompact in the terminal."
     );
   });
   it("claude, nothing", () => {
     expect(autoCompactHelp({ agent: "claude", userValue: null, platformValue: null })).toBe(
-      "Claude Code decides: the size you last saved with /autocompact, otherwise about 967,000 tokens. Applies to new and resumed sessions. Board agents keep their full size."
+      "Claude Code decides: the size you last saved with /autocompact, otherwise about 967,000 tokens. Applies to new and resumed sessions. Board agents tidy up at 400,000 tokens."
     );
   });
   it("codex, own choice", () => {
@@ -103,5 +104,12 @@ describe("autoCompactHelp (the six lines from the approved mock)", () => {
     expect(autoCompactHelp({ agent: "codex", userValue: null, platformValue: null })).toBe(
       "Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions."
     );
+  });
+});
+
+describe("BOARD_AGENT_AUTO_COMPACT_WINDOW (task 5e654dd1 stage 9)", () => {
+  it("is 400k, inside the allowed range", () => {
+    expect(BOARD_AGENT_AUTO_COMPACT_WINDOW).toBe(400_000);
+    expect(isValidAutoCompactWindow(BOARD_AGENT_AUTO_COMPACT_WINDOW)).toBe(true);
   });
 });

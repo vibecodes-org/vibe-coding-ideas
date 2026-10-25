@@ -148,6 +148,12 @@ describe("loadRunSessionAgents", () => {
     expect(run!.agents[0]).toEqual(single);
   });
 
+  it("gives every synced Claude agent the 400k memory limit (task 5e654dd1 stage 9)", async () => {
+    const run = await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    expect(run!.agents.length).toBeGreaterThan(0);
+    for (const a of run!.agents) expect(a.def.autoCompactWindow).toBe(400_000);
+  });
+
   it("scopes the run read by idea and run, and leaves out finished steps by status", async () => {
     await loadRunSessionAgents(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
     expect(filters).toContainEqual({ table: "task_workflow_steps", col: "run_id", val: RUN });

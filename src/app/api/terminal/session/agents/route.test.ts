@@ -171,9 +171,9 @@ describe("POST /api/terminal/session/agents", () => {
     expect(agents["vc-lens-87e09eb1"]).not.toHaveProperty("model");
   });
 
-  it("keeps Claude board agents at full size, and gives Codex role definitions no such key (task 5e654dd1)", async () => {
+  it("gives Claude board agents the 400k limit, and gives Codex role definitions no such key (task 5e654dd1)", async () => {
     const claude = (await (await POST(req({ sid: SID, token: "bridge-tok" }))).json()).agents;
-    expect(Object.values(claude).every((d) => (d as { autoCompactWindow?: number }).autoCompactWindow === 1_000_000)).toBe(true);
+    expect(Object.values(claude).every((d) => (d as { autoCompactWindow?: number }).autoCompactWindow === 400_000)).toBe(true);
     const codex = (await (await POST(req({ sid: SID, token: "bridge-tok", agent: "codex" }))).json()).agents;
     expect(Object.values(codex).some((d) => "autoCompactWindow" in (d as object))).toBe(false);
   });
