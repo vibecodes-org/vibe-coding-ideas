@@ -170,8 +170,8 @@ export async function loadBoardSessionAgents(
   const waitingInputs = toInputs(waiting);
   const optionalInputs = toInputs(optional);
 
-  // Claude board agents get their own memory limit whatever the session's own
-  // limit is (task 5e654dd1). Codex role files never carry it.
+  // Claude board agents get their own memory limit (it can only lower, never
+  // raise, the session's own limit) (task 5e654dd1). Codex role files never carry it.
   const agents = buildSessionAgents(waitingInputs, undefined, {
     optional: optionalInputs,
     ...(agent === "claude" ? { autoCompactWindow: BOARD_AGENT_AUTO_COMPACT_WINDOW } : {}),
