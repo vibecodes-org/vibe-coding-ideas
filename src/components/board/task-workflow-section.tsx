@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useContext } from "react";
+import { useState, useEffect, useRef, useCallback, useContext, useMemo } from "react";
+import { format } from "date-fns";
 import Link from "next/link";
 import { toast } from "sonner";
 import { HelpLink } from "@/components/shared/help-link";
@@ -64,6 +65,7 @@ import { WorkflowSuggestionPanel } from "./workflow-suggestion-panel";
 import { TaskAutoOpenContext } from "./kanban-board";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import { ModelTierBadge } from "@/components/shared/model-tier-select";
+import { splitRunsByRecency } from "@/lib/workflow-current-run";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
 
 /** Map a role string to a color class for the role badge. */
@@ -141,6 +143,107 @@ const RUN_STATUS_BADGE: Record<WorkflowRun["status"], { cls: string; label: stri
   failed: { cls: "bg-red-500/15 text-red-400 border-red-500/25", label: "Failed" },
 };
 
+function WorkflowStepRow({
+  step,
+  number,
+  readOnly,
+  earlier = false,
+  isActionLoading,
+  onOpen,
+  onRetry,
+}: {
+  step: TaskWorkflowStep;
+  number: number;
+  readOnly: boolean;
+  earlier?: boolean;
+  isActionLoading: boolean;
+  onOpen: () => void;
+  onRetry: () => void;
+}) {
+  const config = STATUS_CONFIG[step.status];
+  return (
+    <div
+      className={`group flex items-center gap-3 rounded-md border ${config.border} bg-muted/30 px-3 ${earlier ? "py-2 opacity-75 hover:opacity-100" : "py-2.5"} cursor-pointer transition-colors hover:bg-muted/60`}
+      onClick={onOpen}
+    >
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${config.numBg} text-xs font-semibold ${config.numText}`}
+      >
+        {step.status === "completed" ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : step.status === "skipped" ? (
+          <SkipForward className="h-3.5 w-3.5" />
+        ) : (
+          number
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {step.title}
+      </span>
+
+      {/* Inline action buttons — shown on hover for key statuses */}
+      {!readOnly && step.status === "failed" && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 gap-1 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+          disabled={isActionLoading}
+        >
+          {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+          Retry
+        </Button>
+      )}
+
+      {step.output && (
+        <span className="shrink-0 text-blue-400" title="Has output">
+          <FileText className="h-3.5 w-3.5" />
+        </span>
+      )}
+      {(step.comment_count ?? 0) > 0 && (
+        <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground" title={`${step.comment_count} comment${step.comment_count === 1 ? "" : "s"}`}>
+          <MessageSquare className="h-3 w-3" />
+          {step.comment_count}
+        </span>
+      )}
+
+      <ModelTierBadge
+        tier={step.model_tier}
+        executedModel={step.executed_model}
+        tierHonored={step.tier_honored}
+      />
+      {step.agent_role && (
+        <Badge
+          variant="outline"
+          className={`shrink-0 text-[10px] ${getRoleBadgeClasses(step.agent_role)}`}
+        >
+          {step.agent_role}
+        </Badge>
+      )}
+      <Badge
+        variant="outline"
+        className={`shrink-0 text-[10px] ${config.badgeCls}`}
+      >
+        {step.status === "in_progress" && (
+          <Loader2 className="mr-1 h-2.5 w-2.5 animate-spin" />
+        )}
+        {step.status === "completed" && (
+          <Check className="mr-1 h-2.5 w-2.5" />
+        )}
+        {step.status === "failed" && (
+          <XCircle className="mr-1 h-2.5 w-2.5" />
+        )}
+        {config.label}
+      </Badge>
+      {step.human_check_required && <ApprovalLockIcon />}
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+    </div>
+  );
+}
+
 interface TaskWorkflowSectionProps {
   taskId: string;
   ideaId: string;
@@ -149,7 +252,8 @@ interface TaskWorkflowSectionProps {
 
 export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: TaskWorkflowSectionProps) {
   const [steps, setSteps] = useState<TaskWorkflowStep[] | null>(null);
-  const [run, setRun] = useState<(WorkflowRun & { template_name?: string }) | null>(null);
+  const [runs, setRuns] = useState<Array<WorkflowRun & { template_name?: string }>>([]);
+  const [showEarlier, setShowEarlier] = useState(false);
   const [loading, setLoading] = useState(true);
   // Track the OPEN step by id, not by a captured object — the dialog then always
   // renders the freshest copy from `steps`, so an edit saved inside the dialog
@@ -183,6 +287,24 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     ? steps?.find((s) => s.id === selectedStepId) ?? null
     : null;
 
+  // The card shows only its live (newest) run; earlier runs sit behind a
+  // read-only disclosure. Same recency rule as get_task / claim_next_step.
+  const { liveKey, live: liveSteps, earlier: earlierGroups } = useMemo(
+    () => splitRunsByRecency(steps ?? []),
+    [steps]
+  );
+  const run = useMemo(() => runs.find((r) => r.id === liveKey) ?? null, [runs, liveKey]);
+  const earlierRuns = useMemo(
+    () =>
+      earlierGroups.map((g) => ({
+        key: g.runKey,
+        steps: g.steps,
+        run: runs.find((r) => r.id === g.runKey) ?? null,
+      })),
+    [earlierGroups, runs]
+  );
+  const selectedIsEarlier = !!selectedStep && !liveSteps.some((s) => s.id === selectedStep.id);
+
   const fetchData = useCallback(async () => {
     const supabase = supabaseRef.current;
     const [stepsRes, runRes] = await Promise.all([
@@ -195,23 +317,21 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
         .from("workflow_runs")
         .select("*, workflow_templates(name)")
         .eq("task_id", taskId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .order("created_at", { ascending: false }),
     ]);
 
     if (stepsRes.data) setSteps(stepsRes.data);
     else setSteps([]);
-    if (runRes.data) {
-      const templateData = runRes.data.workflow_templates as { name: string } | null;
-      setRun({
-        ...runRes.data,
-        template_name: templateData?.name ?? undefined,
-        workflow_templates: undefined,
-      } as WorkflowRun & { template_name?: string });
-    } else {
-      setRun(null);
-    }
+    setRuns(
+      (runRes.data ?? []).map((r) => {
+        const templateData = r.workflow_templates as { name: string } | null;
+        return {
+          ...r,
+          template_name: templateData?.name ?? undefined,
+          workflow_templates: undefined,
+        } as WorkflowRun & { template_name?: string };
+      })
+    );
     setLoading(false);
   }, [taskId]);
 
@@ -240,15 +360,15 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   // This catches cases where the background after() rematch failed or hasn't run yet
   useEffect(() => {
     if (loading || rematchAttemptedRef.current) return;
-    const unmatched = steps?.filter(
+    const unmatched = liveSteps.filter(
       (s) => s.agent_role && !s.bot_id && s.status === "pending"
-    ) ?? [];
+    );
     if (unmatched.length === 0) return;
     rematchAttemptedRef.current = true;
     rematchWorkflowAgents(taskId)
       .then(() => fetchData())
       .catch(() => { /* silently ignore — warning will still show */ });
-  }, [loading, steps, taskId, fetchData]);
+  }, [loading, liveSteps, taskId, fetchData]);
 
   // Reset rematch flag when task changes
   useEffect(() => {
@@ -263,9 +383,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     const target = steps.find((s) => s.id === autoOpenStepId);
     if (!target) return;
     autoOpenStepHandledRef.current = true;
+    if ((target.run_id ?? null) !== liveKey) setShowEarlier(true);
     setSelectedStepId(target.id);
     onAutoOpenConsumed();
-  }, [autoOpenStepId, steps, onAutoOpenConsumed]);
+  }, [autoOpenStepId, steps, liveKey, onAutoOpenConsumed]);
 
   // Load templates when user opens apply UI
   useEffect(() => {
@@ -347,13 +468,12 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     }
   }
 
-  const hasWorkflow = !loading && steps && steps.length > 0;
-  const noWorkflow = !loading && (!steps || steps.length === 0);
+  const noWorkflow = !loading && liveSteps.length === 0;
 
-  // Agent match feedback: count steps with no bot assigned
-  const unmatchedSteps = steps?.filter(
+  // Agent match feedback: count live-run steps with no bot assigned
+  const unmatchedSteps = liveSteps.filter(
     (s) => s.agent_role && !s.bot_id && s.status === "pending"
-  ) ?? [];
+  );
 
   if (loading) {
     return (
@@ -442,8 +562,13 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     );
   }
 
-  const completedCount = steps!.filter((s) => s.status === "completed" || s.status === "skipped").length;
-  const totalCount = steps!.length;
+  const dialogSteps = selectedStep && selectedIsEarlier
+    ? earlierRuns.find((er) => er.steps.some((x) => x.id === selectedStep.id))?.steps ?? []
+    : liveSteps;
+  const stepNumberInRun = selectedStep ? dialogSteps.findIndex((x) => x.id === selectedStep.id) + 1 : 0;
+  const earlierCount = earlierRuns.length;
+  const completedCount = liveSteps.filter((s) => s.status === "completed" || s.status === "skipped").length;
+  const totalCount = liveSteps.length;
 
   return (
     <>
@@ -526,95 +651,82 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
           />
         </div>
 
-        {/* Step list */}
+        {/* Step list (live run) */}
         <div className="space-y-1.5">
-          {steps!.map((step, idx) => {
-            const config = STATUS_CONFIG[step.status];
-            const isActionLoading = actionStepId === step.id;
-            return (
-              <div
-                key={step.id}
-                className={`group flex items-center gap-3 rounded-md border ${config.border} bg-muted/30 px-3 py-2.5 cursor-pointer transition-colors hover:bg-muted/60`}
-                onClick={() => setSelectedStepId(step.id)}
-              >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${config.numBg} text-xs font-semibold ${config.numText}`}
-                >
-                  {step.status === "completed" ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : step.status === "skipped" ? (
-                    <SkipForward className="h-3.5 w-3.5" />
-                  ) : (
-                    idx + 1
-                  )}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {step.title}
-                </span>
-
-                {/* Inline action buttons — shown on hover for key statuses */}
-                {!isReadOnly && step.status === "failed" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 gap-1 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleInlineAction(step.id, "retry");
-                    }}
-                    disabled={isActionLoading}
-                  >
-                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-                    Retry
-                  </Button>
-                )}
-
-                {step.output && (
-                  <span className="shrink-0 text-blue-400" title="Has output">
-                    <FileText className="h-3.5 w-3.5" />
-                  </span>
-                )}
-                {(step.comment_count ?? 0) > 0 && (
-                  <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground" title={`${step.comment_count} comment${step.comment_count === 1 ? "" : "s"}`}>
-                    <MessageSquare className="h-3 w-3" />
-                    {step.comment_count}
-                  </span>
-                )}
-
-                <ModelTierBadge
-                  tier={step.model_tier}
-                  executedModel={step.executed_model}
-                  tierHonored={step.tier_honored}
-                />
-                {step.agent_role && (
-                  <Badge
-                    variant="outline"
-                    className={`shrink-0 text-[10px] ${getRoleBadgeClasses(step.agent_role)}`}
-                  >
-                    {step.agent_role}
-                  </Badge>
-                )}
-                <Badge
-                  variant="outline"
-                  className={`shrink-0 text-[10px] ${config.badgeCls}`}
-                >
-                  {step.status === "in_progress" && (
-                    <Loader2 className="mr-1 h-2.5 w-2.5 animate-spin" />
-                  )}
-                  {step.status === "completed" && (
-                    <Check className="mr-1 h-2.5 w-2.5" />
-                  )}
-                  {step.status === "failed" && (
-                    <XCircle className="mr-1 h-2.5 w-2.5" />
-                  )}
-                  {config.label}
-                </Badge>
-                {step.human_check_required && <ApprovalLockIcon />}
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            );
-          })}
+          {liveSteps.map((step, idx) => (
+            <WorkflowStepRow
+              key={step.id}
+              step={step}
+              number={idx + 1}
+              readOnly={isReadOnly}
+              isActionLoading={actionStepId === step.id}
+              onOpen={() => setSelectedStepId(step.id)}
+              onRetry={() => handleInlineAction(step.id, "retry")}
+            />
+          ))}
         </div>
+
+        {/* Earlier runs: closed by default, read-only */}
+        {earlierRuns.length > 0 && (
+          <>
+            <button
+              type="button"
+              aria-expanded={showEarlier}
+              onClick={() => setShowEarlier((v) => !v)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight
+                className={`h-3.5 w-3.5 transition-transform ${showEarlier ? "rotate-90" : ""}`}
+              />
+              {earlierRuns.length} earlier run{earlierRuns.length === 1 ? "" : "s"}
+            </button>
+            {showEarlier && (
+              <div className="space-y-3 sm:rounded-md sm:border sm:border-border/60 sm:bg-background/40 sm:px-3 sm:py-2.5">
+                {earlierRuns.map((er, i) => {
+                  const done = er.steps.filter((s) => s.status === "completed" || s.status === "skipped").length;
+                  const number = earlierRuns.length - i;
+                  const started = er.run?.created_at ?? er.steps[0]?.created_at;
+                  return (
+                    <div key={er.key ?? "none"} className="space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                          <span>
+                            Run {number}
+                            {er.run?.template_name ? ` · ${er.run.template_name}` : ""}
+                            {started ? ` · started ${format(new Date(started), "d MMM")}` : ""}
+                          </span>
+                          {er.run && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${RUN_STATUS_BADGE[er.run.status].cls}`}
+                            >
+                              {RUN_STATUS_BADGE[er.run.status].label}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {done} of {er.steps.length} steps completed
+                        </span>
+                      </div>
+                      {er.steps.map((step, idx) => (
+                        <WorkflowStepRow
+                          key={step.id}
+                          step={step}
+                          number={idx + 1}
+                          readOnly
+                          earlier
+                          isActionLoading={false}
+                          onOpen={() => setSelectedStepId(step.id)}
+                          onRetry={() => {}}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <Separator />
@@ -625,10 +737,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
           open={!!selectedStep}
           onOpenChange={(open) => { if (!open) { setSelectedStepId(null); fetchData(); } }}
           step={selectedStep}
-          stepNumber={steps!.findIndex((s) => s.id === selectedStep.id) + 1}
+          stepNumber={stepNumberInRun}
           ideaId={ideaId}
-          allSteps={steps!}
-          isReadOnly={isReadOnly}
+          allSteps={dialogSteps}
+          isReadOnly={isReadOnly || selectedIsEarlier}
           onStepUpdated={fetchData}
         />
       )}
@@ -660,7 +772,8 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Workflow?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the workflow and all its steps from this task. You can apply a new template afterwards.
+              This will permanently remove the workflow and all its steps from this task
+              {earlierCount > 0 ? `, including ${earlierCount} earlier run${earlierCount === 1 ? "" : "s"}` : ""}. You can apply a new template afterwards.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

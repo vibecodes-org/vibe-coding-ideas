@@ -39,7 +39,7 @@ vi.mock("@/lib/workflow-helpers", () => ({
   checkAndCompleteRun: vi.fn().mockResolvedValue(false),
 }));
 
-import { completeWorkflowStep, failWorkflowStep } from "./workflow";
+import { completeWorkflowStep, failWorkflowStep, removeWorkflow } from "./workflow";
 
 describe("completeWorkflowStep — manual UI submission", () => {
   beforeEach(() => {
@@ -134,5 +134,31 @@ describe("failWorkflowStep — manual UI rejection", () => {
     await expect(failWorkflowStep("step-1")).rejects.toThrow(
       /not in a state that can be failed/i
     );
+  });
+});
+
+describe("removeWorkflow — removes every run on the card", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads the run's task, then deletes by task_id (not by run id)", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: { task_id: "task-9" }, error: null });
+    const deleteEq = vi.fn().mockResolvedValue({ error: null });
+    (chain as Record<string, unknown>).delete = vi.fn(() => ({ eq: deleteEq }));
+
+    await removeWorkflow("run-1");
+
+    expect(mockFrom).toHaveBeenCalledWith("workflow_runs");
+    expect(deleteEq).toHaveBeenCalledWith("task_id", "task-9");
+  });
+
+  it("throws and deletes nothing when the run is not found", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    const deleteFn = vi.fn();
+    (chain as Record<string, unknown>).delete = deleteFn;
+
+    await expect(removeWorkflow("run-x")).rejects.toThrow("Workflow not found");
+    expect(deleteFn).not.toHaveBeenCalled();
   });
 });

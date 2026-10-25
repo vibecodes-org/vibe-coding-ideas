@@ -38,6 +38,7 @@ import {
   readLiveUnavailableModel,
   rematchWorkflowAgents,
   deliverableFileFormat,
+  removeWorkflow,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
 
@@ -7196,5 +7197,17 @@ describe("claimNextStep — saved write-up and rework shape (stage 3)", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, priorSteps: [] });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as unknown as { instruction: string };
     expect(r.instruction).toContain(`save_step_output (step_id "${STEP_ID}", work_token)`);
+  });
+});
+
+describe("removeWorkflow — removes every run on the card", () => {
+  it("deletes by task_id so earlier runs go too", async () => {
+    const { chain, captured } = createChain({ id: "run-live" });
+    const ctx = makeContext((() => chain) as unknown as McpContext["supabase"]["from"]);
+    const r = (await removeWorkflow(ctx, { task_id: TASK_ID })) as { message: string };
+    expect(chain.delete).toHaveBeenCalled();
+    expect(captured.eqs).toContainEqual(["task_id", TASK_ID]);
+    expect(captured.eqs).not.toContainEqual(["id", "run-live"]);
+    expect(r.message).toContain("all runs");
   });
 });

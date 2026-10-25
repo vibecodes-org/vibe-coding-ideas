@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { getDueDateStatus } from "@/lib/utils";
+import { pickCurrentRunKey } from "@/lib/workflow-current-run";
 import { DEFAULT_PANEL_ORDER } from "@/lib/dashboard-order";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
@@ -267,7 +268,7 @@ export default async function DashboardPage() {
       ? supabase
           .from("task_workflow_steps")
           .select(
-            "id, title, status, started_at, completed_at, position, bot_id, task:board_tasks!task_workflow_steps_task_id_fkey(id, title, archived, idea_id, workflow_step_completed, workflow_step_total, idea:ideas!board_tasks_idea_id_fkey(id, title))"
+            "id, title, status, started_at, completed_at, position, bot_id, run_id, task:board_tasks!task_workflow_steps_task_id_fkey(id, title, archived, idea_id, workflow_step_completed, workflow_step_total, idea:ideas!board_tasks_idea_id_fkey(id, title), steps:task_workflow_steps!task_workflow_steps_task_id_fkey(run_id, created_at))"
           )
           .in("bot_id", botUserIds)
           .in("status", ["pending", "in_progress", "failed", "awaiting_approval"])
@@ -316,6 +317,7 @@ export default async function DashboardPage() {
     completed_at: string | null;
     position: number;
     bot_id: string;
+    run_id: string | null;
     task: {
       id: string;
       title: string;
@@ -324,6 +326,7 @@ export default async function DashboardPage() {
       workflow_step_completed: number | null;
       workflow_step_total: number | null;
       idea: { id: string; title: string };
+      steps: Array<{ run_id: string | null; created_at: string }> | null;
     } | null;
   };
   const botTaskRows = (botTasksResult.data ?? []) as unknown as BotTaskRow[];
@@ -357,6 +360,8 @@ export default async function DashboardPage() {
   const stepsByBot = new Map<string, AgentWorkflowStep[]>();
   for (const row of botWorkflowStepRows) {
     if (!row.task || row.task.archived) continue;
+    // Skip steps left behind by an earlier run: only the card's live run counts.
+    if ((row.run_id ?? null) !== pickCurrentRunKey(row.task.steps ?? [])) continue;
     const list = stepsByBot.get(row.bot_id) ?? [];
     list.push({
       stepId: row.id,

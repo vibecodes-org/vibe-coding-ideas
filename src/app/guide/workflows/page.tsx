@@ -594,6 +594,12 @@ export default function WorkflowsPage() {
               step to see its full details, output, comments, and action buttons
             </li>
             <li>
+              <strong className="text-foreground">Earlier runs</strong> — if a
+              task&apos;s workflow has been run more than once, its card and
+              step list show only the newest run. Earlier runs stay readable
+              (read-only) under &quot;N earlier runs&quot; below the step list
+            </li>
+            <li>
               <strong className="text-foreground">Skip</strong> — mark a pending
               step as not applicable. Skipped steps count toward workflow
               completion
@@ -608,7 +614,7 @@ export default function WorkflowsPage() {
             </li>
             <li>
               <strong className="text-foreground">Remove Workflow</strong>{" "}
-              — delete the workflow run and all its steps entirely
+              — delete the workflow, including any earlier runs, and all their steps entirely
             </li>
           </ul>
         </section>

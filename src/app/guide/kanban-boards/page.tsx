@@ -115,7 +115,7 @@ export default function KanbanBoardsPage() {
               tasks into steps with progress tracking. When a task has an
               attached workflow, its card shows the workflow name with a{" "}
               <strong className="text-foreground">completed / total</strong> step
-              count and a progress bar
+              count for its newest run, and a progress bar
             </li>
             <li>
               <strong className="text-foreground">Comments</strong> — discuss
