@@ -2558,8 +2558,32 @@ describe("useTerminalSession", () => {
 
       // No link fired: a folder-less launch would start the agent at `/`.
       expect(document.querySelectorAll("iframe")).toHaveLength(0);
-      // Task b563f4da: a fresh browser launch carries required setup (the
-      // agent-guide step), so the refusal uses the design's copy.
+      // A Claude launch carries no guide step (card 5e654dd1, stage 4), so the
+      // refusal is the plain "path too long" copy; a Codex launch, which does
+      // carry the required guide step, uses the design's copy (next test).
+      expect(toastError).toHaveBeenCalledWith(
+        "Project path too long to launch — open the folder manually and run Claude Code there",
+      );
+    });
+
+    it("a Codex launch with a folder that can't fit refuses with the guide-step copy, and still fires nothing", async () => {
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [{ absolute_path: veryLongPath, hostname: "nicks-mac" }],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true, agent: "codex" });
+      });
+
+      expect(document.querySelectorAll("iframe")).toHaveLength(0);
       expect(toastError).toHaveBeenCalledWith(GUIDE_LAUNCH_REFUSAL_MESSAGE);
     });
 
@@ -2646,12 +2670,15 @@ describe("useTerminalSession", () => {
       const prompt = new URL(src).searchParams.get("prompt") ?? "";
       expect(prompt).toContain("mkdir -p");
       expect(prompt).toContain("record_project_path");
-      // Task b563f4da: the agent-guide step now rides too, so at this worst
-      // shape the work step rides in its COMPACT form — whole, with the
-      // idea id and the ask-first rule.
-      expect(prompt).toContain(buildGuideBootstrapStep("claude"));
-      expect(prompt).toContain("Find work, but ASK first: get_board (idea_id idea-1)");
-      expect(prompt.trimEnd().endsWith("before starting it.")).toBe(true);
+      // Card 5e654dd1 (stage 4): a Claude launch no longer carries the
+      // agent-guide step, so there is no "read the rule book" line in the
+      // prompt, so at this worst shape the FULL work step now fits (it used to
+      // fall back to the compact form) — whole, with the idea id and the
+      // ask-first rule.
+      expect(prompt).not.toContain(buildGuideBootstrapStep("claude"));
+      expect(prompt).not.toContain("checkout root");
+      expect(prompt).toContain("Find work, but ASK first: call get_board (idea_id idea-1), NOT get_my_tasks");
+      expect(prompt.trimEnd().endsWith("Comment as you go.")).toBe(true);
     });
 
     // Nick, 3 Sep 2026 (dock counterpart of the launch button's fresh read):
@@ -2902,10 +2929,11 @@ describe("useTerminalSession", () => {
       return promptOfLaunch();
     }
 
-    it("a dock/chooser Claude launch reads CLAUDE.md natively (AGENTS.md as the fallback source)", async () => {
+    it("a dock/chooser Claude launch carries no guide step (Claude Code loads CLAUDE.md itself)", async () => {
       const prompt = await hookLaunch();
-      expect(prompt).toContain(buildGuideBootstrapStep("claude"));
+      expect(prompt).not.toContain(buildGuideBootstrapStep("claude"));
       expect(prompt).not.toContain(buildGuideBootstrapStep("codex"));
+      expect(prompt).not.toContain("checkout root");
       expect(prompt).toContain("claude mcp add -s local");
     });
 
@@ -2949,7 +2977,8 @@ describe("useTerminalSession", () => {
           await result.current.actions.connect({ autoLaunch: true });
         });
         expect(promptOfLaunch()).toBe(hookPrompt);
-        expect(hookPrompt).toContain(buildGuideBootstrapStep(agent));
+        if (agent === "codex") expect(hookPrompt).toContain(buildGuideBootstrapStep("codex"));
+        else expect(hookPrompt).not.toContain("checkout root");
       },
     );
 

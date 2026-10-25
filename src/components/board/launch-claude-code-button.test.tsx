@@ -305,20 +305,27 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     location.restore();
   });
 
-  // Task b563f4da: fresh browser launches carry the agent-guide step, matched
-  // to the chosen agent; the terminal-window launch (claude-cli://) doesn't.
+  // Task b563f4da: fresh Codex browser launches carry the Codex guide step.
+  // Card 5e654dd1 (stage 4): Claude browser launches do not — Claude Code loads
+  // CLAUDE.md itself. The terminal-window launch (claude-cli://) never did.
   it.each([
     { name: /Launch in browser terminal/i, agent: "claude" as const },
     { name: /Launch Codex in browser terminal/i, agent: "codex" as const },
-  ])("the $agent browser payload carries that agent's guide step, with the task id", async ({ name, agent }) => {
+  ])("the $agent browser payload carries the task id", async ({ name, agent }) => {
     renderMenuItem({ taskId: "task-abc-789" });
     fireEvent.click(screen.getByRole("menuitem", { name }));
 
     await waitFor(() => expect(mockRequestBrowserLaunch).toHaveBeenCalledTimes(1));
     const payload = mockRequestBrowserLaunch.mock.calls[0][0] as { essentials: CompactPromptEssentials };
-    expect(payload.essentials.guideStep).toBe(buildGuideBootstrapStep(agent));
-    expect(payload.essentials.headSteps).toContain(buildGuideBootstrapStep(agent));
-    expect(payload.essentials.packed?.guideStep).toBe(buildGuideBootstrapStep(agent));
+    if (agent === "codex") {
+      expect(payload.essentials.guideStep).toBe(buildGuideBootstrapStep("codex"));
+      expect(payload.essentials.headSteps).toContain(buildGuideBootstrapStep("codex"));
+      expect(payload.essentials.packed?.guideStep).toBe(buildGuideBootstrapStep("codex"));
+    } else {
+      expect(payload.essentials.guideStep).toBeUndefined();
+      expect(payload.essentials.headSteps).not.toContain(buildGuideBootstrapStep("claude"));
+      expect(payload.essentials.packed).toBeUndefined();
+    }
     expect(payload.essentials.work).toContain("task-abc-789");
   });
 
