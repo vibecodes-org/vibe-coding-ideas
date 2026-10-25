@@ -94,7 +94,7 @@ describe("AdminPlatformDashboard (agent-aware, Codex model-tier task FR-7)", () 
     expect(screen.getByText(/Save enables when you change a value/)).toBeInTheDocument();
     // The resolution line names both agents' seeded model.
     expect(
-      screen.getByText(/Frontier → Opus \(high\) on Claude · gpt-6-astra \(high\) on Codex/)
+      screen.getByText(/Frontier → Opus \(medium\) on Claude · gpt-6-astra \(high\) on Codex/)
     ).toBeInTheDocument();
   });
 

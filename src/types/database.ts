@@ -8,6 +8,7 @@ export interface WorkflowTemplateStep {
   deliverables?: string[];
   /** Model tier: 'frontier' | 'standard' | 'cheap'. Absent = Auto. Steps with a tier run on the tier's mapped model (mcp-server/src/tools/workflows.ts). */
   model_tier?: string;
+  effort?: string;
 }
 
 /** Codex model-tier task (FR-2): `users.model_tier_map`'s stored shape,
@@ -960,6 +961,7 @@ export type Database = {
           expected_deliverables: string[];
           match_tier: string | null;
           model_tier: string | null;
+          effort_override: string | null;
           executed_model: string | null;
           /** Migration 00171 (Codex model-tier task, FR-8). Self-reported
            *  reasoning-effort level ('minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'unknown')
@@ -999,6 +1001,7 @@ export type Database = {
           expected_deliverables?: string[];
           match_tier?: string | null;
           model_tier?: string | null;
+          effort_override?: string | null;
           executed_model?: string | null;
           reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;
@@ -1033,6 +1036,7 @@ export type Database = {
           expected_deliverables?: string[];
           match_tier?: string | null;
           model_tier?: string | null;
+          effort_override?: string | null;
           executed_model?: string | null;
           reasoning_effort_used?: string | null;
           tier_honored?: boolean | null;

@@ -39,7 +39,7 @@ vi.mock("@/lib/workflow-helpers", () => ({
   checkAndCompleteRun: vi.fn().mockResolvedValue(false),
 }));
 
-import { completeWorkflowStep, failWorkflowStep, removeWorkflow } from "./workflow";
+import { completeWorkflowStep, failWorkflowStep, removeWorkflow, updateWorkflowStep } from "./workflow";
 
 describe("completeWorkflowStep — manual UI submission", () => {
   beforeEach(() => {
@@ -160,5 +160,36 @@ describe("removeWorkflow — removes every run on the card", () => {
 
     await expect(removeWorkflow("run-x")).rejects.toThrow("Workflow not found");
     expect(deleteFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateWorkflowStep - effort needs a tier", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects an effort on a step whose tier is Auto", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: { model_tier: null }, error: null });
+    await expect(updateWorkflowStep("s1", { effort: "high" })).rejects.toThrow(/needs a model tier/);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects clearing the tier and setting an effort in one call", async () => {
+    await expect(updateWorkflowStep("s1", { model_tier: null, effort: "high" })).rejects.toThrow(/needs a model tier/);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("accepts an effort when the step already has a tier", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { model_tier: "frontier" }, error: null })
+      .mockResolvedValueOnce({ data: { id: "s1" }, error: null });
+    await updateWorkflowStep("s1", { effort: "high" });
+    expect(mockUpdate).toHaveBeenCalledWith({ effort_override: "high" });
+  });
+
+  it("accepts a tier and effort together without a lookup", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s1" }, error: null });
+    await updateWorkflowStep("s1", { model_tier: "frontier", effort: "high" });
+    expect(mockUpdate).toHaveBeenCalledWith({ model_tier: "frontier", effort_override: "high" });
   });
 });

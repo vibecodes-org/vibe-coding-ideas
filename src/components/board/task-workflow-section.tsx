@@ -212,6 +212,7 @@ function WorkflowStepRow({
 
       <ModelTierBadge
         tier={step.model_tier}
+        effort={step.effort_override}
         executedModel={step.executed_model}
         tierHonored={step.tier_honored}
       />

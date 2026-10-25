@@ -7,6 +7,7 @@ import {
   SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
   REASONING_EFFORT_LEVELS,
   resolveModelTier,
+  isStepEffort,
   type ModelTierAgentResolution,
   type AgentAwarePlatformModelDefaults,
   type AgentKind,
@@ -81,7 +82,7 @@ async function touchBoardTask(ctx: McpContext, taskId: string) {
 
 // --- Shared step schema used by template tools ---
 
-const templateStepSchema = z.object({
+const templateStepObject = z.object({
   title: z.string().min(1).max(200).describe("Step title"),
   role: z.string().min(1).max(100).describe("Agent role that should execute this step"),
   description: z.string().max(5000).optional().describe("Step description"),
@@ -89,7 +90,14 @@ const templateStepSchema = z.object({
   deliverables: z.array(z.string().max(100)).max(10).optional()
     .describe("Expected deliverables this step should produce (e.g. 'HTML mockups', 'requirements doc')"),
   model_tier: z.enum(["frontier", "standard", "cheap"]).optional()
-    .describe("Model tier (frontier | standard | cheap). Steps with a tier run on the tier's mapped model (defaults: frontier→fable, standard→sonnet, cheap→haiku). Omit for Auto — the orchestrator picks."),
+    .describe("Model tier (frontier | standard | cheap). Steps with a tier run on the model the user's Models setting maps that tier to. Omit for Auto — the orchestrator picks."),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional()
+    .describe("This step's own reasoning effort, overriding its tier's effort (needs model_tier). Omit to follow the tier's setting. Codex runs max as xhigh."),
+});
+
+// An effort needs a tier: Auto promises no model, so there is nothing to adjust.
+const templateStepSchema = templateStepObject.refine((st) => !st.effort || !!st.model_tier, {
+  message: "A step's effort needs a model_tier (Auto steps cannot set an effort)",
 });
 
 // P2b: platform-default Task-tool `model` parameter per tier, and the
@@ -190,10 +198,11 @@ export function modelTierClause(
   agent: AgentKind = "claude",
   userModelTierMap?: unknown,
   platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
-  unavailableModel?: string | null
+  unavailableModel?: string | null,
+  stepEffort?: string | null
 ): string {
   if (!tier) return "";
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults);
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults, stepEffort);
   if (!resolution) return "";
   const applied = applyModelAvailability(resolution, unavailableModel);
   const { directed: resolved, fallback } = applied;
@@ -251,14 +260,15 @@ export function resolveTierAdherence(
   modelUsed: string | undefined,
   effortUsed: string | undefined,
   userModelTierMap?: unknown,
-  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  stepEffort?: string | null
 ): TierAdherenceResult {
   const reportedEffort = effortUsed ?? null;
   if (modelUsed === undefined) return { executedModel: null, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
   if (modelUsed === "unknown") return { executedModel: "unknown", executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
   if (!tier) return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
 
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults);
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults, stepEffort);
   if (!resolution) return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
 
   const { resolved, fallback, effort } = resolution;
@@ -339,7 +349,7 @@ export const listWorkflowTemplatesSchema = z.object({
     .describe("true returns every template with all its steps in full (large). The default is a short summary per template."),
 });
 
-type TemplateStepLike = { title?: unknown; role?: unknown; model_tier?: unknown; requires_approval?: unknown };
+type TemplateStepLike = { title?: unknown; role?: unknown; model_tier?: unknown; effort?: unknown; requires_approval?: unknown };
 
 /** The short step list the template write tools hand back instead of the whole template. */
 function compactTemplateSteps(steps: unknown) {
@@ -347,6 +357,7 @@ function compactTemplateSteps(steps: unknown) {
     title: st.title ?? null,
     role: st.role ?? null,
     model_tier: st.model_tier ?? null,
+    ...(typeof st.effort === "string" ? { effort: st.effort } : {}),
     requires_approval: st.requires_approval === true,
   }));
 }
@@ -500,6 +511,7 @@ export async function resyncWorkflowTemplate(
     requires_approval: Boolean(s.requires_approval ?? false),
     deliverables: Array.isArray(s.deliverables) ? s.deliverables.map(String) : undefined,
     model_tier: typeof s.model_tier === "string" ? s.model_tier : undefined,
+    effort: typeof s.effort === "string" ? s.effort : undefined,
   }));
 
   // Propagate edits to pending steps
@@ -662,6 +674,7 @@ export async function applyWorkflowTemplate(
         human_check_required: Boolean(step.requires_approval ?? false),
         expected_deliverables: Array.isArray(step.deliverables) ? step.deliverables : [],
         model_tier: typeof step.model_tier === "string" ? step.model_tier : null,
+        effort_override: typeof step.effort === "string" ? step.effort : null,
         position: (i + 1) * 1000,
         step_order: i + 1,
       })
@@ -902,7 +915,7 @@ export async function claimNextStep(
     })
     .eq("id", step.id)
     .in("status", ["pending", "in_progress"])
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at, model_tier")
+    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at, model_tier, effort_override")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to claim step: ${updateError.message}`);
@@ -1191,9 +1204,9 @@ export async function claimNextStep(
     platformDefaults = resolvedPlatformDefaults;
     unavailableModel = await readLiveUnavailableModel(ctx, updated.idea_id);
   }
-  const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults, unavailableModel);
+  const modelTierInstruction = modelTierClause(updated.model_tier, claimingAgent, userModelTierMap, platformDefaults, unavailableModel, updated.effort_override);
   const codexBaseResolution = claimingAgent === "codex" && updated.model_tier
-    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults, updated.effort_override)
     : null;
   // Codex's execution object must carry the same switched values the
   // directive above named — never the tier's normal, unswitched pair.
@@ -1205,7 +1218,7 @@ export async function claimNextStep(
   // active the native-subagent note is left out and the step follows the
   // general path, which the MODEL SWITCH directive above points at the backup.
   const tierResolutionForSwitch = unavailableModel && updated.model_tier
-    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults)
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults, updated.effort_override)
     : null;
   const modelSwitched = tierResolutionForSwitch
     ? applyModelAvailability(tierResolutionForSwitch, unavailableModel).switched
@@ -1223,7 +1236,7 @@ export async function claimNextStep(
       ? (() => {
           const tier = updated.model_tier as SessionAgentTier | null;
           const resolution = tier
-            ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults)
+            ? resolveModelTier(tier, claimingAgent, userModelTierMap, platformDefaults, updated.effort_override)
             : null;
           return sessionAgentClaimHint({
             bot: {
@@ -1235,6 +1248,9 @@ export async function claimNextStep(
             tier,
             model: resolution?.resolved ?? null,
             effort: resolution?.effort ?? null,
+            // Names the "-<level>" definition; steps without a level keep the
+            // tier's name and tag exactly as before.
+            stepEffort: tier && isStepEffort(updated.effort_override) ? updated.effort_override : null,
             // Hashed into the tag, so a session whose skills have changed
             // since launch no longer matches this claim.
             skillsText: skillsSection.text,
@@ -1298,6 +1314,7 @@ export async function claimNextStep(
       step_order: updated.step_order,
       started_at: updated.started_at,
       model_tier: updated.model_tier,
+      ...(updated.effort_override ? { effort: updated.effort_override } : {}),
     },
     claim_token,
     work_token: workTokenPair?.token ?? null,
@@ -1398,7 +1415,7 @@ export async function completeStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier, output")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier, effort_override, output")
     .eq("id", params.step_id)
     .single();
 
@@ -1504,7 +1521,8 @@ export async function completeStep(
     params.model_used,
     params.reasoning_effort_used,
     userModelTierMap,
-    platformDefaults
+    platformDefaults,
+    step.effort_override
   );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
@@ -1523,7 +1541,7 @@ export async function completeStep(
   // backwards and mark the backup dead instead of the primary. completeStep
   // never calls applyModelAvailability for exactly this reason.
   const substitutionResolution = step.model_tier
-    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults)
+    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override)
     : null;
   const substitutedUnavailable = inferUnavailableFromSubstitution(
     step.model_tier,
@@ -1611,7 +1629,7 @@ export async function completeStep(
   // (plain 'comment' type, not 'failure') so the mismatch is visible in-product.
   // Honored/unknown completions post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -1808,7 +1826,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, output")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, effort_override, output")
     .eq("id", params.step_id)
     .single();
 
@@ -1886,7 +1904,8 @@ export async function failStep(
     params.model_used,
     params.reasoning_effort_used,
     userModelTierMap,
-    platformDefaults
+    platformDefaults,
+    step.effort_override
   );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
@@ -1943,7 +1962,7 @@ export async function failStep(
   // not the unswitched primary).
   let rescueResolution: { unavailableModel: string; backupModel: string } | null = null;
   if (canRescue) {
-    const baseResolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults);
+    const baseResolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults, step.effort_override);
     if (baseResolution) {
       const liveUnavailable = await readLiveUnavailableModel(ctx, step.idea_id);
       const applied = applyModelAvailability(baseResolution, liveUnavailable);
@@ -2123,7 +2142,7 @@ export async function failStep(
   // blocked — mirrors complete_step. Plain 'comment' type (not 'failure') so it
   // reads distinctly from the failure comment above. Honored/unknown post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults, step.effort_override);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -2295,6 +2314,8 @@ export const updateStepSchema = z.object({
     .describe("Expected deliverables (null to clear)"),
   model_tier: z.enum(["frontier", "standard", "cheap"]).nullish()
     .describe("Model tier (frontier | standard | cheap, or null to clear back to Auto). Steps with a tier run on the tier's mapped model. Applied to pending steps only."),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullish()
+    .describe("This step's own reasoning effort (low | medium | high | xhigh | max, or null for the tier's own). Needs a model tier. Applied to pending steps only."),
 });
 
 export async function updateStep(
@@ -2308,9 +2329,28 @@ export async function updateStep(
   if (params.human_check_required !== undefined) patch.human_check_required = params.human_check_required;
   if (params.expected_deliverables !== undefined) patch.expected_deliverables = params.expected_deliverables ?? [];
   if (params.model_tier !== undefined) patch.model_tier = params.model_tier ?? null;
+  // Auto promises no model, so it carries no level of its own.
+  if (params.model_tier === null) patch.effort_override = null;
+  if (params.effort !== undefined) patch.effort_override = params.effort ?? null;
 
   if (Object.keys(patch).length === 0) {
     throw new Error("No fields to update — provide at least one field to change");
+  }
+
+  // An effort needs a tier: Auto promises no model, so it has no level to adjust.
+  if (params.effort != null) {
+    let resultingTier: string | null | undefined = params.model_tier;
+    if (resultingTier === undefined) {
+      const { data: current } = await ctx.supabase
+        .from("task_workflow_steps")
+        .select("model_tier")
+        .eq("id", params.step_id)
+        .maybeSingle();
+      resultingTier = (current as { model_tier?: string | null } | null)?.model_tier ?? null;
+    }
+    if (resultingTier === null) {
+      throw new Error("An effort needs a model tier — set a tier on the step first (Auto has no effort)");
+    }
   }
 
   const { data: updated, error } = await ctx.supabase
@@ -2318,7 +2358,7 @@ export async function updateStep(
     .update(patch)
     .eq("id", params.step_id)
     .eq("status", "pending")
-    .select("id, task_id, run_id, title, description, agent_role, human_check_required, expected_deliverables, model_tier, status")
+    .select("id, task_id, run_id, title, description, agent_role, human_check_required, expected_deliverables, model_tier, effort_override, status")
     .maybeSingle();
 
   if (error) throw new Error(`Failed to update step: ${error.message}`);

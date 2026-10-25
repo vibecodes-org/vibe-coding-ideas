@@ -202,7 +202,7 @@ export interface AgentAwarePlatformModelDefaults {
 export const SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS: AgentAwarePlatformModelDefaults = {
   defaults: {
     frontier: {
-      claude: { model: SEED_PLATFORM_MODEL_DEFAULTS.defaults.frontier, effort: "high" },
+      claude: { model: SEED_PLATFORM_MODEL_DEFAULTS.defaults.frontier, effort: "medium" },
       codex: { model: "gpt-6-astra", effort: "high" },
     },
     standard: {
@@ -367,6 +367,26 @@ export function normalizeUserModelTierMap(raw: unknown): AgentAwareUserModelTier
 
 export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffort; fallback: string };
 
+/** Levels a single workflow step may carry (the Claude ladder). */
+export const STEP_EFFORT_LEVELS = CLAUDE_EFFORT_LEVELS;
+
+/** True when `value` is a level a workflow step may carry on its own. */
+export function isStepEffort(value: unknown): value is (typeof STEP_EFFORT_LEVELS)[number] {
+  return isEffortForAgent("claude", value);
+}
+
+/**
+ * A step's own level as one agent runs it. Claude takes it as is. Codex has
+ * no "max", so max runs as xhigh there. Returns null when the step has no
+ * valid level of its own (the tier's setting then applies).
+ */
+export function stepEffortForAgent(agent: AgentKind, stepEffort: unknown): ReasoningEffort | null {
+  if (!isStepEffort(stepEffort)) return null;
+  if (agent === "claude") return stepEffort;
+  const mapped: ReasoningEffort = stepEffort === "max" ? "xhigh" : stepEffort;
+  return isEffortForAgent("codex", mapped) ? mapped : null;
+}
+
 /**
  * Resolves a step's tier + agent to a concrete model + its fallback + its
  * required reasoning effort: the caller's model_tier_map override for this
@@ -374,7 +394,9 @@ export type ModelTierAgentResolution = { resolved: string; effort: ReasoningEffo
  * `platformDefaults`, defaulting to the agent-aware seed); fallback is
  * `platformDefaults.fallback[agent][resolved]`, falling back to the seed
  * fallback chain, and finally to the resolved model itself if neither knows
- * it (never a broken/undefined directive). Returns null for an unrecognised
+ * it (never a broken/undefined directive). `stepEffort` is the step's own
+ * level (workflow step "Effort" setting); when valid it wins over the tier's
+ * effort for either agent (Codex runs max as xhigh). Returns null for an unrecognised
  * tier (defensive — the enum already constrains stored values).
  *
  * `userModelTierMap` is the RAW `users.model_tier_map` value (either the
@@ -395,7 +417,8 @@ export function resolveModelTier(
   tier: "frontier" | "standard" | "cheap",
   agent: AgentKind = "claude",
   userModelTierMap?: unknown,
-  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS
+  platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
+  stepEffort?: string | null
 ): ModelTierAgentResolution | null {
   const tierDefaults = platformDefaults.defaults[tier] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults[tier];
   if (!tierDefaults) return null;
@@ -412,7 +435,8 @@ export function resolveModelTier(
         : true;
     if (validOverride) resolvedModel = overrideEntry.model;
   }
-  const resolvedEffort = overrideEntry?.effort ?? platformAgentDefault.effort;
+  const stepLevel = stepEffortForAgent(agent, stepEffort);
+  const resolvedEffort = stepLevel ?? overrideEntry?.effort ?? platformAgentDefault.effort;
 
   const fallbackMap = platformDefaults.fallback[agent] ?? SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.fallback[agent];
   const fallback =

@@ -9,11 +9,14 @@
 // tier) while a timed-out fetch loses every agent.
 
 import { buildRoleMatcher } from "../role-matching";
+import { isStepEffort } from "../platform-model-defaults";
 import type { SessionAgentTier } from "./session-agents";
 
 export type SessionAgentPair = {
   botId: string;
   tier: SessionAgentTier | null;
+  /** The step's own effort level (a tiered step only), else null: the tier's setting applies. */
+  effort: string | null;
   /** How many steps (waiting, or in templates) want this pair — packing order. */
   uses: number;
 };
@@ -29,17 +32,22 @@ export function normalizeStepTier(tier: unknown): SessionAgentTier | null {
   return typeof tier === "string" && TIERS.has(tier) ? (tier as SessionAgentTier) : null;
 }
 
-function pairKey(botId: string, tier: SessionAgentTier | null): string {
-  return `${botId}:${tier ?? "auto"}`;
+/** A step's own effort level; only a tiered step can carry one (Auto promises no model). */
+export function normalizeStepEffort(tier: SessionAgentTier | null, effort: unknown): string | null {
+  return tier && isStepEffort(effort) ? effort : null;
 }
 
-function tally(entries: { botId: string; tier: SessionAgentTier | null }[]): Map<string, SessionAgentPair> {
+function pairKey(botId: string, tier: SessionAgentTier | null, effort: string | null): string {
+  return `${botId}:${tier ?? "auto"}${effort ? `:${effort}` : ""}`;
+}
+
+function tally(entries: { botId: string; tier: SessionAgentTier | null; effort: string | null }[]): Map<string, SessionAgentPair> {
   const pairs = new Map<string, SessionAgentPair>();
-  for (const { botId, tier } of entries) {
-    const key = pairKey(botId, tier);
+  for (const { botId, tier, effort } of entries) {
+    const key = pairKey(botId, tier, effort);
     const existing = pairs.get(key);
     if (existing) existing.uses += 1;
-    else pairs.set(key, { botId, tier, uses: 1 });
+    else pairs.set(key, { botId, tier, effort, uses: 1 });
   }
   return pairs;
 }
@@ -48,7 +56,10 @@ function tally(entries: { botId: string; tier: SessionAgentTier | null }[]): Map
 function sortPairs(pairs: Iterable<SessionAgentPair>): SessionAgentPair[] {
   return [...pairs].sort(
     (a, b) =>
-      b.uses - a.uses || a.botId.localeCompare(b.botId) || (a.tier ?? "").localeCompare(b.tier ?? ""),
+      b.uses - a.uses ||
+      a.botId.localeCompare(b.botId) ||
+      (a.tier ?? "").localeCompare(b.tier ?? "") ||
+      (a.effort ?? "").localeCompare(b.effort ?? ""),
   );
 }
 
@@ -86,7 +97,7 @@ export function resolveRolesWithoutAi(
 
 export function selectSessionAgentPairs(input: {
   /** Claimable (pending / in_progress / failed) steps that have a bot. */
-  claimableSteps: { bot_id: string | null; model_tier: string | null }[];
+  claimableSteps: { bot_id: string | null; model_tier: string | null; effort_override?: string | null }[];
   /** `workflow_templates.steps` of every template on the board. */
   templates: { steps: unknown }[];
   pool: AllocatedAgent[];
@@ -94,22 +105,28 @@ export function selectSessionAgentPairs(input: {
 }): { waiting: SessionAgentPair[]; optional: SessionAgentPair[] } {
   const waitingMap = tally(
     input.claimableSteps
-      .filter((s): s is { bot_id: string; model_tier: string | null } => !!s.bot_id)
-      .map((s) => ({ botId: s.bot_id, tier: normalizeStepTier(s.model_tier) })),
+      .filter((s): s is { bot_id: string; model_tier: string | null; effort_override?: string | null } => !!s.bot_id)
+      .map((s) => {
+        const tier = normalizeStepTier(s.model_tier);
+        return { botId: s.bot_id, tier, effort: normalizeStepEffort(tier, s.effort_override) };
+      }),
   );
 
-  const templateSteps: { role: string; tier: SessionAgentTier | null }[] = [];
+  const templateSteps: { role: string; tier: SessionAgentTier | null; effort: string | null }[] = [];
   for (const template of input.templates) {
     if (!Array.isArray(template.steps)) continue;
     for (const step of template.steps as Record<string, unknown>[]) {
       const role = step && typeof step.role === "string" ? step.role.trim() : "";
-      if (role) templateSteps.push({ role, tier: normalizeStepTier(step.model_tier) });
+      if (role) {
+        const tier = normalizeStepTier(step.model_tier);
+        templateSteps.push({ role, tier, effort: normalizeStepEffort(tier, step.effort) });
+      }
     }
   }
   const resolved = resolveRolesWithoutAi([...new Set(templateSteps.map((s) => s.role))], input.pool, input.cachedMatches);
-  const optionalEntries: { botId: string; tier: SessionAgentTier | null }[] = [];
-  for (const { role, tier } of templateSteps) {
-    for (const botId of resolved.get(role) ?? []) optionalEntries.push({ botId, tier });
+  const optionalEntries: { botId: string; tier: SessionAgentTier | null; effort: string | null }[] = [];
+  for (const { role, tier, effort } of templateSteps) {
+    for (const botId of resolved.get(role) ?? []) optionalEntries.push({ botId, tier, effort });
   }
   const optionalMap = tally(optionalEntries);
   for (const key of waitingMap.keys()) optionalMap.delete(key);

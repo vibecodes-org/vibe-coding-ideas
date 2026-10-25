@@ -467,6 +467,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
       agent_role: s.agent_role ?? null,
       bot_id: s.bot_id ?? null,
       model_tier: s.model_tier ?? null,
+      ...(s.effort_override ? { effort: s.effort_override } : {}),
       human_check_required: s.human_check_required,
       step_order: s.step_order ?? null,
       output_chars: outputLength(s),

@@ -61,13 +61,30 @@ describe("loadStepSessionAgent", () => {
       bot: ATLAS,
       tier: "frontier",
       model: "opus",
-      effort: "high",
+      effort: "medium",
       skillsText: buildSkillsSection(ATLAS.id, [{ name: "testing", content: "Test first." }]).text,
     });
     expect(got!.name).toBe(hint.name);
     expect(got!.def.description.endsWith(hint.tag)).toBe(true);
-    expect(got!.def).toMatchObject({ model: "opus", effort: "high" });
+    expect(got!.def).toMatchObject({ model: "opus", effort: "medium" });
     expect(got!.def.prompt).toContain("### testing\nTest first.");
+  });
+
+  it("a step with its own effort gets the -<level> agent at that effort, matching the claim hint", async () => {
+    tables.task_workflow_steps = { data: { bot_id: ATLAS.id, model_tier: "frontier", effort_override: "high" } };
+    const got = await loadStepSessionAgent(makeSupabase(), { stepId: STEP, ideaId: IDEA, userId: USER });
+    const hint = sessionAgentClaimHint({
+      bot: ATLAS,
+      tier: "frontier",
+      model: "opus",
+      effort: "high",
+      stepEffort: "high",
+      skillsText: buildSkillsSection(ATLAS.id, [{ name: "testing", content: "Test first." }]).text,
+    });
+    expect(hint.name).toBe("vc-atlas-37e8ffb2-frontier-high");
+    expect(got!.name).toBe(hint.name);
+    expect(got!.def.description.endsWith(hint.tag)).toBe(true);
+    expect(got!.def).toMatchObject({ model: "opus", effort: "high" });
   });
 
   it("reads the step scoped to its idea", async () => {

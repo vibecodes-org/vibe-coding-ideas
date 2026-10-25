@@ -529,6 +529,7 @@ export async function propagateTemplateEdits(
               human_check_required: s.requires_approval ?? false,
               expected_deliverables: s.deliverables ?? [],
               model_tier: s.model_tier ?? null,
+              effort_override: s.effort ?? null,
             })),
           })
         : { data: false, error: null };
@@ -563,6 +564,7 @@ export async function propagateTemplateEdits(
         human_check_required: templateStep.requires_approval ?? false,
         expected_deliverables: templateStep.deliverables ?? [],
         model_tier: templateStep.model_tier ?? null,
+        effort_override: templateStep.effort ?? null,
       };
       // The stored agent was matched to the OLD role. Drop it so the rematch
       // picks one for the new role (a tied "exact" would otherwise keep it).

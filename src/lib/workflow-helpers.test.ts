@@ -698,8 +698,8 @@ describe("propagateTemplateEdits", () => {
     expect(supabase.rpc).toHaveBeenCalledWith("replace_unstarted_workflow_run", {
       p_run_id: "run-1",
       p_steps: [
-        { title: "Step A Updated", description: "New desc", agent_role: "Dev", human_check_required: true, expected_deliverables: ["doc.md"], model_tier: null },
-        { title: "Step B Updated", description: "QA desc", agent_role: "QA", human_check_required: false, expected_deliverables: [], model_tier: null },
+        { title: "Step A Updated", description: "New desc", agent_role: "Dev", human_check_required: true, expected_deliverables: ["doc.md"], model_tier: null, effort_override: null },
+        { title: "Step B Updated", description: "QA desc", agent_role: "QA", human_check_required: false, expected_deliverables: [], model_tier: null, effort_override: null },
       ],
     });
     expect(result.runsReplaced).toBe(1);
@@ -794,6 +794,45 @@ describe("propagateTemplateEdits", () => {
     expect(result.runsUpdated).toBe(1);
     expect(result.stepsUpdated).toBe(2);
     expect(result.affectedTaskIds).toEqual(["task-1"]);
+  });
+
+  it("copies a template step's own effort onto the waiting step (in place), and clears it when absent", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1, agent_role: "Dev" },
+          { id: "s2", status: "pending", step_order: 2, agent_role: "QA" },
+        ],
+      },
+    });
+    const steps = [
+      { title: "Review", role: "Dev", model_tier: "frontier", effort: "high" },
+      { title: "Test", role: "QA", model_tier: "standard" },
+    ];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", steps);
+
+    expect(supabase.updatePatches.map((u) => u.patch.effort_override)).toEqual(["high", null]);
+  });
+
+  it("passes the effort in the swap payload when a never-started run is replaced", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      stepsByRun: { "run-1": [{ id: "s1", status: "pending", step_order: 1 }] },
+      rpcResult: { data: true, error: null },
+    });
+    const steps = [
+      { title: "Review", role: "Dev", model_tier: "frontier", effort: "high" },
+      { title: "Test", role: "QA" },
+    ];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", steps);
+
+    const payload = supabase.rpc.mock.calls[0][1].p_steps;
+    expect(payload.map((p: { effort_override: unknown }) => p.effort_override)).toEqual(["high", null]);
   });
 
   it("clears the agent and match tier on a step whose role changed", async () => {

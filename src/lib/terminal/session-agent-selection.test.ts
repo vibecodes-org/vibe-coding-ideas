@@ -74,8 +74,8 @@ describe("selectSessionAgentPairs", () => {
       cachedMatches: null,
     });
     expect(waiting).toEqual([
-      { botId: ATLAS, tier: "standard", uses: 2 },
-      { botId: SENTINEL, tier: null, uses: 1 },
+      { botId: ATLAS, tier: "standard", effort: null, uses: 2 },
+      { botId: SENTINEL, tier: null, effort: null, uses: 1 },
     ]);
   });
 
@@ -89,8 +89,8 @@ describe("selectSessionAgentPairs", () => {
     expect(waiting).toHaveLength(1);
     expect(optional).toEqual(
       expect.arrayContaining([
-        { botId: PLANNER, tier: "frontier", uses: 1 },
-        { botId: SENTINEL, tier: null, uses: 1 },
+        { botId: PLANNER, tier: "frontier", effort: null, uses: 1 },
+        { botId: SENTINEL, tier: null, effort: null, uses: 1 },
       ]),
     );
   });
@@ -103,7 +103,7 @@ describe("selectSessionAgentPairs", () => {
       cachedMatches: null,
     });
     expect(optional.some((p) => p.botId === PLANNER)).toBe(false);
-    expect(optional[0]).toEqual({ botId: ATLAS, tier: "standard", uses: 2 });
+    expect(optional[0]).toEqual({ botId: ATLAS, tier: "standard", effort: null, uses: 2 });
   });
 
   it("copes with malformed template steps", () => {

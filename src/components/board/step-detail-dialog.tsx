@@ -348,6 +348,7 @@ export function StepDetailDialog({
   const [editRole, setEditRole] = useState("");
   const [editDeliverables, setEditDeliverables] = useState("");
   const [editModelTier, setEditModelTier] = useState<string | null>(null);
+  const [editEffort, setEditEffort] = useState<string | null>(null);
   const [editHumanCheck, setEditHumanCheck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [assignedAgent, setAssignedAgent] = useState<{ name: string; avatar_url: string | null; role: string | null } | null>(null);
@@ -495,6 +496,7 @@ export function StepDetailDialog({
     setEditRole(step.agent_role ?? "");
     setEditDeliverables((step.expected_deliverables ?? []).join(", "));
     setEditModelTier(step.model_tier ?? null);
+    setEditEffort(step.model_tier ? (step.effort_override ?? null) : null);
     setEditHumanCheck(step.human_check_required);
     setIsEditing(true);
   }
@@ -511,6 +513,7 @@ export function StepDetailDialog({
         description: editDescription || null,
         agent_role: editRole || null,
         model_tier: editModelTier,
+        effort: editModelTier ? editEffort : null,
         human_check_required: editHumanCheck,
         expected_deliverables: deliverables,
       });
@@ -644,7 +647,7 @@ export function StepDetailDialog({
                     {step.agent_role}
                   </Badge>
                 )}
-                <ModelTierBadge tier={step.model_tier} />
+                <ModelTierBadge tier={step.model_tier} effort={step.effort_override} />
                 {step.bot_id && assignedAgent ? (
                   <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <Avatar className="h-4 w-4">
@@ -740,6 +743,8 @@ export function StepDetailDialog({
                 variant="full"
                 value={editModelTier}
                 onChange={setEditModelTier}
+                effort={editEffort}
+                onEffortChange={setEditEffort}
               />
               <div className="space-y-1.5">
                 <Label htmlFor="edit-deliverables" className="text-xs">Expected Deliverables</Label>

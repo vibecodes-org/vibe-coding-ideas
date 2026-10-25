@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { HelpLink } from "@/components/shared/help-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -119,7 +119,7 @@ function StepRow({
         <div className="truncate text-sm font-medium">{step.title}</div>
         <StepRunnerLine runner={runner} skillNames={skillNames} coverageKnown={coverageKnown} />
       </div>
-      <ModelTierBadge tier={step.model_tier} />
+      <ModelTierBadge tier={step.model_tier} effort={step.effort} />
       <span className="relative shrink-0">
         <Badge
           variant="outline"
@@ -142,16 +142,16 @@ function StepRow({
 
 interface StepEditorProps {
   steps: WorkflowTemplateStep[];
-  onChange: (steps: WorkflowTemplateStep[]) => void;
+  // Accepts a functional updater so several edits in one click compose.
+  onChange: Dispatch<SetStateAction<WorkflowTemplateStep[]>>;
   ideaId?: string;
   poolRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
   userRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
 }
 
-function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
+export function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
-    const next = steps.map((s, i) => (i === idx ? { ...s, ...patch } : s));
-    onChange(next);
+    onChange((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
 
   function removeStep(idx: number) {
@@ -263,7 +263,9 @@ function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEdito
             </div>
             <ModelTierSelect
               value={step.model_tier ?? null}
-              onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+              onChange={(v) => updateStep(idx, v === null ? { model_tier: undefined, effort: undefined } : { model_tier: v })}
+              effort={step.effort ?? null}
+              onEffortChange={(e) => updateStep(idx, { effort: e ?? undefined })}
             />
           </div>
 
