@@ -155,3 +155,26 @@ describe("board actions — auto-rule adjudication scheduling", () => {
     }
   });
 });
+
+describe("deleteBoardTask — failure logging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+  });
+
+  it("logs on the server and throws when the database delete fails", async () => {
+    const { logger } = await import("@/lib/logger");
+    // The second .eq() is the last call in the delete chain and is awaited.
+    mockDelete.mockReturnValue(chain);
+    mockEq.mockReturnValueOnce(chain).mockReturnValueOnce({
+      then: (resolve: (v: unknown) => void) =>
+        resolve({ error: { message: "boom", code: "XX000" } }),
+    } as never);
+
+    await expect(deleteBoardTask("task-1", "idea-1")).rejects.toThrow("boom");
+    expect(logger.error).toHaveBeenCalledWith(
+      "deleteBoardTask failed",
+      expect.objectContaining({ taskId: "task-1", ideaId: "idea-1", error: "boom" })
+    );
+  });
+});

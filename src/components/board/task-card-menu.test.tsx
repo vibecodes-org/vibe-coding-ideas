@@ -54,6 +54,11 @@ vi.mock("./board-launch-context", () => ({
 
 const archiveTask = vi.fn();
 const unarchiveTask = vi.fn();
+const deleteTaskOp = vi.fn();
+const captureException = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...a: unknown[]) => captureException(...a),
+}));
 const trustMove = vi.fn();
 const trustRemoval = vi.fn();
 const incrementPendingOps = vi.fn();
@@ -62,6 +67,7 @@ vi.mock("./board-context", () => ({
   useBoardOps: () => ({
     archiveTask: (...args: unknown[]) => archiveTask(...args),
     unarchiveTask: (...args: unknown[]) => unarchiveTask(...args),
+    deleteTask: (...args: unknown[]) => deleteTaskOp(...args),
     trustMove: (...args: unknown[]) => trustMove(...args),
     trustRemoval: (...args: unknown[]) => trustRemoval(...args),
     incrementPendingOps,
@@ -177,5 +183,31 @@ describe("TaskCardMenu — archive/unarchive", () => {
     // Rejected unarchive: stop trusting the flip entirely.
     expect(trustMove).toHaveBeenLastCalledWith("task-1", "col-1", null);
     expect(toastError).toHaveBeenCalledWith("Couldn't unarchive task");
+  });
+
+  it("on delete failure: rolls back, shows a short message (no raw error) and reports to Sentry", async () => {
+    const rollback = vi.fn();
+    deleteTaskOp.mockReturnValue(rollback);
+    const err = new Error("permission denied for table x");
+    deleteBoardTask.mockRejectedValue(err);
+
+    setup(makeTask());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete task/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(trustRemoval).toHaveBeenLastCalledWith("task-1", false);
+    expect(toastError).toHaveBeenCalledWith("Couldn't delete task. Try refreshing the page.");
+    expect(captureException).toHaveBeenCalledWith(
+      err,
+      expect.objectContaining({ tags: expect.objectContaining({ action: "deleteBoardTask" }) })
+    );
   });
 });

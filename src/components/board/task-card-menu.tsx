@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import * as Sentry from "@sentry/nextjs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,10 +149,16 @@ export function TaskCardMenu({
     ops.trustRemoval(task.id); // suppress a lagging-replica snapshot re-showing it
 
     deleteBoardTask(task.id, ideaId)
-      .catch(() => {
+      .catch((err: unknown) => {
         rollback();
         ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
-        toast.error("Couldn't delete task");
+        // Detail goes to Sentry (browser) and the server action's own log; the
+        // on-screen text stays short because production masks server errors.
+        Sentry.captureException(err, {
+          tags: { action: "deleteBoardTask" },
+          extra: { taskId: task.id, ideaId },
+        });
+        toast.error("Couldn't delete task. Try refreshing the page.");
       })
       .finally(() => {
         ops.decrementPendingOps();
