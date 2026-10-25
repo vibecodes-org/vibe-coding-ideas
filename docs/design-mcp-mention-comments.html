@@ -166,7 +166,7 @@ The board web client (task-comments-section.tsx ~L247) inserts <code>notificatio
 <div class="callout"><strong>Markdown / code spans — parse everywhere (do not strip)</strong>
 We deliberately do <strong>not</strong> exclude fenced blocks or inline code from parsing. Rationale: matching is exact-full-name against a small human roster, so a false positive requires an <code>@</code> plus a real teammate's exact full name literally inside code — negligible, and arguably still intent. Stripping markdown would add a parser dependency and a fresh class of boundary bugs (nested fences, unterminated backticks) for near-zero benefit. Keep it simple; revisit only if reviewers object (see open questions).</p></div>
 <ul>
-  <li><strong>Email-like strings</strong> (<code>ballathesenior@gmail.com</code>): the <code>@</code> is preceded by <code>r</code> (alnum) ⇒ ignored by 4.2. Never triggers.</li>
+  <li><strong>Email-like strings</strong> (<code>user@gmail.com</code>): the <code>@</code> is preceded by <code>r</code> (alnum) ⇒ ignored by 4.2. Never triggers.</li>
   <li><strong>Ambiguous roster</strong>: two members whose names normalise identically ⇒ that name resolves to <span class="enum">ambiguous</span>; neither is notified. (Explicit <code>mentioned_user_ids</code> is the disambiguation escape hatch.)</li>
   <li><strong>Bare <code>@</code></strong> or <code>@</code> followed by no roster match ⇒ token recorded as <span class="enum">unknown_name</span> only if it consumed a plausible name run; a lone <code>@</code> with no following word is silently ignored (no noise).</li>
 </ul>
@@ -178,7 +178,7 @@ We deliberately do <strong>not</strong> exclude fenced blocks or inline code fro
 <tr><td>1</td><td><code>Hey @Nick Ball can you look?</code></td><td><span class="pill ok">Nick Ball</span></td><td>Greedy longest: 2-word match beats bare "Nick".</td></tr>
 <tr><td>2</td><td><code>thanks @Nick, done</code></td><td><span class="pill ok">Nick</span></td><td>Comma is trailing punct; "Nick Ball" doesn't match ("," breaks word 2).</td></tr>
 <tr><td>3</td><td><code>ping (@Nick Ball) re: build</code></td><td><span class="pill ok">Nick Ball</span></td><td><code>(</code> is a valid boundary; <code>)</code> is trailing punct.</td></tr>
-<tr><td>4</td><td><code>mail me at ballathesenior@gmail.com</code></td><td><span class="pill">— none —</span></td><td><code>@</code> preceded by alnum ⇒ ignored (email guard).</td></tr>
+<tr><td>4</td><td><code>mail me at user@gmail.com</code></td><td><span class="pill">— none —</span></td><td><code>@</code> preceded by alnum ⇒ ignored (email guard).</td></tr>
 <tr><td>5</td><td><code>@Nicky started it</code></td><td><span class="pill warn">unknown_name</span></td><td>"Nicky" ≠ any roster name; no prefix/partial credit.</td></tr>
 <tr><td>6</td><td><code>cc @Ada Lovelace and @Nick</code></td><td><span class="pill ok">Ada Lovelace</span> <span class="pill ok">Nick</span></td><td>Two mentions; scan resumes after each match.</td></tr>
 <tr><td>7</td><td><code>see @José Díaz output</code></td><td><span class="pill ok">José Díaz</span></td><td>NFKC + casefold; diacritics preserved and matched.</td></tr>

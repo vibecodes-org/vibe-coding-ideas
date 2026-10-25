@@ -34,6 +34,11 @@ const SESSION = "3960fe51-6010-44e8-9e77-a3c5882afffd";
 const REAL_TOKEN = "x".repeat(283); // measured length of a real HMAC-signed token
 const AGENTS = ["claude", "codex"] as const;
 type Agent = (typeof AGENTS)[number];
+// Stage 4 of the token review (card 5e654dd1): only Codex launches carry the
+// guide step. Claude Code loads CLAUDE.md on its own, so telling it to read the
+// file again just cost an extra read on every launch. The guide-step sections
+// below therefore loop over this list; Claude has its own section at the end.
+const GUIDE_AGENTS = ["codex"] as const;
 
 // The design's "Compact guide block" copy, verbatim — the implementation
 // contract. If the wording ever changes, the design doc changes first.
@@ -116,14 +121,14 @@ function expectCompleteBootstrap(url: string, essentials: CompactPromptEssential
 
 type Shape = "known-folder" | "new-project" | "repo-no-folder" | "repo-known-folder";
 const SHAPES: Shape[] = ["known-folder", "new-project", "repo-no-folder", "repo-known-folder"];
-const REPO = "https://github.com/nicholasmball/personal-spending-and-financial-analysis";
+const REPO = "https://github.com/nicholasmball/household-budgeting-and-expense-planning";
 
 function shapeArgs(
   shape: Shape,
   agent: Agent,
   opts: { title: string; taskId?: string; folder?: string }
 ): { args: CompactBootstrapArgs; cwd: string | undefined } {
-  const folder = opts.folder ?? "/Users/nickball/projects/personal-spending-and-financial-analysis";
+  const folder = opts.folder ?? "/Users/devuser1/projects/household-budgeting-and-expense-planning";
   const base = {
     appUrl: APP_URL,
     ideaId: IDEA_ID,
@@ -235,7 +240,7 @@ describe("guideBootstrap is opt-in — every other launch is byte-identical to b
 });
 
 describe("guide step placement and surrounding safeguards", () => {
-  it.each(AGENTS)("%s: guide comes after the create-folder step, before board setup, record and work", (agent) => {
+  it.each(GUIDE_AGENTS)("%s: guide comes after the create-folder step, before board setup, record and work", (agent) => {
     const { args } = shapeArgs("new-project", agent, { title: "My First App", taskId: TASK_ID });
     const e = buildCompactPromptEssentials(args);
     const steps = e.headSteps ?? [];
@@ -250,7 +255,7 @@ describe("guide step placement and surrounding safeguards", () => {
     expect(head.indexOf(buildGuideBootstrapStep(agent))).toBeLessThan(head.indexOf("record_project_path"));
   });
 
-  it.each(AGENTS)("%s: a known-folder launch keeps its worktree 'stay put' echo, isolation flag and main-folder recording", (agent) => {
+  it.each(GUIDE_AGENTS)("%s: a known-folder launch keeps its worktree 'stay put' echo, isolation flag and main-folder recording", (agent) => {
     const { args } = shapeArgs("known-folder", agent, { title: "VibeCodes" });
     const e = buildCompactPromptEssentials(args);
     expect(e.isolate).toBe(true);
@@ -284,8 +289,8 @@ describe("guide step placement and surrounding safeguards", () => {
 
 describe("the packed form keeps every required instruction (semantic equivalence)", () => {
   it("title-free header, same task/board framing", () => {
-    const task = buildCompactPromptEssentials(shapeArgs("known-folder", "claude", { title: "Long Title", taskId: TASK_ID }).args);
-    const board = buildCompactPromptEssentials(shapeArgs("known-folder", "claude", { title: "Long Title" }).args);
+    const task = buildCompactPromptEssentials(shapeArgs("known-folder", "codex", { title: "Long Title", taskId: TASK_ID }).args);
+    const board = buildCompactPromptEssentials(shapeArgs("known-folder", "codex", { title: "Long Title" }).args);
     expect(task.packed?.header).toBe("Set up VibeCodes and work a board task.");
     expect(board.packed?.header).toBe("Set up VibeCodes and pick up board work.");
     // Guide, work steps and isolation are unchanged by packing.
@@ -296,7 +301,7 @@ describe("the packed form keeps every required instruction (semantic equivalence
   });
 
   it("create-new step: folder first, mkdir + cd, reuse if it exists, never home, git init/clone", () => {
-    const { args } = shapeArgs("new-project", "claude", { title: "My First App" });
+    const { args } = shapeArgs("new-project", "codex", { title: "My First App" });
     const p = "~/projects/my-first-app";
     const step = buildCompactPromptEssentials(args).packed?.headSteps?.[0] ?? "";
     expect(step).toContain("Project folder FIRST, even for planning/research");
@@ -316,26 +321,25 @@ describe("the packed form keeps every required instruction (semantic equivalence
     expect(step).toContain("report its launch settings");
   });
 
-  it("Claude's connect step is not rewritten; the record step only loses its em dash", () => {
+  it("Claude has no packed form: with no guide step there is nothing to pack, and its steps are unchanged", () => {
     const e = buildCompactPromptEssentials(shapeArgs("known-folder", "claude", { title: "X" }).args);
-    expect(e.packed?.headSteps?.[1]).toBe(e.headSteps?.[1]);
-    expect(e.packed?.headSteps?.[2]).toBe(
-      `Re-confirm the folder (never \`/\` or home; cd in first): call record_project_path (idea_id ${IDEA_ID}, machine \`hostname\`, \`pwd\`) so future launches reopen here.`
-    );
+    expect(e.packed).toBeUndefined();
+    expect(e.guideStep).toBeUndefined();
+    expect(e.headSteps).toHaveLength(2); // connect + record, as for a launch with no guide
   });
 });
 
 describe("the guide policy survives the real URL budget", () => {
   const TITLES = [
     "VibeCodes",
-    "Personal spending and financial analysis and tracking",
+    "Household budgeting and planning review and reporting",
     "A".repeat(80) + " past the header cap",
   ];
 
   // Every realistic fresh browser launch: both agents × task/board × every
   // folder situation × short/typical/maximum titles, at the largest real
   // overhead. None may be refused, and each carries the full bootstrap.
-  for (const agent of AGENTS) {
+  for (const agent of GUIDE_AGENTS) {
     for (const shape of SHAPES) {
       for (const taskId of [TASK_ID, undefined]) {
         it(`${agent} · ${shape} · ${taskId ? "task" : "board"}: fits with the complete bootstrap, folder kept`, () => {
@@ -364,10 +368,10 @@ describe("the guide policy survives the real URL budget", () => {
   // step) — the helper then never got a fresh control-link credential. The
   // raised browser cap keeps it, AND the full work step, in every one.
   it("keeps the helper token AND the full work step in every realistic shape (no token-drop fallback needed)", () => {
-    for (const agent of AGENTS) {
+    for (const agent of GUIDE_AGENTS) {
       for (const shape of SHAPES) {
         for (const taskId of [TASK_ID, undefined]) {
-          for (const title of ["Personal spending", "A".repeat(80) + " past the header cap"]) {
+          for (const title of ["Household budgets", "A".repeat(80) + " past the header cap"]) {
             const { args, cwd } = shapeArgs(shape, agent, { title, taskId });
             const essentials = buildCompactPromptEssentials(args);
             const label = `${agent}/${shape}/${taskId ? "task" : "board"}/title=${title.length}`;
@@ -386,7 +390,7 @@ describe("the guide policy survives the real URL budget", () => {
 
   it("the design's long-folder example — spaces and non-ASCII in the path — still launches whole", () => {
     const folder = "/Users/Alex/Projects/Customer portal – shared checkout";
-    for (const agent of AGENTS) {
+    for (const agent of GUIDE_AGENTS) {
       const { args, cwd } = shapeArgs("known-folder", agent, { title: "Customer portal", taskId: TASK_ID, folder });
       const essentials = buildCompactPromptEssentials(args);
       const result = fireLikeTheHook(essentials, cwd, agent);
@@ -399,7 +403,7 @@ describe("the guide policy survives the real URL budget", () => {
 
   it("a long Unicode title never costs any required content (the header is what gives way)", () => {
     const title = "Überprüfung der Kundenzufriedenheit 📊 — 顧客満足度の分析とレポート作成ツール".repeat(2);
-    for (const agent of AGENTS) {
+    for (const agent of GUIDE_AGENTS) {
       const { args, cwd } = shapeArgs("new-project", agent, { title });
       const essentials = buildCompactPromptEssentials(args);
       const result = fireLikeTheHook(essentials, cwd, agent);
@@ -411,10 +415,10 @@ describe("the guide policy survives the real URL budget", () => {
   it("a tight budget either fires the complete bootstrap or refuses — never a partial guide, never a missing folder", () => {
     let refused = 0;
     let fired = 0;
-    for (const agent of AGENTS) {
+    for (const agent of GUIDE_AGENTS) {
       for (const shape of SHAPES) {
         for (const taskId of [TASK_ID, undefined]) {
-          const { args, cwd } = shapeArgs(shape, agent, { title: "Personal spending", taskId });
+          const { args, cwd } = shapeArgs(shape, agent, { title: "Household budgets", taskId });
           const essentials = buildCompactPromptEssentials(args);
           for (let cap = 1200; cap <= MAX_LAUNCH_URL_LENGTH; cap += 37) {
             const result = boundedBrowserLink(essentials, cwd, agent, undefined, cap);
@@ -445,7 +449,7 @@ describe("the guide policy survives the real URL budget", () => {
   });
 
   it("a guide launch through the default 'degrade' policy refuses rather than trading setup steps for the folder", () => {
-    const { args, cwd } = shapeArgs("known-folder", "claude", { title: "X" });
+    const { args, cwd } = shapeArgs("known-folder", "codex", { title: "X" });
     const essentials = buildCompactPromptEssentials(args);
     const result = buildBoundedDeepLink({
       essentials,
@@ -453,7 +457,7 @@ describe("the guide policy survives the real URL budget", () => {
       cap: 900, // far too small for the whole setup
       promptKeyOverhead: "&prompt=".length,
       promptMeasure: formEncodedLength,
-      buildLink: browserLink("claude", undefined, false),
+      buildLink: browserLink("codex", undefined, false),
     });
     expect(result.ok).toBe(false);
   });
@@ -464,11 +468,11 @@ describe("the guide policy survives the real URL budget", () => {
 // one char less refuses, and every cap from there up fires the SAME complete
 // link (never a different, shorter, partial one).
 describe("the exact launch-cap boundary: cap-1 refuses, cap and cap+1 fire whole", () => {
-  for (const agent of AGENTS) {
+  for (const agent of GUIDE_AGENTS) {
     for (const shape of SHAPES) {
       for (const taskId of [TASK_ID, undefined]) {
         it(`${agent} · ${shape} · ${taskId ? "task" : "board"}`, () => {
-          const { args, cwd } = shapeArgs(shape, agent, { title: "Personal spending", taskId });
+          const { args, cwd } = shapeArgs(shape, agent, { title: "Household budgets", taskId });
           const essentials = buildCompactPromptEssentials(args);
           let minCap = -1;
           for (let cap = 900; cap <= MAX_LAUNCH_URL_LENGTH; cap++) {
@@ -491,4 +495,75 @@ describe("the exact launch-cap boundary: cap-1 refuses, cap and cap+1 fire whole
       }
     }
   }
+});
+
+// Stage 4 (card 5e654dd1): a Claude Code browser launch no longer carries the
+// guide step even when the caller asks for guideBootstrap (the callers still
+// pass true; the builder decides per agent). With no guide step the launch uses
+// the ordinary prompt-shortening ladder, folder kept.
+describe("Claude Code browser launches carry no guide step", () => {
+  it("guideBootstrap: true on a Claude launch is the same as leaving it off", () => {
+    for (const shape of SHAPES) {
+      for (const taskId of [TASK_ID, undefined]) {
+        const { args } = shapeArgs(shape, "claude", { title: "VibeCodes", taskId });
+        const on = buildCompactPromptEssentials(args);
+        const off = buildCompactPromptEssentials({ ...args, guideBootstrap: false });
+        expect(on, `${shape}/${taskId ? "task" : "board"}`).toEqual(off);
+        expect(on.guideStep).toBeUndefined();
+        expect(on.packed).toBeUndefined();
+        const { head, tail } = buildCompactBootstrapPromptParts(args);
+        expect(head + tail).not.toContain("checkout root");
+        expect(head + tail).not.toContain("read/follow");
+      }
+    }
+  });
+
+  it("Codex still carries its guide step byte for byte", () => {
+    const { args } = shapeArgs("known-folder", "codex", { title: "VibeCodes", taskId: TASK_ID });
+    const e = buildCompactPromptEssentials(args);
+    expect(e.guideStep).toBe(buildGuideBootstrapStep("codex"));
+    expect(e.headSteps).toContain(buildGuideBootstrapStep("codex"));
+  });
+
+  it("every realistic Claude browser launch fits, keeps the folder, and carries connect + record + a work step whole", () => {
+    for (const shape of SHAPES) {
+      for (const taskId of [TASK_ID, undefined]) {
+        for (const title of ["VibeCodes", "Household budgeting and planning review and reporting", "A".repeat(80) + " past the header cap"]) {
+          const { args, cwd } = shapeArgs(shape, "claude", { title, taskId });
+          const essentials = buildCompactPromptEssentials(args);
+          const label = `claude/${shape}/${taskId ? "task" : "board"}/title=${title.length}`;
+          const result = fireLikeTheHook(essentials, cwd, "claude");
+          expect(result.ok, label).toBe(true);
+          if (!result.ok) continue;
+          expect(result.url.length, label).toBeLessThanOrEqual(MAX_LAUNCH_URL_LENGTH);
+          expect(result.droppedCwd, label).toBe(false);
+          const parsed = parseLaunchDeepLink(result.url);
+          expect(parsed?.cwd, label).toBe(cwd);
+          const prompt = parsed?.prompt ?? "";
+          expect(prompt, label).not.toContain("checkout root");
+          for (const step of essentials.headSteps ?? []) expect(prompt, `${label}: head step`).toContain(step);
+          expect(
+            prompt.includes(essentials.work as string) || prompt.includes(essentials.workCompact as string),
+            `${label}: a whole work step`
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("a tight budget never drops the folder from a Claude launch: it fires with the folder or refuses", () => {
+    let fired = 0;
+    for (const shape of SHAPES) {
+      const { args, cwd } = shapeArgs(shape, "claude", { title: "Household budgets", taskId: TASK_ID });
+      const essentials = buildCompactPromptEssentials(args);
+      for (let cap = 1200; cap <= MAX_LAUNCH_URL_LENGTH; cap += 37) {
+        const result = boundedBrowserLink(essentials, cwd, "claude", undefined, cap);
+        if (!result.ok) continue;
+        fired++;
+        expect(result.url.length).toBeLessThanOrEqual(cap);
+        expect(parseLaunchDeepLink(result.url)?.cwd, `${shape}/cap=${cap}`).toBe(cwd);
+      }
+    }
+    expect(fired).toBeGreaterThan(0);
+  });
 });

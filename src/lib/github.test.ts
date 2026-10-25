@@ -42,7 +42,7 @@ describe("toRepoName", () => {
   });
 
   it("handles emoji and unicode by stripping", () => {
-    expect(toRepoName("Balla Bot 🤖")).toBe("balla-bot");
+    expect(toRepoName("Basil Bot 🤖")).toBe("basil-bot");
   });
 });
 
@@ -251,22 +251,22 @@ describe("createOwnRepo", () => {
       status: 201,
       body: {
         id: 1,
-        name: "ballabot",
-        full_name: "nick/ballabot",
-        html_url: "https://github.com/nick/ballabot",
+        name: "basilbot",
+        full_name: "nick/basilbot",
+        html_url: "https://github.com/nick/basilbot",
         private: true,
       },
     });
     const repo = await createOwnRepo("tok", {
-      name: "ballabot",
+      name: "basilbot",
       description: "Bot",
       isPrivate: true,
       autoInit: false,
     });
-    expect(repo.full_name).toBe("nick/ballabot");
+    expect(repo.full_name).toBe("nick/basilbot");
     const call = fetchMock.mock.calls[0]?.[1] as { body: string };
     const body = JSON.parse(call.body);
-    expect(body).toEqual({ name: "ballabot", description: "Bot", private: true, auto_init: false });
+    expect(body).toEqual({ name: "basilbot", description: "Bot", private: true, auto_init: false });
   });
 
   it("throws GithubApiError(422) on name conflict", async () => {

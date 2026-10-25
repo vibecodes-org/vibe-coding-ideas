@@ -997,9 +997,12 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
   /**
    * Task b563f4da (docs/browser-agent-guide-bootstrap-ux-design.html): add the
    * agent-guide bootstrap step — read the launched agent's NATIVE guide
-   * (CLAUDE.md for Claude Code, AGENTS.md for Codex), or create it from the
-   * other agent's guide when only that one exists. FRESH in-browser launches
-   * only (the launch button's "in the browser" payload and the terminal
+   * (AGENTS.md for Codex), or create it from the other agent's guide when only
+   * that one exists. CODEX LAUNCHES ONLY since card 5e654dd1 (stage 4): Claude
+   * Code loads CLAUDE.md itself at session start, so for `agent: "claude"` this
+   * flag is accepted and ignored (buildGuideBootstrapStep("claude") stays
+   * because the design-copy test pins it, but no launch uses it). FRESH
+   * in-browser launches only (the launch button's "in the browser" payload and the terminal
    * hook's own dock/chooser launches). The claude-cli:// terminal window and
    * the Codex Terminal.app launch leave it off (outside the design's scope),
    * and a resume never builds essentials at all. When on, the essentials
@@ -1246,7 +1249,11 @@ function buildCompactStepPieces({
     ? "Set up VibeCodes and work a board task."
     : "Set up VibeCodes and pick up board work.";
 
-  const guideStep = guideBootstrap ? buildGuideBootstrapStep(agent) : undefined;
+  // Only Codex gets the guide step. Claude Code loads CLAUDE.md by itself at
+  // session start, so the extra "read it" instruction only added a read of a
+  // file already in context (card 5e654dd1, stage 4). Claude launches use the
+  // ordinary prompt-shortening ladder.
+  const guideStep = guideBootstrap && agent === "codex" ? buildGuideBootstrapStep("codex") : undefined;
 
   return {
     header,

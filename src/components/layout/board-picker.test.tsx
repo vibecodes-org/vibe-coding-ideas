@@ -15,7 +15,7 @@ vi.mock("next/link", () => ({
 import { BoardPicker } from "./board-picker";
 
 const SAMPLE_BOARDS = [
-  { ideaId: "balla-bot", title: "Balla Bot board", lastActivity: "2026-05-06T12:00:00Z" },
+  { ideaId: "basil-bot", title: "Basil Bot board", lastActivity: "2026-05-06T12:00:00Z" },
   { ideaId: "vibecodes", title: "VibeCodes", lastActivity: "2026-05-05T12:00:00Z" },
   { ideaId: "padel", title: "Padel Game Organiser", lastActivity: "2026-05-01T12:00:00Z" },
 ];
@@ -37,7 +37,7 @@ describe("BoardPicker", () => {
   it("renders all boards in default state", () => {
     render(<BoardPicker boards={SAMPLE_BOARDS} currentIdeaId={null} onSelect={() => {}} />);
 
-    expect(screen.getByText("Balla Bot board")).toBeInTheDocument();
+    expect(screen.getByText("Basil Bot board")).toBeInTheDocument();
     expect(screen.getByText("VibeCodes")).toBeInTheDocument();
     expect(screen.getByText("Padel Game Organiser")).toBeInTheDocument();
   });
@@ -54,7 +54,7 @@ describe("BoardPicker", () => {
     const input = screen.getByPlaceholderText("Find a board…");
     fireEvent.change(input, { target: { value: "ba" } });
 
-    // "Balla Bot board" matches; "VibeCodes" doesn't contain "ba"; "Padel" doesn't either.
+    // "Basil Bot board" matches; "VibeCodes" doesn't contain "ba"; "Padel" doesn't either.
     expect(screen.getByText("Bot board", { exact: false })).toBeInTheDocument();
     expect(screen.queryByText("VibeCodes")).not.toBeInTheDocument();
     expect(screen.queryByText("Padel Game Organiser")).not.toBeInTheDocument();
@@ -118,7 +118,7 @@ describe("BoardPicker", () => {
 
     fireEvent.keyDown(screen.getByPlaceholderText("Find a board…"), { key: "Enter" });
 
-    expect(mockPush).toHaveBeenCalledWith("/ideas/balla-bot/board");
+    expect(mockPush).toHaveBeenCalledWith("/ideas/basil-bot/board");
   });
 
   it("'All boards…' footer link points to /dashboard", () => {
