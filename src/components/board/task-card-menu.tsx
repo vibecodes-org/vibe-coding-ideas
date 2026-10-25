@@ -13,7 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { logger } from "@/lib/logger";
+import * as Sentry from "@sentry/nextjs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -152,9 +152,13 @@ export function TaskCardMenu({
       .catch((err: unknown) => {
         rollback();
         ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.error("Failed to delete task", { taskId: task.id, ideaId, error: reason });
-        toast.error(`Couldn't delete task: ${reason}`);
+        // Detail goes to Sentry (browser) and the server action's own log; the
+        // on-screen text stays short because production masks server errors.
+        Sentry.captureException(err, {
+          tags: { action: "deleteBoardTask" },
+          extra: { taskId: task.id, ideaId },
+        });
+        toast.error("Couldn't delete task. Try refreshing the page.");
       })
       .finally(() => {
         ops.decrementPendingOps();

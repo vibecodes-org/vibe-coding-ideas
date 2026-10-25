@@ -354,7 +354,16 @@ export async function deleteBoardTask(taskId: string, ideaId: string) {
     .eq("id", taskId)
     .eq("idea_id", ideaId);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    logger.error("deleteBoardTask failed", {
+      taskId,
+      ideaId,
+      userId: user.id,
+      error: error.message,
+      code: error.code,
+    });
+    throw new Error(error.message);
+  }
 
   // No revalidatePath — Realtime subscription in BoardRealtime handles the
   // refresh for other users. The deleting user already removed the task

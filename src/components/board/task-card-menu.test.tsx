@@ -55,9 +55,9 @@ vi.mock("./board-launch-context", () => ({
 const archiveTask = vi.fn();
 const unarchiveTask = vi.fn();
 const deleteTaskOp = vi.fn();
-const loggerError = vi.fn();
-vi.mock("@/lib/logger", () => ({
-  logger: { error: (...a: unknown[]) => loggerError(...a), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+const captureException = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...a: unknown[]) => captureException(...a),
 }));
 const trustMove = vi.fn();
 const trustRemoval = vi.fn();
@@ -185,10 +185,11 @@ describe("TaskCardMenu — archive/unarchive", () => {
     expect(toastError).toHaveBeenCalledWith("Couldn't unarchive task");
   });
 
-  it("logs the real error and shows it when delete fails, and rolls back", async () => {
+  it("on delete failure: rolls back, shows a short message (no raw error) and reports to Sentry", async () => {
     const rollback = vi.fn();
     deleteTaskOp.mockReturnValue(rollback);
-    deleteBoardTask.mockRejectedValue(new Error("permission denied for table x"));
+    const err = new Error("permission denied for table x");
+    deleteBoardTask.mockRejectedValue(err);
 
     setup(makeTask());
 
@@ -202,12 +203,11 @@ describe("TaskCardMenu — archive/unarchive", () => {
     });
 
     expect(rollback).toHaveBeenCalledTimes(1);
-    expect(loggerError).toHaveBeenCalledWith(
-      "Failed to delete task",
-      expect.objectContaining({ taskId: "task-1", error: "permission denied for table x" })
-    );
-    expect(toastError).toHaveBeenCalledWith(
-      expect.stringContaining("permission denied for table x")
+    expect(trustRemoval).toHaveBeenLastCalledWith("task-1", false);
+    expect(toastError).toHaveBeenCalledWith("Couldn't delete task. Try refreshing the page.");
+    expect(captureException).toHaveBeenCalledWith(
+      err,
+      expect.objectContaining({ tags: expect.objectContaining({ action: "deleteBoardTask" }) })
     );
   });
 });
