@@ -1,0 +1,45 @@
+---
+paths:
+  - ".env*"
+  - "src/lib/**"
+  - "terminal/**"
+  - "vercel.json"
+  - "next.config.*"
+---
+
+# Area rules: environment variables (moved from CLAUDE.md)
+
+## Environment Variables
+
+```
+# App
+NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_APP_URL
+SUPABASE_SERVICE_ROLE_KEY, API_KEY_ENCRYPTION_KEY
+NOTIFICATION_WEBHOOK_SECRET
+
+# AI
+ANTHROPIC_API_KEY, ANTHROPIC_MODEL, PLATFORM_AI_DAILY_LIMIT (default 50)
+
+# Third-party
+NEXT_PUBLIC_SENTRY_DSN, SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT
+RESEND_API_KEY
+NEXT_PUBLIC_TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY
+NEXT_PUBLIC_POSTHOG_KEY
+
+# Logging
+LOG_LEVEL (default: warn prod, debug dev)
+
+# GitHub integration
+GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET
+
+# In-app terminal
+TERMINAL_SESSION_SECRET          # HMAC secret shared with the relay — never in code
+NEXT_PUBLIC_TERMINAL_ENABLED     # feature flag (removal tracked by card 139c633c)
+NEXT_PUBLIC_TERMINAL_RELAY_URL, NEXT_PUBLIC_TERMINAL_SESSION_CAP
+TERMINAL_SESSION_CAP, TERMINAL_MINT_RATE_LIMIT, TERMINAL_HELPER_VERSION
+TERMINAL_DAILY_BUDGET, TERMINAL_BUDGET_SOFT_PCT, TERMINAL_ASSUMED_REQUESTS_PER_SESSION
+STEP_USAGE_SHORT_COMMAND         # off by default; set to 1 only after helper 0.3.27 ships (the short step-cost command needs the saved script)
+
+# MCP (stdio mode)
+SUPABASE_URL, VIBECODES_BOT_ID, VIBECODES_BOT_USER_ID, VIBECODES_OWNER_ID
+```
