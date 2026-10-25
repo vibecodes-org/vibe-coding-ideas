@@ -57,3 +57,35 @@ describe("ImportPreviewTable ScrollArea height", () => {
     expect(scrollArea!.className).toContain("min-h-[200px]");
   });
 });
+
+describe("ImportPreviewTable shows every task", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders a row and checkbox for all 126 tasks, with no '... and N more' line", () => {
+    const { container, queryByText } = render(
+      <ImportPreviewTable
+        tasks={makeTasks(126)}
+        columns={[]}
+        columnMapping={{}}
+        defaultColumnId="col-1"
+        selectedIndices={new Set(Array.from({ length: 126 }, (_, i) => i))}
+        onSelectionChange={() => {}}
+      />
+    );
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(126);
+    expect(queryByText(/and \d+ more/)).toBeNull();
+    expect(container.textContent).toContain("Task 125");
+  });
+
+  it("renders 500 rows in a reasonable time", () => {
+    const start = performance.now();
+    const { container } = render(
+      <ImportPreviewTable tasks={makeTasks(500)} columns={[]} columnMapping={{}} defaultColumnId="c" />
+    );
+    const ms = performance.now() - start;
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(500);
+    expect(ms).toBeLessThan(3000);
+  });
+});

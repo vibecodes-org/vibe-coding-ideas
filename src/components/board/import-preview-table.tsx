@@ -119,9 +119,6 @@ export function ImportPreviewTable({
 
   if (tasks.length === 0 && !streaming) return null;
 
-  const displayed = tasks.slice(0, 100);
-  const hasMore = tasks.length > 100;
-
   return (
     <div className="space-y-3">
       {/* Stat chips */}
@@ -187,7 +184,7 @@ export function ImportPreviewTable({
 
       <ScrollArea
         className={
-          displayed.length > 8
+          tasks.length > 8
             ? "h-[50vh] min-h-[200px] rounded-md border"
             : "min-h-[200px] rounded-md border"
         }
@@ -205,7 +202,7 @@ export function ImportPreviewTable({
             </tr>
           </thead>
           <tbody>
-            {displayed.map((task, i) => {
+            {tasks.map((task, i) => {
               const isSelected = selectable ? selectedIndices.has(i) : true;
               const isNewest = streaming && i === tasks.length - 1;
               const col = resolveColumnName(task);
@@ -297,11 +294,6 @@ export function ImportPreviewTable({
             )}
           </tbody>
         </table>
-        {hasMore && (
-          <p className="px-2 py-1 text-center text-xs text-muted-foreground">
-            ... and {tasks.length - 100} more
-          </p>
-        )}
         <div ref={scrollEndRef} />
       </ScrollArea>
     </div>
