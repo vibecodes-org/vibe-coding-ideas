@@ -1,5 +1,7 @@
 // Server-side input validation for server actions
 
+import { isStepEffort, STEP_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
+
 export const MAX_TITLE_LENGTH = 200;
 export const MAX_DESCRIPTION_LENGTH = 50000;
 export const MAX_COMMENT_LENGTH = 5000;
@@ -246,6 +248,7 @@ type WorkflowTemplateStepInput = {
   requires_approval?: boolean;
   deliverables?: string[];
   model_tier?: string | null;
+  effort?: string | null;
 };
 
 type WorkflowTemplateStepOutput = {
@@ -255,6 +258,7 @@ type WorkflowTemplateStepOutput = {
   requires_approval?: boolean;
   deliverables?: string[];
   model_tier?: string;
+  effort?: string;
 };
 
 export function validateWorkflowTemplateSteps(
@@ -287,6 +291,21 @@ export function validateWorkflowTemplateSteps(
       model_tier = step.model_tier;
     }
 
+    // effort: the step's own level. Only valid on a step with a tier (Auto
+    // promises no model, so there is nothing to adjust).
+    let effort: string | undefined;
+    if (step.effort !== undefined && step.effort !== null) {
+      if (!isStepEffort(step.effort)) {
+        throw new ValidationError(
+          `Step ${i + 1}: invalid effort "${step.effort}" (expected ${STEP_EFFORT_LEVELS.join(", ")})`
+        );
+      }
+      if (model_tier === undefined) {
+        throw new ValidationError(`Step ${i + 1}: effort needs a model tier (Auto steps cannot set an effort)`);
+      }
+      effort = step.effort;
+    }
+
     return {
       title,
       description: step.description?.trim() || undefined,
@@ -294,6 +313,7 @@ export function validateWorkflowTemplateSteps(
       requires_approval: step.requires_approval ?? false,
       deliverables: step.deliverables ? validateDeliverables(step.deliverables) : undefined,
       ...(model_tier !== undefined ? { model_tier } : {}),
+      ...(effort !== undefined ? { effort } : {}),
     };
   });
 }

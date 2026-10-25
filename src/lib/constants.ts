@@ -206,10 +206,13 @@ export interface AgentResolvedEntry {
 export function tierResolutionLine(
   tier: string,
   claude: AgentResolvedEntry,
-  codex: AgentResolvedEntry
+  codex: AgentResolvedEntry,
+  stepEffort?: boolean
 ): string {
   const label = modelTierLabel(tier);
-  return `${label} → ${capitalizeModelName(claude.model)} (${claude.effort}) on Claude · ${codex.model} (${codex.effort}) on Codex`;
+  // When the step carries its own level, each agent's brackets say so.
+  const note = stepEffort ? ", set on this step" : "";
+  return `${label} → ${capitalizeModelName(claude.model)} (${claude.effort}${note}) on Claude · ${codex.model} (${codex.effort}${note}) on Codex`;
 }
 
 /**

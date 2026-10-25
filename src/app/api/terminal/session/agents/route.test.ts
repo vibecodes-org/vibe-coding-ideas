@@ -164,8 +164,8 @@ describe("POST /api/terminal/session/agents", () => {
       "vc-atlas-37e8ffb2-standard",
       "vc-lens-87e09eb1",
     ]);
-    // Seed platform defaults: frontier = opus/high, standard = sonnet/medium.
-    expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "opus", effort: "high" });
+    // Seed platform defaults: frontier = opus/medium, standard = sonnet/medium.
+    expect(agents["vc-atlas-37e8ffb2-frontier"]).toMatchObject({ model: "opus", effort: "medium" });
     expect(agents["vc-atlas-37e8ffb2-standard"]).toMatchObject({ model: "sonnet", effort: "medium" });
     expect(agents["vc-atlas-37e8ffb2-frontier"].prompt).toContain("### testing\nTest first.");
     expect(agents["vc-lens-87e09eb1"]).not.toHaveProperty("model");
@@ -221,7 +221,7 @@ describe("POST /api/terminal/session/agents", () => {
 
     it("includes the Planner with no waiting step, with the tag a claim hands out", async () => {
       const { agents } = await (await POST(req({ sid: SID, token: "bridge-tok" }))).json();
-      const hint = sessionAgentClaimHint({ bot: PLANNER, tier: "frontier", model: "opus", effort: "high" });
+      const hint = sessionAgentClaimHint({ bot: PLANNER, tier: "frontier", model: "opus", effort: "medium" });
       expect(agents[hint.name]).toBeDefined();
       expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
       expect(Object.keys(agents)).toHaveLength(4);

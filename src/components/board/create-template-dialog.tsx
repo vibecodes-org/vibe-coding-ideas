@@ -296,7 +296,9 @@ export function CreateTemplateDialog({
                   </div>
                   <ModelTierSelect
                     value={step.model_tier ?? null}
-                    onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+                    onChange={(v) => updateStep(idx, v === null ? { model_tier: undefined, effort: undefined } : { model_tier: v })}
+                    effort={step.effort ?? null}
+                    onEffortChange={(e) => updateStep(idx, { effort: e ?? undefined })}
                   />
                 </div>
 

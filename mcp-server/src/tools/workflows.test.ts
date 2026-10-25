@@ -26,6 +26,7 @@ import {
   failStepSchema,
   updateStep,
   updateStepSchema,
+  createWorkflowTemplateSchema,
   skipStep,
   applyWorkflowTemplate,
   modelTierClause,
@@ -1474,8 +1475,8 @@ describe("claimNextStep — persona embedding", () => {
         "auto/missing": "8a71456840d0baf752a8d0606f44520a3dafce4b802e9d6719e94dbe8d7eb0ef",
         "cheap/embedded": "27311d871224a2da45b2be29b8a64246811de8f66ca05f1cdd61495fe16b5072",
         "cheap/missing": "a646a28985dfade02a59b1dd7bb0e1dfa40243d0d7fc5285cc38cde0d7a610e3",
-        "frontier/embedded": "7ac008c6e592c1dec6e0b30b1c381bd747861bab9dfbfcf54e7e590f64582030",
-        "frontier/missing": "9c39d769a599f3bea934220417da2ebc376301334b62e77b3412b18e10838c20",
+        "frontier/embedded": "c2c98a0a3e22fb3df28740b0becdebc75273570981b5dcbd4622916d9484b39c",
+        "frontier/missing": "eb9f4ea3c3f5c9f0e4561c4c868cc2ff01145193c34883413adea2ad8030e58c",
         "standard/embedded": "486f9a09744087c472d90061ad16155726662451364015ad886ff9867b0850fb",
         "standard/missing": "58c038966bf90e6fbe3707a15046fac95b73ffc99ac873fc41f4437d7bb59bfe",
       }
@@ -1496,7 +1497,7 @@ describe("claimNextStep — persona embedding", () => {
         bot: { id: PERSONA_BOT_ID, name: "Atlas", system_prompt: PERSONA },
         tier: "frontier",
         model: "opus",
-        effort: "high",
+        effort: "medium",
         ideaId: IDEA_ID,
         stepId: step.id,
       });
@@ -1512,6 +1513,48 @@ describe("claimNextStep — persona embedding", () => {
       const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim;
       expect(result.native_subagent?.name.endsWith("-frontier")).toBe(false);
       expect(result.native_subagent?.tag).toContain(" auto auto]");
+    });
+
+    // Stage 5 of card 5e654dd1: a step's own effort level.
+    it("a step with its own effort names the -<level> subagent and directs that effort", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier", effort_override: "high" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim & {
+        step: { effort?: string };
+      };
+      const expected = sessionAgentClaimHint({
+        bot: { id: PERSONA_BOT_ID, name: "Atlas", system_prompt: PERSONA },
+        tier: "frontier",
+        model: "opus",
+        effort: "high",
+        stepEffort: "high",
+        ideaId: IDEA_ID,
+        stepId: step.id,
+      });
+      expect(expected.name.endsWith("-frontier-high")).toBe(true);
+      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+      expect(result.instruction).toContain('reasoning effort "high"');
+      expect(result.step.effort).toBe("high");
+    });
+
+    it("a step without its own effort keeps the tier's name, tag and effort, and shows no effort", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier", effort_override: null });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as NativeClaim & { step: Record<string, unknown> };
+      expect(result.native_subagent?.name.endsWith("-frontier")).toBe(true);
+      expect(result.native_subagent?.tag).toContain("opus medium]");
+      expect(result.step).not.toHaveProperty("effort");
+    });
+
+    it("a Codex claim of a max step runs it as xhigh", async () => {
+      const step = makeStepRow({ bot_id: PERSONA_BOT_ID, model_tier: "frontier", effort_override: "max" });
+      const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep: { ...step, status: "in_progress" }, systemPrompt: PERSONA });
+      const result = (await claimNextStep(ctx, { task_id: TASK_ID, agent: "codex" })) as {
+        execution: { reasoning_effort: string };
+        instruction: string;
+      };
+      expect(result.execution.reasoning_effort).toBe("xhigh");
+      expect(result.instruction).toContain('reasoning_effort: "xhigh"');
     });
 
     it("adds nothing when the bot has no persona", async () => {
@@ -2059,17 +2102,17 @@ describe("completeStep — tier adherence (P2c)", () => {
     completed_at: "2026-01-01T00:00:00Z",
   };
 
-  it("model_used = resolved model (seed: frontier -> opus/high), effort reported and matches -> executed_model+effort set, tier_honored=true, no comment", async () => {
+  it("model_used = resolved model (seed: frontier -> opus/medium), effort reported and matches -> executed_model+effort set, tier_honored=true, no comment", async () => {
     const { ctx, getUpdate, getComment } = ctxFor({
       stepData: { ...baseStep, model_tier: "frontier" },
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "high" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("opus");
-    expect(update.reasoning_effort_used).toBe("high");
+    expect(update.reasoning_effort_used).toBe("medium");
     expect(update.tier_honored).toBe(true);
     expect(getComment()).toBeNull();
   });
@@ -2080,7 +2123,7 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "fable", reasoning_effort_used: "high" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "fable", reasoning_effort_used: "medium" });
 
     const update = getUpdate();
     expect(update.executed_model).toBe("fable");
@@ -2218,8 +2261,8 @@ describe("completeStep — tier adherence (P2c)", () => {
 
     // Override maps frontier -> opus, so opus is now the *resolved* model (not the fallback).
     // The legacy flat override carries no effort, so the platform default's
-    // (seed) effort for frontier ("high") still applies.
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "high" });
+    // (seed) effort for frontier ("medium") still applies.
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium" });
 
     const update = getUpdate();
     expect(update.tier_honored).toBe(true);
@@ -4777,7 +4820,7 @@ describe("updateStep", () => {
     }) as unknown as McpContext["supabase"]["from"]);
 
     await updateStep(ctx, { step_id: STEP_ID, model_tier: null });
-    expect(capturedPatch).toEqual({ model_tier: null });
+    expect(capturedPatch).toEqual({ model_tier: null, effort_override: null });
   });
 
   it("rejects a model_tier edit when the step is not pending", async () => {
@@ -5736,7 +5779,7 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
 
 describe("resolveModelTier", () => {
   it("resolves each Claude tier to its platform default, effort, and single-hop fallback (seed: frontier -> opus)", () => {
-    expect(resolveModelTier("frontier")).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
+    expect(resolveModelTier("frontier")).toEqual({ resolved: "opus", effort: "medium", fallback: "fable" });
     expect(resolveModelTier("standard")).toEqual({ resolved: "sonnet", effort: "medium", fallback: "opus" });
     expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", effort: "low", fallback: "sonnet" });
   });
@@ -5749,7 +5792,7 @@ describe("resolveModelTier", () => {
 
   it("uses the caller's Claude override when the tier is present and valid", () => {
     expect(resolveModelTier("frontier", "claude", { frontier: { claude: { model: "opus" } } })).toEqual({
-      resolved: "opus", effort: "high", fallback: "fable",
+      resolved: "opus", effort: "medium", fallback: "fable",
     });
   });
 
@@ -5779,7 +5822,7 @@ describe("resolveModelTier", () => {
 
   it("accepts a legacy flat user-map string as a Claude-only override", () => {
     expect(resolveModelTier("frontier", "claude", { frontier: "opus" })).toEqual({
-      resolved: "opus", effort: "high", fallback: "fable",
+      resolved: "opus", effort: "medium", fallback: "fable",
     });
     // The legacy flat shape carries no Codex information — Codex still resolves to its own platform default.
     expect(resolveModelTier("frontier", "codex", { frontier: "opus" })).toEqual({
@@ -5788,8 +5831,8 @@ describe("resolveModelTier", () => {
   });
 
   it("treats a null/undefined map the same as no override", () => {
-    expect(resolveModelTier("frontier", "claude", null)).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
-    expect(resolveModelTier("frontier", "claude", undefined)).toEqual({ resolved: "opus", effort: "high", fallback: "fable" });
+    expect(resolveModelTier("frontier", "claude", null)).toEqual({ resolved: "opus", effort: "medium", fallback: "fable" });
+    expect(resolveModelTier("frontier", "claude", undefined)).toEqual({ resolved: "opus", effort: "medium", fallback: "fable" });
   });
 
   it("threads a live agent-aware platformDefaults argument through — overrides the seed default", () => {
@@ -5840,7 +5883,7 @@ describe("modelTierClause", () => {
 
   it("produces the exact directive string for a user-overridden Claude tier", () => {
     expect(modelTierClause("frontier", "claude", { frontier: { claude: { model: "opus" } } })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus" and reasoning effort "high". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user\'s current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don\'t edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus" and reasoning effort "medium". If "opus" is unavailable on this plan/session, use model: "fable" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user\'s current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don\'t edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.'
     );
   });
 
@@ -5990,10 +6033,10 @@ describe("resolveTierAdherence", () => {
     });
   });
 
-  it("tier set, model+effort = platform-resolved (seed: frontier -> opus/high) -> honored=true, not via fallback", () => {
-    expect(resolveTierAdherence("frontier", "claude", "opus", "high")).toEqual({
+  it("tier set, model+effort = platform-resolved (seed: frontier -> opus/medium) -> honored=true, not via fallback", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", "medium")).toEqual({
       executedModel: "opus",
-      executedEffort: "high",
+      executedEffort: "medium",
       tierHonored: true,
       viaFallback: false,
     });
@@ -6001,9 +6044,9 @@ describe("resolveTierAdherence", () => {
 
   it("tier set, model = the tier's allowed fallback, effort matches -> honored=true, viaFallback=true", () => {
     // frontier resolves to opus (effort high), whose fallback is fable.
-    expect(resolveTierAdherence("frontier", "claude", "fable", "high")).toEqual({
+    expect(resolveTierAdherence("frontier", "claude", "fable", "medium")).toEqual({
       executedModel: "fable",
-      executedEffort: "high",
+      executedEffort: "medium",
       tierHonored: true,
       viaFallback: true,
     });
@@ -6054,9 +6097,9 @@ describe("resolveTierAdherence", () => {
   });
 
   it("tier set, model_used = a user's overridden resolved model -> honored=true", () => {
-    expect(resolveTierAdherence("frontier", "claude", "opus", "high", { frontier: { claude: { model: "opus" } } })).toEqual({
+    expect(resolveTierAdherence("frontier", "claude", "opus", "medium", { frontier: { claude: { model: "opus" } } })).toEqual({
       executedModel: "opus",
-      executedEffort: "high",
+      executedEffort: "medium",
       tierHonored: true,
       viaFallback: false,
     });
@@ -6509,7 +6552,7 @@ describe("applyWorkflowTemplate — model_tier", () => {
       idea_id: IDEA_ID,
       usage_count: 0,
       steps: [
-        { title: "Implement", role: "Full Stack Developer", model_tier: "standard" },
+        { title: "Implement", role: "Full Stack Developer", model_tier: "standard", effort: "high" },
         { title: "UX", role: "UX Designer" }, // no tier → null
       ],
     };
@@ -6557,6 +6600,9 @@ describe("applyWorkflowTemplate — model_tier", () => {
     expect(insertedSteps).toHaveLength(2);
     expect(insertedSteps[0].model_tier).toBe("standard");
     expect(insertedSteps[1].model_tier).toBeNull();
+    // Stage 5 of card 5e654dd1: the step's own effort travels with it.
+    expect(insertedSteps[0].effort_override).toBe("high");
+    expect(insertedSteps[1].effort_override).toBeNull();
   });
 });
 
@@ -7209,5 +7255,73 @@ describe("removeWorkflow — removes every run on the card", () => {
     expect(captured.eqs).toContainEqual(["task_id", TASK_ID]);
     expect(captured.eqs).not.toContainEqual(["id", "run-live"]);
     expect(r.message).toContain("all runs");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Per-step effort (card 5e654dd1, stage 5)
+// ---------------------------------------------------------------------------
+
+describe("per-step effort", () => {
+  it("modelTierClause directs the step's own effort for Claude, and the tier's when there is none", () => {
+    expect(modelTierClause("frontier", "claude", null, undefined, null, "high")).toContain('reasoning effort "high"');
+    expect(modelTierClause("frontier", "claude", null, undefined, null, null)).toContain('reasoning effort "medium"');
+  });
+
+  it("modelTierClause gives Codex xhigh for max", () => {
+    expect(modelTierClause("frontier", "codex", null, undefined, null, "max")).toContain('reasoning_effort: "xhigh"');
+  });
+
+  it("tier adherence is judged against the step's own level", () => {
+    // Tier default is medium; the step asks for high.
+    const honored = resolveTierAdherence("frontier", "claude", "opus", "high", null, undefined, "high");
+    expect(honored.tierHonored).toBe(true);
+    const notHonored = resolveTierAdherence("frontier", "claude", "opus", "medium", null, undefined, "high");
+    expect(notHonored.tierHonored).toBe(false);
+    // Without a step level, medium is what the tier asks for.
+    expect(resolveTierAdherence("frontier", "claude", "opus", "medium").tierHonored).toBe(true);
+  });
+
+  it("update_step sets the level, clears it, and clears it when the tier goes back to Auto", async () => {
+    const patches: Record<string, unknown>[] = [];
+    const ctx = makeContext((() => {
+      const chain = createChain(null);
+      chain.chain.update = vi.fn((data: unknown) => {
+        patches.push(data as Record<string, unknown>);
+        return chain.chain;
+      });
+      chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: { id: STEP_ID, status: "pending" }, error: null }));
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await updateStep(ctx, { step_id: STEP_ID, effort: "high" });
+    await updateStep(ctx, { step_id: STEP_ID, effort: null });
+    await updateStep(ctx, { step_id: STEP_ID, model_tier: null });
+    expect(patches).toEqual([
+      { effort_override: "high" },
+      { effort_override: null },
+      { model_tier: null, effort_override: null },
+    ]);
+    expect(updateStepSchema.safeParse({ step_id: STEP_ID, effort: "turbo" }).success).toBe(false);
+  });
+
+  it("a template step may carry an effort only with a tier", () => {
+    const base = { name: "T", idea_id: IDEA_ID };
+    const ok = createWorkflowTemplateSchema.safeParse({
+      ...base,
+      steps: [{ title: "Review", role: "Code Reviewer", model_tier: "frontier", effort: "high" }],
+    });
+    expect(ok.success).toBe(true);
+    const noTier = createWorkflowTemplateSchema.safeParse({
+      ...base,
+      steps: [{ title: "Review", role: "Code Reviewer", effort: "high" }],
+    });
+    expect(noTier.success).toBe(false);
+    const bad = createWorkflowTemplateSchema.safeParse({
+      ...base,
+      steps: [{ title: "Review", role: "Code Reviewer", model_tier: "frontier", effort: "turbo" }],
+    });
+    expect(bad.success).toBe(false);
   });
 });

@@ -22,10 +22,28 @@ import {
   type ModelTierMap,
   type ModelTierValue,
 } from "@/lib/constants";
-import type { AgentAwarePlatformModelDefaults, AgentAwareUserModelTierMap, AgentTierEntry } from "@/lib/platform-model-defaults";
+import {
+  isStepEffort,
+  stepEffortForAgent,
+  type AgentAwarePlatformModelDefaults,
+  type AgentAwareUserModelTierMap,
+  type AgentTierEntry,
+} from "@/lib/platform-model-defaults";
+import { EFFORT_LABELS } from "@/lib/terminal/claude-effort";
 
 // Radix Select can't use "" as an item value, so Auto (null) uses this sentinel.
 const AUTO_VALUE = "__auto__";
+// Same for the effort control's "Tier's own" (null).
+const TIER_OWN_VALUE = "__tier__";
+
+/** Step effort levels, lowest to highest, with the one-line gloss under each (stage 5 mock). */
+const STEP_EFFORT_OPTIONS = [
+  { value: "low", gloss: "Quick, light checking" },
+  { value: "medium", gloss: "Everyday work with a clear scope" },
+  { value: "high", gloss: "Where checking matters most" },
+  { value: "xhigh", gloss: "Deeper thinking, more of your allowance" },
+  { value: "max", gloss: "Deepest. Codex runs this as X-High" },
+] as const;
 
 interface TierOption {
   value: string;
@@ -100,26 +118,58 @@ const AUTO_HELPER_TEXT = "Auto — orchestrator picks freely on either agent. No
  * first, then the live platform default, then seed). Reuses
  * tierResolutionLine (constants.ts) rather than inventing new copy logic.
  */
+/** Both agents' resolved model + effort for a tier, as the claim will resolve them. */
+function resolveTierEntries(
+  tier: ModelTierValue,
+  viewerMap: AgentAwareUserModelTierMap | undefined,
+  platformDefaults: AgentAwarePlatformModelDefaults,
+  stepEffort?: string | null
+): { claude: AgentTierEntry; codex: AgentTierEntry; tierClaude: AgentTierEntry; tierCodex: AgentTierEntry } {
+  const platformEntry = platformDefaults.defaults[tier];
+  const viewerEntry = viewerMap?.[tier];
+  const tierClaude: AgentTierEntry = {
+    model: viewerEntry?.claude?.model ?? platformEntry.claude.model,
+    effort: viewerEntry?.claude?.effort ?? platformEntry.claude.effort,
+  };
+  const tierCodex: AgentTierEntry = {
+    model: viewerEntry?.codex?.model ?? platformEntry.codex.model,
+    effort: viewerEntry?.codex?.effort ?? platformEntry.codex.effort,
+  };
+  return {
+    tierClaude,
+    tierCodex,
+    claude: { ...tierClaude, effort: stepEffortForAgent("claude", stepEffort) ?? tierClaude.effort },
+    codex: { ...tierCodex, effort: stepEffortForAgent("codex", stepEffort) ?? tierCodex.effort },
+  };
+}
+
 function buildTierHelperText(
+  tierValue: string | null,
+  viewerMap: AgentAwareUserModelTierMap | undefined,
+  platformDefaults: AgentAwarePlatformModelDefaults,
+  stepEffort?: string | null,
+  showEffort?: boolean
+): string {
+  if (tierValue === null) {
+    return showEffort ? `${AUTO_HELPER_TEXT} Pick a tier to set an effort.` : AUTO_HELPER_TEXT;
+  }
+
+  const tier = tierValue as ModelTierValue;
+  const { claude, codex } = resolveTierEntries(tier, viewerMap, platformDefaults, stepEffort);
+  const hasStepLevel = isStepEffort(stepEffort);
+
+  return `${tierResolutionLine(tier, claude, codex, hasStepLevel)}. Whichever agent claims this step runs it on that model. Live sessions pick up a tier change on their next step.`;
+}
+
+/** "Medium on Claude · High on Codex, from your Model Tiers setting" - the "Tier's own" gloss. */
+function tierOwnGloss(
   tierValue: string | null,
   viewerMap: AgentAwareUserModelTierMap | undefined,
   platformDefaults: AgentAwarePlatformModelDefaults
 ): string {
-  if (tierValue === null) return AUTO_HELPER_TEXT;
-
-  const tier = tierValue as ModelTierValue;
-  const platformEntry = platformDefaults.defaults[tier];
-  const viewerEntry = viewerMap?.[tier];
-  const claude: AgentTierEntry = {
-    model: viewerEntry?.claude?.model ?? platformEntry.claude.model,
-    effort: viewerEntry?.claude?.effort ?? platformEntry.claude.effort,
-  };
-  const codex: AgentTierEntry = {
-    model: viewerEntry?.codex?.model ?? platformEntry.codex.model,
-    effort: viewerEntry?.codex?.effort ?? platformEntry.codex.effort,
-  };
-
-  return `${tierResolutionLine(tier, claude, codex)}. Whichever agent claims this step runs it on that model. Live sessions pick up a tier change on their next step.`;
+  if (tierValue === null) return "Pick a tier first";
+  const { tierClaude, tierCodex } = resolveTierEntries(tierValue as ModelTierValue, viewerMap, platformDefaults);
+  return `${EFFORT_LABELS[tierClaude.effort]} on Claude · ${EFFORT_LABELS[tierCodex.effort]} on Codex, from your Model Tiers setting`;
 }
 
 export interface ModelTierSelectProps {
@@ -130,6 +180,13 @@ export interface ModelTierSelectProps {
   variant?: "compact" | "full";
   id?: string;
   className?: string;
+  /**
+   * The step's own effort level (null/undefined = "Tier's own"). The Effort
+   * dropdown renders only when `onEffortChange` is given, so mounts that
+   * don't carry a per-step level are unchanged.
+   */
+  effort?: string | null;
+  onEffortChange?: (effort: string | null) => void;
 }
 
 /**
@@ -146,6 +203,8 @@ export function ModelTierSelect({
   variant = "compact",
   id,
   className,
+  effort,
+  onEffortChange,
 }: ModelTierSelectProps) {
   const reactId = React.useId();
   const triggerId = id ?? `model-tier-${reactId}`;
@@ -158,12 +217,39 @@ export function ModelTierSelect({
     () => buildOptions(viewerMap, platformDefaults.defaults),
     [viewerMap, platformDefaults]
   );
+  const showEffort = !!onEffortChange;
+  const stepEffort = value && isStepEffort(effort) ? effort : null;
   const helperText = agentAwareLoading
     ? "Loading…"
-    : buildTierHelperText(value, viewerAgentAwareMap, agentAwarePlatformDefaults);
+    : buildTierHelperText(value, viewerAgentAwareMap, agentAwarePlatformDefaults, stepEffort, showEffort);
 
   const selectValue = value ?? AUTO_VALUE;
-  const handleChange = (v: string) => onChange(v === AUTO_VALUE ? null : v);
+  const handleChange = (v: string) => {
+    const next = v === AUTO_VALUE ? null : v;
+    onChange(next);
+    // Auto promises no model, so it carries no level of its own.
+    if (next === null && effort) onEffortChange?.(null);
+  };
+
+  const effortId = `${triggerId}-effort`;
+  const effortOptions: TierOption[] = [
+    {
+      value: TIER_OWN_VALUE,
+      label: <>Tier&apos;s own</>,
+      gloss: tierOwnGloss(value, viewerAgentAwareMap, agentAwarePlatformDefaults),
+    },
+    ...STEP_EFFORT_OPTIONS.map((o) => ({ value: o.value, label: EFFORT_LABELS[o.value], gloss: o.gloss })),
+  ];
+  const effortSelectValue = stepEffort ?? TIER_OWN_VALUE;
+  const effortDisplay = stepEffort ? EFFORT_LABELS[stepEffort] : <>Tier&apos;s own</>;
+  const effortListbox = (
+    <SelectContent aria-label="Effort" className="min-w-[16rem]">
+      {effortOptions.map((opt) => (
+        <TierItem key={opt.value} {...opt} />
+      ))}
+    </SelectContent>
+  );
+  const handleEffortChange = (v: string) => onEffortChange?.(v === TIER_OWN_VALUE ? null : v);
 
   const displayLabel =
     value === null || value === undefined ? (
@@ -208,6 +294,26 @@ export function ModelTierSelect({
           </SelectPrimitive.Trigger>
           {listbox}
         </SelectPrimitive.Root>
+        {showEffort && (
+          <div className="space-y-1.5 pt-1.5">
+            <Label htmlFor={effortId} className="text-xs">
+              Effort
+            </Label>
+            <SelectPrimitive.Root value={effortSelectValue} onValueChange={handleEffortChange} disabled={disabled || value === null}>
+              <SelectPrimitive.Trigger
+                id={effortId}
+                aria-describedby={helperId}
+                className={cn(triggerClass, "h-8 w-full px-3 text-sm")}
+              >
+                <SelectPrimitive.Value>{effortDisplay}</SelectPrimitive.Value>
+                <SelectPrimitive.Icon asChild>
+                  <ChevronDownIcon className="size-4 opacity-50" />
+                </SelectPrimitive.Icon>
+              </SelectPrimitive.Trigger>
+              {effortListbox}
+            </SelectPrimitive.Root>
+          </div>
+        )}
         <p id={helperId} className="text-[11px] text-muted-foreground" aria-busy={agentAwareLoading || undefined}>
           {helperText}
         </p>
@@ -234,7 +340,31 @@ export function ModelTierSelect({
         </SelectPrimitive.Trigger>
         {listbox}
       </SelectPrimitive.Root>
-      <span id={helperId} className="min-w-0 flex-1 text-[10px] text-muted-foreground" aria-busy={agentAwareLoading || undefined}>
+      {showEffort && (
+        <>
+          <Label htmlFor={effortId} className="text-[10px] text-muted-foreground whitespace-nowrap">
+            Effort
+          </Label>
+          <SelectPrimitive.Root value={effortSelectValue} onValueChange={handleEffortChange} disabled={disabled || value === null}>
+            <SelectPrimitive.Trigger
+              id={effortId}
+              aria-describedby={helperId}
+              className={cn(triggerClass, "h-7 w-[150px] px-2 text-xs")}
+            >
+              <SelectPrimitive.Value>{effortDisplay}</SelectPrimitive.Value>
+              <SelectPrimitive.Icon asChild>
+                <ChevronDownIcon className="size-3.5 opacity-50" />
+              </SelectPrimitive.Icon>
+            </SelectPrimitive.Trigger>
+            {effortListbox}
+          </SelectPrimitive.Root>
+        </>
+      )}
+      <span
+        id={helperId}
+        className={cn("min-w-0 text-[10px] text-muted-foreground", showEffort ? "basis-full" : "flex-1")}
+        aria-busy={agentAwareLoading || undefined}
+      >
         {helperText}
       </span>
     </div>
@@ -258,11 +388,14 @@ export function ModelTierBadge({
   tier,
   executedModel,
   tierHonored,
+  effort,
   className,
 }: {
   tier: string | null | undefined;
   executedModel?: string | null;
   tierHonored?: boolean | null;
+  /** The step's own effort level; shown as "Frontier · High" only when set. */
+  effort?: string | null;
   className?: string;
 }) {
   // Called unconditionally (before the early `!tier` return) per the Rules of
@@ -270,7 +403,8 @@ export function ModelTierBadge({
   const platformDefaults = usePlatformModelDefaults();
 
   if (!tier) return null;
-  const label = modelTierLabel(tier);
+  const tierName = modelTierLabel(tier);
+  const label = isStepEffort(effort) ? `${tierName} · ${EFFORT_LABELS[effort]}` : tierName;
   const dishonored = tierHonored === false;
   const executedLabel = capitalizeModelName(executedModel ?? "unknown");
 

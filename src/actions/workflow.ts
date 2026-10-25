@@ -9,6 +9,7 @@ import {
   MAX_WORKFLOW_ROLE_LENGTH,
 } from "@/lib/validation";
 import { MODEL_TIER_VALUES } from "@/lib/constants";
+import { isStepEffort, STEP_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
 
 // ─── Workflow Steps ───
 
@@ -68,6 +69,7 @@ export async function updateWorkflowStep(
     expected_deliverables?: string[];
     bot_id?: string | null;
     model_tier?: string | null;
+    effort?: string | null;
   }
 ) {
   const supabase = await createClient();
@@ -105,6 +107,14 @@ export async function updateWorkflowStep(
       throw new Error("Invalid model tier — expected frontier, standard, or cheap");
     }
     patch.model_tier = updates.model_tier;
+    // Auto promises no model, so it carries no level of its own.
+    if (updates.model_tier === null) patch.effort_override = null;
+  }
+  if (updates.effort !== undefined) {
+    if (updates.effort !== null && !isStepEffort(updates.effort)) {
+      throw new Error(`Invalid effort — expected ${STEP_EFFORT_LEVELS.join(", ")}`);
+    }
+    patch.effort_override = updates.effort;
   }
 
   const { data, error } = await supabase

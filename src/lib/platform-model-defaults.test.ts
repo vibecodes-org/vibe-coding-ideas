@@ -323,7 +323,7 @@ describe("normalizeToAgentAwarePlatformModelDefaults", () => {
       fallback: { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
     };
     const upgraded = normalizeToAgentAwarePlatformModelDefaults(legacy);
-    expect(upgraded.defaults.frontier.claude).toEqual({ model: "fable", effort: "high" });
+    expect(upgraded.defaults.frontier.claude).toEqual({ model: "fable", effort: "medium" });
     expect(upgraded.defaults.standard.claude).toEqual({ model: "sonnet", effort: "medium" });
     expect(upgraded.defaults.cheap.claude).toEqual({ model: "haiku", effort: "low" });
     expect(upgraded.defaults.frontier.codex).toEqual(SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS.defaults.frontier.codex);

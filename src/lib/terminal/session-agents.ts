@@ -43,9 +43,15 @@ export function personaHash(systemPrompt: string): string {
 /**
  * `vc-<name>-<bot id prefix>[-<tier>]`. The bot id prefix keeps two agents
  * with the same name (e.g. the two "Sentinel" seeds) apart; Auto steps (no
- * tier) get the untiered variant.
+ * tier) get the untiered variant. A step with its own effort level (card
+ * 5e654dd1, stage 5) is a separate definition, `…-<tier>-<level>`; steps
+ * without one keep the name above, unchanged.
  */
-export function sessionAgentName(bot: { id: string; name: string }, tier: SessionAgentTier | null): string {
+export function sessionAgentName(
+  bot: { id: string; name: string },
+  tier: SessionAgentTier | null,
+  stepEffort?: string | null,
+): string {
   const slug =
     bot.name
       .normalize("NFKD")
@@ -54,7 +60,8 @@ export function sessionAgentName(bot: { id: string; name: string }, tier: Sessio
       .replace(/^-+|-+$/g, "")
       .slice(0, 24) || "agent";
   const idPart = bot.id.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
-  return `vc-${slug}-${idPart}${tier ? `-${tier}` : ""}`;
+  const level = tier && stepEffort && /^[a-z]+$/.test(stepEffort) ? `-${stepEffort}` : "";
+  return `vc-${slug}-${idPart}${tier ? `-${tier}` : ""}${level}`;
 }
 
 /**
@@ -89,6 +96,8 @@ export type SessionAgentInput = {
   /** Resolved model for this tier, Claude's or Codex's (null on Auto steps — the subagent inherits). */
   model: string | null;
   effort: string | null;
+  /** The step's own effort level, when it has one (only changes the definition's name; `effort` above is what it runs at). */
+  stepEffort?: string | null;
   skills: { name: string; content: string }[];
 };
 
@@ -173,7 +182,7 @@ function build(
   const agents: Record<string, ClaudeCodeAgentDefinition> = {};
   for (const input of inputs) {
     if (!input.bot.system_prompt.trim()) continue;
-    agents[sessionAgentName(input.bot, input.tier)] = definitionFor(input, withSkillContent, autoCompactWindow);
+    agents[sessionAgentName(input.bot, input.tier, input.stepEffort)] = definitionFor(input, withSkillContent, autoCompactWindow);
   }
   return agents;
 }
@@ -236,6 +245,8 @@ export function sessionAgentClaimHint(input: {
   tier: SessionAgentTier | null;
   model: string | null;
   effort: string | null;
+  /** The step's own effort level, when it has one: names the `-<level>` definition. */
+  stepEffort?: string | null;
   /** The Skills section the claim sends (buildSkillsSection(...).text); "" for an agent without skills. */
   skillsText?: string;
   agent?: "claude" | "codex";
@@ -247,7 +258,7 @@ export function sessionAgentClaimHint(input: {
   ideaId?: string;
   stepId?: string;
 }): { name: string; tag: string; instruction: string } {
-  const name = sessionAgentName(input.bot, input.tier);
+  const name = sessionAgentName(input.bot, input.tier, input.stepEffort);
   const tag = sessionAgentTag(
     agentPersonaBody(input.bot.system_prompt, input.bot.tool_access),
     input.model,

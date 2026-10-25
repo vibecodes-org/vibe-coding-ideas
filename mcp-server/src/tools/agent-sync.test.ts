@@ -61,7 +61,7 @@ describe("sync_board_agents", () => {
   it("returns the claimed step's agent with the name and tag the claim hint names", async () => {
     const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
     if (res.status !== "ok") throw new Error("expected ok");
-    const hint = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
+    const hint = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "medium" });
     expect(res.agents[0].name).toBe(hint.name);
     expect(res.agents[0].tag).toBe(hint.tag);
     expect(res.agents[0].sha256).toMatch(/^[0-9a-f]{64}$/);

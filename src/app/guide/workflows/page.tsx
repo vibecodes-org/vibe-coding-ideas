@@ -81,6 +81,20 @@ export default function WorkflowsPage() {
               (optional) — describe what the step should produce, guiding
               agents on output format
             </li>
+            <li>
+              <strong className="text-foreground">Model tier</strong>{" "}
+              (optional) — Frontier, Standard or Cheap. The step runs on the
+              model your Model Tiers setting gives that tier; Auto leaves the
+              choice to the session
+            </li>
+            <li>
+              <strong className="text-foreground">Effort</strong> (optional,
+              needs a tier) — how hard the step thinks: Low, Medium, High,
+              X-High or Max. &quot;Tier&apos;s own&quot; (the default) follows
+              your Model Tiers setting, so only pick a level for a step that
+              needs to differ from its tier. Codex has no Max and runs it as
+              X-High
+            </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="mb-3 text-sm text-muted-foreground">

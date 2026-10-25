@@ -119,7 +119,7 @@ function StepRow({
         <div className="truncate text-sm font-medium">{step.title}</div>
         <StepRunnerLine runner={runner} skillNames={skillNames} coverageKnown={coverageKnown} />
       </div>
-      <ModelTierBadge tier={step.model_tier} />
+      <ModelTierBadge tier={step.model_tier} effort={step.effort} />
       <span className="relative shrink-0">
         <Badge
           variant="outline"
@@ -263,7 +263,9 @@ function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEdito
             </div>
             <ModelTierSelect
               value={step.model_tier ?? null}
-              onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+              onChange={(v) => updateStep(idx, v === null ? { model_tier: undefined, effort: undefined } : { model_tier: v })}
+              effort={step.effort ?? null}
+              onEffortChange={(e) => updateStep(idx, { effort: e ?? undefined })}
             />
           </div>
 

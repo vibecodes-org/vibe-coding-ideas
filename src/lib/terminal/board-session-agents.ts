@@ -14,6 +14,7 @@ import {
   type SessionAgentTier,
 } from "@/lib/terminal/session-agents";
 import {
+  normalizeStepEffort,
   selectSessionAgentPairs,
   type AllocatedAgent,
   type CachedRoleMatches,
@@ -36,11 +37,11 @@ const STEP_MAX_PAGES = 20;
  * (one real board has ~1,900), so a waiting agent could silently drop out.
  */
 async function fetchClaimableSteps(supabase: SupabaseClient<Database>, ideaId: string, logContext: Record<string, unknown>) {
-  const steps: { bot_id: string | null; model_tier: string | null }[] = [];
+  const steps: { bot_id: string | null; model_tier: string | null; effort_override: string | null }[] = [];
   for (let page = 0; page < STEP_MAX_PAGES; page++) {
     const { data, error } = await supabase
       .from("task_workflow_steps")
-      .select("bot_id, model_tier")
+      .select("bot_id, model_tier, effort_override")
       .eq("idea_id", ideaId)
       .in("status", [...CLAIMABLE_STATUSES])
       .not("bot_id", "is", null)
@@ -90,12 +91,12 @@ async function loadInputBuilder(
   const botsById = new Map((bots ?? []).map((b) => [b.id, b]));
   return (pairs) => {
     const inputs: SessionAgentInput[] = [];
-    for (const { botId, tier } of pairs) {
+    for (const { botId, tier, effort: stepEffort } of pairs) {
       const bot = botsById.get(botId);
       if (!bot?.system_prompt) continue;
       // Resolved exactly as claim_next_step resolves it, so the definition's
       // model/effort match the step's MANDATORY MODEL directive.
-      const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults) : null;
+      const resolution = tier ? resolveModelTier(tier, agent, owner?.model_tier_map ?? null, platformDefaults, stepEffort) : null;
       inputs.push({
         bot: {
           id: bot.id,
@@ -107,6 +108,7 @@ async function loadInputBuilder(
         tier,
         model: resolution?.resolved ?? null,
         effort: resolution?.effort ?? null,
+        stepEffort,
         skills: skillsByBot.get(botId) ?? [],
       });
     }
@@ -175,8 +177,8 @@ export async function loadBoardSessionAgents(
     ...(agent === "claude" ? { autoCompactWindow: BOARD_AGENT_AUTO_COMPACT_WINDOW } : {}),
   });
   const delivered = agents ? Object.keys(agents) : [];
-  const waitingDelivered = waitingInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;
-  const optionalDelivered = optionalInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier))).length;
+  const waitingDelivered = waitingInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier, i.stepEffort))).length;
+  const optionalDelivered = optionalInputs.filter((i) => delivered.includes(sessionAgentName(i.bot, i.tier, i.stepEffort))).length;
   logger.info("Terminal session agents built", {
     ...logContext,
     agent,
@@ -208,7 +210,7 @@ export async function loadStepSessionAgent(
   const logContext = { idea: ideaId };
   const { data: step } = await supabase
     .from("task_workflow_steps")
-    .select("bot_id, model_tier")
+    .select("bot_id, model_tier, effort_override")
     .eq("id", stepId)
     .eq("idea_id", ideaId)
     .maybeSingle();
@@ -216,10 +218,11 @@ export async function loadStepSessionAgent(
   const tier = (step.model_tier ?? null) as SessionAgentTier | null;
   const toInputs = await loadInputBuilder(supabase, { botIds: [step.bot_id], userId, agent: "claude", logContext });
   if (!toInputs) return null;
-  const inputs = toInputs([{ botId: step.bot_id, tier, uses: 1 }]);
+  const effort = normalizeStepEffort(tier, step.effort_override);
+  const inputs = toInputs([{ botId: step.bot_id, tier, effort, uses: 1 }]);
   if (inputs.length === 0) return null;
   const agents = buildSessionAgents(inputs);
-  const name = sessionAgentName(inputs[0].bot, tier);
+  const name = sessionAgentName(inputs[0].bot, tier, effort);
   const def = agents?.[name];
   return def ? { name, def } : null;
 }
@@ -255,17 +258,17 @@ export async function loadRunSessionAgents(
   const logContext = { idea: ideaId };
   const { data: claimed } = await supabase
     .from("task_workflow_steps")
-    .select("bot_id, model_tier, run_id")
+    .select("bot_id, model_tier, effort_override, run_id")
     .eq("id", stepId)
     .eq("idea_id", ideaId)
     .maybeSingle();
   if (!claimed?.bot_id) return null;
 
-  let others: { bot_id: string | null; model_tier: string | null }[] = [];
+  let others: { bot_id: string | null; model_tier: string | null; effort_override: string | null }[] = [];
   if (claimed.run_id) {
     const { data, error } = await supabase
       .from("task_workflow_steps")
-      .select("id, bot_id, model_tier, step_order")
+      .select("id, bot_id, model_tier, effort_override, step_order")
       .eq("idea_id", ideaId)
       .eq("run_id", claimed.run_id)
       .in("status", [...RUN_SYNC_STATUSES])
@@ -281,9 +284,11 @@ export async function loadRunSessionAgents(
     }
   }
 
-  const pairs = [claimed, ...others].flatMap((s) =>
-    s.bot_id ? [{ botId: s.bot_id, tier: (s.model_tier ?? null) as SessionAgentTier | null, uses: 1 }] : [],
-  );
+  const pairs: SessionAgentPair[] = [claimed, ...others].flatMap((s) => {
+    if (!s.bot_id) return [];
+    const tier = (s.model_tier ?? null) as SessionAgentTier | null;
+    return [{ botId: s.bot_id, tier, effort: normalizeStepEffort(tier, s.effort_override), uses: 1 }];
+  });
   const toInputs = await loadInputBuilder(supabase, {
     botIds: [...new Set(pairs.map((p) => p.botId))],
     userId,
@@ -302,7 +307,7 @@ export async function loadRunSessionAgents(
       if (index === 0) return null;
       continue;
     }
-    const name = sessionAgentName(input.bot, pair.tier);
+    const name = sessionAgentName(input.bot, pair.tier, pair.effort);
     if (seen.has(name)) continue;
     seen.add(name);
     // One agent per build, like a single claim, so the size packing of a
