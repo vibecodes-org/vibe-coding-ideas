@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,10 +149,12 @@ export function TaskCardMenu({
     ops.trustRemoval(task.id); // suppress a lagging-replica snapshot re-showing it
 
     deleteBoardTask(task.id, ideaId)
-      .catch(() => {
+      .catch((err: unknown) => {
         rollback();
         ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
-        toast.error("Couldn't delete task");
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.error("Failed to delete task", { taskId: task.id, ideaId, error: reason });
+        toast.error(`Couldn't delete task: ${reason}`);
       })
       .finally(() => {
         ops.decrementPendingOps();

@@ -54,6 +54,11 @@ vi.mock("./board-launch-context", () => ({
 
 const archiveTask = vi.fn();
 const unarchiveTask = vi.fn();
+const deleteTaskOp = vi.fn();
+const loggerError = vi.fn();
+vi.mock("@/lib/logger", () => ({
+  logger: { error: (...a: unknown[]) => loggerError(...a), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 const trustMove = vi.fn();
 const trustRemoval = vi.fn();
 const incrementPendingOps = vi.fn();
@@ -62,6 +67,7 @@ vi.mock("./board-context", () => ({
   useBoardOps: () => ({
     archiveTask: (...args: unknown[]) => archiveTask(...args),
     unarchiveTask: (...args: unknown[]) => unarchiveTask(...args),
+    deleteTask: (...args: unknown[]) => deleteTaskOp(...args),
     trustMove: (...args: unknown[]) => trustMove(...args),
     trustRemoval: (...args: unknown[]) => trustRemoval(...args),
     incrementPendingOps,
@@ -177,5 +183,31 @@ describe("TaskCardMenu — archive/unarchive", () => {
     // Rejected unarchive: stop trusting the flip entirely.
     expect(trustMove).toHaveBeenLastCalledWith("task-1", "col-1", null);
     expect(toastError).toHaveBeenCalledWith("Couldn't unarchive task");
+  });
+
+  it("logs the real error and shows it when delete fails, and rolls back", async () => {
+    const rollback = vi.fn();
+    deleteTaskOp.mockReturnValue(rollback);
+    deleteBoardTask.mockRejectedValue(new Error("permission denied for table x"));
+
+    setup(makeTask());
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /delete/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete task/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(loggerError).toHaveBeenCalledWith(
+      "Failed to delete task",
+      expect.objectContaining({ taskId: "task-1", error: "permission denied for table x" })
+    );
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("permission denied for table x")
+    );
   });
 });
