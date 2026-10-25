@@ -35,10 +35,8 @@ class ResizeObserverStub {
 (globalThis as any).ResizeObserver = ResizeObserverStub;
 Element.prototype.scrollIntoView = () => {};
 
-const seen: { steps: WorkflowTemplateStep[] } = { steps: [] };
 function Harness({ initial }: { initial: WorkflowTemplateStep[] }) {
   const [steps, setSteps] = useState(initial);
-  seen.steps = steps;
   return <StepEditor steps={steps} onChange={setSteps} />;
 }
 
@@ -50,7 +48,9 @@ describe("StepEditor tier + effort", () => {
     // The first combobox is the tier select.
     fireEvent.click(screen.getAllByRole("combobox")[0]);
     fireEvent.click(await screen.findByRole("option", { name: /Auto/ }));
-    expect(seen.steps[0].model_tier).toBeUndefined();
-    expect(seen.steps[0].effort).toBeUndefined();
+    const [tier, effort] = screen.getAllByRole("combobox");
+    expect(tier).toHaveTextContent("Auto");
+    expect(effort).toBeDisabled();
+    expect(effort).toHaveTextContent("Tier's own");
   });
 });
