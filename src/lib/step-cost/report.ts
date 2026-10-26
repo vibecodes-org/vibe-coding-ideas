@@ -329,10 +329,15 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     const currentRuns = new Set(currentRows.map((r) => r.run_id)).size;
     const since = currentRows.map((r) => r.started_at ?? r.completed_at).filter((d): d is string => !!d).sort()[0] ?? null;
     // Adds the rows as they are shown (whole minutes, whole cents), so the
-    // sum matches what an admin gets adding the displayed rows by hand.
+    // sum matches what an admin gets adding the displayed rows by hand. A row
+    // shown as "<1 min" / "<$0.01" counts as nothing; if that leaves only such
+    // rows, the sum keeps a tiny value so it also reads "<1 min" / "<$0.01".
     const addUp = (vals: (number | null)[], step: number) => {
-      const have = vals.filter((v): v is number => v !== null).map((v) => Math.round(v / step));
-      return { total: have.length > 0 ? have.reduce((a, v) => a + v, 0) * step : null, missing: vals.length - have.length };
+      const have = vals.filter((v): v is number => v !== null);
+      if (have.length === 0) return { total: null, missing: vals.length };
+      const shown = have.reduce((a, v) => a + (v < step ? 0 : Math.round(v / step)), 0) * step;
+      const raw = have.reduce((a, v) => a + v, 0);
+      return { total: shown === 0 && raw > 0 ? Math.min(raw, step / 2) : shown, missing: vals.length - have.length };
     };
     const sumMinutes = addUp(current.map((r) => r.medianMinutes), 1);
     const sumCost = addUp(current.map((r) => r.medianCost), 0.01);

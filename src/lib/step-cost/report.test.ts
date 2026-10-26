@@ -197,6 +197,25 @@ describe("buildStepPerformanceReport", () => {
     expect(r.templates[0].sumOfSteps?.minutes).toBe(21);
   });
 
+  it("counts rows shown as under a minute as nothing, so two of them don't add up to 1 min", () => {
+    // Plan and Build take 36 s each (shown "<1 min"); Code review takes 7 min.
+    const steps = [
+      step("r1", "Plan", { completed_at: "2026-10-14T10:00:36Z" }),
+      step("r1", "Build", { completed_at: "2026-10-14T10:00:36Z" }),
+      step("r1", "Code review", { completed_at: "2026-10-14T10:07:00Z" }),
+    ];
+    const r = buildStepPerformanceReport(input({ steps, runs: done("r1"), usage: [] }));
+    expect(r.templates[0].sumOfSteps?.minutes).toBe(7);
+  });
+
+  it("keeps a sum of only under-a-minute rows under a minute", () => {
+    const steps = ["Plan", "Build", "Code review"].map((t) => step("r1", t, { completed_at: "2026-10-14T10:00:36Z" }));
+    const r = buildStepPerformanceReport(input({ steps, runs: done("r1"), usage: [] }));
+    const m = r.templates[0].sumOfSteps?.minutes ?? null;
+    expect(m).toBeGreaterThan(0);
+    expect(m).toBeLessThan(1);
+  });
+
   it("skips steps with no figure when adding up, and counts them", () => {
     const steps = [step("r1", "Plan"), step("r1", "Build"), step("r1", "Code review")];
     const r = buildStepPerformanceReport(input({
