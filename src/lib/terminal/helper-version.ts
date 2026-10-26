@@ -145,10 +145,12 @@
  *  project folder itself it drops the agent's own "record the folder" line from
  *  the start-up message, and a Reconnect/Resume of a session with no recorded
  *  folder finds the conversation in Claude's own transcript store and resumes it
- *  there (a clear "fresh session" line if it isn't on the Mac). Deliberately NOT
- *  the minimum: an older helper keeps the redundant line and, with no folder,
- *  ends that resume with its usual message — no nudge needed. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.27";
+ *  there (a clear "fresh session" line if it isn't on the Mac). An older helper
+ *  still works (it keeps the redundant line and, with no folder, ends that
+ *  resume with its usual message), so this is a soft nudge: it is the minimum
+ *  only because the download link and the "Update now" prompt follow this
+ *  constant, and without it nobody is offered the release. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.28";
 
 export type HelperVersionParts = readonly [number, number, number];
 
