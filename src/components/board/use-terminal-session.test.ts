@@ -117,6 +117,7 @@ vi.mock("@xterm/addon-serialize", () => ({
 }));
 
 const toastError = vi.fn();
+const toastInfo = vi.fn();
 const toastSuccess = vi.fn();
 // Nick, 3 Sep 2026: connect() re-reads the recorded folders before a
 // hook-initiated mint (see refreshRecordedPaths). Null by default = "read
@@ -132,6 +133,7 @@ vi.mock("sonner", () => ({
   toast: {
     error: (...args: unknown[]) => toastError(...args),
     success: (...args: unknown[]) => toastSuccess(...args),
+    info: (...args: unknown[]) => toastInfo(...args),
   },
 }));
 
@@ -227,6 +229,7 @@ describe("useTerminalSession", () => {
     mockSockets = [];
     mockTerminals.length = 0;
     toastError.mockClear();
+    toastInfo.mockClear();
     toastSuccess.mockClear();
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal("fetch", vi.fn(async () => mintResponse()));
@@ -2619,7 +2622,7 @@ describe("useTerminalSession", () => {
       // Decode exactly as the helper/bridge do (URLSearchParams: `+` → space).
       const prompt = new URL(src).searchParams.get("prompt") ?? "";
       expect(src).not.toContain("%20"); // spaces ride as `+`, never %20
-      expect(prompt).toContain(`get_board (idea_id ${descriptor.ideaId})`);
+      expect(prompt).toContain(`get_board (idea_id ${descriptor.ideaId}, up_next 5)`);
       expect(prompt).toContain("ASK first");
       // The FULL work step, not the compact fallback — and the directory
       // echo too. This is the headroom the `+` encoding bought.
@@ -2677,7 +2680,7 @@ describe("useTerminalSession", () => {
       // ask-first rule.
       expect(prompt).not.toContain(buildGuideBootstrapStep("claude"));
       expect(prompt).not.toContain("checkout root");
-      expect(prompt).toContain("Find work, but ASK first: call get_board (idea_id idea-1), NOT get_my_tasks");
+      expect(prompt).toContain("Find work, but ASK first: call get_board (idea_id idea-1, up_next 5), NOT get_my_tasks");
       expect(prompt.trimEnd().endsWith("Comment as you go.")).toBe(true);
     });
 
@@ -2863,6 +2866,134 @@ describe("useTerminalSession", () => {
   // board-connect step (`claude mcp add … -s local` / `/mcp`) and ran `claude`
   // instead of connecting. The board-connect copy must follow the chosen agent
   // on this hook path exactly as it already does on the launch-button path.
+  // Card 5e654dd1, stage 12 (Reconnect guard test): Reconnect / Resume never
+  // sends the start-up message again. A tab that was started fresh still holds
+  // the start-up prompt in memory; after it times out, the reattach must fire a
+  // resume-shaped link (resume_id, or resume=1) with no `prompt=`. The ONE
+  // exception, named in its test: a session with neither a folder nor a
+  // conversation id has nothing to resume, so it starts fresh and SAYS SO.
+  describe("reconnect guard: Reconnect/Resume never sends the start-up prompt (card 5e654dd1)", () => {
+    const REATTACH = "/api/terminal/session/reattach";
+
+    function macBrowser() {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+    }
+
+    async function freshThenTimedOutThenReconnect(reattach: Record<string, unknown>) {
+      macBrowser();
+      vi.useFakeTimers();
+      const utils = setup();
+      utils.result.current.containerRef.current = document.createElement("div");
+      for (let i = 0; i < 20 && mockTerminals.length === 0; i++) await flushEffects();
+      expect(mockTerminals.length).toBeGreaterThan(0);
+      await act(async () => {
+        await utils.result.current.actions.connect({ autoLaunch: true });
+      });
+      // Control: the first launch DID carry the start-up prompt.
+      const first = document.querySelector("iframe")?.getAttribute("src") ?? "";
+      expect(first).toContain("prompt=");
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      // The link drops, the grace window is spent, and the user clicks Reconnect.
+      act(() => latestSocket().simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      act(() => latestSocket().simulateOpen());
+      vi.setSystemTime(Date.now() + RECONNECT_GRACE_MS + 5_000);
+      document.querySelectorAll("iframe").forEach((n) => n.remove());
+      vi.mocked(global.fetch).mockImplementation(async (url) =>
+        url === REATTACH
+          ? ({
+              ok: true,
+              json: async () => ({
+                sessionId: "sid-abc123",
+                browserToken: "fresh-browser-token",
+                bridgeToken: "fresh-bridge-token",
+                helperToken: "fresh-helper-token",
+                ...reattach,
+              }),
+            } as unknown as Response)
+          : (mintResponse() as unknown as Response),
+      );
+      await act(async () => {
+        utils.result.current.actions.reconnectNow();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      const links = [...document.querySelectorAll("iframe")].map((n) => n.getAttribute("src") ?? "");
+      return { ...utils, links };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("AC3.1: folder + conversation id → resume_id link, no prompt", async () => {
+      const { links } = await freshThenTimedOutThenReconnect({ cwd: "/Users/nick/projects/x", claudeSessionId: "conv-1" });
+      expect(links.length).toBeGreaterThan(0);
+      for (const src of links) {
+        expect(src).toContain(`resume_id=${encodeURIComponent("conv-1")}`);
+        expect(src).not.toContain("prompt=");
+      }
+    });
+
+    it("AC3.2: folder but no conversation id → resume=1 link, no prompt", async () => {
+      const { links } = await freshThenTimedOutThenReconnect({ cwd: "/Users/nick/projects/x", claudeSessionId: null });
+      expect(links.length).toBeGreaterThan(0);
+      for (const src of links) {
+        expect(src).toContain("resume=1");
+        expect(src).not.toContain("prompt=");
+      }
+    });
+
+    it("AC3.3: a Resume chosen after a fresh launch in the same tab carries no prompt", async () => {
+      macBrowser();
+      const { result } = setup();
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+      expect(document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "").toContain("prompt=");
+      document.querySelectorAll("iframe").forEach((n) => n.remove());
+      vi.mocked(global.fetch).mockImplementation(async () => mintResponse({ sessionId: "sid-resumed" }) as unknown as Response);
+      act(() => {
+        result.current.actions.launchFromBus({ resumeId: "claude-conv-carried", cwd: "/Users/nick/projects/x" });
+      });
+      await waitFor(() => expect(document.querySelectorAll("iframe").length).toBeGreaterThan(0));
+      const src = document.querySelector("iframe")?.getAttribute("src") ?? "";
+      expect(src).toContain("resume_id=claude-conv-carried");
+      expect(src).not.toContain("prompt=");
+    });
+
+    it("no folder but a conversation id → still a resume link (the helper finds the folder), no prompt, no cwd", async () => {
+      const { links } = await freshThenTimedOutThenReconnect({ cwd: null, claudeSessionId: "conv-2" });
+      expect(links.length).toBeGreaterThan(0);
+      for (const src of links) {
+        expect(src).toContain(`resume_id=${encodeURIComponent("conv-2")}`);
+        expect(src).not.toContain("cwd=");
+        expect(src).not.toContain("prompt=");
+      }
+      expect(toastInfo).not.toHaveBeenCalled();
+    });
+
+    it("AC3.6 THE ONE EXCEPTION: no folder and no conversation id → a fresh launch, and Nick is told it started fresh", async () => {
+      const { links } = await freshThenTimedOutThenReconnect({ cwd: null, claudeSessionId: null });
+      expect(links.length).toBeGreaterThan(0);
+      expect(links.some((src) => src.includes("prompt=") && !src.includes("resume"))).toBe(true);
+      expect(toastInfo).toHaveBeenCalledWith(expect.stringContaining("fresh session"));
+    });
+  });
+
   describe("Codex board-connect wiring (Nick, 7 Sep 2026)", () => {
     function promptFromLastIframe(): string {
       const src = document.querySelectorAll("iframe")[0]?.getAttribute("src") ?? "";

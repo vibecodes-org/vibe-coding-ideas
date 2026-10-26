@@ -1670,17 +1670,22 @@ export function useTerminalSession(
       const effectiveHelperToken = skipHelperToken ? undefined : helperToken;
       const carriedForResume = promptPartsRef.current;
       const forcedCwd = opts?.forceResumeCwd?.trim() || null;
-      const resumeSource = forcedCwd
+      // Card 5e654dd1 (Nick, 26 Oct 2026): a reattach whose row has a Claude
+      // conversation id but no recorded folder still resumes. The helper finds
+      // the conversation in Claude's own transcript store and resumes it in the
+      // folder it really ran in, so the link carries resume_id and no cwd.
+      const forcedResumeId = trigger === "attach-existing" ? opts?.forceResumeId?.trim() || null : null;
+      const resumeSource = forcedCwd || forcedResumeId
         ? { cwd: forcedCwd, resumeId: opts?.forceResumeId ?? undefined, forced: true, agent: carriedForResume?.agent }
         : carriedForResume?.resume || carriedForResume?.resumeId
           ? { cwd: carriedForResume.cwd, resumeId: carriedForResume.resumeId, forced: false, agent: carriedForResume.agent }
           : null;
       if (resumeSource) {
         const { cwd, resumeId, forced, agent } = resumeSource;
-        if (!cwd) {
+        if (!cwd && !resumeId) {
           // Should never happen — the chooser only offers Resume for a row
           // with a recorded folder (F4) — but stay honest rather than fire a
-          // directory-less resume.
+          // resume with neither a folder nor a conversation to find.
           logger.error("Terminal resume launch missing cwd — refusing to fire");
           toast.error("Couldn't resume — no folder was recorded for that session");
           setLaunchPhase("helper-timeout");
@@ -1696,7 +1701,7 @@ export function useTerminalSession(
             session: sessionId,
             token: bridgeToken,
             helperToken: effectiveHelperToken,
-            cwd,
+            cwd: cwd ?? undefined,
             resume: resumeId ? undefined : true,
             resumeId,
             cols: dims?.cols,
@@ -1739,9 +1744,11 @@ export function useTerminalSession(
       // fresh mint in the logs.
       if (trigger === "attach-existing") {
         logger.warn(
-          "Terminal reattach relaunch has no recorded cwd — falling back to fresh-launch deep link (will not resume)",
+          "Terminal reattach relaunch has no recorded cwd and no conversation id — falling back to fresh-launch deep link (will not resume)",
           { sessionId },
         );
+        // Never silent: there is no conversation to pick up, so say it started fresh.
+        toast.info("Couldn't find your earlier conversation, so this started a fresh session.");
       }
 
       // Task 5c8969cc: computed once — the link and the early-exit tracking

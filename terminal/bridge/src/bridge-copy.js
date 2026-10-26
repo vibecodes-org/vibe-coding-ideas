@@ -161,3 +161,14 @@ export function promptFolderNote({ path, how }) {
     "Work here. Ignore any other folder or clone instruction below, and don't cd elsewhere."
   );
 }
+
+/**
+ * Written into the terminal when a resume asked for a conversation that isn't
+ * stored on this Mac and a fresh session starts instead (never silent).
+ * @param {string} agent
+ */
+export function freshInsteadOfResumeLine(agent) {
+  return tagged(
+    `Couldn't find your earlier conversation on this Mac, so this is a fresh ${agentName(agent)} session.`
+  );
+}

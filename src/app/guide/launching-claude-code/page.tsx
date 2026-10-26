@@ -315,7 +315,8 @@ export default function LaunchingClaudeCodePage() {
             </li>
             <li>
               <strong className="text-foreground">Record the project folder</strong>{" "}
-              so future launches reopen it automatically
+              so future launches reopen it automatically (in the browser terminal the
+              helper app does this itself before Claude starts)
             </li>
             <li>
               <strong className="text-foreground">Pick up board work</strong>

@@ -71,7 +71,19 @@ export const getBoardSchema = z.object({
     .boolean()
     .default(true)
     .describe("Exclude tasks in done columns (default true)"),
+  up_next: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe(
+      "Short look at the queue: only the To Do and Backlog columns, at most this many cards in total, top of To Do first (Backlog only tops up what To Do leaves). A column with hidden cards says how many more (\"more\"). Overrides column_ids, column_names and exclude_done."
+    ),
 });
+
+/** Columns read by `up_next`, in fill order. */
+const UP_NEXT_COLUMNS = ["to do", "backlog"];
 
 export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardSchema>) {
   // Check if columns exist; if not, initialize defaults
@@ -149,31 +161,59 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
     .eq("idea_id", params.idea_id);
 
   // Filter columns: explicit filters override exclude_done
-  const hasExplicitFilter = params.column_ids || params.column_names;
+  const upNext = params.up_next !== undefined;
+  const hasExplicitFilter = upNext || params.column_ids || params.column_names;
 
-  const columnIdSet = params.column_ids ? new Set(params.column_ids) : null;
-  const columnNameSet = params.column_names
-    ? new Set(params.column_names.map((n) => n.toLowerCase()))
-    : null;
+  const columnIdSet = !upNext && params.column_ids ? new Set(params.column_ids) : null;
+  const columnNameSet = upNext
+    ? new Set(UP_NEXT_COLUMNS)
+    : params.column_names
+      ? new Set(params.column_names.map((n) => n.toLowerCase()))
+      : null;
 
   const doneColumnIds =
     !hasExplicitFilter && params.exclude_done
       ? new Set(columns!.filter((c) => c.is_done_column).map((c) => c.id))
       : new Set<string>();
 
+  const shownColumns = columns!.filter((col) => {
+    if (columnIdSet) return columnIdSet.has(col.id);
+    if (columnNameSet) return columnNameSet.has(col.title.toLowerCase());
+    return !doneColumnIds.has(col.id);
+  });
+
+  // up_next: a running total of cards, To Do first, so Backlog only tops up
+  // what To Do leaves (Backlog sits BEFORE To Do in board order, so the fill
+  // order is explicit here, not the column order).
+  const allowance = new Map<string, number>();
+  if (upNext) {
+    let left = params.up_next!;
+    const ordered = [...shownColumns].sort(
+      (a, b) =>
+        UP_NEXT_COLUMNS.indexOf(a.title.toLowerCase()) -
+        UP_NEXT_COLUMNS.indexOf(b.title.toLowerCase())
+    );
+    for (const col of ordered) {
+      const count = (tasks ?? []).filter((t) => t.column_id === col.id).length;
+      const take = Math.min(left, count);
+      allowance.set(col.id, take);
+      left -= take;
+    }
+  }
+
   // Group tasks by column, keep payload compact (use get_task for full details)
-  const board = columns!
-    .filter((col) => {
-      if (columnIdSet) return columnIdSet.has(col.id);
-      if (columnNameSet) return columnNameSet.has(col.title.toLowerCase());
-      return !doneColumnIds.has(col.id);
-    })
-    .map((col) => ({
+  const board = shownColumns
+    .map((col) => {
+      const colTasks = (tasks ?? []).filter((t) => t.column_id === col.id);
+      const allowed = allowance.get(col.id);
+      const hidden = allowed === undefined ? 0 : colTasks.length - allowed;
+      return {
       id: col.id,
       title: col.title,
       is_done_column: col.is_done_column,
-      tasks: (tasks ?? [])
-        .filter((t) => t.column_id === col.id)
+      ...(hidden > 0 ? { more: hidden } : {}),
+      tasks: colTasks
+        .slice(0, allowed ?? colTasks.length)
         .map((t) => {
           const assigneeData = (t as Record<string, unknown>).users as Record<string, unknown> | null;
           const labelData =
@@ -201,7 +241,8 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
           if (t.attachment_count > 0) summary.attachments = t.attachment_count;
           return summary;
         }),
-    }));
+      };
+    });
 
   return { columns: board, labels: (labels ?? []).map((l) => l.name) };
 }

@@ -140,7 +140,14 @@
  *  send a short line instead of the whole token-counting command. Made the
  *  minimum when STEP_USAGE_SHORT_COMMAND was switched on, so a Mac on an
  *  older helper is nudged to update (otherwise its step costs are left out:
- *  the short line prints NO_TRANSCRIPT) — soft nudge. */
+ *  the short line prints NO_TRANSCRIPT) — soft nudge.
+ *  0.3.28 (card 5e654dd1 stage 15, 26 Oct 2026): after the helper saves the
+ *  project folder itself it drops the agent's own "record the folder" line from
+ *  the start-up message, and a Reconnect/Resume of a session with no recorded
+ *  folder finds the conversation in Claude's own transcript store and resumes it
+ *  there (a clear "fresh session" line if it isn't on the Mac). Deliberately NOT
+ *  the minimum: an older helper keeps the redundant line and, with no folder,
+ *  ends that resume with its usual message — no nudge needed. */
 export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.27";
 
 export type HelperVersionParts = readonly [number, number, number];
