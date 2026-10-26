@@ -54,7 +54,9 @@ import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eli
 import { agentNotInstalledBanner } from "./agent-copy.js";
 import { resolveResumeFolder, resolveWorkspaceFolder, sanitizeWorkspace } from "./folder-resolve.js";
 import { cloneRepo } from "./git-clone.js";
-import { progressLine, failureLines, earlyExitLine, promptFolderNote } from "./bridge-copy.js";
+import { progressLine, failureLines, earlyExitLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
+import { findConversationFolder } from "./transcript-folder.js";
+import { withoutFolderRecordStep } from "../../shared/launch-prompt.mjs";
 import { resolveMachineNames } from "../../shared/machine-name.mjs";
 import { stripClaudeWorktreeSuffix } from "../../shared/project-path.mjs";
 import { isBinaryInstalled } from "../../shared/binary-check.mjs";
@@ -171,7 +173,7 @@ const RESUME = !!launched?.resume;
 // link (already UUID-checked by parseLaunchDeepLink; re-checked here as
 // defense in depth — same posture as HOST/sanitizeMachineLabel above) names
 // the SPECIFIC claude conversation to resume.
-const RESUME_ID = sanitizeConversationId(launched?.resumeId);
+const RESUME_ID_ASKED = sanitizeConversationId(launched?.resumeId);
 // An explicit `--cmd`/`BRIDGE_CMD` override always wins (dev/test
 // convenience) — see resolveClaudeLaunch's doc for the full launch-shape
 // priority order and the empirical finding behind CONV.
@@ -226,22 +228,52 @@ const WORKTREE_REQUESTED = !!(launched?.worktree ?? (process.env.BRIDGE_WORKTREE
 //     (checked synchronously below).
 //   - "fresh": everything else. The spawn waits for the relay's `attached`
 //     frame (R1, as before) and the folder resolution that follows it.
-const IS_RESUME = !explicitCmd && !!(RESUME || RESUME_ID);
-const LAUNCH_PROMPT = RESUME || RESUME_ID ? "" : launched?.prompt || "";
-const MODE = IS_RESUME ? "resume" : explicitCmd && !LAUNCH_PROMPT ? "direct" : "fresh";
 const HINT = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || (explicitCmd ? process.cwd() : null);
+// Card 5e654dd1 (Nick, 26 Oct 2026): a resume by conversation id that arrives
+// WITHOUT a folder (the session never recorded one) is not refused or quietly
+// restarted. The conversation lives in Claude's own transcript store, whose
+// lines name the folder it ran in, so find it there and resume it in that
+// folder. Only when no transcript exists on this Mac is it a fresh session,
+// and then the terminal says so (freshInsteadOfResumeLine).
+const TRANSCRIPT_FOLDER =
+  !explicitCmd && !HINT && RESUME_ID_ASKED && !launched?.resume
+    ? findConversationFolder({ id: RESUME_ID_ASKED, fs, env: process.env, homedir: os.homedir() })
+    : null;
+const FRESH_INSTEAD_OF_RESUME = !explicitCmd && !HINT && !!RESUME_ID_ASKED && !launched?.resume && !TRANSCRIPT_FOLDER;
+const RESUME_ID = FRESH_INSTEAD_OF_RESUME ? null : RESUME_ID_ASKED;
+const IS_RESUME = !explicitCmd && !!(RESUME || RESUME_ID);
+const LAUNCH_PROMPT = RESUME || RESUME_ID_ASKED ? "" : launched?.prompt || "";
+const MODE = IS_RESUME ? "resume" : explicitCmd && !LAUNCH_PROMPT ? "direct" : "fresh";
 // The folder the PTY spawns in: known now for direct/resume, set after the
 // resolution for a fresh launch (spawnPty is never called before that).
 let CWD = MODE === "direct" ? HINT : null;
 /** A resume whose folder isn't on this Mac — ended once the relay link opens. */
 let folderFailure = null;
-if (MODE === "resume") {
+/** The MAIN checkout of a transcript-found resume folder, told to the page once the link is up. */
+let resumeFolderForPage = null;
+if (MODE === "resume" && TRANSCRIPT_FOLDER) {
+  // Resume where the conversation really ran (a worktree if it ran in one),
+  // but only ever report/record the main checkout (stripClaudeWorktreeSuffix).
+  const main = resolveResumeFolder({ hint: TRANSCRIPT_FOLDER, fs, homedir: os.homedir() });
+  if (main.ok) {
+    const exact = isDirectoryHere(TRANSCRIPT_FOLDER) ? TRANSCRIPT_FOLDER : main.path;
+    CWD = exact;
+    resumeFolderForPage = main.path;
+    log("info", "resume folder found from Claude's own transcript", { cwd: exact });
+  } else {
+    folderFailure = { reason: main.reason, detail: null };
+    log("warn", "resume folder from the transcript can't be used on this Mac — not spawning", { reason: main.reason });
+  }
+} else if (MODE === "resume") {
   const res = resolveResumeFolder({ hint: HINT, fs, homedir: os.homedir() });
   if (res.ok) CWD = res.path;
   else {
     folderFailure = { reason: res.reason, detail: null };
     log("warn", "resume folder can't be used on this Mac — not spawning", { cwd: HINT, reason: res.reason });
   }
+}
+function isDirectoryHere(p) {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 // Task 5b8a3865 (Nick, 5 Sep 2026): a requested worktree is only APPENDED when
 // the folder can actually take one. `claude --worktree` branches off HEAD, so
@@ -489,7 +521,7 @@ async function fetchWorkspace() {
 
 /** Save the resolved folder for THIS Mac (every name it goes by). Best effort. */
 async function recordFolder(folderPath, how) {
-  if (!TOKEN || !SESSION || MACHINE.names.length === 0) return;
+  if (!TOKEN || !SESSION || MACHINE.names.length === 0) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FOLDER_RECORD_TIMEOUT_MS);
   try {
@@ -499,9 +531,15 @@ async function recordFolder(folderPath, how) {
       body: JSON.stringify({ sid: SESSION, token: TOKEN, machineNames: MACHINE.names, path: folderPath, how }),
       signal: controller.signal,
     });
-    log(res.ok ? "info" : "warn", "project folder recorded", { how, status: res.status });
+    let confirmed = false;
+    if (res.ok) {
+      try { confirmed = (await res.json())?.ok === true; } catch { confirmed = false; }
+    }
+    log(res.ok ? "info" : "warn", "project folder recorded", { how, status: res.status, confirmed });
+    return confirmed;
   } catch (e) {
     log("warn", "couldn't record the project folder (the agent's own record step is the backup)", { err: String(e?.message || e) });
+    return false;
   } finally {
     clearTimeout(timer);
   }
@@ -1198,6 +1236,11 @@ async function main() {
     if (shuttingDown) return;
     const home = os.homedir();
     const progress = (event) => writeLines(progressLine(event, { home, agent: AGENT }));
+    if (FRESH_INSTEAD_OF_RESUME) {
+      // Never silent: the earlier conversation isn't on this Mac.
+      writeLines(freshInsteadOfResumeLine(AGENT));
+      log("warn", "resume asked for a conversation with no transcript here — starting fresh", {});
+    }
     const res = await resolveWorkspaceFolder({
       hint: HINT,
       workspace: WORKSPACE,
@@ -1234,8 +1277,18 @@ async function main() {
     if (res.how === "cloned") progress({ kind: "clone-done" });
     CWD = res.path;
     log("info", "project folder ready", { how: res.how, cwd: res.path, alsoFound: res.alsoFound.length });
-    if (WORKSPACE) await recordFolder(res.path, res.how);
+    const folderSaved = WORKSPACE ? await recordFolder(res.path, res.how) : false;
     if (shuttingDown) return;
+    // The helper saved the folder itself, so the agent's own "record the
+    // project folder" step is redundant (card 5e654dd1, stage 15). If the save
+    // failed, the step stays in the prompt as the backup.
+    if (folderSaved && PROMPT) {
+      const trimmed = withoutFolderRecordStep(PROMPT);
+      if (trimmed !== PROMPT) {
+        PROMPT = trimmed;
+        log("info", "folder step dropped from the start-up message");
+      }
+    }
     // The page learns the folder from the bridge (plaintext metadata, like
     // host/conv). Text frames are never buffered, so only when the link is up.
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1431,6 +1484,9 @@ async function main() {
         clearTimeout(attachTimer);
         attachTimer = null;
         log("info", "relay confirmed attach", { session: SESSION });
+        if (resumeFolderForPage) {
+          try { outputBatcher.sendControl(encodeBridgeCwdFrame(resumeFolderForPage)); } catch { /* best effort */ }
+        }
         if (MODE === "fresh") {
           startFreshLaunch().catch((e) => {
             log("error", "fresh launch failed", { err: String(e?.stack || e) });

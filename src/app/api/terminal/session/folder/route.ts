@@ -14,8 +14,9 @@
 //   - sets the session's folder (terminal_sessions.cwd).
 // `how` ("saved" | "found" | "cloned" | "created") is only logged.
 //
-// The agent's own record_project_path step in the launch prompt stays as a
-// backup; this route is what makes a fresh Mac right without it.
+// The agent's own record_project_path step in the launch prompt is the backup:
+// the helper (0.3.28+) removes it from the start-up message once this route
+// answers { ok: true }, and leaves it in when the save fails (card 5e654dd1).
 //
 // AUTH: the bridge's own session token — see
 // src/lib/terminal/bridge-session-auth.ts. Service-role client; the owner

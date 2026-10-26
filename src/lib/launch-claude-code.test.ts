@@ -2925,7 +2925,7 @@ describe("buildBoundedDeepLink cwdPolicy: keep + the compact work-step rung (Nic
     for (const step of essentials.headSteps ?? []) expect(prompt).toContain(step);
     expect(prompt).not.toContain(essentials.work as string);
     expect(prompt).toContain(essentials.workCompact as string);
-    expect(prompt).toContain(`get_board (idea_id ${realIdeaId})`);
+    expect(prompt).toContain(`get_board (idea_id ${realIdeaId}, up_next 5)`);
     expect(prompt).toContain("ASK first");
     // Never a fragment: the compact step ends the prompt cleanly.
     expect(prompt.trimEnd().endsWith("before starting it.")).toBe(true);

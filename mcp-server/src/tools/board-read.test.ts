@@ -698,3 +698,50 @@ describe("getTask - lean default", () => {
     expect((result.recent_activity as unknown[]).length).toBe(1);
   });
 });
+
+describe("getBoard — up_next (short look at the queue)", () => {
+  const cols = [
+    { id: "col-b", idea_id: IDEA_ID, title: "Backlog", position: 0, is_done_column: false },
+    { id: "col-t", idea_id: IDEA_ID, title: "To Do", position: 1000, is_done_column: false },
+    { id: "col-p", idea_id: IDEA_ID, title: "In Progress", position: 2000, is_done_column: false },
+  ];
+  const mk = (col: string, n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${col}-${i}`, title: `${col} task ${i}`, column_id: col, position: i * 1000,
+      due_date: null, archived: false, attachment_count: 0,
+      workflow_step_total: 0, workflow_step_completed: 0, workflow_step_in_progress: 0,
+      workflow_step_failed: 0, workflow_step_awaiting_approval: 0,
+      users: null, board_task_labels: [],
+    }));
+  const run = (tasks: Record<string, unknown>[], extra: Record<string, unknown> = {}) =>
+    getBoard(
+      buildBoardContext({ columns: cols, tasks }),
+      getBoardSchema.parse({ idea_id: IDEA_ID, ...extra })
+    );
+
+  it("without up_next returns every card and no 'more' field", async () => {
+    const r = await run([...mk("col-b", 4), ...mk("col-t", 12), ...mk("col-p", 3)]);
+    expect(r.columns.map((c) => c.tasks.length)).toEqual([4, 12, 3]);
+    for (const c of r.columns) expect(c).not.toHaveProperty("more");
+  });
+
+  it("a full To Do gives its top 5, says how many are hidden, and Backlog adds nothing", async () => {
+    const r = await run([...mk("col-b", 4), ...mk("col-t", 12), ...mk("col-p", 3)], { up_next: 5 });
+    const by = Object.fromEntries(r.columns.map((c) => [c.title, c]));
+    expect(Object.keys(by).sort()).toEqual(["Backlog", "To Do"]);
+    expect(by["To Do"].tasks.map((t) => t.id)).toEqual(["col-t-0", "col-t-1", "col-t-2", "col-t-3", "col-t-4"]);
+    expect(by["To Do"].more).toBe(7);
+    expect(by["Backlog"].tasks).toHaveLength(0);
+    expect(by["Backlog"].more).toBe(4);
+  });
+
+  it("a short To Do is topped up from Backlog to reach 5, never from other columns", async () => {
+    const r = await run([...mk("col-b", 4), ...mk("col-t", 3), ...mk("col-p", 3)], { up_next: 5 });
+    const by = Object.fromEntries(r.columns.map((c) => [c.title, c]));
+    expect(by["To Do"].tasks).toHaveLength(3);
+    expect(by["To Do"]).not.toHaveProperty("more");
+    expect(by["Backlog"].tasks.map((t) => t.id)).toEqual(["col-b-0", "col-b-1"]);
+    expect(by["Backlog"].more).toBe(2);
+    expect(r.columns.some((c) => c.title === "In Progress")).toBe(false);
+  });
+});

@@ -904,7 +904,7 @@ export function buildBoardBootstrapPrompt({
   const mcp = mcpSetupHead(appUrl);
   const work = `Then, pick up my work on the VibeCodes board for this idea, but ask me first rather than just starting:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
-  • Call get_board with idea_id ${ideaId} to see the columns and tasks. Use it rather than get_my_tasks here: get_my_tasks only returns tasks already assigned to you, and a fresh board has none, so it would wrongly look like there's no work.
+  • Call get_board with idea_id ${ideaId} and up_next 5 to see the top of the queue (To Do first; Backlog only fills what To Do leaves). Use it rather than get_my_tasks here: get_my_tasks only returns tasks already assigned to you, and a fresh board has none, so it would wrongly look like there's no work.
   • Identify the top unstarted task (e.g. the first item in To Do, then Backlog). Only ever pick a task from To Do or Backlog — never touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
   • Then stop and ask me: tell me which task is next up and ask whether you should pick it up, or whether I want something else (report a new bug, continue work in flight, a question, …). Wait for my reply. Don't call get_task, assign, move or start anything before I answer.
   • If I say yes: read it with get_task and move it to In Progress. If it has a workflow, use claim_next_step and follow the orchestration loop; don't assign it to yourself (the step records who). If not, assign it to yourself.
@@ -1235,11 +1235,11 @@ function buildCompactStepPieces({
 
   const work = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
-    : `Find work, but ASK first: call get_board (idea_id ${ideaId}), NOT get_my_tasks. Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). Name the top one, ask before starting it, and wait for my reply. Then get_task, move to In Progress, start. Comment as you go.`;
+    : `Find work, but ASK first: call get_board (idea_id ${ideaId}, up_next 5), NOT get_my_tasks. Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). Name the top one, ask before starting it, and wait for my reply. Then get_task, move to In Progress, start. Comment as you go.`;
   // Same facts, fewer words — the budget-pressure fallback for `work`.
   const workCompact = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start.`
-    : `Find work, but ASK first: get_board (idea_id ${ideaId}); only To Do/Backlog. Name the top one and wait for my reply before starting it.`;
+    : `Find work, but ASK first: get_board (idea_id ${ideaId}, up_next 5); only To Do/Backlog. Name the top one and wait for my reply before starting it.`;
 
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`

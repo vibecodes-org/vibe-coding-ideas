@@ -280,7 +280,7 @@ describe("guide step placement and surrounding safeguards", () => {
     expect(task.work).toContain(`get_task (task_id ${TASK_ID}, idea_id ${IDEA_ID})`);
     expect(task.workCompact).toContain(`task_id ${TASK_ID}`);
     const board = buildCompactPromptEssentials(shapeArgs("known-folder", agent, { title: "X" }).args);
-    expect(board.work).toContain(`get_board (idea_id ${IDEA_ID})`);
+    expect(board.work).toContain(`get_board (idea_id ${IDEA_ID}, up_next 5)`);
     expect(board.work).toContain("ASK first");
     expect(board.workCompact).toContain("ASK first");
     expect(board.workCompact).toContain("wait for my reply");
@@ -355,7 +355,7 @@ describe("the guide policy survives the real URL budget", () => {
             const parsed = parseLaunchDeepLink(result.url);
             expect(parsed?.cwd, label).toBe(cwd);
             const prompt = expectCompleteBootstrap(result.url, essentials, label);
-            expect(prompt, label).toContain(taskId ? `task_id ${taskId}` : `get_board (idea_id ${IDEA_ID})`);
+            expect(prompt, label).toContain(taskId ? `task_id ${taskId}` : `get_board (idea_id ${IDEA_ID}, up_next 5)`);
             expect(prompt, label).toContain(agent === "codex" ? 'agent: "codex"' : "claude mcp add");
           }
         });
