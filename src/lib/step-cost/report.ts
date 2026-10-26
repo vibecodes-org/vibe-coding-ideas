@@ -61,7 +61,10 @@ export interface TemplatePerformance {
   currentRuns: number;
   currentSince: string | null;
   current: StepPerformanceRow[];
+  /** Median of real per-run totals (redo rounds included). Not the sum of the step rows. */
   wholeRun: { medianMinutes: number | null; medianCost: number | null } | null;
+  /** The step rows above added up. Steps with no figure are skipped and counted in the *Missing fields. */
+  sumOfSteps: { minutes: number | null; cost: number | null; minutesMissing: number; costMissing: number } | null;
   earlierRuns: number;
   earlier: StepPerformanceRow[];
 }
@@ -325,6 +328,14 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
 
     const currentRuns = new Set(currentRows.map((r) => r.run_id)).size;
     const since = currentRows.map((r) => r.started_at ?? r.completed_at).filter((d): d is string => !!d).sort()[0] ?? null;
+    // Adds the rows as they are shown (whole minutes, whole cents), so the
+    // sum matches what an admin gets adding the displayed rows by hand.
+    const addUp = (vals: (number | null)[], step: number) => {
+      const have = vals.filter((v): v is number => v !== null).map((v) => Math.round(v / step));
+      return { total: have.length > 0 ? have.reduce((a, v) => a + v, 0) * step : null, missing: vals.length - have.length };
+    };
+    const sumMinutes = addUp(current.map((r) => r.medianMinutes), 1);
+    const sumCost = addUp(current.map((r) => r.medianCost), 0.01);
     result.push({
       key: acc.key,
       name: byRecent[0].name,
@@ -332,6 +343,10 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
       currentSince: since,
       current,
       wholeRun: currentRuns > 0 ? { medianMinutes: median(runMinutes), medianCost: median(runCosts) } : null,
+      sumOfSteps:
+        currentRuns > 0
+          ? { minutes: sumMinutes.total, cost: sumCost.total, minutesMissing: sumMinutes.missing, costMissing: sumCost.missing }
+          : null,
       earlierRuns: new Set(earlierRows.map((r) => r.run_id)).size,
       earlier,
     });

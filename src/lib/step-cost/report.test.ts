@@ -163,6 +163,54 @@ describe("buildStepPerformanceReport", () => {
     expect(r.summary.medianCostPerFinishedRun).toBeCloseTo(4.5);
   });
 
+  it("adds up the step rows as a separate line, because the whole run is a median of real totals that include redos", () => {
+    const run = (id: string, planEnd: string, planRead: number[]) => {
+      const s = [step(id, "Plan", { completed_at: planEnd }), step(id, "Build"), step(id, "Code review")];
+      return { steps: s, usage: [...planRead.map((r) => opus(s[0].id, id, r)), opus(s[1].id, id, 5_000_000), opus(s[2].id, id, 0)] };
+    };
+    const a = run("r1", "2026-10-14T10:20:00Z", [10_000_000]);
+    const b = run("r2", "2026-10-14T10:40:00Z", [20_000_000]);
+    // r3 redoes Build: a second Build row in the same run, so its run total is bigger than the sum of per-step medians.
+    const c = run("r3", "2026-10-14T10:20:00Z", [10_000_000]);
+    const redo = step("r3", "Build");
+    const r = buildStepPerformanceReport(input({
+      steps: [...a.steps, ...b.steps, ...c.steps, redo],
+      runs: done("r1", "r2", "r3"),
+      usage: [...a.usage, ...b.usage, ...c.usage, opus(redo.id, "r3", 5_000_000)],
+    }));
+    const t = r.templates[0];
+    const sum = (k: "medianMinutes" | "medianCost") => t.current.reduce((acc, s) => acc + (s[k] ?? 0), 0);
+    expect(t.sumOfSteps).toEqual({
+      minutes: sum("medianMinutes"),
+      cost: expect.closeTo(sum("medianCost")),
+      minutesMissing: 0,
+      costMissing: 0,
+    });
+    // The real figure stays the median of real run totals, so it differs from the sum.
+    expect(t.wholeRun?.medianMinutes).not.toBe(t.sumOfSteps?.minutes);
+  });
+
+  it("adds up the rows as displayed, so the sum matches adding the shown rows by hand", () => {
+    // Each step takes 7 min 24 s: every row shows 7 min, so the sum must show 21, not 22.
+    const steps = ["Plan", "Build", "Code review"].map((t) => step("r1", t, { completed_at: "2026-10-14T10:07:24Z" }));
+    const r = buildStepPerformanceReport(input({ steps, runs: done("r1"), usage: [] }));
+    expect(r.templates[0].sumOfSteps?.minutes).toBe(21);
+  });
+
+  it("skips steps with no figure when adding up, and counts them", () => {
+    const steps = [step("r1", "Plan"), step("r1", "Build"), step("r1", "Code review")];
+    const r = buildStepPerformanceReport(input({
+      steps,
+      runs: done("r1"),
+      usage: [opus(steps[0].id, "r1", 5_000_000)],
+    }));
+    const t = r.templates[0];
+    expect(t.sumOfSteps?.cost).toBeCloseTo(1);
+    expect(t.sumOfSteps?.costMissing).toBe(2);
+    expect(t.sumOfSteps?.minutes).toBe(30);
+    expect(t.sumOfSteps?.minutesMissing).toBe(0);
+  });
+
   it("leaves a run out of the whole-run figures when a step recorded no cost or fell before the period", () => {
     const full = [step("r1", "Plan"), step("r1", "Build"), step("r1", "Code review")];
     // r2 started before the period: its Plan wasn't loaded.
