@@ -80,7 +80,9 @@ async function launch(t, { home, appUrl, link }) {
   const fakeBin = tmpDir(t, "vc-lfr-bin-");
   const shim = path.join(fakeBin, "shim.mjs");
   fs.writeFileSync(shim, `process.stdout.write("RUN_BEGIN"+JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()})+"RUN_END\\n");process.stdin.resume();\n`);
-  fs.writeFileSync(path.join(fakeBin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${shim}" "$@"\n`, { mode: 0o755 });
+  for (const name of ["claude", "codex"]) {
+    fs.writeFileSync(path.join(fakeBin, name), `#!/bin/sh\nexec "${process.execPath}" "${shim}" "$@"\n`, { mode: 0o755 });
+  }
   const session = `lfr-${Math.random().toString(36).slice(2, 8)}`;
   const tokens = await mintSessionTokens({ sub: "user-LFR", idea: "idea-LFR", sid: session, secret: SECRET });
   const relay = await startStandinRelay({ port: 0, secret: SECRET });
@@ -212,4 +214,51 @@ test("C: resume by id but no transcript on this Mac → a fresh session starts A
   assert.ok(!r.argv.includes("--resume"), JSON.stringify(r.argv));
   assert.equal(r.cwd, folder);
   assert.match(r.buf, /Couldn't find your earlier conversation on this Mac, so this is a fresh Claude Code session\./);
+});
+
+// AC3.5 — a resume never carries a start-up prompt, even when the link has one.
+const SECRET_PROMPT = "NEVER-TYPE-THIS-PROMPT-ON-A-RESUME";
+const anyArgvHasPrompt = (argv) => argv.some((a) => a.includes(SECRET_PROMPT));
+
+async function resumeSetup(t) {
+  const home = tmpDir(t, "vc-lfr-home-");
+  const folder = path.join(home, "projects", "board");
+  fs.mkdirSync(folder, { recursive: true });
+  writeTranscript(home, "-k", CONV, folder);
+  const app = await startFakeApp({ folder, folderReply: { status: 200, body: { ok: true } } });
+  t.after(app.close);
+  return { home, folder, app };
+}
+
+test("AC3.5a: Claude resume_id plus prompt= -> exactly the resume arguments, no prompt", { timeout: 60000 }, async (t) => {
+  const { home, folder, app } = await resumeSetup(t);
+  const r = await launch(t, { home, appUrl: app.url, link: { cwd: folder, resumeId: CONV, prompt: SECRET_PROMPT } });
+  assert.deepEqual(r.argv.slice(0, 2), ["--resume", CONV], JSON.stringify(r.argv));
+  assert.ok(!anyArgvHasPrompt(r.argv), JSON.stringify(r.argv));
+});
+
+test("AC3.5b: Claude resume=1 plus prompt= -> --continue, no prompt", { timeout: 60000 }, async (t) => {
+  const { home, folder, app } = await resumeSetup(t);
+  const r = await launch(t, { home, appUrl: app.url, link: { cwd: folder, resume: true, prompt: SECRET_PROMPT } });
+  assert.equal(r.argv[0], "--continue", JSON.stringify(r.argv));
+  assert.ok(!anyArgvHasPrompt(r.argv), JSON.stringify(r.argv));
+});
+
+test("AC3.5c: Codex resume plus prompt= -> resume arguments, no prompt", { timeout: 60000 }, async (t) => {
+  const { home, folder, app } = await resumeSetup(t);
+  const r = await launch(t, { home, appUrl: app.url, link: { cwd: folder, agent: "codex", resume: true, prompt: SECRET_PROMPT } });
+  assert.equal(r.argv[0], "resume", JSON.stringify(r.argv));
+  assert.ok(!anyArgvHasPrompt(r.argv), JSON.stringify(r.argv));
+});
+
+test("AC3.5d: no transcript found, start fresh instead -> no start-up prompt either", { timeout: 60000 }, async (t) => {
+  const home = tmpDir(t, "vc-lfr-home-");
+  const folder = path.join(home, "projects", "board");
+  fs.mkdirSync(folder, { recursive: true });
+  const app = await startFakeApp({ folder, folderReply: { status: 200, body: { ok: true } } });
+  t.after(app.close);
+  const r = await launch(t, { home, appUrl: app.url, link: { resumeId: CONV, prompt: SECRET_PROMPT } });
+  assert.ok(!r.argv.includes("--resume"), JSON.stringify(r.argv));
+  assert.ok(!anyArgvHasPrompt(r.argv), JSON.stringify(r.argv));
+  assert.match(r.buf, /fresh Claude Code session/);
 });
