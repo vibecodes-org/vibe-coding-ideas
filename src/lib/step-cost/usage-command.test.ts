@@ -189,6 +189,53 @@ describe("stepUsageCommand", () => {
     }
   });
 
+  // Card 5e654dd1, stage 16: one session holding several claims at once.
+  const MARK2 = "vcu_fedcba9876543210fedcba98";
+  const claim2 = claimLine.replace(MARK, MARK2);
+  const runUsage = (id: string, mark: string, read: number) =>
+    line({ id, model: "claude-opus-5-5", block: { type: "tool_use", id: `toolu_${id}`, name: "Bash", input: { command: `sh f '${mark}' 'AGENT_ID'` } }, read, main: true });
+  const call = (id: string, read: number) => line({ id, model: "claude-opus-5-5", block: text("x".repeat(35)), read, main: true });
+
+  it("splits the session's own calls across the steps open at the time, and stops at this step's usage run", () => {
+    const root = sandbox({}, [
+      mainBefore, claimLine, call("msg_a", 1000), claim2, call("msg_b", 2000), call("msg_c", 4000),
+      runUsage("msg_d", MARK2, 600), // the other step's cost run: shared, then that step is closed
+      call("msg_e", 8000),
+      runUsage("msg_f", MARK, 100), // this step's own run: counted, and nothing after it
+      call("msg_g", 900_000),
+    ]);
+    try {
+      const m = JSON.parse(run(root, USAGE_COMMAND_PLACEHOLDER)).models[0];
+      // 1000 alone, then 2000 + 4000 + 600 split two ways, then 8000 + 100 alone.
+      expect(m.cache_read_tokens).toBe(1000 + 1000 + 2000 + 300 + 8000 + 100);
+      expect(m.calls).toBe(5); // 1 + 0.5 * 3 + 2 = 4.5, rounded
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("shares calls with a step claimed before this one and still open", () => {
+    const root = sandbox({}, [claim2, call("msg_a", 50_000), claimLine, call("msg_b", 2000), runUsage("msg_c", MARK, 1000)]);
+    try {
+      expect(JSON.parse(run(root, USAGE_COMMAND_PLACEHOLDER)).models[0].cache_read_tokens).toBe(1500);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("still counts subagent calls in full while other steps are open", () => {
+    const root = sandbox(
+      { a1: [line({ id: "msg_s", model: "claude-sonnet-5-5", block: text("hi"), read: 500 })] },
+      [claimLine, claim2, call("msg_a", 2000)],
+    );
+    try {
+      const models = JSON.parse(run(root, "a1")).models as { model: string; cache_read_tokens: number }[];
+      expect(models.map((m) => `${m.model}:${m.cache_read_tokens}`).sort()).toEqual(["claude-opus-5-5:1000", "claude-sonnet-5-5:500"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   const hasZsh = spawnSync("zsh", ["-c", "true"]).status === 0;
   it.skipIf(!hasZsh)("gives the same answer under zsh, several agent ids included", () => {
     const root = sandbox({
@@ -277,6 +324,17 @@ describe("saved step-usage script and the short command", () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("falls back to the newest saved script when this version's file isn't there yet", () => {
+    const root = withScript(null);
+    try {
+      mkdirSync(join(root, "vibecodes"), { recursive: true });
+      writeFileSync(join(root, "vibecodes", "step-usage-00000000.sh"), body);
+      expect(runCommand(root, stepUsageShortCommand(MARK))).toBe(runCommand(root, stepUsageCommand(MARK)));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

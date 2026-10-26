@@ -94,6 +94,30 @@ describe("backfillSession", () => {
     expect(second.models).toEqual([expect.objectContaining({ model: "claude-opus-5-5", calls: 2, cache_read_tokens: 6000 })]);
   });
 
+  it("splits the session's own calls across attempts open at the same time (stage 16)", () => {
+    clock = 0;
+    const lines = [
+      call("msg_0", { uses: [["u1", CLAIM, {}]] }),
+      result("u1", claimed(STEP, "ct_a")),
+      call("msg_1", { read: 1000 }),
+      call("msg_2", { uses: [["u2", CLAIM, {}]] , read: 2000 }),
+      result("u2", claimed(STEP2, "ct_b")),
+      call("msg_3", { read: 4000 }),
+      call("msg_4", { uses: [["u3", COMPLETE, { step_id: STEP2, claim_token: "ct_b" }]], read: 600 }),
+      result("u3", { step: { id: STEP2, status: "completed" } }),
+      call("msg_5", { uses: [["u4", COMPLETE, { step_id: STEP, claim_token: "ct_a" }]], read: 8000 }),
+      result("u4", { step: { id: STEP, status: "completed" } }),
+      call("msg_6", { uses: [["u5", CLAIM, {}]] }),
+      result("u5", claimed("33333333-3333-4333-8333-333333333333", "ct_c")),
+      call("msg_7", { read: 50_000 }),
+    ];
+    const { attempts } = backfillSession(lines, () => null);
+    const read = Object.fromEntries(attempts.map((a) => [a.step_id, a.models[0].cache_read_tokens]));
+    // STEP: 1000 + 2000 alone, 4000 + 600 shared, 8000 alone. STEP2: half of 4000 + 600.
+    expect(read[STEP]).toBe(1000 + 2000 + 2300 + 8000);
+    expect(read[STEP2]).toBe(2300);
+  });
+
   it("skips an attempt whose subagent transcript is gone rather than under-counting it", () => {
     const { attempts, skipped } = backfillSession(session(), () => null);
     expect(skipped).toBe(1);
