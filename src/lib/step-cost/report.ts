@@ -328,12 +328,14 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
 
     const currentRuns = new Set(currentRows.map((r) => r.run_id)).size;
     const since = currentRows.map((r) => r.started_at ?? r.completed_at).filter((d): d is string => !!d).sort()[0] ?? null;
-    const addUp = (vals: (number | null)[]) => {
-      const have = vals.filter((v): v is number => v !== null);
-      return { total: have.length > 0 ? have.reduce((a, v) => a + v, 0) : null, missing: vals.length - have.length };
+    // Adds the rows as they are shown (whole minutes, whole cents), so the
+    // sum matches what an admin gets adding the displayed rows by hand.
+    const addUp = (vals: (number | null)[], step: number) => {
+      const have = vals.filter((v): v is number => v !== null).map((v) => Math.round(v / step));
+      return { total: have.length > 0 ? have.reduce((a, v) => a + v, 0) * step : null, missing: vals.length - have.length };
     };
-    const sumMinutes = addUp(current.map((r) => r.medianMinutes));
-    const sumCost = addUp(current.map((r) => r.medianCost));
+    const sumMinutes = addUp(current.map((r) => r.medianMinutes), 1);
+    const sumCost = addUp(current.map((r) => r.medianCost), 0.01);
     result.push({
       key: acc.key,
       name: byRecent[0].name,

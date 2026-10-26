@@ -190,6 +190,13 @@ describe("buildStepPerformanceReport", () => {
     expect(t.wholeRun?.medianMinutes).not.toBe(t.sumOfSteps?.minutes);
   });
 
+  it("adds up the rows as displayed, so the sum matches adding the shown rows by hand", () => {
+    // Each step takes 7 min 24 s: every row shows 7 min, so the sum must show 21, not 22.
+    const steps = ["Plan", "Build", "Code review"].map((t) => step("r1", t, { completed_at: "2026-10-14T10:07:24Z" }));
+    const r = buildStepPerformanceReport(input({ steps, runs: done("r1"), usage: [] }));
+    expect(r.templates[0].sumOfSteps?.minutes).toBe(21);
+  });
+
   it("skips steps with no figure when adding up, and counts them", () => {
     const steps = [step("r1", "Plan"), step("r1", "Build"), step("r1", "Code review")];
     const r = buildStepPerformanceReport(input({
