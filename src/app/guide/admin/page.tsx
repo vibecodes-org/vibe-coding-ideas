@@ -141,6 +141,12 @@ export default function AdminPage() {
             one has run, and counts only runs that used exactly those steps.
             Runs of the template&apos;s earlier versions are listed separately,
             all their steps included, so old and new numbers don&apos;t mix.
+            Under the steps, <strong className="text-foreground">Sum of steps</strong>{" "}
+            adds up the rows above it (a * means a step with no figure was
+            skipped), and <strong className="text-foreground">Typical whole
+            run (incl. redos)</strong> is the median of real finished runs,
+            redo rounds counted. The two won&apos;t match, because the step
+            rows are medians of single steps.
           </p>
           <p className="mb-4 text-muted-foreground">
             Cost is what the tokens would cost at Anthropic API prices. When a

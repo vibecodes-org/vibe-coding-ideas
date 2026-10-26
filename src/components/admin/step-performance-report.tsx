@@ -261,6 +261,13 @@ export function StepPerformanceReportView() {
           period isn&apos;t counted in the whole-run figures.
         </p>
         <p>
+          <span className="font-medium text-foreground">Sum of steps</span> adds up the step rows above it. A * means at least one step has
+          no figure in that column and was skipped, so the sum is short.{" "}
+          <span className="font-medium text-foreground">Typical whole run (incl. redos)</span> is the median of real finished runs, with every
+          redo round counted, so it won&apos;t equal the sum: the step rows are medians of single steps, and a run that redid a step costs more
+          than one that didn&apos;t.
+        </p>
+        <p>
           A run counts under the current version only if its steps are exactly the template&apos;s steps today; runs of earlier versions are
           listed under them with all their steps, even ones whose name was kept. With All boards, templates with the same name are combined. A step that has run 5+ times and caught a problem in at least 1 in 5 runs is marked
           &ldquo;Catches problems&rdquo;; one that has run 10+ times with nothing caught or rejected is marked &ldquo;Never caught anything&rdquo;. Earlier-version
@@ -285,7 +292,7 @@ function TemplateSection({ template }: { template: TemplatePerformance }) {
         )}
       </div>
       {template.current.length > 0 ? (
-        <StepTable rows={template.current} numbered wholeRun={template.wholeRun} />
+        <StepTable rows={template.current} numbered wholeRun={template.wholeRun} sumOfSteps={template.sumOfSteps} />
       ) : (
         <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
           No run has finished a step of this template&apos;s current version in this period.
@@ -313,10 +320,12 @@ function StepTable({
   rows,
   numbered = false,
   wholeRun = null,
+  sumOfSteps = null,
 }: {
   rows: StepPerformanceRow[];
   numbered?: boolean;
   wholeRun?: TemplatePerformance["wholeRun"];
+  sumOfSteps?: TemplatePerformance["sumOfSteps"];
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -378,9 +387,24 @@ function StepTable({
               )}
             </TableRow>
           ))}
+          {sumOfSteps && (
+            <TableRow>
+              <TableCell className="text-xs font-semibold">Sum of steps</TableCell>
+              <TableCell colSpan={4} />
+              <TableCell className="text-right text-xs font-semibold">
+                {mins(sumOfSteps.minutes)}
+                {sumOfSteps.minutesMissing > 0 && <span className="text-muted-foreground">*</span>}
+              </TableCell>
+              <TableCell className="text-right text-xs font-semibold">
+                {money(sumOfSteps.cost)}
+                {sumOfSteps.costMissing > 0 && <span className="text-muted-foreground">*</span>}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          )}
           {wholeRun && (
             <TableRow>
-              <TableCell className="text-xs font-semibold">Whole run</TableCell>
+              <TableCell className="text-xs font-semibold">Typical whole run (incl. redos)</TableCell>
               <TableCell colSpan={4} />
               <TableCell className="text-right text-xs font-semibold">{mins(wholeRun.medianMinutes)}</TableCell>
               <TableCell className="text-right text-xs font-semibold">{money(wholeRun.medianCost)}</TableCell>
