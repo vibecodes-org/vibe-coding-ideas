@@ -6,6 +6,15 @@
 // itself, the hand-off and wrap-up when a subagent did it) plus the calls of
 // each subagent that did the work.
 //
+// Steps run side by side (card 5e654dd1, stage 16): one session can hold
+// several claims at once, and its own calls then serve all of them. Each of
+// the session's calls is split equally across the steps open at that moment,
+// so the coordinator's work is counted once in total rather than once per
+// open step (26 Oct 2026: five bugs at once showed Opus $21, about $16 real).
+// A step is open from the first line holding its marker (the claim) until a
+// Bash call holding it (the session running that step's usage command); the
+// step's own count stops there. Subagent calls always count in full.
+//
 // Claude Code writes the session's transcript to
 // ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<project>/<session>.jsonl and each
 // subagent's to <project>/<session>/subagents/agent-<agentId>.jsonl. The
@@ -36,8 +45,17 @@ export const USAGE_COMMAND_PLACEHOLDER = "AGENT_ID";
 // Kept free of single quotes: it is passed to awk inside '…'. In the
 // session transcript (FILENAME == main) nothing counts until the marker line.
 const AWK_PROGRAM = String.raw`
-FILENAME == main && !on { if (index($0, mark)) on = 1; next }
-FILENAME == main && /"isSidechain":true/ { next }
+FILENAME == main {
+  if (done) next
+  sk = !on; if (!on && index($0, mark)) on = 1
+  if (/"isSidechain":true/) next
+  cl = /"type":"assistant"/ && /"name":"Bash"/; r = $0; nk = 0; split("", ln)
+  while (match(r, /vcu_[0-9a-f]+/)) { k = substr(r, RSTART, RLENGTH); r = substr(r, RSTART + RLENGTH); if (k in ln) continue; ln[k] = 1; if (!(k in sn)) { sn[k] = 1; lv[k] = 1; nl++ } else if (cl && (k in lv)) sh[++nk] = k }
+  lw = 1 / (nl ? nl : 1)
+  for (j = 1; j <= nk; j++) { delete lv[sh[j]]; nl--; if (sh[j] == mark) done = 1 }
+  if (sk) next
+}
+function q(x) { return int(x + 0.5) }
 function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return substr(s, RSTART + length(key) + 3, RLENGTH - length(key) - 3) + 0; return 0 }
 /"type":"assistant"/ {
   if (!match($0, /"id":"msg_[A-Za-z0-9_]+"/)) next
@@ -49,19 +67,20 @@ function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return su
   i = num(u, "input_tokens"); r = num(u, "cache_read_input_tokens"); w = num(u, "cache_creation_input_tokens"); h = num(u, "ephemeral_1h_input_tokens")
   if (m ~ /haiku-5-5/ && i + r + w > 100000) m = m "+long"
   model[id] = m; inp[id] = i; rd[id] = r; w1h[id] = h; w5m[id] = w - h
+  if (!(id in wt)) wt[id] = (FILENAME == main) ? lw : 1
   o = num(u, "output_tokens"); if (o > rep[id]) rep[id] = o
   s = index($0, "\"content\":["); e = index($0, ",\"stop_reason\":")
   if (s > 0 && e > s) { seg = substr($0, s + 11, e - s - 11); gsub(/"signature":"[^"]*"/, "", seg); gsub(/"(type|id|name|caller|container)":("[^"]*"|null|[{][^{}]*[}])/, "", seg); len[id] += length(seg) }
 }
 END {
   for (id in model) {
-    m = model[id]; est = int(len[id] / 3.5 + 0.5); out = (rep[id] > est) ? rep[id] : est
-    C[m]++; I[m] += inp[id]; O[m] += out; R[m] += rd[id]; W5[m] += w5m[id]; W1[m] += w1h[id]
+    m = model[id]; est = int(len[id] / 3.5 + 0.5); out = (rep[id] > est) ? rep[id] : est; f = wt[id]
+    C[m] += f; I[m] += inp[id] * f; O[m] += out * f; R[m] += rd[id] * f; W5[m] += w5m[id] * f; W1[m] += w1h[id] * f
   }
   n = 0; body = ""
   for (m in C) {
     if (n++) body = body ","
-    body = body sprintf("{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d}", m, C[m], I[m], O[m], R[m], W5[m], W1[m])
+    body = body sprintf("{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d}", m, q(C[m]), q(I[m]), q(O[m]), q(R[m]), q(W5[m]), q(W1[m]))
   }
   # A subagent that died on an API error has no real model calls to report.
   if (n == 0) { print "NO_TRANSCRIPT"; exit }
@@ -143,7 +162,9 @@ export function stepUsageScript(): { file: string; body: string } {
 /**
  * The short command: runs the saved script, or prints NO_TRANSCRIPT no-script
  * when it isn't there (a session the helper didn't launch, or an older
- * helper). The session already treats NO_TRANSCRIPT as "omit usage", so a
+ * helper). A session launched before the script last changed only has the
+ * older copy, so it falls back to the newest saved one (same arguments) rather
+ * than losing the step's cost until a relaunch. The session already treats NO_TRANSCRIPT as "omit usage", so a
  * missing file never blocks a step.
  */
 export function stepUsageShortCommand(
@@ -153,5 +174,5 @@ export function stepUsageShortCommand(
 ): string {
   if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
   if (!STEP_USAGE_SCRIPT_FILE.test(file)) throw new Error("bad usage script name");
-  return `f="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes/${file}"; [ -s "$f" ] && sh "$f" '${marker}' '${agentIds}' || echo "NO_TRANSCRIPT no-script"`;
+  return `d="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes"; f="$d/${file}"; [ -s "$f" ] || f=$(ls -t "$d"/step-usage-*.sh 2>/dev/null | head -n 1); [ -s "$f" ] && sh "$f" '${marker}' '${agentIds}' || echo "NO_TRANSCRIPT no-script"`;
 }

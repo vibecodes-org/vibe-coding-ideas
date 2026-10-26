@@ -8,6 +8,11 @@
 // launched in between (up to that moment). The claim and the completion are
 // paired by their claim token, so nothing is guessed from timing.
 //
+// Steps run side by side (card 5e654dd1, stage 16): each of the session's own
+// calls is split equally across the attempts open at that line (claimed and
+// not yet completed, including claims that never finished), as the live
+// command does. Subagent calls count in full.
+//
 // Input/cache counts are exact; output is estimated from the length of what
 // the model wrote, exactly as the live command's awk does it.
 
@@ -49,15 +54,20 @@ export function readCall(line) {
   return { id: idm[1], model, input, read, write5m: write - write1h, write1h, reported: num(u, "output_tokens"), len };
 }
 
-/** Totals model calls the way the live command does: one entry per model. */
-export function totalCalls(lines) {
+/**
+ * Totals model calls the way the live command does: one entry per model.
+ * weights[i] (default 1) is the share of line i's call that belongs to this
+ * step, taken from the first line of each call.
+ */
+export function totalCalls(lines, weights = []) {
   const calls = new Map();
-  for (const line of lines) {
+  for (const [i, line] of lines.entries()) {
     const c = readCall(line);
     if (!c) continue;
     const prev = calls.get(c.id);
     calls.set(c.id, {
       ...c,
+      weight: prev?.weight ?? weights[i] ?? 1,
       reported: Math.max(c.reported, prev?.reported ?? 0),
       len: (prev?.len ?? 0) + c.len,
     });
@@ -68,15 +78,17 @@ export function totalCalls(lines) {
     const m = byModel.get(c.model) ?? {
       model: c.model, calls: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0,
     };
-    m.calls++;
-    m.input_tokens += c.input;
-    m.output_tokens += Math.max(c.reported, est);
-    m.cache_read_tokens += c.read;
-    m.cache_write_5m_tokens += c.write5m;
-    m.cache_write_1h_tokens += c.write1h;
+    const w = c.weight;
+    m.calls += w;
+    m.input_tokens += c.input * w;
+    m.output_tokens += Math.max(c.reported, est) * w;
+    m.cache_read_tokens += c.read * w;
+    m.cache_write_5m_tokens += c.write5m * w;
+    m.cache_write_1h_tokens += c.write1h * w;
     byModel.set(c.model, m);
   }
-  return [...byModel.values()];
+  const round = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, typeof v === "number" ? Math.round(v) : v]));
+  return [...byModel.values()].map(round);
 }
 
 function resultText(block) {
@@ -102,6 +114,11 @@ const timestampOf = (line) => /"timestamp":"([^"]+)"/.exec(line)?.[1] ?? null;
  * line indexes: the session's calls after `from` up to and including `to`.
  */
 export function findAttempts(lines) {
+  return scanAttempts(lines).done;
+}
+
+/** The finished attempts, plus the claims still open at the end of the transcript. */
+function scanAttempts(lines) {
   const tools = new Map(); // tool_use id -> { name, input, index }
   const open = new Map(); // claim token -> attempt
   let latest = null; // the attempt most recently claimed and still open
@@ -151,7 +168,7 @@ export function findAttempts(lines) {
       });
     }
   });
-  return done;
+  return { done, unfinished: [...open.values()] };
 }
 
 /**
@@ -162,8 +179,17 @@ export function findAttempts(lines) {
 export function backfillSession(lines, readAgent) {
   const attempts = [];
   let skipped = 0;
-  for (const a of findAttempts(lines)) {
-    const own = lines.slice(a.from + 1, a.to + 1).filter((l) => !l.includes('"isSidechain":true'));
+  const { done, unfinished } = scanAttempts(lines);
+  const spans = [...done.map((a) => [a.from, a.to]), ...unfinished.map((a) => [a.from, Infinity])];
+  const share = (i) => 1 / Math.max(1, spans.filter(([from, to]) => from < i && i <= to).length);
+  for (const a of done) {
+    const own = [];
+    const weights = [];
+    for (let i = a.from + 1; i <= a.to; i++) {
+      if (lines[i].includes('"isSidechain":true')) continue;
+      own.push(lines[i]);
+      weights.push(share(i));
+    }
     const agentLines = [];
     let missing = false;
     for (const id of a.agentIds) {
@@ -175,7 +201,7 @@ export function backfillSession(lines, readAgent) {
       // Only what the subagent did before the step closed: a later SendMessage isn't this step's.
       agentLines.push(...agent.filter((l) => (timestampOf(l) ?? "") <= a.endedAt));
     }
-    const models = missing ? [] : totalCalls([...own, ...agentLines]);
+    const models = missing ? [] : totalCalls([...own, ...agentLines], weights);
     if (missing || models.length === 0 || !a.endedAt) {
       skipped++;
       continue;
