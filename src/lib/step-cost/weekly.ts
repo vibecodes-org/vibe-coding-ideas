@@ -6,7 +6,15 @@
 // titles, card content, prompts or outputs.
 
 import { MODEL_PRICES, priceKey } from "./pricing";
-import { isWholeRun, median, stepCostsFor, wholeRunCost, type ReportUsageRow } from "./report";
+import {
+  caughtOrRejectedStepIds,
+  isWholeRun,
+  median,
+  stepCostsFor,
+  wholeRunCost,
+  type ReportCommentRow,
+  type ReportUsageRow,
+} from "./report";
 
 /** A recorded attempt; created_at says when, for a step that was sent back and is waiting to re-run. */
 export type WeeklyUsageRow = ReportUsageRow & { created_at?: string };
@@ -23,6 +31,8 @@ export interface WeeklyStepRow {
   status: string;
   started_at: string | null;
   completed_at: string | null;
+  /** A person approves this step; their failure on it is a rejection. */
+  human_check_required: boolean;
   /** What the step ran with, copied from its template when the run started. */
   model_tier: string | null;
   effort_override: string | null;
@@ -37,8 +47,10 @@ export interface WeeklyInput {
   steps: WeeklyStepRow[];
   runs: WeeklyRunRow[];
   templates: WeeklyTemplateRow[];
-  /** Step ids that have a changes_requested comment (the work was sent back). */
-  sentBackStepIds: Set<string>;
+  /** changes_requested and failure comments (the rest are ignored), to tell caught and rejected steps apart. */
+  comments: ReportCommentRow[];
+  /** Author ids that are agents (bot profiles), to tell an agent's failure from a person's. */
+  botIds: Set<string>;
   usage: WeeklyUsageRow[];
   ideas: WeeklyIdeaRow[];
   paths: WeeklyPathRow[];
@@ -120,9 +132,13 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   }
 
   // Steps that finished an attempt inside the windows, on a run with a known
-  // workflow. A step sent back and waiting to re-run (pending or in progress
-  // again) still counts when it has recorded cost or a send-back, in the week of
-  // its latest recorded attempt, so its earlier attempt's cost doesn't vanish.
+  // workflow. A step waiting to re-run (pending or in progress again) still
+  // counts when the Admin report would count it (caught by a send-back, or
+  // rejected at its gate), in the week of its latest recorded attempt, so its
+  // earlier attempt's cost doesn't vanish. A step that only has cost (for
+  // example one from a run that was reset) does not.
+  const sentBackStepIds = new Set(input.comments.filter((c) => c.type === "changes_requested").map((c) => c.step_id));
+  const waitingCounted = caughtOrRejectedStepIds({ steps: input.steps, comments: input.comments, botIds: input.botIds });
   const lastUsage = new Map<string, string>();
   for (const u of input.usage) {
     if (u.created_at && u.created_at > (lastUsage.get(u.step_id) ?? "")) lastUsage.set(u.step_id, u.created_at);
@@ -130,7 +146,7 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   const counted: (WeeklyStepRow & { week: number; wf: string })[] = [];
   for (const s of input.steps) {
     if (!s.run_id) continue;
-    const waiting = !RAN.has(s.status) && (lastUsage.has(s.id) || input.sentBackStepIds.has(s.id));
+    const waiting = !RAN.has(s.status) && waitingCounted.has(s.id);
     if (!RAN.has(s.status) && !waiting) continue;
     const week = idx(waiting ? lastUsage.get(s.id) ?? stepWhen(s) : stepWhen(s));
     if (week < 0) continue;
@@ -165,7 +181,7 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     r.usd += stepCost.get(s.id) ?? 0;
     r.stepIds.push(s.id);
     r.titles.push(s.title);
-    if (input.sentBackStepIds.has(s.id)) r.sentBack = true;
+    if (sentBackStepIds.has(s.id)) r.sentBack = true;
   }
 
   const total = zeros(weeks);

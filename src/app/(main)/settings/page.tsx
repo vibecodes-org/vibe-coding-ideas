@@ -95,7 +95,7 @@ export default async function SettingsPage() {
           <SettingsRow
             icon={Cpu}
             title="Model Tiers"
-            description="Which Claude model each tier and the in-app terminal use."
+            description="Which model and effort each tier and the in-app terminal use, for Claude and Codex."
             action={
               <ModelTierSettings
                 // model_tier_map's stored type is agent-aware now (Codex

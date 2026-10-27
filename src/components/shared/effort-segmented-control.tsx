@@ -13,10 +13,21 @@ type SegmentedButtonsProps = {
   groupLabel: string;
   options: { key: string; label: string; pressed: boolean; onSelect: () => void }[];
   disabled: boolean;
+  /** Disables only the option buttons, not the leading default segment. */
+  levelsDisabled?: boolean;
   describedById?: string;
   invalid?: boolean;
   /** Adds the leading two-line Default segment; `pressed` marks it chosen. */
-  defaultOption?: { pressed: boolean; subLabel: string | null; ariaLabel?: string; onSelect: () => void };
+  defaultOption?: {
+    pressed: boolean;
+    subLabel: string | null;
+    ariaLabel?: string;
+    onSelect: () => void;
+    /** First-segment wording; default "Default" (Admin passes "Not set"). */
+    label?: string;
+    /** Disables just this segment (it is then never shown pressed). */
+    disabled?: boolean;
+  };
 };
 
 /**
@@ -24,8 +35,9 @@ type SegmentedButtonsProps = {
  * AutoCompactSegmentedControl, so both rows look and behave the same by
  * construction (classes unchanged from the original effort control).
  */
-function SegmentedButtons({ groupLabel, options, disabled, describedById, invalid, defaultOption }: SegmentedButtonsProps) {
+function SegmentedButtons({ groupLabel, options, disabled, levelsDisabled, describedById, invalid, defaultOption }: SegmentedButtonsProps) {
   const segmentPadding = defaultOption ? "px-0.5" : "px-1";
+  const defaultDisabled = disabled || !!defaultOption?.disabled;
   return (
     <div
       role="group"
@@ -40,22 +52,22 @@ function SegmentedButtons({ groupLabel, options, disabled, describedById, invali
       {defaultOption && (
         <button
           type="button"
-          disabled={disabled}
-          aria-pressed={!disabled && defaultOption.pressed}
+          disabled={defaultDisabled}
+          aria-pressed={!defaultDisabled && defaultOption.pressed}
           aria-label={defaultOption.ariaLabel}
           onClick={defaultOption.onSelect}
           className={cn(
             "flex min-h-9 min-w-0 flex-[1.5_1_0%] flex-col items-center justify-center whitespace-nowrap border-r border-input py-[3px] text-[11px] font-medium leading-[1.15] transition-colors disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:min-h-11",
             segmentPadding,
-            !disabled && defaultOption.pressed ? "bg-foreground text-background" : "bg-transparent text-foreground hover:bg-accent"
+            !defaultDisabled && defaultOption.pressed ? "bg-foreground text-background" : "bg-transparent text-foreground hover:bg-accent"
           )}
         >
-          Default
+          {defaultOption.label ?? "Default"}
           {defaultOption.subLabel && (
             <span
               className={cn(
                 "text-[10px] font-normal",
-                !disabled && defaultOption.pressed ? "text-background/75" : "text-muted-foreground"
+                !defaultDisabled && defaultOption.pressed ? "text-background/75" : "text-muted-foreground"
               )}
             >
               {defaultOption.subLabel}
@@ -67,7 +79,7 @@ function SegmentedButtons({ groupLabel, options, disabled, describedById, invali
         <button
           key={option.key}
           type="button"
-          disabled={disabled}
+          disabled={disabled || levelsDisabled}
           aria-pressed={option.pressed}
           onClick={option.onSelect}
           className={cn(
@@ -119,7 +131,13 @@ type EffortSegmentedControlProps = {
   /** Overrides the group's accessible name (default "<Agent> reasoning effort"). */
   groupLabel?: string;
   /** Adds the leading Default segment; `onSelect` fires when it is clicked. */
-  defaultOption?: { subLabel: string | null; ariaLabel?: string; onSelect: () => void };
+  defaultOption?: { subLabel: string | null; ariaLabel?: string; onSelect: () => void; label?: string; disabled?: boolean };
+  /**
+   * Disables only the level buttons (the Default segment stays clickable unless
+   * its own `disabled` is set) and shows `showDefaultPressed` greyed. Used by
+   * the Codex rows, where the level follows the model.
+   */
+  levelsDisabled?: boolean;
 };
 
 export function EffortSegmentedControl({
@@ -132,11 +150,14 @@ export function EffortSegmentedControl({
   invalid,
   groupLabel,
   defaultOption,
+  levelsDisabled,
 }: EffortSegmentedControlProps) {
+  const levelsOff = disabled || !!levelsDisabled;
   return (
     <SegmentedButtons
       groupLabel={groupLabel ?? `${AGENT_LABELS[agent]} reasoning effort`}
       disabled={disabled}
+      levelsDisabled={levelsDisabled}
       describedById={describedById}
       invalid={invalid}
       defaultOption={
@@ -145,12 +166,14 @@ export function EffortSegmentedControl({
           subLabel: defaultOption.subLabel,
           ariaLabel: defaultOption.ariaLabel,
           onSelect: defaultOption.onSelect,
+          label: defaultOption.label,
+          disabled: defaultOption.disabled,
         }
       }
       options={EFFORT_LEVELS_BY_AGENT[agent].map((level) => ({
         key: level,
         label: EFFORT_LABELS[level],
-        pressed: disabled ? level === showDefaultPressed : level === value,
+        pressed: levelsOff ? level === showDefaultPressed : level === value,
         onSelect: () => onChange(level),
       }))}
     />
@@ -166,7 +189,7 @@ type AutoCompactSegmentedControlProps = {
   groupLabel: string;
   describedById?: string;
   /** Settings only: the leading Default segment. Admin passes none. */
-  defaultOption?: { subLabel: string | null; ariaLabel?: string; onSelect: () => void };
+  defaultOption?: { subLabel: string | null; ariaLabel?: string; onSelect: () => void; label?: string };
 };
 
 /** Memory-limit strip (task 5e654dd1): 200k...1M for Claude, 100k...200k for Codex. Same look as the effort strip. */
@@ -190,6 +213,7 @@ export function AutoCompactSegmentedControl({
           subLabel: defaultOption.subLabel,
           ariaLabel: defaultOption.ariaLabel,
           onSelect: defaultOption.onSelect,
+          label: defaultOption.label,
         }
       }
       options={AUTO_COMPACT_STEPS[agent].map((step) => ({

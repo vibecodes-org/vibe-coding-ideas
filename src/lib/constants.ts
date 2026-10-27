@@ -64,7 +64,7 @@ export const MODEL_TIER_VALUES: ReadonlySet<string> = new Set(
 
 /** Always-visible helper text shown beneath the tier control (P2b — mandatory, not advisory). */
 export const MODEL_TIER_RUNS_ON_HELPER =
-  "Steps run on the tier's mapped model — change your mapping in Profile → Model Tiers.";
+  "Steps run on the tier's mapped model — change your mapping in Settings → Model Tiers.";
 
 /** Human label for a stored tier value; falls back to the raw value if unknown. */
 export function modelTierLabel(tier: string): string {
@@ -197,7 +197,7 @@ export interface AgentResolvedEntry {
  * "<Tier> → <Claude model> (<effort>) on Claude · <codex model> (<effort>) on
  * Codex" — the recurring resolution line (Codex model-tier task FR-7 design,
  * docs/codex-model-tiers-ux-design.html §overview): shown under each tier row
- * in Profile → Model Tiers and the admin Platform card, and in the step tier
+ * in Settings → Model Tiers and the admin Platform card, and in the step tier
  * picker's helper text. Claude models keep their capitalised family-alias
  * casing (capitalizeModelName); Codex model ids are shown exactly as
  * configured — lowercase, as typed — same rule as tierMismatchSentence's
