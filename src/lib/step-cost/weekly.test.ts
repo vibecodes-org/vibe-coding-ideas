@@ -18,8 +18,8 @@ const ONE_DOLLAR = 5_000_000;
 
 function input(o: Partial<WeeklyInput> = {}): WeeklyInput {
   return {
-    steps: [], runs: [{ id: "r1", template_id: "t1" }, { id: "r2", template_id: "t1" }],
-    templates: [{ id: "t1", idea_id: "i1", name: "Bug Fix", updated_at: "2026-10-01T00:00:00Z" }],
+    steps: [], runs: [{ id: "r1", template_id: "t1", status: "completed" }, { id: "r2", template_id: "t1", status: "completed" }],
+    templates: [{ id: "t1", idea_id: "i1", name: "Bug Fix", updated_at: "2026-10-01T00:00:00Z", steps: [{ title: "Build" }, { title: "Review" }] }],
     sentBackStepIds: new Set(), usage: [], ideas: [{ id: "i1", title: "Board One" }], paths: [],
     weekEndsAt: END, weeks: 3, ...o,
   };
@@ -66,7 +66,7 @@ describe("buildWeeklyReport", () => {
     const r = buildWeeklyReport(input({ steps, usage: us }));
     expect(r.vibecodes_total_usd).toEqual([0, 2, 4]);
     expect(r.boards).toEqual([{ idea_id: "i1", title: "Board One", project_path: null, usd: [0, 2, 4], runs: [0, 1, 1] }]);
-    expect(r.workflows).toEqual([{ name: "Bug Fix", runs: [0, 1, 1], usd: [0, 2, 4], median_usd: [null, 2, 4], sent_back: [0, 0, 0], cost_missing: [0, 0, 0] }]);
+    expect(r.workflows).toEqual([{ name: "Bug Fix", runs: [0, 1, 1], usd: [0, 2, 4], median_usd: [null, null, 4], sent_back: [0, 0, 0], cost_missing: [0, 0, 0] }]);
     const build = r.steps.find((s) => s.step === "Build")!;
     expect(build.runs).toEqual([0, 1, 1]);
     expect(build.usd).toEqual([0, 2, 3]);
@@ -111,10 +111,10 @@ describe("buildWeeklyReport", () => {
   it("combines same-named workflows from different boards", () => {
     const r = buildWeeklyReport(input({
       steps: [step("a", "r1", "Build", at(2)), step("b", "r2", "Build", at(2), { idea_id: "i2" })],
-      runs: [{ id: "r1", template_id: "t1" }, { id: "r2", template_id: "t2" }],
+      runs: [{ id: "r1", template_id: "t1", status: "completed" }, { id: "r2", template_id: "t2", status: "completed" }],
       templates: [
-        { id: "t1", idea_id: "i1", name: "Bug Fix", updated_at: "1" },
-        { id: "t2", idea_id: "i2", name: "bug fix ", updated_at: "2" },
+        { id: "t1", idea_id: "i1", name: "Bug Fix", updated_at: "1", steps: [] },
+        { id: "t2", idea_id: "i2", name: "bug fix ", updated_at: "2", steps: [] },
       ],
       ideas: [{ id: "i1", title: "A" }, { id: "i2", title: "B" }],
       usage: [usage("a", "r1", ONE_DOLLAR), usage("b", "r2", ONE_DOLLAR)],
@@ -182,5 +182,55 @@ describe("buildWeeklyReport", () => {
     // A pending step with no cost and no send-back is still left out.
     const idle = buildWeeklyReport(input({ steps: [step("p", "r1", "Build", at(2), { status: "pending" })] }));
     expect(idle.workflows).toEqual([]);
+  });
+  describe("typical cost per run follows the Admin whole-run rule", () => {
+    // A finished run on the template (Build + Review), costed $1 + $2 = $3.
+    const whole = (run: string, w: number) => [
+      step(`${run}b`, run, "Build", at(w)), step(`${run}r`, run, "Review", at(w - 0.5)),
+    ];
+    const wholeUsage = (run: string, b = 1, r = 2) => [usage(`${run}b`, run, ONE_DOLLAR * b), usage(`${run}r`, run, ONE_DOLLAR * r)];
+    const runsOf = (extra: { id: string; status: string }[]) =>
+      [{ id: "r1", template_id: "t1", status: "completed" }, ...extra.map((e) => ({ ...e, template_id: "t1" }))];
+    const wf = (r: ReturnType<typeof buildWeeklyReport>) => r.workflows[0];
+
+    it("leaves out a dropped plan-only run but still counts its cost and run", () => {
+      const steps = [...whole("r1", 2), step("r2b", "r2", "Build", at(2))];
+      const r = buildWeeklyReport(input({ steps, usage: [...wholeUsage("r1"), usage("r2b", "r2", ONE_DOLLAR * 10)], runs: runsOf([{ id: "r2", status: "completed" }]) }));
+      expect(wf(r).median_usd[2]).toBe(3);
+      expect(wf(r).runs[2]).toBe(2);
+      expect(wf(r).usd[2]).toBe(13);
+    });
+    it("leaves out an in-flight run", () => {
+      const steps = [...whole("r1", 2), ...whole("r2", 1)];
+      const r = buildWeeklyReport(input({ steps, usage: [...wholeUsage("r1"), ...wholeUsage("r2", 9, 9)], runs: runsOf([{ id: "r2", status: "running" }]) }));
+      expect(wf(r).median_usd[2]).toBe(3);
+      expect(wf(r).runs[2]).toBe(2);
+      expect(wf(r).usd[2]).toBe(21);
+    });
+    it("leaves out a partly costed run but counts it as missing", () => {
+      const steps = [...whole("r1", 2), ...whole("r2", 1)];
+      const r = buildWeeklyReport(input({ steps, usage: [...wholeUsage("r1"), usage("r2b", "r2", ONE_DOLLAR * 9)], runs: runsOf([{ id: "r2", status: "completed" }]) }));
+      expect(wf(r).median_usd[2]).toBe(3);
+      expect(wf(r).cost_missing[2]).toBe(1);
+      expect(wf(r).usd[2]).toBe(12);
+    });
+    it("is null when no run qualifies", () => {
+      const r = buildWeeklyReport(input({ steps: whole("r1", 2), usage: wholeUsage("r1"), runs: [{ id: "r1", template_id: "t1", status: "running" }] }));
+      expect(wf(r).median_usd[2]).toBeNull();
+    });
+    it("equals the Admin wholeRun.medianCost for the same data", () => {
+      const rs = [{ id: "r1", status: "completed" }, { id: "r2", status: "completed" }, { id: "r3", status: "completed" }, { id: "r4", status: "running" }, { id: "r5", status: "completed" }];
+      const steps = [...whole("r1", 2), ...whole("r2", 3), ...whole("r3", 1), ...whole("r4", 1), step("r5b", "r5", "Build", at(2))];
+      const us = [...wholeUsage("r1", 1, 2), ...wholeUsage("r2", 5, 5), ...wholeUsage("r3", 2, 2), ...wholeUsage("r4", 9, 9), usage("r5b", "r5", ONE_DOLLAR * 7)];
+      const runs = rs.map((x) => ({ ...x, template_id: "t1" }));
+      const admin = buildStepPerformanceReport({
+        steps: steps.map((s) => ({ ...s, step_order: 0, human_check_required: false, executed_model: null, reasoning_effort_used: null })),
+        runs, templates: [{ id: "t1", idea_id: "i1", name: "Bug Fix", steps: [{ title: "Build" }, { title: "Review" }], updated_at: "x" }],
+        comments: [], botIds: new Set(), usage: us, runSteps: [], singleBoard: true,
+      });
+      const weekly = buildWeeklyReport(input({ steps, usage: us, runs }));
+      expect(admin.templates[0].wholeRun?.medianCost).toBe(4);
+      expect(wf(weekly).median_usd[2]).toBe(admin.templates[0].wholeRun!.medianCost);
+    });
   });
 });

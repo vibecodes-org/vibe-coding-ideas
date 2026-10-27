@@ -123,6 +123,29 @@ export function templateTitles(steps: unknown): string[] {
     .filter((t): t is string => t !== null);
 }
 
+/**
+ * The whole-run rule shared by the Admin step-cost report and the weekly cost
+ * tool: a run counts only when it is completed and every current step title of
+ * its template is among the run's step rows.
+ */
+export function isWholeRun(status: string | null | undefined, templateSteps: unknown, presentTitles: Iterable<string>): boolean {
+  if (status !== "completed") return false;
+  const want = templateTitles(templateSteps);
+  const present = new Set(presentTitles);
+  return want.length > 0 && want.every((t) => present.has(t));
+}
+
+/** A whole run's cost: the sum of its steps, or null when any step has no recorded cost. */
+export function wholeRunCost(stepIds: string[], stepCost: Map<string, number>): number | null {
+  let total = 0;
+  for (const id of stepIds) {
+    const c = stepCost.get(id);
+    if (c === undefined) return null;
+    total += c;
+  }
+  return total;
+}
+
 function minutes(step: ReportStepRow): number | null {
   if (step.status !== "completed" && step.status !== "awaiting_approval") return null;
   if (!step.started_at || !step.completed_at) return null;
@@ -326,14 +349,11 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     for (const [runId, rows] of perRun) {
       const run = runs.get(runId);
       if (run?.status !== "completed") continue;
-      const runTitles = templateTitles(templates.get(run.template_id ?? "")?.steps);
-      const present = new Set(rows.map((r) => r.title));
-      if (runTitles.length === 0 || !runTitles.every((t) => present.has(t))) continue;
+      if (!isWholeRun(run.status, templates.get(run.template_id ?? "")?.steps, rows.map((r) => r.title))) continue;
       const mins = rows.map(minutes);
       if (mins.every((m) => m !== null)) runMinutes.push(mins.reduce<number>((a, m) => a + (m ?? 0), 0));
-      const costs = rows.map((r) => stepCost.get(r.id));
-      if (costs.every((c) => c !== undefined)) {
-        const total = costs.reduce<number>((a, c) => a + (c ?? 0), 0);
+      const total = wholeRunCost(rows.map((r) => r.id), stepCost);
+      if (total !== null) {
         runCosts.push(total);
         finishedRunCosts.push(total);
       }

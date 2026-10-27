@@ -6,7 +6,7 @@
 // titles, card content, prompts or outputs.
 
 import { MODEL_PRICES, priceKey } from "./pricing";
-import { median, stepCostsFor, type ReportUsageRow } from "./report";
+import { isWholeRun, median, stepCostsFor, wholeRunCost, type ReportUsageRow } from "./report";
 
 /** A recorded attempt; created_at says when, for a step that was sent back and is waiting to re-run. */
 export type WeeklyUsageRow = ReportUsageRow & { created_at?: string };
@@ -28,8 +28,8 @@ export interface WeeklyStepRow {
   effort_override: string | null;
   description: string | null;
 }
-export interface WeeklyRunRow { id: string; template_id: string | null }
-export interface WeeklyTemplateRow { id: string; idea_id: string; name: string; updated_at: string }
+export interface WeeklyRunRow { id: string; template_id: string | null; status: string }
+export interface WeeklyTemplateRow { id: string; idea_id: string; name: string; updated_at: string; steps: unknown }
 export interface WeeklyIdeaRow { id: string; title: string }
 export interface WeeklyPathRow { idea_id: string; absolute_path: string; updated_at: string }
 
@@ -153,16 +153,18 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   }
 
   // A run belongs to the week of its latest step; its cost is all its costed steps.
-  interface RunAcc { id: string; wf: string; idea: string; week: number; usd: number; sentBack: boolean }
+  interface RunAcc { id: string; wf: string; idea: string; week: number; usd: number; sentBack: boolean; stepIds: string[]; titles: string[] }
   const runAcc = new Map<string, RunAcc>();
   for (const s of counted) {
     let r = runAcc.get(s.run_id!);
     if (!r) {
-      r = { id: s.run_id!, wf: s.wf, idea: s.idea_id, week: s.week, usd: 0, sentBack: false };
+      r = { id: s.run_id!, wf: s.wf, idea: s.idea_id, week: s.week, usd: 0, sentBack: false, stepIds: [], titles: [] };
       runAcc.set(r.id, r);
     }
     r.week = Math.max(r.week, s.week);
     r.usd += stepCost.get(s.id) ?? 0;
+    r.stepIds.push(s.id);
+    r.titles.push(s.title);
     if (input.sentBackStepIds.has(s.id)) r.sentBack = true;
   }
 
@@ -220,7 +222,13 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     const w = wf(r.wf);
     w.runs[r.week]++;
     if (r.sentBack) w.sent[r.week]++;
-    if (r.usd > 0) w.runCosts[r.week].push(r.usd);
+    // Typical cost per run uses the Admin whole-run rule: finished, every current
+    // step present and costed. Other runs still count in usd, runs and the rest.
+    const run = runs.get(r.id);
+    if (isWholeRun(run?.status, templates.get(run?.template_id ?? "")?.steps, r.titles)) {
+      const total = wholeRunCost(r.stepIds, stepCost);
+      if (total !== null) w.runCosts[r.week].push(total);
+    }
   }
   const workflows = [...wfs.entries()]
     .map(([key, w]) => ({
