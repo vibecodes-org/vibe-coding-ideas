@@ -63,7 +63,7 @@ interface BoardRows {
  */
 async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRows> {
   const templates = await readAll<WeeklyTemplateRow>((from, to) =>
-    db.from("workflow_templates").select("id, idea_id, name, updated_at").eq("idea_id", ideaId).order("id").range(from, to)
+    db.from("workflow_templates").select("id, idea_id, name, updated_at, steps").eq("idea_id", ideaId).order("id").range(from, to)
   );
   const steps = await readAll<WeeklyStepRow>((from, to) =>
     db
@@ -113,7 +113,7 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
   );
   if (steps.length === 0) return { steps, runs: [], templates, sentBackStepIds: [], usage: [] };
   const runIds = [...new Set(steps.map((s) => s.run_id).filter((id): id is string => !!id))];
-  const runs = await readByIds<WeeklyRunRow>(runIds, (chunk) => db.from("workflow_runs").select("id, template_id").in("id", chunk));
+  const runs = await readByIds<WeeklyRunRow>(runIds, (chunk) => db.from("workflow_runs").select("id, template_id, status").in("id", chunk));
   return { steps, runs, templates, sentBackStepIds: comments.map((c) => c.step_id), usage };
 }
 
