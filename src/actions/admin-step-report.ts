@@ -15,6 +15,7 @@ import {
   type StepPerformanceReport,
 } from "@/lib/step-cost/report";
 import { backfillFileSchema } from "@/lib/step-cost/usage-schema";
+import { readAll, readAllByIds, readByIds } from "@/lib/step-cost/paging";
 
 // Admin step report (card ba37039b). Admins can read every workflow step, but
 // not every board's runs, templates or step comments, so after the admin
@@ -30,8 +31,6 @@ export interface StepReportResult {
 }
 
 const PERIODS: StepReportPeriod[] = ["30", "60", "90", "all"];
-const PAGE = 1000;
-const CHUNK = 100;
 
 async function requireAdmin(): Promise<string> {
   const supabase = await createClient();
@@ -49,46 +48,6 @@ function serviceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
-}
-
-/** Reads every page: a plain read stops at 1,000 rows without an error. */
-async function readAll<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) return rows;
-  }
-}
-
-/** Large `.in()` lists come back empty at scale, so they go in chunks. */
-async function readByIds<T>(
-  ids: string[],
-  read: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await read(ids.slice(i, i + CHUNK));
-    if (error) throw new Error(error.message);
-    rows.push(...(data ?? []));
-  }
-  return rows;
-}
-
-/** readByIds for reads that can pass 1,000 rows in one chunk. */
-async function readAllByIds<T>(
-  ids: string[],
-  page: (chunk: string[], from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-    rows.push(...(await readAll<T>((from, to) => page(chunk, from, to))));
-  }
-  return rows;
 }
 
 export async function getStepPerformanceReport(params: {

@@ -157,6 +157,12 @@ export default function AdminPage() {
             about 10%. Codex steps and steps run in a different session from
             the one that claimed them show no cost.
           </p>
+          <p className="mb-4 text-muted-foreground">
+            The same prices and per-step costs are available to agents through
+            the read-only <code className="rounded bg-muted px-1.5 py-0.5 text-xs">get_cost_report</code>{" "}
+            MCP tool, as weekly figures for the boards the caller belongs to.
+            It returns names and numbers only, never card content or prompts.
+          </p>
           <p className="text-muted-foreground">
             For runs from before cost tracking, run{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
