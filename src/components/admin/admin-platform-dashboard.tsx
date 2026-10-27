@@ -43,7 +43,6 @@ import {
   AUTO_COMPACT_OWN_SIZE_TEXT,
   autoCompactShortLabel,
   isAutoCompactStep,
-  type AutoCompactAgent,
 } from "@/lib/terminal/auto-compact";
 import { setPlatformTerminalCodexModelDefaultCache } from "@/hooks/use-platform-terminal-codex-model-default";
 import {
@@ -585,26 +584,197 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
 }
 
 const NO_TERMINAL_DEFAULT_VALUE = "__no_default__";
+const NO_CODEX_TERMINAL_DEFAULT = "__no_codex_default__";
+
+type CardLoadState = "loading" | "error" | "ready";
+type AuditStamp = { updatedBy: { full_name: string | null } | null; updatedAt: string | null };
 
 /**
- * Admin "Terminal starting model" card (task c4ca2d95) — a sibling to "Model
- * tier defaults" above, reusing its visual language (skeleton/error states,
- * audit row, novel-value confirm-checkbox gate) but its OWN platform_settings
- * key and Save/audit/error boundary (design decision: separate key => one
- * setting, one save, unambiguous errors).
- *
- * BINDING (Nick, design-review approval gate): there is NO seed here, unlike
- * the tier defaults above — "Clear" returns this to genuinely unset, at
- * which point resolution omits the model entirely (today's behaviour).
+ * Shared shell for the two per-agent terminal cards (task fae2ce4f): title,
+ * description, one loading skeleton, one error box with Retry. Both agents
+ * render through it so their cards cannot drift apart.
  */
-export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
-  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+function TerminalSettingsCard({
+  title,
+  description,
+  loadState,
+  loadError,
+  onRetry,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  loadState: CardLoadState;
+  loadError: string;
+  onRetry: () => void;
+  children: React.ReactNode;
+}) {
+  if (loadState === "loading") {
+    return (
+      <div className="space-y-4 rounded-lg border p-4 sm:p-6">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-4 w-full max-w-md" />
+        <div className="max-w-[420px] space-y-1.5">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      </div>
+    );
+  }
+  if (loadState === "error") {
+    return (
+      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+        <p className="text-sm text-red-400">{loadError}</p>
+        <Button size="sm" variant="outline" className="mt-3" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-6 rounded-lg border p-4 sm:p-6">
+      <div>
+        <h3 className="font-semibold">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** One setting inside a card: label, control (max 420px), then its own small audit line. */
+function TerminalSettingRow({
+  label,
+  htmlFor,
+  labelId,
+  children,
+  audit,
+}: {
+  label: string;
+  htmlFor?: string;
+  labelId?: string;
+  children: React.ReactNode;
+  audit: React.ReactNode;
+}) {
+  return (
+    <div className="max-w-[420px] space-y-1.5">
+      {htmlFor ? (
+        <Label htmlFor={htmlFor} id={labelId} className="block text-xs font-medium">
+          {label}
+        </Label>
+      ) : (
+        <span id={labelId} className="block text-xs font-medium">
+          {label}
+        </span>
+      )}
+      {children}
+      <p className="text-[11px] text-muted-foreground">{audit}</p>
+    </div>
+  );
+}
+
+/** "Last changed by X · 3d ago", or the row's own "Not set: ..." sentence. */
+function auditText(isSet: boolean, stamp: AuditStamp | null, notSet: string): React.ReactNode {
+  if (!isSet || !stamp) return notSet;
+  return (
+    <>
+      Last changed by <b className="text-foreground">{stamp.updatedBy?.full_name ?? "a super-admin"}</b>
+      {stamp.updatedAt ? ` · ${formatRelativeTime(stamp.updatedAt)}` : ""}
+    </>
+  );
+}
+
+function TerminalCardFooter({
+  whyId,
+  isDirty,
+  hint,
+  saving,
+  saveDisabled,
+  onCancel,
+  onSave,
+}: {
+  whyId: string;
+  isDirty: boolean;
+  hint: string | null;
+  saving: boolean;
+  saveDisabled: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+      {!isDirty && (
+        <span id={whyId} className="mr-auto text-xs text-muted-foreground">
+          Save enables when you change a value.
+        </span>
+      )}
+      {isDirty && hint && <span className="mr-auto text-xs text-muted-foreground">{hint}</span>}
+      <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving || !isDirty}>
+        Cancel
+      </Button>
+      <Button type="button" size="sm" onClick={onSave} disabled={saveDisabled} aria-describedby={!isDirty ? whyId : undefined}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
+type RowOutcome = { row: string; ok: true; text: string } | { row: string; ok: false; message: string | null };
+
+/** Runs each dirty row's write on its own key; one failing never undoes another. */
+async function settleRows(rows: { row: string; run: () => Promise<string> }[]): Promise<RowOutcome[]> {
+  const results = await Promise.allSettled(rows.map((r) => r.run()));
+  return results.map((res, i): RowOutcome =>
+    res.status === "fulfilled"
+      ? { row: rows[i].row, ok: true, text: res.value }
+      : { row: rows[i].row, ok: false, message: res.reason instanceof Error ? res.reason.message : null }
+  );
+}
+
+function failureToast(failed: Extract<RowOutcome, { ok: false }>[]): string {
+  const names = failed.map((f) => f.row).join(" and ");
+  if (failed.length === 1 && failed[0].message) return `Couldn't save the ${names} — ${failed[0].message}`;
+  return `Couldn't save the ${names} — try again`;
+}
+
+const CLAUDE_TERMINAL_DESCRIPTION = (
+  <>
+    What new in-browser Claude Code sessions start with, site-wide. Takes effect on the <b>next</b> session launched
+    or resumed, with no deploy, and running sessions untouched. Users can choose their own in Settings → Model
+    Tiers, and theirs wins.
+  </>
+);
+
+const CODEX_TERMINAL_DESCRIPTION = (
+  <>
+    What new in-browser Codex sessions start with, site-wide. Takes effect on the <b>next</b> session launched
+    (memory limit: launched or resumed), with no deploy, and running sessions untouched. Users can choose their own
+    in Settings → Model Tiers, and theirs wins.
+  </>
+);
+
+/**
+ * Admin "Claude Code terminal sessions" card (task fae2ce4f): the site-wide
+ * starting model, starting effort and memory limit for in-browser Claude Code
+ * sessions, one card and one Save. Each setting is still its own
+ * platform_settings key with its own audit; Save writes only the rows that
+ * changed, so changing one never touches another. "Not set" is the first
+ * choice of every control (there is no seed and no Clear button): resolution
+ * then omits the value and Claude Code decides.
+ */
+export function AdminClaudeTerminalCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [loadState, setLoadState] = useState<CardLoadState>("loading");
   const [reloadToken, setReloadToken] = useState(0);
-  const [audit, setAudit] = useState<PlatformTerminalModelAudit | null>(null);
-  // "" represents "no platform default" throughout this component's local
-  // state — mapped to `null` only at the server-action boundary.
-  const [persisted, setPersisted] = useState<string>("");
-  const [staged, setStaged] = useState<string>("");
+  const [modelAudit, setModelAudit] = useState<PlatformTerminalModelAudit | null>(null);
+  const [effortAudit, setEffortAudit] = useState<PlatformTerminalEffortAudit | null>(null);
+  const [memoryAudit, setMemoryAudit] = useState<PlatformTerminalAutoCompactAudit | null>(null);
+  // "" = not set for the model, mapped to `null` only at the server-action boundary.
+  const [persistedModel, setPersistedModel] = useState("");
+  const [stagedModel, setStagedModel] = useState("");
+  const [persistedEffort, setPersistedEffort] = useState<string | null>(null);
+  const [stagedEffort, setStagedEffort] = useState<string | null>(null);
+  const [persistedMemory, setPersistedMemory] = useState<number | null>(null);
+  const [stagedMemory, setStagedMemory] = useState<number | null>(null);
   const [forceCustom, setForceCustom] = useState(false);
   const [confirmedNovel, setConfirmedNovel] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -613,17 +783,26 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
     if (!isSuperAdmin) return;
     let cancelled = false;
     setLoadState("loading");
-    getPlatformTerminalModelDefaultForAdmin()
-      .then((result) => {
+    Promise.all([
+      getPlatformTerminalModelDefaultForAdmin(),
+      getPlatformTerminalEffortDefaultForAdmin(),
+      getPlatformTerminalAutoCompactDefaultForAdmin("claude"),
+    ])
+      .then(([model, effort, memory]) => {
         if (cancelled) return;
-        setAudit(result);
-        setPersisted(result.value ?? "");
-        setStaged(result.value ?? "");
+        setModelAudit(model);
+        setPersistedModel(model.value ?? "");
+        setStagedModel(model.value ?? "");
+        setEffortAudit(effort);
+        setPersistedEffort(effort.value);
+        setStagedEffort(effort.value);
+        setMemoryAudit(memory);
+        setPersistedMemory(memory.value);
+        setStagedMemory(memory.value);
         setLoadState("ready");
       })
       .catch(() => {
-        if (cancelled) return;
-        setLoadState("error");
+        if (!cancelled) setLoadState("error");
       });
     return () => {
       cancelled = true;
@@ -632,36 +811,20 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
 
   if (!isSuperAdmin) return <PlatformAccessDenied />;
 
-  if (loadState === "loading") {
-    return (
-      <div className="space-y-4 rounded-lg border p-6">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-4 w-full max-w-md" />
-        <div className="max-w-[300px] space-y-1.5">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
-        <p className="text-sm text-red-400">Failed to load the terminal starting model.</p>
-        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  const isDirty = staged !== persisted;
-  const isCustom = forceCustom || (staged.length > 0 && !KNOWN_MODEL_VALUES.has(staged));
-  const structuralValidation = isCustom ? validateTerminalModelValue(staged) : { ok: true as const };
+  const modelDirty = stagedModel !== persistedModel;
+  const effortDirty = stagedEffort !== persistedEffort;
+  const memoryDirty = stagedMemory !== persistedMemory;
+  const isDirty = modelDirty || effortDirty || memoryDirty;
+  const isCustom = forceCustom || (stagedModel.length > 0 && !KNOWN_MODEL_VALUES.has(stagedModel));
+  const structuralValidation = isCustom ? validateTerminalModelValue(stagedModel) : { ok: true as const };
   const structurallyBlocked = isCustom && !structuralValidation.ok;
-  const isNovel = isCustom && structuralValidation.ok && !KNOWN_MODEL_VALUES.has(staged.trim());
+  const isNovel = isCustom && structuralValidation.ok && !KNOWN_MODEL_VALUES.has(stagedModel.trim());
   const saveDisabled = saving || !isDirty || structurallyBlocked || (isNovel && !confirmedNovel);
+  const hint = structurallyBlocked
+    ? "Fix the model name to enable Save."
+    : isNovel && !confirmedNovel
+      ? "Confirm the checkbox above to enable Save."
+      : null;
 
   function handleSelectChange(value: string) {
     if (value === CUSTOM_VALUE) {
@@ -670,71 +833,97 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
     }
     setForceCustom(false);
     setConfirmedNovel(false);
-    setStaged(value === NO_TERMINAL_DEFAULT_VALUE ? "" : value);
+    setStagedModel(value === NO_TERMINAL_DEFAULT_VALUE ? "" : value);
   }
 
   function handleCancel() {
-    setStaged(persisted);
-    setForceCustom(false);
-    setConfirmedNovel(false);
-  }
-
-  function handleClear() {
-    // Local staging only — like the sibling card's "Reset to seed", this
-    // doesn't persist until Save. There is no seed to reset TO here, so this
-    // clears back to "no platform default" instead.
-    setStaged("");
+    setStagedModel(persistedModel);
+    setStagedEffort(persistedEffort);
+    setStagedMemory(persistedMemory);
     setForceCustom(false);
     setConfirmedNovel(false);
   }
 
   async function handleSave() {
     setSaving(true);
+    const rows: { row: string; run: () => Promise<string> }[] = [];
+    if (modelDirty) {
+      rows.push({
+        row: "starting model",
+        run: async () => {
+          const saved = await updatePlatformTerminalModelDefault(stagedModel.trim().length > 0 ? stagedModel.trim() : null);
+          const fresh = await getPlatformTerminalModelDefaultForAdmin();
+          setModelAudit(fresh);
+          setPersistedModel(fresh.value ?? "");
+          setStagedModel(fresh.value ?? "");
+          setForceCustom(false);
+          setConfirmedNovel(false);
+          setPlatformTerminalModelDefaultCache(fresh.value);
+          return saved ? `model ${capitalizeTerminalModelName(saved)}` : "model not set";
+        },
+      });
+    }
+    if (effortDirty) {
+      rows.push({
+        row: "starting effort",
+        run: async () => {
+          const saved = await updatePlatformTerminalEffortDefault(stagedEffort);
+          const fresh = await getPlatformTerminalEffortDefaultForAdmin();
+          setEffortAudit(fresh);
+          setPersistedEffort(fresh.value);
+          setStagedEffort(fresh.value);
+          setPlatformTerminalEffortDefaultCache(fresh.value);
+          return saved && isClaudeEffort(saved) ? `effort ${EFFORT_LABELS[saved]}` : "effort not set";
+        },
+      });
+    }
+    if (memoryDirty) {
+      rows.push({
+        row: "memory limit",
+        run: async () => {
+          const saved = await updatePlatformTerminalAutoCompactDefault("claude", stagedMemory);
+          const fresh = await getPlatformTerminalAutoCompactDefaultForAdmin("claude");
+          setMemoryAudit(fresh);
+          setPersistedMemory(fresh.value);
+          setStagedMemory(fresh.value);
+          setPlatformTerminalAutoCompactDefaultCache("claude", fresh.value);
+          return saved !== null ? `memory limit ${autoCompactShortLabel(saved)}` : "memory limit not set";
+        },
+      });
+    }
     try {
-      const toSave = staged.trim().length > 0 ? staged.trim() : null;
-      const saved = await updatePlatformTerminalModelDefault(toSave);
-      const fresh = await getPlatformTerminalModelDefaultForAdmin();
-      setAudit(fresh);
-      setPersisted(fresh.value ?? "");
-      setStaged(fresh.value ?? "");
-      setForceCustom(false);
-      setConfirmedNovel(false);
-      setPlatformTerminalModelDefaultCache(fresh.value);
-      toast.success(
-        saved
-          ? `Terminal starting model saved · fresh sessions now start on ${capitalizeTerminalModelName(saved)}`
-          : "Terminal starting model cleared · fresh sessions use each user's own machine default"
-      );
-    } catch (err) {
-      // Staged value is retained on error so the super-admin can retry
-      // without re-entering it.
-      toast.error(err instanceof Error ? err.message : "Failed to save the terminal starting model — try again");
+      const outcomes = await settleRows(rows);
+      const failed = outcomes.filter((o): o is Extract<RowOutcome, { ok: false }> => !o.ok);
+      if (failed.length > 0) toast.error(failureToast(failed));
+      else toast.success(`Claude Code site defaults saved · ${outcomes.map((o) => (o.ok ? o.text : "")).join(", ")}`);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="space-y-6 rounded-lg border p-6">
-      <div>
-        <h3 className="font-semibold">Claude terminal starting model</h3>
-        <p className="text-sm text-muted-foreground">
-          The model fresh in-browser terminal sessions start on, platform-wide. Takes effect on the{" "}
-          <b>next</b> session launched — no deploy, running sessions untouched. Users can override it in
-          Profile → Model Tiers, or keep their machine&apos;s own default.
-        </p>
-      </div>
-
-      <div className="max-w-[300px] space-y-1.5">
-        <Label htmlFor="platform-terminal-model" className="text-xs">
-          Starting model
-        </Label>
+    <TerminalSettingsCard
+      title="Claude Code terminal sessions"
+      description={CLAUDE_TERMINAL_DESCRIPTION}
+      loadState={loadState}
+      loadError="Failed to load the Claude Code terminal settings."
+      onRetry={() => setReloadToken((t) => t + 1)}
+    >
+      <TerminalSettingRow
+        label="Starting model"
+        htmlFor="platform-terminal-model"
+        audit={auditText(
+          modelAudit?.value != null,
+          modelAudit,
+          "Not set: each user's machine decides which model to start on."
+        )}
+      >
         {isCustom ? (
           <div className="flex flex-wrap items-center gap-2">
             <Input
               id="platform-terminal-model"
-              value={staged}
-              onChange={(e) => setStaged(e.target.value)}
+              value={stagedModel}
+              onChange={(e) => setStagedModel(e.target.value)}
               placeholder="e.g. opus-5.5"
               disabled={saving}
               aria-invalid={structurallyBlocked}
@@ -756,16 +945,16 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
             </Button>
           </div>
         ) : (
-          <Select value={staged || NO_TERMINAL_DEFAULT_VALUE} disabled={saving} onValueChange={handleSelectChange}>
+          <Select value={stagedModel || NO_TERMINAL_DEFAULT_VALUE} disabled={saving} onValueChange={handleSelectChange}>
             <SelectTrigger id="platform-terminal-model" className="w-full">
               <SelectValue>
-                {staged
-                  ? (KNOWN_MODEL_OPTIONS.find((o) => o.value === staged)?.label ?? staged)
-                  : "No platform default (nothing passed)"}
+                {stagedModel
+                  ? (KNOWN_MODEL_OPTIONS.find((o) => o.value === stagedModel)?.label ?? stagedModel)
+                  : "Not set — each user's machine decides"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NO_TERMINAL_DEFAULT_VALUE}>No platform default (nothing passed)</SelectItem>
+              <SelectItem value={NO_TERMINAL_DEFAULT_VALUE}>Not set — each user&apos;s machine decides</SelectItem>
               <SelectSeparator />
               {KNOWN_MODEL_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
@@ -783,7 +972,7 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
             {structuralValidation.reason}
           </p>
         )}
-      </div>
+      </TerminalSettingRow>
 
       {isNovel && (
         <div
@@ -794,7 +983,7 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
           <div className="space-y-2">
             <p>
               This isn&apos;t a known model alias. Every user&apos;s fresh terminal session will run{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">claude --model {staged}</code> verbatim — if
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">claude --model {stagedModel}</code> verbatim — if
               Claude rejects it, <b>every launch platform-wide</b> shows an error in the terminal until this is
               corrected.
             </p>
@@ -806,385 +995,74 @@ export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean
         </div>
       )}
 
-      {audit && (
-        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          {audit.value === null ? (
-            <span>Using the code default (no model) — nothing saved yet.</span>
-          ) : (
-            <span>
-              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
-              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-        {!isDirty && (
-          <span id="platform-terminal-model-save-why" className="mr-auto text-xs text-muted-foreground">
-            Save enables when you change a value.
-          </span>
+      <TerminalSettingRow
+        label="Starting effort"
+        labelId="platform-terminal-effort-label"
+        audit={auditText(
+          effortAudit?.value != null,
+          effortAudit,
+          "Not set: Claude Code decides (today's behaviour)."
         )}
-        {isDirty && structurallyBlocked && (
-          <span className="mr-auto text-xs text-muted-foreground">Fix the model name to enable Save.</span>
-        )}
-        {isDirty && !structurallyBlocked && isNovel && !confirmedNovel && (
-          <span className="mr-auto text-xs text-muted-foreground">Confirm the checkbox above to enable Save.</span>
-        )}
-        <Button type="button" variant="destructive" size="sm" onClick={handleClear} disabled={saving || staged === ""}>
-          Clear
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving || !isDirty}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={saveDisabled}
-          aria-describedby={!isDirty ? "platform-terminal-model-save-why" : undefined}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Admin "Claude terminal starting effort" card (task 18a37612) — the site-wide
- * default for `claude --effort`, a sibling of the starting-model card above
- * with its OWN platform_settings key (terminal_effort_default) and
- * Save/audit/error boundary. No seed: Clear returns it to unset, at which
- * point nothing is sent (Claude Code decides). A user's own setting in
- * Settings -> Model Tiers wins over it.
- */
-export function AdminTerminalEffortCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
-  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
-  const [reloadToken, setReloadToken] = useState(0);
-  const [audit, setAudit] = useState<PlatformTerminalEffortAudit | null>(null);
-  // null = no site default (nothing pressed in the strip).
-  const [persisted, setPersisted] = useState<string | null>(null);
-  const [staged, setStaged] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isSuperAdmin) return;
-    let cancelled = false;
-    setLoadState("loading");
-    getPlatformTerminalEffortDefaultForAdmin()
-      .then((result) => {
-        if (cancelled) return;
-        setAudit(result);
-        setPersisted(result.value);
-        setStaged(result.value);
-        setLoadState("ready");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLoadState("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isSuperAdmin, reloadToken]);
-
-  if (!isSuperAdmin) return <PlatformAccessDenied />;
-
-  if (loadState === "loading") {
-    return (
-      <div className="space-y-4 rounded-lg border p-6">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-4 w-full max-w-md" />
-        <div className="max-w-[420px] space-y-1.5">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
-        <p className="text-sm text-red-400">Failed to load the terminal starting effort.</p>
-        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  const isDirty = staged !== persisted;
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const saved = await updatePlatformTerminalEffortDefault(staged);
-      const fresh = await getPlatformTerminalEffortDefaultForAdmin();
-      setAudit(fresh);
-      setPersisted(fresh.value);
-      setStaged(fresh.value);
-      setPlatformTerminalEffortDefaultCache(fresh.value);
-      toast.success(
-        saved && isClaudeEffort(saved)
-          ? `Terminal starting effort saved · sessions now start at ${EFFORT_LABELS[saved]} unless a user picks their own`
-          : "Terminal starting effort cleared · Claude Code decides unless a user picks their own"
-      );
-    } catch (err) {
-      // Staged value is retained on error so the super-admin can retry.
-      toast.error(err instanceof Error ? err.message : "Failed to save the terminal starting effort — try again");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6 rounded-lg border p-6">
-      <div>
-        <h3 className="font-semibold">Claude terminal starting effort</h3>
-        <p className="text-sm text-muted-foreground">
-          How hard Claude thinks when an in-browser terminal session starts or resumes, platform-wide. Takes effect
-          on the <b>next</b> session launched, with no deploy, and running sessions untouched. Users can choose
-          their own in Settings → Model Tiers, and theirs wins.
-        </p>
-      </div>
-
-      <div className="max-w-[420px] space-y-1.5">
-        <span id="platform-terminal-effort-label" className="block text-xs font-medium">
-          Starting effort
-        </span>
+      >
         <EffortSegmentedControl
           agent="claude"
-          value={isClaudeEffort(staged) ? staged : undefined}
+          value={isClaudeEffort(stagedEffort) ? stagedEffort : null}
           disabled={saving}
-          onChange={(effort) => setStaged(effort)}
+          onChange={(effort) => setStagedEffort(effort)}
           groupLabel="Claude starting effort, site default"
+          defaultOption={{ label: "Not set", subLabel: "Claude's own", onSelect: () => setStagedEffort(null) }}
         />
-      </div>
+      </TerminalSettingRow>
 
-      {audit && (
-        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          {audit.value === null ? (
-            <span>No site default: Claude Code decides (today&apos;s behaviour).</span>
-          ) : (
-            <span>
-              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
-              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-        {!isDirty && (
-          <span id="platform-terminal-effort-save-why" className="mr-auto text-xs text-muted-foreground">
-            Save enables when you change a value.
-          </span>
+      <TerminalSettingRow
+        label="Memory limit"
+        labelId="platform-terminal-claude-auto-compact-label"
+        audit={auditText(
+          memoryAudit?.value != null,
+          memoryAudit,
+          `Not set: Claude Code decides (${AUTO_COMPACT_OWN_SIZE_TEXT.claude}).`
         )}
-        <Button type="button" variant="destructive" size="sm" onClick={() => setStaged(null)} disabled={saving || staged === null}>
-          Clear
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => setStaged(persisted)} disabled={saving || !isDirty}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          aria-describedby={!isDirty ? "platform-terminal-effort-save-why" : undefined}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
+      >
+        <AutoCompactSegmentedControl
+          agent="claude"
+          value={isAutoCompactStep("claude", stagedMemory) ? stagedMemory : null}
+          disabled={saving}
+          onChange={setStagedMemory}
+          groupLabel="Claude memory limit, site default"
+          defaultOption={{ label: "Not set", subLabel: "Claude's own", onSelect: () => setStagedMemory(null) }}
+        />
+      </TerminalSettingRow>
+
+      <TerminalCardFooter
+        whyId="platform-terminal-claude-save-why"
+        isDirty={isDirty}
+        hint={hint}
+        saving={saving}
+        saveDisabled={saveDisabled}
+        onCancel={handleCancel}
+        onSave={handleSave}
+      />
+    </TerminalSettingsCard>
   );
 }
 
-const AUTO_COMPACT_CARD_COPY: Record<
-  AutoCompactAgent,
-  { title: string; savedPrefix: string; decides: string; loadError: string; label: string; groupLabel: string }
-> = {
-  claude: {
-    title: "Claude terminal memory limit",
-    savedPrefix: "Terminal memory limit",
-    decides: "Claude Code decides",
-    loadError: "Failed to load the Claude terminal memory limit.",
-    label: "platform-terminal-claude-auto-compact",
-    groupLabel: "Claude memory limit, site default",
-  },
-  codex: {
-    title: "Codex terminal memory limit",
-    savedPrefix: "Codex terminal memory limit",
-    decides: "Codex decides",
-    loadError: "Failed to load the Codex terminal memory limit.",
-    label: "platform-terminal-codex-auto-compact",
-    groupLabel: "Codex memory limit, site default",
-  },
-};
+type CodexPair = { model: string; effort: ReasoningEffort };
 
 /**
- * Site-wide memory limit (auto-compact window) for one agent (task 5e654dd1).
- * A structural copy of AdminTerminalEffortCard: no Default segment (nothing
- * pressed = no site default), an audit line, Clear / Cancel / Save.
+ * Admin "Codex terminal sessions" card (task fae2ce4f): same three rows as the
+ * Claude card. Codex saves its model and effort together as one pair under one
+ * key, so the effort strip is only live once a model is chosen, and "Not set"
+ * on the model clears both.
  */
-export function AdminTerminalAutoCompactCard({ isSuperAdmin, agent }: { isSuperAdmin: boolean; agent: AutoCompactAgent }) {
-  const copy = AUTO_COMPACT_CARD_COPY[agent];
-  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+export function AdminCodexTerminalCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [loadState, setLoadState] = useState<CardLoadState>("loading");
   const [reloadToken, setReloadToken] = useState(0);
-  const [audit, setAudit] = useState<PlatformTerminalAutoCompactAudit | null>(null);
-  // null = no site default (nothing pressed in the strip).
-  const [persisted, setPersisted] = useState<number | null>(null);
-  const [staged, setStaged] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isSuperAdmin) return;
-    let cancelled = false;
-    setLoadState("loading");
-    getPlatformTerminalAutoCompactDefaultForAdmin(agent)
-      .then((result) => {
-        if (cancelled) return;
-        setAudit(result);
-        setPersisted(result.value);
-        setStaged(result.value);
-        setLoadState("ready");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLoadState("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isSuperAdmin, agent, reloadToken]);
-
-  if (!isSuperAdmin) return <PlatformAccessDenied />;
-
-  if (loadState === "loading") {
-    return (
-      <div className="space-y-4 rounded-lg border p-6">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-4 w-full max-w-md" />
-        <div className="max-w-[420px] space-y-1.5">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState === "error") {
-    return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
-        <p className="text-sm text-red-400">{copy.loadError}</p>
-        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  const isDirty = staged !== persisted;
-  const agentName = agent === "claude" ? "Claude Code" : "Codex";
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const saved = await updatePlatformTerminalAutoCompactDefault(agent, staged);
-      const fresh = await getPlatformTerminalAutoCompactDefaultForAdmin(agent);
-      setAudit(fresh);
-      setPersisted(fresh.value);
-      setStaged(fresh.value);
-      setPlatformTerminalAutoCompactDefaultCache(agent, fresh.value);
-      toast.success(
-        saved !== null
-          ? `${copy.savedPrefix} saved · sessions now tidy up at ${autoCompactShortLabel(saved)} unless a user picks their own`
-          : `${copy.savedPrefix} cleared · ${copy.decides} unless a user picks their own`
-      );
-    } catch (err) {
-      // Staged value is retained on error so the super-admin can retry.
-      toast.error(err instanceof Error ? err.message : "Failed to save the terminal memory limit — try again");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6 rounded-lg border p-6">
-      <div>
-        <h3 className="font-semibold">{copy.title}</h3>
-        <p className="text-sm text-muted-foreground">
-          When an in-browser {agentName} session tidies up its memory (summarises the conversation so far),
-          platform-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running
-          sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.
-        </p>
-      </div>
-
-      <div className="max-w-[420px] space-y-1.5">
-        <span id={`${copy.label}-label`} className="block text-xs font-medium">
-          Memory limit
-        </span>
-        <AutoCompactSegmentedControl
-          agent={agent}
-          value={isAutoCompactStep(agent, staged) ? staged : null}
-          disabled={saving}
-          onChange={setStaged}
-          groupLabel={copy.groupLabel}
-        />
-      </div>
-
-      {audit && (
-        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          {audit.value === null ? (
-            <span>
-              No site default: {copy.decides} ({AUTO_COMPACT_OWN_SIZE_TEXT[agent]}).
-            </span>
-          ) : (
-            <span>
-              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
-              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-        {!isDirty && (
-          <span id={`${copy.label}-save-why`} className="mr-auto text-xs text-muted-foreground">
-            Save enables when you change a value.
-          </span>
-        )}
-        <Button type="button" variant="destructive" size="sm" onClick={() => setStaged(null)} disabled={saving || staged === null}>
-          Clear
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => setStaged(persisted)} disabled={saving || !isDirty}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          aria-describedby={!isDirty ? `${copy.label}-save-why` : undefined}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const NO_CODEX_TERMINAL_DEFAULT = "__no_codex_default__";
-
-/** Independent model + effort pair used by fresh Codex terminal launches. */
-export function AdminTerminalCodexModelCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
-  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
-  const [reloadToken, setReloadToken] = useState(0);
-  const [audit, setAudit] = useState<PlatformTerminalCodexModelAudit | null>(null);
-  const [persisted, setPersisted] = useState<{ model: string; effort: ReasoningEffort } | null>(null);
-  const [staged, setStaged] = useState<{ model: string; effort: ReasoningEffort } | null>(null);
+  const [pairAudit, setPairAudit] = useState<PlatformTerminalCodexModelAudit | null>(null);
+  const [memoryAudit, setMemoryAudit] = useState<PlatformTerminalAutoCompactAudit | null>(null);
+  const [persistedPair, setPersistedPair] = useState<CodexPair | null>(null);
+  const [stagedPair, setStagedPair] = useState<CodexPair | null>(null);
+  const [persistedMemory, setPersistedMemory] = useState<number | null>(null);
+  const [stagedMemory, setStagedMemory] = useState<number | null>(null);
   const [forceCustom, setForceCustom] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -1192,95 +1070,200 @@ export function AdminTerminalCodexModelCard({ isSuperAdmin }: { isSuperAdmin: bo
     if (!isSuperAdmin) return;
     let cancelled = false;
     setLoadState("loading");
-    getPlatformTerminalCodexModelDefaultForAdmin()
-      .then((result) => {
+    Promise.all([getPlatformTerminalCodexModelDefaultForAdmin(), getPlatformTerminalAutoCompactDefaultForAdmin("codex")])
+      .then(([pair, memory]) => {
         if (cancelled) return;
-        setAudit(result);
-        setPersisted(result.value);
-        setStaged(result.value);
+        setPairAudit(pair);
+        setPersistedPair(pair.value);
+        setStagedPair(pair.value);
+        setMemoryAudit(memory);
+        setPersistedMemory(memory.value);
+        setStagedMemory(memory.value);
         setLoadState("ready");
       })
-      .catch(() => { if (!cancelled) setLoadState("error"); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isSuperAdmin, reloadToken]);
 
   if (!isSuperAdmin) return <PlatformAccessDenied />;
-  if (loadState === "loading") return <div className="space-y-4 rounded-lg border p-6"><Skeleton className="h-5 w-56" /><Skeleton className="h-9 w-full max-w-md" /></div>;
-  if (loadState === "error") return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
-      <p className="text-sm text-red-400">Failed to load the Codex terminal starting model.</p>
-      <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>Retry</Button>
-    </div>
-  );
 
-  const isDirty = JSON.stringify(staged) !== JSON.stringify(persisted);
-  const validation = staged ? validateCodexModelValue(staged.model) : { ok: true as const };
+  const pairDirty = JSON.stringify(stagedPair) !== JSON.stringify(persistedPair);
+  const memoryDirty = stagedMemory !== persistedMemory;
+  const isDirty = pairDirty || memoryDirty;
+  const validation = stagedPair ? validateCodexModelValue(stagedPair.model) : { ok: true as const };
   const blocked = !validation.ok;
+  const custom = forceCustom || Boolean(stagedPair && !isKnownCodexModel(stagedPair.model));
+  const saveDisabled = saving || !isDirty || blocked;
 
   function selectModel(value: string) {
-    if (value === CUSTOM_VALUE) { setForceCustom(true); return; }
+    if (value === CUSTOM_VALUE) {
+      setForceCustom(true);
+      return;
+    }
     setForceCustom(false);
-    if (value === NO_CODEX_TERMINAL_DEFAULT) setStaged(null);
-    else setStaged({ model: value, effort: staged?.effort ?? "medium" });
+    if (value === NO_CODEX_TERMINAL_DEFAULT) setStagedPair(null);
+    else setStagedPair({ model: value, effort: stagedPair?.effort ?? "medium" });
   }
 
-  async function save() {
+  function handleCancel() {
+    setStagedPair(persistedPair);
+    setStagedMemory(persistedMemory);
+    setForceCustom(false);
+  }
+
+  async function handleSave() {
     setSaving(true);
+    const rows: { row: string; run: () => Promise<string> }[] = [];
+    if (pairDirty) {
+      rows.push({
+        row: "starting model and effort",
+        run: async () => {
+          await updatePlatformTerminalCodexModelDefault(stagedPair && { model: stagedPair.model.trim(), effort: stagedPair.effort });
+          const fresh = await getPlatformTerminalCodexModelDefaultForAdmin();
+          setPairAudit(fresh);
+          setPersistedPair(fresh.value);
+          setStagedPair(fresh.value);
+          setForceCustom(false);
+          setPlatformTerminalCodexModelDefaultCache(fresh.value);
+          return fresh.value
+              ? `model ${fresh.value.model}, effort ${EFFORT_LABELS[fresh.value.effort] ?? fresh.value.effort}`
+              : "model not set";
+        },
+      });
+    }
+    if (memoryDirty) {
+      rows.push({
+        row: "memory limit",
+        run: async () => {
+          const saved = await updatePlatformTerminalAutoCompactDefault("codex", stagedMemory);
+          const fresh = await getPlatformTerminalAutoCompactDefaultForAdmin("codex");
+          setMemoryAudit(fresh);
+          setPersistedMemory(fresh.value);
+          setStagedMemory(fresh.value);
+          setPlatformTerminalAutoCompactDefaultCache("codex", fresh.value);
+          return saved !== null ? `memory limit ${autoCompactShortLabel(saved)}` : "memory limit not set";
+        },
+      });
+    }
     try {
-      await updatePlatformTerminalCodexModelDefault(staged && { model: staged.model.trim(), effort: staged.effort });
-      const fresh = await getPlatformTerminalCodexModelDefaultForAdmin();
-      setAudit(fresh);
-      setPersisted(fresh.value);
-      setStaged(fresh.value);
-      setForceCustom(false);
-      setPlatformTerminalCodexModelDefaultCache(fresh.value);
-      toast.success(fresh.value ? `Codex terminal default saved · ${fresh.value.model} (${fresh.value.effort})` : "Codex terminal default cleared · fresh sessions use the Standard fallback");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save the Codex terminal starting model — try again");
-    } finally { setSaving(false); }
+      const outcomes = await settleRows(rows);
+      const failed = outcomes.filter((o): o is Extract<RowOutcome, { ok: false }> => !o.ok);
+      if (failed.length > 0) toast.error(failureToast(failed));
+      else toast.success(`Codex site defaults saved · ${outcomes.map((o) => (o.ok ? o.text : "")).join(", ")}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  const custom = forceCustom || Boolean(staged && !isKnownCodexModel(staged.model));
   return (
-    <div className="space-y-6 rounded-lg border p-6">
-      <div>
-        <h3 className="font-semibold">Codex terminal starting model</h3>
-        <p className="text-sm text-muted-foreground">The model and reasoning effort for fresh in-browser Codex sessions, platform-wide. Users can override this pair in Profile → Model Tiers.</p>
-      </div>
-      <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="platform-terminal-codex-model" className="text-xs">Codex starting model</Label>
-          {custom ? (
-            <div className="flex gap-2">
-              <Input id="platform-terminal-codex-model" value={staged?.model ?? ""} disabled={saving} aria-invalid={blocked || undefined} onChange={(e) => setStaged({ model: e.target.value, effort: staged?.effort ?? "medium" })} placeholder="e.g. gpt-6-astra" />
-              <Button type="button" variant="ghost" size="sm" onClick={() => setForceCustom(false)}>Choose known…</Button>
-            </div>
-          ) : (
-            <Select value={staged?.model ?? NO_CODEX_TERMINAL_DEFAULT} disabled={saving} onValueChange={selectModel}>
-              <SelectTrigger id="platform-terminal-codex-model"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_CODEX_TERMINAL_DEFAULT}>Use Standard-tier fallback</SelectItem>
-                <SelectSeparator />
-                {KNOWN_CODEX_MODELS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-                <SelectSeparator /><SelectItem value={CUSTOM_VALUE}>Custom…</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-          {blocked && !validation.ok && <p role="alert" className="text-xs text-rose-500">{validation.reason}</p>}
-        </div>
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium">Reasoning effort</span>
-          <EffortSegmentedControl agent="codex" value={staged?.effort} disabled={saving || !staged} onChange={(effort) => setStaged(staged ? { ...staged, effort } : staged)} />
-        </div>
-      </div>
-      {audit && <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{audit.value ? <span>Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>{audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}</span> : <span>No Codex terminal platform pair saved — using the Standard-tier fallback.</span>}</div>}
-      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-        {!isDirty && <span className="mr-auto text-xs text-muted-foreground">Save enables when you change a value.</span>}
-        {isDirty && blocked && <span className="mr-auto text-xs text-muted-foreground">Fix the model name to enable Save.</span>}
-        <Button type="button" variant="destructive" size="sm" disabled={saving || !staged} onClick={() => { setStaged(null); setForceCustom(false); }}>Clear</Button>
-        <Button type="button" variant="outline" size="sm" disabled={saving || !isDirty} onClick={() => { setStaged(persisted); setForceCustom(false); }}>Cancel</Button>
-        <Button type="button" size="sm" disabled={saving || !isDirty || blocked} onClick={save}>{saving ? "Saving…" : "Save"}</Button>
-      </div>
-    </div>
+    <TerminalSettingsCard
+      title="Codex terminal sessions"
+      description={CODEX_TERMINAL_DESCRIPTION}
+      loadState={loadState}
+      loadError="Failed to load the Codex terminal settings."
+      onRetry={() => setReloadToken((t) => t + 1)}
+    >
+      <TerminalSettingRow
+        label="Starting model"
+        htmlFor="platform-terminal-codex-model"
+        audit={auditText(
+          pairAudit?.value != null,
+          pairAudit,
+          "Not set: using the Standard tier's Codex model."
+        )}
+      >
+        {custom ? (
+          <div className="flex gap-2">
+            <Input
+              id="platform-terminal-codex-model"
+              value={stagedPair?.model ?? ""}
+              disabled={saving}
+              aria-invalid={blocked || undefined}
+              onChange={(e) => setStagedPair({ model: e.target.value, effort: stagedPair?.effort ?? "medium" })}
+              placeholder="e.g. gpt-6-astra"
+            />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setForceCustom(false)}>
+              Choose known…
+            </Button>
+          </div>
+        ) : (
+          <Select value={stagedPair?.model ?? NO_CODEX_TERMINAL_DEFAULT} disabled={saving} onValueChange={selectModel}>
+            <SelectTrigger id="platform-terminal-codex-model" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_CODEX_TERMINAL_DEFAULT}>Not set — the Standard tier&apos;s Codex model</SelectItem>
+              <SelectSeparator />
+              {KNOWN_CODEX_MODELS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+              <SelectSeparator />
+              <SelectItem value={CUSTOM_VALUE}>Custom…</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {blocked && !validation.ok && (
+          <p role="alert" className="text-xs text-rose-500">
+            {validation.reason}
+          </p>
+        )}
+      </TerminalSettingRow>
+
+      <TerminalSettingRow
+        label="Starting effort"
+        labelId="platform-terminal-codex-effort-label"
+        audit={`Saved together with the model${stagedPair ? "." : ": pick a model to choose an effort."}`}
+      >
+        <EffortSegmentedControl
+          agent="codex"
+          value={stagedPair ? stagedPair.effort : null}
+          disabled={saving}
+          levelsDisabled={!stagedPair}
+          onChange={(effort) => setStagedPair(stagedPair ? { ...stagedPair, effort } : stagedPair)}
+          groupLabel="Codex starting effort, site default"
+          defaultOption={{
+            label: "Not set",
+            subLabel: "with model",
+            disabled: !!stagedPair,
+            onSelect: () => setStagedPair(null),
+          }}
+        />
+      </TerminalSettingRow>
+
+      <TerminalSettingRow
+        label="Memory limit"
+        labelId="platform-terminal-codex-auto-compact-label"
+        audit={auditText(
+          memoryAudit?.value != null,
+          memoryAudit,
+          `Not set: Codex decides (${AUTO_COMPACT_OWN_SIZE_TEXT.codex}).`
+        )}
+      >
+        <AutoCompactSegmentedControl
+          agent="codex"
+          value={isAutoCompactStep("codex", stagedMemory) ? stagedMemory : null}
+          disabled={saving}
+          onChange={setStagedMemory}
+          groupLabel="Codex memory limit, site default"
+          defaultOption={{ label: "Not set", subLabel: "Codex's own", onSelect: () => setStagedMemory(null) }}
+        />
+      </TerminalSettingRow>
+
+      <TerminalCardFooter
+        whyId="platform-terminal-codex-save-why"
+        isDirty={isDirty}
+        hint={blocked ? "Fix the model name to enable Save." : null}
+        saving={saving}
+        saveDisabled={saveDisabled}
+        onCancel={handleCancel}
+        onSave={handleSave}
+      />
+    </TerminalSettingsCard>
   );
 }

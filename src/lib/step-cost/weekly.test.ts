@@ -8,8 +8,11 @@ const at = (daysBeforeEnd: number) => new Date(END.getTime() - daysBeforeEnd * D
 
 const step = (id: string, run: string, title: string, when: string, o: Partial<WeeklyStepRow> = {}): WeeklyStepRow => ({
   id, idea_id: "i1", run_id: run, title, status: "completed", started_at: when, completed_at: when,
-  model_tier: "standard", effort_override: null, description: "do it", ...o,
+  human_check_required: false, model_tier: "standard", effort_override: null, description: "do it", ...o,
 });
+const BOT = "bot1";
+const comment = (step_id: string, type: "changes_requested" | "failure", author_id: string, when: string) => ({ step_id, type, author_id, created_at: when });
+const sendBack = (step_id: string, when = at(1)) => comment(step_id, "changes_requested", BOT, when);
 const usage = (step_id: string, run_id: string, read: number, model = "claude-opus-5-5") => ({
   step_id, run_id, model, input_tokens: 0, output_tokens: 0, cache_read_tokens: read, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0,
 });
@@ -20,7 +23,7 @@ function input(o: Partial<WeeklyInput> = {}): WeeklyInput {
   return {
     steps: [], runs: [{ id: "r1", template_id: "t1", status: "completed" }, { id: "r2", template_id: "t1", status: "completed" }],
     templates: [{ id: "t1", idea_id: "i1", name: "Bug Fix", updated_at: "2026-10-01T00:00:00Z", steps: [{ title: "Build" }, { title: "Review" }] }],
-    sentBackStepIds: new Set(), usage: [], ideas: [{ id: "i1", title: "Board One" }], paths: [],
+    comments: [], botIds: new Set(), usage: [], ideas: [{ id: "i1", title: "Board One" }], paths: [],
     weekEndsAt: END, weeks: 3, ...o,
   };
 }
@@ -75,7 +78,7 @@ describe("buildWeeklyReport", () => {
   });
 
   it("lists this week's runs with cost and whether work was sent back", () => {
-    const r = buildWeeklyReport(input({ steps, usage: us, sentBackStepIds: new Set(["s2"]) }));
+    const r = buildWeeklyReport(input({ steps, usage: us, comments: [sendBack("s2")] }));
     expect(r.runs_this_week).toEqual([{ run_id: "r1", workflow: "Bug Fix", usd: 4, sent_back: true }]);
     expect(r.workflows[0].sent_back).toEqual([0, 0, 1]);
   });
@@ -173,16 +176,50 @@ describe("buildWeeklyReport", () => {
     expect(r.cost_missing).toEqual([0, 0, 1]);
   });
 
-  it("keeps a sent-back step that is waiting to re-run, in the week of its last costed attempt", () => {
-    const waiting = step("w", "r1", "Build", at(2), { status: "pending", started_at: null, completed_at: null });
+  it("keeps a caught step that is waiting to re-run, in the week of its last costed attempt", () => {
+    // Review failed and sent Build back: Review is caught and waiting; Build is the step sent back.
+    const review = step("w", "r1", "Review", at(2), { status: "pending", started_at: null, completed_at: null });
+    const build = step("b", "r1", "Build", at(2), { status: "pending", started_at: null, completed_at: null });
     const u = { ...usage("w", "r1", ONE_DOLLAR * 2), created_at: at(2) };
-    const r = buildWeeklyReport(input({ steps: [waiting], usage: [u], sentBackStepIds: new Set(["w"]) }));
+    const comments = [comment("w", "failure", BOT, at(2)), comment("b", "changes_requested", BOT, at(2))];
+    const r = buildWeeklyReport(input({ steps: [review, build], usage: [u], comments, botIds: new Set([BOT]) }));
     expect(r.vibecodes_total_usd).toEqual([0, 0, 2]);
-    expect(r.workflows[0].sent_back).toEqual([0, 0, 1]);
-    // A pending step with no cost and no send-back is still left out.
+    expect(r.workflows[0].sent_back).toEqual([0, 0, 0]);
+    // A pending step with no cost and no catch is still left out.
     const idle = buildWeeklyReport(input({ steps: [step("p", "r1", "Build", at(2), { status: "pending" })] }));
     expect(idle.workflows).toEqual([]);
   });
+
+  it("does not count a reset step that has cost but was neither caught nor rejected", () => {
+    const reset = step("x", "r1", "Build", at(2), { status: "pending", started_at: null, completed_at: null });
+    const u = { ...usage("x", "r1", ONE_DOLLAR * 2), created_at: at(2) };
+    const r = buildWeeklyReport(input({ steps: [reset], usage: [u] }));
+    expect(r.vibecodes_total_usd).toEqual([0, 0, 0]);
+    expect(r.workflows).toEqual([]);
+  });
+
+  it("counts a step a person rejected at its gate while it waits to re-run", () => {
+    const gate = step("g", "r1", "Review", at(2), { status: "pending", started_at: null, completed_at: null, human_check_required: true });
+    const u = { ...usage("g", "r1", ONE_DOLLAR), created_at: at(2) };
+    const r = buildWeeklyReport(input({ steps: [gate], usage: [u], comments: [comment("g", "failure", "person1", at(2))] }));
+    expect(r.vibecodes_total_usd).toEqual([0, 0, 1]);
+    // The same failure by a person on a step with no human check is not a rejection.
+    const plain = step("g", "r1", "Review", at(2), { status: "pending", started_at: null, completed_at: null });
+    const none = buildWeeklyReport(input({ steps: [plain], usage: [u], comments: [comment("g", "failure", "person1", at(2))] }));
+    expect(none.vibecodes_total_usd).toEqual([0, 0, 0]);
+  });
+
+  it("does not count a step that only received a send-back until it runs again, then sums every attempt", () => {
+    const back = step("b", "r1", "Build", at(2), { status: "pending", started_at: null, completed_at: null });
+    const u1 = { ...usage("b", "r1", ONE_DOLLAR), created_at: at(3) };
+    const waiting = buildWeeklyReport(input({ steps: [back], usage: [u1], comments: [sendBack("b", at(2))] }));
+    expect(waiting.vibecodes_total_usd).toEqual([0, 0, 0]);
+    const ran = step("b", "r1", "Build", at(1));
+    const u2 = { ...usage("b", "r1", ONE_DOLLAR * 2), created_at: at(1) };
+    const again = buildWeeklyReport(input({ steps: [ran], usage: [u1, u2], comments: [sendBack("b", at(2))] }));
+    expect(again.vibecodes_total_usd).toEqual([0, 0, 3]);
+  });
+
   describe("typical cost per run follows the Admin whole-run rule", () => {
     // A finished run on the template (Build + Review), costed $1 + $2 = $3.
     const whole = (run: string, w: number) => [

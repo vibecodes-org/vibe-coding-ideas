@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 
 // Radix primitives (Select/Checkbox) use APIs jsdom lacks.
 class ResizeObserverStub {
@@ -63,7 +63,7 @@ vi.mock("@/hooks/use-platform-terminal-codex-model-default", () => ({
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { AdminPlatformDashboard, AdminTerminalAutoCompactCard, AdminTerminalCodexModelCard, AdminTerminalEffortCard, AdminTerminalModelCard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminClaudeTerminalCard, AdminCodexTerminalCard } from "./admin-platform-dashboard";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
@@ -246,364 +246,285 @@ describe("AdminPlatformDashboard (agent-aware, Codex model-tier task FR-7)", () 
   });
 });
 
-describe("AdminTerminalModelCard (task c4ca2d95 — binding: no seed)", () => {
-  it("renders the denied state for a non-super-admin and never fetches", () => {
-    render(<AdminTerminalModelCard isSuperAdmin={false} />);
+const NICK = { id: "u1", full_name: "Nick Ball" };
+const audit = <T,>(value: T, updatedAt: string | null = "2026-07-20T00:00:00Z") => ({
+  value,
+  updatedBy: value === null ? null : NICK,
+  updatedAt: value === null ? null : updatedAt,
+});
 
+function resetTerminalMocks() {
+  for (const m of [
+    mockGetTerminalForAdmin,
+    mockUpdateTerminal,
+    mockGetEffortForAdmin,
+    mockUpdateEffort,
+    mockGetAutoCompactForAdmin,
+    mockUpdateAutoCompact,
+    mockSetAutoCompactCache,
+    mockSetEffortCache,
+    mockGetCodexTerminalForAdmin,
+    mockUpdateCodexTerminal,
+  ]) {
+    m.mockReset();
+  }
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
+}
+
+describe("AdminClaudeTerminalCard (task fae2ce4f)", () => {
+  const effortStrip = () => screen.getByRole("group", { name: "Claude starting effort, site default" });
+  const memoryStrip = () => screen.getByRole("group", { name: "Claude memory limit, site default" });
+
+  beforeEach(() => {
+    resetTerminalMocks();
+    mockGetTerminalForAdmin.mockResolvedValue(audit("opus"));
+    mockGetEffortForAdmin.mockResolvedValue(audit("medium"));
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(300_000));
+  });
+
+  it("renders the denied state for a non-super-admin and never fetches", () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin={false} />);
     expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
     expect(mockGetTerminalForAdmin).not.toHaveBeenCalled();
+    expect(mockGetEffortForAdmin).not.toHaveBeenCalled();
   });
 
-  it("shows 'nothing saved yet' (no seed pill) when no platform default has ever been set", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-
-    await waitFor(() => expect(screen.getByText(/Using the code default \(no model\) — nothing saved yet/)).toBeInTheDocument());
-    expect(screen.getByText(/No platform default \(nothing passed\)/)).toBeInTheDocument();
+  it("shows one card with the three rows, each with its own audit line, and no Clear button", async () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    expect(screen.getByText("Starting model")).toBeInTheDocument();
+    expect(screen.getByText("Starting effort")).toBeInTheDocument();
+    expect(screen.getByText("Memory limit")).toBeInTheDocument();
+    expect(screen.getAllByText(/Last changed by/)).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+    expect(within(effortStrip()).getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(memoryStrip()).getByRole("button", { name: "300k" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    // Clear is disabled too — there is nothing to clear.
-    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
+    expect(screen.getByText(/Save enables when you change a value/)).toBeInTheDocument();
   });
 
-  it("shows the fetched value and audit line when a platform default is set", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({
-      value: "opus",
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-
-    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
-    expect(screen.getByText("Nick Ball")).toBeInTheDocument();
-    expect(screen.getByText("Opus")).toBeInTheDocument();
+  it("every control leads with 'Not set' and says so in the row's audit line when nothing is saved", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue(audit(null));
+    mockGetEffortForAdmin.mockResolvedValue(audit(null));
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(null));
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    expect(screen.getByText(/Not set — each user's machine decides/)).toBeInTheDocument();
+    expect(within(effortStrip()).getByRole("button", { name: /Not set/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(memoryStrip()).getByRole("button", { name: /Not set/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Not set: each user's machine decides which model to start on/)).toBeInTheDocument();
+    expect(screen.getByText(/Not set: Claude Code decides \(today's behaviour\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Not set: Claude Code decides \(about 967,000 tokens\)/)).toBeInTheDocument();
   });
 
-  it("shows an error state with a Retry button when the fetch fails", async () => {
-    mockGetTerminalForAdmin.mockRejectedValueOnce(new Error("boom"));
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-
-    await waitFor(() => expect(screen.getByText(/Failed to load the terminal starting model/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  it("shows one error box with Retry when any read fails", async () => {
+    mockGetEffortForAdmin.mockRejectedValueOnce(new Error("boom"));
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Failed to load the Claude Code terminal settings.");
+    mockGetEffortForAdmin.mockResolvedValue(audit("medium"));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Claude Code terminal sessions");
   });
 
-  it("'Clear' stages 'no platform default' locally (dirty, Save enabled) without saving", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({
-      value: "opus",
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-
-    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+  it("changing only the effort writes only the effort key", async () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "High" }));
+    mockUpdateEffort.mockResolvedValue("high");
+    mockGetEffortForAdmin.mockResolvedValue(audit("high", "2026-10-27T00:00:00Z"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith("high"));
     expect(mockUpdateTerminal).not.toHaveBeenCalled();
+    expect(mockUpdateAutoCompact).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Claude Code site defaults saved · effort High")
+    );
+    expect(mockSetEffortCache).toHaveBeenCalledWith("high");
   });
 
-  it("blocks Save with role=alert on a structurally invalid custom value (AC-12), before any novel-value gate", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({
-      value: "opus-5.5",
-      updatedBy: null,
-      updatedAt: null,
-    });
+  it("'Not set' on a strip clears that one key, and the toast says what changed", async () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: /Not set/ }));
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "Max" }));
+    mockUpdateAutoCompact.mockResolvedValue(null);
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(null));
+    mockUpdateEffort.mockResolvedValue("max");
+    mockGetEffortForAdmin.mockResolvedValue(audit("max"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("claude", null));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Claude Code site defaults saved · effort Max, memory limit not set")
+    );
+    expect(mockUpdateTerminal).not.toHaveBeenCalled();
+    expect(mockSetAutoCompactCache).toHaveBeenCalledWith("claude", null);
+  });
 
-    render(<AdminTerminalModelCard isSuperAdmin />);
+  it("Cancel restores every row of the card", async () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "Low" }));
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "500k" }));
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(within(effortStrip()).getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(memoryStrip()).getByRole("button", { name: "300k" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("a failing row keeps its staged value, the other row is saved, and one toast names the failure", async () => {
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
+    await screen.findByText("Claude Code terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "High" }));
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "400k" }));
+    mockUpdateEffort.mockRejectedValue(new Error("Failed to save the terminal starting effort — try again"));
+    mockUpdateAutoCompact.mockResolvedValue(400_000);
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(400_000));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Couldn't save the starting effort — Failed to save the terminal starting effort — try again"
+      )
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(within(effortStrip()).getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+    // The memory row saved: it is now the persisted value, so only effort is still dirty.
+    expect(within(memoryStrip()).getByRole("button", { name: "400k" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+    mockUpdateEffort.mockClear();
+    mockUpdateAutoCompact.mockClear();
+    mockUpdateEffort.mockResolvedValue("high");
+    mockGetEffortForAdmin.mockResolvedValue(audit("high"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith("high"));
+    expect(mockUpdateAutoCompact).not.toHaveBeenCalled();
+  });
+
+  it("blocks Save on a structurally invalid custom model name, with the hint and an alert", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue(audit("opus-5.5"));
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
     const input = await screen.findByLabelText("Starting model");
     expect(input).toHaveValue("opus-5.5");
-
     fireEvent.change(input, { target: { value: "opus 5!" } });
-
     expect(screen.getByRole("alert")).toHaveTextContent(/space/i);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText(/Fix the model name to enable Save/)).toBeInTheDocument();
   });
 
-  it("gates Save behind the novel-value confirm checkbox, then saves once confirmed", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({ value: "opus-5.5", updatedBy: null, updatedAt: null });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
+  it("gates Save behind the novel-model tick box, then saves the model only", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue(audit("opus-5.5"));
+    render(<AdminClaudeTerminalCard isSuperAdmin />);
     const input = await screen.findByLabelText("Starting model");
-    expect(input).toHaveValue("opus-5.5");
-
     fireEvent.change(input, { target: { value: "opus-5.6" } });
-
     expect(screen.getByText(/isn't a known model alias/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText(/Confirm the checkbox above to enable Save/)).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
-
     mockUpdateTerminal.mockResolvedValue("opus-5.6");
-    mockGetTerminalForAdmin.mockResolvedValue({
-      value: "opus-5.6",
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-07-25T00:00:00Z",
-    });
-
+    mockGetTerminalForAdmin.mockResolvedValue(audit("opus-5.6", "2026-07-25T00:00:00Z"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
     await waitFor(() => expect(mockUpdateTerminal).toHaveBeenCalledWith("opus-5.6"));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Opus-5.6")));
-  });
-
-  it("saves a Clear (null) as clearing back to unset, with distinct toast copy", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({
-      value: "opus",
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    mockUpdateTerminal.mockResolvedValue(null);
-    mockGetTerminalForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(mockUpdateTerminal).toHaveBeenCalledWith(null));
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("cleared"))
-    );
-  });
-
-  it("shows a retryable error toast and keeps staged values when the save action throws", async () => {
-    mockGetTerminalForAdmin.mockResolvedValue({ value: "opus", updatedBy: null, updatedAt: null });
-
-    render(<AdminTerminalModelCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
-
-    mockUpdateTerminal.mockRejectedValueOnce(new Error("Super admin access required"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Super admin access required"));
-    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
-  });
-});
-
-describe("AdminTerminalEffortCard (task 18a37612 — no seed)", () => {
-  const strip = () => screen.getByRole("group", { name: "Claude starting effort, site default" });
-
-  it("renders the denied state for a non-super-admin and never fetches", () => {
-    mockGetEffortForAdmin.mockClear();
-    render(<AdminTerminalEffortCard isSuperAdmin={false} />);
-    expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
-    expect(mockGetEffortForAdmin).not.toHaveBeenCalled();
-  });
-
-  it("shows a skeleton while loading (heading not yet shown)", () => {
-    mockGetEffortForAdmin.mockReturnValue(new Promise(() => {}));
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    expect(screen.queryByText("Claude terminal starting effort")).not.toBeInTheDocument();
-  });
-
-  it("with nothing saved: five levels, none pressed, the no-default audit line, Save and Clear disabled", async () => {
-    mockGetEffortForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByText(/No site default: Claude Code decides/)).toBeInTheDocument());
-    const buttons = Array.from(strip().querySelectorAll("button"));
-    expect(buttons.map((b) => b.textContent)).toEqual(["Low", "Medium", "High", "X-High", "Max"]);
-    expect(buttons.every((b) => b.getAttribute("aria-pressed") === "false")).toBe(true);
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
-  });
-
-  it("shows the saved level and who changed it", async () => {
-    mockGetEffortForAdmin.mockResolvedValue({
-      value: "high",
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-10-14T00:00:00Z",
-    });
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
-    expect(screen.getByText("Nick Ball")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("shows an error state with Retry when the fetch fails", async () => {
-    mockGetEffortForAdmin.mockRejectedValueOnce(new Error("boom"));
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByText(/Failed to load the terminal starting effort/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
-  });
-
-  it("pick High -> Save calls the action with 'high', refreshes the cache and toasts", async () => {
-    mockGetEffortForAdmin
-      .mockResolvedValueOnce({ value: null, updatedBy: null, updatedAt: null })
-      .mockResolvedValue({ value: "high", updatedBy: { id: "u1", full_name: "Nick Ball" }, updatedAt: "2026-10-14T00:00:00Z" });
-    mockUpdateEffort.mockResolvedValue("high");
-    vi.mocked(toast.success).mockClear();
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "High" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "High" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith("high"));
-    await waitFor(() => expect(mockSetEffortCache).toHaveBeenCalledWith("high"));
-    expect(toast.success).toHaveBeenCalledWith(
-      "Terminal starting effort saved · sessions now start at High unless a user picks their own"
-    );
-  });
-
-  it("Clear -> Save calls the action with null and toasts the cleared copy", async () => {
-    mockGetEffortForAdmin
-      .mockResolvedValueOnce({ value: "xhigh", updatedBy: null, updatedAt: null })
-      .mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    mockUpdateEffort.mockClear();
-    mockUpdateEffort.mockResolvedValue(null);
-    vi.mocked(toast.success).mockClear();
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("model Opus-5.6")));
     expect(mockUpdateEffort).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdateEffort).toHaveBeenCalledWith(null));
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        "Terminal starting effort cleared · Claude Code decides unless a user picks their own"
-      )
-    );
-  });
-
-  it("keeps the staged value and toasts the error when Save fails", async () => {
-    mockGetEffortForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    mockUpdateEffort.mockRejectedValue(new Error("Choose a valid Claude effort"));
-    vi.mocked(toast.error).mockClear();
-    render(<AdminTerminalEffortCard isSuperAdmin />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Max" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Max" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Choose a valid Claude effort"));
-    expect(screen.getByRole("button", { name: "Max" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
-describe("AdminTerminalAutoCompactCard (task 5e654dd1)", () => {
-  const strip = (agent: "claude" | "codex") =>
-    screen.getByRole("group", { name: agent === "claude" ? "Claude memory limit, site default" : "Codex memory limit, site default" });
+describe("AdminCodexTerminalCard (task fae2ce4f)", () => {
+  const effortStrip = () => screen.getByRole("group", { name: "Codex starting effort, site default" });
+  const memoryStrip = () => screen.getByRole("group", { name: "Codex memory limit, site default" });
+
+  beforeEach(() => {
+    resetTerminalMocks();
+    mockGetCodexTerminalForAdmin.mockResolvedValue(audit({ model: "gpt-5.6-sol", effort: "medium" }));
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(null));
+  });
 
   it("renders the denied state for a non-super-admin and never fetches", () => {
-    mockGetAutoCompactForAdmin.mockClear();
-    render(<AdminTerminalAutoCompactCard isSuperAdmin={false} agent="claude" />);
+    render(<AdminCodexTerminalCard isSuperAdmin={false} />);
     expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
-    expect(mockGetAutoCompactForAdmin).not.toHaveBeenCalled();
+    expect(mockGetCodexTerminalForAdmin).not.toHaveBeenCalled();
   });
 
-  it("Claude with nothing saved: five steps, none pressed, the empty-state audit line, Save and Clear disabled", async () => {
-    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
-    await waitFor(() => expect(screen.getByText("No site default: Claude Code decides (about 967,000 tokens).")).toBeInTheDocument());
-    expect(screen.getByText("Claude terminal memory limit")).toBeInTheDocument();
+  it("shows the three rows, the pair note, and no Clear button", async () => {
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    expect(screen.getByText("Starting model")).toBeInTheDocument();
+    expect(screen.getByText("Starting effort")).toBeInTheDocument();
     expect(screen.getByText("Memory limit")).toBeInTheDocument();
-    const buttons = Array.from(strip("claude").querySelectorAll("button"));
-    expect(buttons.map((b) => b.textContent)).toEqual(["200k", "300k", "400k", "500k", "1M"]);
-    expect(buttons.every((b) => b.getAttribute("aria-pressed") === "false")).toBe(true);
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
-    expect(mockGetAutoCompactForAdmin).toHaveBeenCalledWith("claude");
+    expect(screen.getByText("Saved together with the model.")).toBeInTheDocument();
+    expect(screen.getByText(/Not set: Codex decides \(about 245,000 tokens/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+    expect(within(effortStrip()).getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    // With a model set, the 'Not set' segment is disabled.
+    expect(within(effortStrip()).getByRole("button", { name: /Not set/ })).toBeDisabled();
   });
 
-  it("Codex with nothing saved: three steps and its own empty-state line", async () => {
-    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
-    await waitFor(() =>
-      expect(screen.getByText("No site default: Codex decides (about 245,000 tokens on today's Codex models).")).toBeInTheDocument()
-    );
-    expect(screen.getByText("Codex terminal memory limit")).toBeInTheDocument();
-    expect(Array.from(strip("codex").querySelectorAll("button")).map((b) => b.textContent)).toEqual(["100k", "150k", "200k"]);
+  it("with no model the effort strip is 'Not set' and its levels are disabled", async () => {
+    mockGetCodexTerminalForAdmin.mockResolvedValue(audit(null));
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    expect(screen.getByText(/Not set: using the Standard tier's Codex model/)).toBeInTheDocument();
+    expect(screen.getByText("Saved together with the model: pick a model to choose an effort.")).toBeInTheDocument();
+    const notSet = within(effortStrip()).getByRole("button", { name: /Not set/ });
+    expect(notSet).toHaveAttribute("aria-pressed", "true");
+    expect(notSet).not.toBeDisabled();
+    expect(within(effortStrip()).getByRole("button", { name: "High" })).toBeDisabled();
   });
 
-  it("shows the saved step and who changed it", async () => {
-    mockGetAutoCompactForAdmin.mockResolvedValue({
-      value: 300000,
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-10-24T00:00:00Z",
-    });
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
-    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "300k" })).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("shows an error state with Retry when the fetch fails", async () => {
-    mockGetAutoCompactForAdmin.mockRejectedValueOnce(new Error("boom"));
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
-    await waitFor(() => expect(screen.getByText("Failed to load the Codex terminal memory limit.")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
-  });
-
-  it("pick 400k -> Save calls the action, refreshes that agent's cache and toasts", async () => {
-    mockGetAutoCompactForAdmin
-      .mockResolvedValueOnce({ value: null, updatedBy: null, updatedAt: null })
-      .mockResolvedValue({ value: 400000, updatedBy: { id: "u1", full_name: "Nick Ball" }, updatedAt: "2026-10-24T00:00:00Z" });
-    mockUpdateAutoCompact.mockResolvedValue(400000);
-    vi.mocked(toast.success).mockClear();
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "400k" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "400k" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("claude", 400000));
-    await waitFor(() => expect(mockSetAutoCompactCache).toHaveBeenCalledWith("claude", 400000));
-    expect(toast.success).toHaveBeenCalledWith(
-      "Terminal memory limit saved · sessions now tidy up at 400k unless a user picks their own"
-    );
-  });
-
-  it("Codex Clear -> Save sends null and toasts the cleared copy", async () => {
-    mockGetAutoCompactForAdmin
-      .mockResolvedValueOnce({ value: 150000, updatedBy: null, updatedAt: null })
-      .mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    mockUpdateAutoCompact.mockClear();
-    mockUpdateAutoCompact.mockResolvedValue(null);
-    vi.mocked(toast.success).mockClear();
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="codex" />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(mockUpdateAutoCompact).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("codex", null));
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        "Codex terminal memory limit cleared · Codex decides unless a user picks their own"
-      )
-    );
-  });
-
-  it("keeps the staged value and toasts the error when Save fails", async () => {
-    mockGetAutoCompactForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
-    mockUpdateAutoCompact.mockRejectedValue(new Error("Choose a valid memory limit"));
-    vi.mocked(toast.error).mockClear();
-    render(<AdminTerminalAutoCompactCard isSuperAdmin agent="claude" />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "1M" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "1M" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Choose a valid memory limit"));
-    expect(screen.getByRole("button", { name: "1M" })).toHaveAttribute("aria-pressed", "true");
-  });
-});
-
-describe("AdminTerminalCodexModelCard", () => {
-  it("renders and saves the independent platform model and effort pair", async () => {
-    mockGetCodexTerminalForAdmin.mockResolvedValue({
-      value: { model: "gpt-5.6-sol", effort: "medium" },
-      updatedBy: { id: "u1", full_name: "Nick Ball" },
-      updatedAt: "2026-09-10T00:00:00Z",
-    });
+  it("changing only the effort saves the pair and nothing else", async () => {
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "High" }));
     mockUpdateCodexTerminal.mockResolvedValue({ model: "gpt-5.6-sol", effort: "high" });
-    render(<AdminTerminalCodexModelCard isSuperAdmin />);
-
-    await screen.findByText("Codex terminal starting model");
-    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    mockGetCodexTerminalForAdmin.mockResolvedValue(audit({ model: "gpt-5.6-sol", effort: "high" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
     await waitFor(() => expect(mockUpdateCodexTerminal).toHaveBeenCalledWith({ model: "gpt-5.6-sol", effort: "high" }));
+    expect(mockUpdateAutoCompact).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Codex site defaults saved · model gpt-5.6-sol, effort High")
+    );
+  });
+
+  it("changing only the memory limit writes only the memory key", async () => {
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "150k" }));
+    mockUpdateAutoCompact.mockResolvedValue(150_000);
+    mockGetAutoCompactForAdmin.mockResolvedValue(audit(150_000));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockUpdateAutoCompact).toHaveBeenCalledWith("codex", 150_000));
+    expect(mockUpdateCodexTerminal).not.toHaveBeenCalled();
+    expect(mockSetAutoCompactCache).toHaveBeenCalledWith("codex", 150_000);
+  });
+
+  it("a failing pair write is named in one error toast and keeps its staged value", async () => {
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "Low" }));
+    mockUpdateCodexTerminal.mockRejectedValue("nope");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't save the starting model and effort — try again")
+    );
+    expect(within(effortStrip()).getByRole("button", { name: "Low" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Cancel restores every row", async () => {
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Codex terminal sessions");
+    fireEvent.click(within(effortStrip()).getByRole("button", { name: "Low" }));
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "100k" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(within(effortStrip()).getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(memoryStrip()).getByRole("button", { name: /Not set/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows one error box with Retry when a read fails", async () => {
+    mockGetAutoCompactForAdmin.mockRejectedValueOnce(new Error("boom"));
+    render(<AdminCodexTerminalCard isSuperAdmin />);
+    await screen.findByText("Failed to load the Codex terminal settings.");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });

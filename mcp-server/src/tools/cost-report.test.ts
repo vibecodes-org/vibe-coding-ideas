@@ -55,8 +55,8 @@ const world = (): Record<string, Row[]> => ({
     { id: "t-other", idea_id: "other", name: "Bug Fix", updated_at: "1" },
   ],
   task_workflow_steps: [
-    { id: "s1", idea_id: "mine", run_id: "r1", title: "Fix", status: "completed", started_at: WHEN, completed_at: WHEN, model_tier: "standard", effort_override: null, description: "SECRET PROMPT" },
-    { id: "s2", idea_id: "other", run_id: "r2", title: "Fix", status: "completed", started_at: WHEN, completed_at: WHEN, model_tier: "standard", effort_override: null, description: "x" },
+    { id: "s1", idea_id: "mine", run_id: "r1", title: "Fix", status: "completed", started_at: WHEN, completed_at: WHEN, human_check_required: false, model_tier: "standard", effort_override: null, description: "SECRET PROMPT" },
+    { id: "s2", idea_id: "other", run_id: "r2", title: "Fix", status: "completed", started_at: WHEN, completed_at: WHEN, human_check_required: false, model_tier: "standard", effort_override: null, description: "x" },
   ],
   workflow_runs: [
     { id: "r1", template_id: "t-mine" },
@@ -107,6 +107,28 @@ describe("getCostReport", () => {
     expect(out.steps[0].median_usd).toEqual([null, null]);
   });
 
+  it("counts a caught step waiting to re-run, but not a reset step that only has cost", async () => {
+    const BOT = "00000000-0000-4000-a000-0000000000b0";
+    const w = world();
+    const waiting = { status: "pending", started_at: null, completed_at: null, human_check_required: false, model_tier: "standard", effort_override: null, description: "x", idea_id: "mine", run_id: "r1" };
+    w.task_workflow_steps.push(
+      { ...waiting, id: "caught", title: "Review" },
+      { ...waiting, id: "back", title: "Build" },
+      { ...waiting, id: "reset", title: "Plan" }
+    );
+    w.workflow_step_comments = [
+      { step_id: "caught", idea_id: "mine", type: "failure", author_id: BOT, created_at: WHEN },
+      { step_id: "back", idea_id: "mine", type: "changes_requested", author_id: BOT, created_at: WHEN },
+    ];
+    w.bot_profiles = [{ id: BOT }];
+    const use = (step_id: string, cache: number) => ({ step_id, run_id: "r1", idea_id: "mine", model: "claude-opus-5-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: cache, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0, created_at: WHEN });
+    w.workflow_step_usage.push(use("caught", 10_000_000), use("reset", 50_000_000));
+    const { db } = fakeDb(w);
+    const out = await getCostReport({ supabase: db, userId: ME }, getCostReportSchema.parse({ week_ends_at: END, weeks: 1 }));
+    // s1 $1 + the caught step $2; the reset step's $10 is left out.
+    expect(out.vibecodes_total_usd).toEqual([3]);
+  });
+
   it("rejects weeks outside 1-26", () => {
     expect(() => getCostReportSchema.parse({ weeks: 27 })).toThrow();
     expect(() => getCostReportSchema.parse({ weeks: 0 })).toThrow();
@@ -118,7 +140,7 @@ describe("fitReport", () => {
   function big(weeks: number, n: number) {
     const end = new Date(END);
     const series = (v: number) => Array.from({ length: weeks }, (_, i) => v + i);
-    const base = buildWeeklyReport({ steps: [], runs: [], templates: [], sentBackStepIds: new Set(), usage: [], ideas: [], paths: [], weekEndsAt: end, weeks });
+    const base = buildWeeklyReport({ steps: [], runs: [], templates: [], comments: [], botIds: new Set(), usage: [], ideas: [], paths: [], weekEndsAt: end, weeks });
     return {
       ...base,
       boards: Array.from({ length: n }, (_, i) => ({ idea_id: `00000000-0000-4000-a000-${String(i).padStart(12, "0")}`, title: `Board number ${i}`, project_path: `/Users/someone/projects/board-${i}`, usd: series(123.45), runs: series(3) })),
@@ -128,7 +150,7 @@ describe("fitReport", () => {
     };
   }
 
-  it("keeps a large report under 12,000 characters as jsonResult sends it, and says what was cut", () => {
+  it("keeps a large report under 12,000 characters of compact JSON, and says what was cut", () => {
     const out = fitReport(big(26, 60), "2026-10-31T06:00:00.000Z");
     const text = compactResult(out).content[0].text;
     expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);

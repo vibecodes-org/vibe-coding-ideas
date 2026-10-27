@@ -2,6 +2,7 @@ import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import { stripClaudeWorktreeSuffix } from "../../../src/lib/launch-claude-code";
 import { readAll, readByIds } from "../../../src/lib/step-cost/paging";
+import type { ReportCommentRow } from "../../../src/lib/step-cost/report";
 import {
   buildWeeklyReport,
   type WeeklyIdeaRow,
@@ -51,7 +52,8 @@ interface BoardRows {
   steps: WeeklyStepRow[];
   runs: WeeklyRunRow[];
   templates: WeeklyTemplateRow[];
-  sentBackStepIds: string[];
+  comments: ReportCommentRow[];
+  botIds: string[];
   usage: WeeklyUsageRow[];
 }
 
@@ -68,19 +70,23 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
   const steps = await readAll<WeeklyStepRow>((from, to) =>
     db
       .from("task_workflow_steps")
-      .select("id, idea_id, run_id, title, status, started_at, completed_at, model_tier, effort_override, description")
+      .select("id, idea_id, run_id, title, status, started_at, completed_at, human_check_required, model_tier, effort_override, description")
       .eq("idea_id", ideaId)
       .not("run_id", "is", null)
       .or(`started_at.gte.${since},completed_at.gte.${since}`)
       .order("id")
       .range(from, to)
   );
-  const comments = await readAll<{ step_id: string; created_at: string }>((from, to) =>
+  // Send-backs and failures, as the admin report reads them: a failure paired
+  // with a send-back means the step was caught, a person's failure at a
+  // human-check step means it was rejected. Those are the steps that count
+  // while they wait to re-run.
+  const comments = await readAll<ReportCommentRow>((from, to) =>
     db
       .from("workflow_step_comments")
-      .select("step_id, created_at")
+      .select("step_id, type, author_id, created_at")
       .eq("idea_id", ideaId)
-      .eq("type", "changes_requested")
+      .in("type", ["changes_requested", "failure"])
       .order("id")
       .range(from, to)
   );
@@ -105,16 +111,21 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
     ...(await readByIds<WeeklyStepRow>(extraIds, (chunk) =>
       db
         .from("task_workflow_steps")
-        .select("id, idea_id, run_id, title, status, started_at, completed_at, model_tier, effort_override, description")
+        .select("id, idea_id, run_id, title, status, started_at, completed_at, human_check_required, model_tier, effort_override, description")
         .eq("idea_id", ideaId)
         .not("run_id", "is", null)
         .in("id", chunk)
     ))
   );
-  if (steps.length === 0) return { steps, runs: [], templates, sentBackStepIds: [], usage: [] };
+  if (steps.length === 0) return { steps, runs: [], templates, comments: [], botIds: [], usage: [] };
   const runIds = [...new Set(steps.map((s) => s.run_id).filter((id): id is string => !!id))];
   const runs = await readByIds<WeeklyRunRow>(runIds, (chunk) => db.from("workflow_runs").select("id, template_id, status").in("id", chunk));
-  return { steps, runs, templates, sentBackStepIds: comments.map((c) => c.step_id), usage };
+  // Which failure authors are agents. bot_profiles can be read by any signed-in user.
+  const failureAuthors = [...new Set(comments.filter((c) => c.type === "failure").map((c) => c.author_id))];
+  const botIds = (
+    await readByIds<{ id: string }>(failureAuthors, (chunk) => db.from("bot_profiles").select("id").in("id", chunk))
+  ).map((b) => b.id);
+  return { steps, runs, templates, comments, botIds, usage };
 }
 
 type CappedList = "steps" | "runs_this_week" | "boards" | "workflows";
@@ -184,21 +195,22 @@ export async function getCostReport(ctx: McpContext, params: z.infer<typeof getC
     .filter((p) => p.owner_user_id === caller)
     .map((p) => ({ idea_id: p.idea_id, absolute_path: stripClaudeWorktreeSuffix(p.absolute_path), updated_at: p.updated_at }));
 
-  const all: BoardRows = { steps: [], runs: [], templates: [], sentBackStepIds: [], usage: [] };
+  const all: BoardRows = { steps: [], runs: [], templates: [], comments: [], botIds: [], usage: [] };
   for (let i = 0; i < ideaIds.length; i += BOARD_CONCURRENCY) {
     const rows = await Promise.all(ideaIds.slice(i, i + BOARD_CONCURRENCY).map((id) => readBoard(db, id, since)));
     for (const r of rows) {
       all.steps.push(...r.steps);
       all.runs.push(...r.runs);
       all.templates.push(...r.templates);
-      all.sentBackStepIds.push(...r.sentBackStepIds);
+      all.comments.push(...r.comments);
+      all.botIds.push(...r.botIds);
       all.usage.push(...r.usage);
     }
   }
 
   const data = buildWeeklyReport({
     ...all,
-    sentBackStepIds: new Set(all.sentBackStepIds),
+    botIds: new Set(all.botIds),
     ideas,
     paths,
     weekEndsAt,

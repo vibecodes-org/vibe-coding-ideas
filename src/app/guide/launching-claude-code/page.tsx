@@ -458,6 +458,37 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">Starting model and effort</h2>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              Choose which model a new in-browser session starts on, and how
+              hard it thinks, for Claude Code and for Codex under{" "}
+              <strong className="text-foreground">
+                Settings → Model Tiers → Terminal sessions
+              </strong>
+              . <strong className="text-foreground">Default</strong> uses the
+              site&apos;s choice. For Claude Code the model applies to new
+              sessions and the effort to new and resumed ones; resumed sessions
+              keep the model they were already on. Codex keeps its model and
+              effort together as one pair and applies them to new sessions.
+              In a Claude Code session you can change them any time by typing{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                /model
+              </code>{" "}
+              or{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                /effort
+              </code>
+              ; in Codex, type{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                /model
+              </code>
+              .
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">Memory limit</h2>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
@@ -490,7 +521,7 @@ export default function LaunchingClaudeCodePage() {
               </strong>{" "}
               — your starting-model setting names a model Claude Code doesn&apos;t
               recognise. Fix it in{" "}
-              <strong className="text-foreground">Profile → Model Tiers</strong>{" "}
+              <strong className="text-foreground">Settings → Model Tiers</strong>{" "}
               (or ask an admin to check the platform default on the admin
               Platform tab), then start a fresh session. Resumed sessions
               aren&apos;t affected — they keep the model they were already

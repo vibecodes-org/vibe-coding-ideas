@@ -51,8 +51,14 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
   render in the panel.
 - A popped-out tab reports a misleading status (mid-preemption) while very much
   alive elsewhere — never read it as ended or errored.
-- Sessions with no recorded folder can't be resumed; hide them from the chooser
-  but keep them in the internal reconnect check.
+- The helper (0.3.28+) records the project folder itself at launch. A session
+  with no recorded folder is still hidden from the chooser's Recent list
+  (`visibleRecentRows`) but kept in the internal reconnect check. Reconnect or
+  Resume of one that has a Claude conversation id finds the conversation in
+  Claude's own transcript store (`terminal/bridge/src/transcript-folder.js`) and
+  resumes it in the folder it really ran in; the launch link carries the resume
+  id and no `cwd`. With no transcript on the Mac, a fresh session starts and the
+  terminal says so.
 - **The recorded project folder is always the MAIN checkout, never a worktree.**
   A second concurrent in-app session runs in `<repo>/.claude/worktrees/<id>`
   (`claude --worktree`); its `pwd` must never be stored as the project folder.

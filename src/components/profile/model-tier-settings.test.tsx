@@ -185,25 +185,25 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
     mockUsePlatformTerminalModelDefault.mockReturnValue(null);
     renderDialog({ terminalModel: null });
 
-    expect(screen.getByText(/Platform default \(your machine decides\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Default \(your machine decides\)/)).toBeInTheDocument();
   });
 
   it("shows the resolved organization Codex pair and its source", () => {
     mockUsePlatformTerminalCodexModelDefault.mockReturnValue({ model: "gpt-5.1-codex-mini", effort: "medium" });
     renderDialog();
-    expect(screen.getByText(/Organization Codex terminal pair: gpt-5\.1-codex-mini \(medium\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Uses the site default: new Codex sessions start on gpt-5\.1-codex-mini\./)).toBeInTheDocument();
   });
 
   it("shows the user's saved Codex pair as the resolved source", () => {
     renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
-    expect(screen.getByText(/Your saved Codex pair: gpt-6-astra \(high\)/)).toBeInTheDocument();
+    expect(screen.getByText(/New Codex sessions start on gpt-6-astra \(your setting\)\./)).toBeInTheDocument();
   });
 
   it("names the live platform default value when one is set", () => {
     mockUsePlatformTerminalModelDefault.mockReturnValue("opus");
     renderDialog({ terminalModel: null });
 
-    expect(screen.getByText(/Platform default \(Opus\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Default \(site: Opus\)/)).toBeInTheDocument();
   });
 
   it("shows 'My machine's default' when the user has opted out", () => {
@@ -474,7 +474,7 @@ describe("ModelTierSettings — Claude starting effort (task 18a37612)", () => {
 
   it("renders the row with Default + six-level strip, Default pressed", () => {
     renderDialog();
-    expect(screen.getByText("Starting effort")).toBeInTheDocument();
+    expect(screen.getAllByText("Starting effort")).toHaveLength(2);
     const names = within(effortGroup()).getAllByRole("button").map((b) => b.textContent);
     expect(names).toEqual(["Default" + "Claude's own", "Low", "Medium", "High", "X-High", "Max"]);
     expect(within(effortGroup()).getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
@@ -561,8 +561,7 @@ describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
 
   it("renders both rows with the approved steps and a leading Default button", () => {
     renderDialog();
-    expect(screen.getByText("Claude memory limit")).toBeInTheDocument();
-    expect(screen.getByText("Codex memory limit")).toBeInTheDocument();
+    expect(screen.getAllByText("Memory limit")).toHaveLength(2);
     const claude = within(claudeGroup()).getAllByRole("button").map((b) => b.textContent);
     expect(claude).toEqual(["Defaultsite: 300k", "200k", "300k", "400k", "500k", "1M"]);
     const codex = within(codexGroup()).getAllByRole("button").map((b) => b.textContent);
@@ -646,5 +645,105 @@ describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
     renderDialog();
     expect(within(claudeGroup()).queryByText(/site:/)).not.toBeInTheDocument();
     expect(within(claudeGroup()).queryByText("Claude's own")).not.toBeInTheDocument();
+  });
+});
+
+
+describe("ModelTierSettings — Claude and Codex terminal rows match (task fae2ce4f)", () => {
+  beforeEach(() => {
+    mockUsePlatformAgentAwareModelDefaults.mockReturnValue({ defaults: DEFAULT_AGENT_AWARE_DEFAULTS, isLoading: false });
+    mockUsePlatformTerminalModelDefault.mockReturnValue("opus");
+    mockUsePlatformTerminalEffortDefault.mockReturnValue("medium");
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue({ model: "gpt-5.6-terra", effort: "medium" });
+    mockUsePlatformAutoCompact.mockReset();
+    mockUsePlatformAutoCompact.mockImplementation((agent: string) => (agent === "claude" ? 300_000 : null));
+    vi.mocked(updateTerminalPreferences).mockClear();
+  });
+
+  const codexEffort = () => screen.getByRole("group", { name: "Codex starting effort" });
+
+  it("has a Claude Code and a Codex heading, each with the same three rows in order", () => {
+    renderDialog();
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("Codex", { selector: "p" })).toBeInTheDocument();
+    expect(screen.getAllByText("Starting model")).toHaveLength(2);
+    expect(screen.getAllByText("Starting effort")).toHaveLength(2);
+    expect(screen.getAllByText("Memory limit")).toHaveLength(2);
+    const claudeModel = screen.getByRole("combobox", { name: "Claude starting model" });
+    const claudeMem = screen.getByRole("group", { name: "Claude memory limit" });
+    const codexModel = screen.getByRole("combobox", { name: "Codex starting model" });
+    const codexMem = screen.getByRole("group", { name: "Codex memory limit" });
+    const before = (a: HTMLElement, b: HTMLElement) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(claudeModel, screen.getByRole("group", { name: "Claude starting effort" }))).toBe(true);
+    expect(before(screen.getByRole("group", { name: "Claude starting effort" }), claudeMem)).toBe(true);
+    expect(before(claudeMem, codexModel)).toBe(true);
+    expect(before(codexModel, codexEffort())).toBe(true);
+    expect(before(codexEffort(), codexMem)).toBe(true);
+  });
+
+  it("both model lists lead with 'Default (site: ...)'", () => {
+    renderDialog();
+    expect(screen.getByRole("combobox", { name: "Claude starting model" })).toHaveTextContent("Default (site: Opus)");
+    expect(screen.getByRole("combobox", { name: "Codex starting model" })).toHaveTextContent("Default (site: gpt-5.6-terra)");
+  });
+
+  it("Codex effort has a Default segment, pressed with the levels greyed and the site level shown, while the model is on Default", () => {
+    renderDialog();
+    const def = within(codexEffort()).getByRole("button", { name: /^Default/ });
+    expect(def).toHaveAttribute("aria-pressed", "true");
+    expect(def).toHaveTextContent("site: Medium");
+    expect(def).not.toBeDisabled();
+    const medium = within(codexEffort()).getByRole("button", { name: "Medium" });
+    expect(medium).toBeDisabled();
+    expect(medium).toHaveAttribute("aria-pressed", "true");
+    expect(within(codexEffort()).getByRole("button", { name: "High" })).toBeDisabled();
+    expect(screen.getByText(/Uses the site default: new Codex sessions start at Medium, with the site's model/)).toBeInTheDocument();
+  });
+
+  it("with no site pair the Codex Default says Standard tier", () => {
+    mockUsePlatformTerminalCodexModelDefault.mockReturnValue(null);
+    renderDialog();
+    expect(within(codexEffort()).getByRole("button", { name: /^Default/ })).toHaveTextContent("Standard tier");
+    expect(screen.getByRole("combobox", { name: "Codex starting model" })).toHaveTextContent("Default (Standard tier: gpt-5.1-codex-mini)");
+  });
+
+  it("with a saved pair the levels are live; Default resets both and Save sends null for each", async () => {
+    vi.mocked(updateTerminalPreferences).mockResolvedValue({
+      agentAwareModelTierMap: null,
+      terminalModel: null,
+      terminalCodexModel: null,
+      terminalCodexEffort: null,
+      terminalEffort: null,
+      terminalAutoCompact: null,
+      terminalCodexAutoCompact: null,
+      terminalAutoAccept: false,
+      terminalRemoteControl: false,
+    });
+    renderDialog({ terminalCodexModel: "gpt-6-astra", terminalCodexEffort: "high" });
+    expect(within(codexEffort()).getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(codexEffort()).getByRole("button", { name: "High" })).not.toBeDisabled();
+    expect(screen.getByText(/New Codex sessions start at High \(your setting\)\. Resumed sessions keep theirs/)).toBeInTheDocument();
+    fireEvent.click(within(codexEffort()).getByRole("button", { name: /^Default/ }));
+    expect(within(codexEffort()).getByRole("button", { name: "High" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+    await waitFor(() =>
+      expect(updateTerminalPreferences).toHaveBeenCalledWith(
+        expect.objectContaining({ terminalCodexModel: null, terminalCodexEffort: null })
+      )
+    );
+  });
+
+  it("with 'My machine's default' every Codex effort segment is disabled", () => {
+    renderDialog({ terminalCodexModel: MACHINE_DEFAULT_TERMINAL_MODEL, terminalCodexEffort: null });
+    for (const b of within(codexEffort()).getAllByRole("button")) expect(b).toBeDisabled();
+    expect(within(codexEffort()).getByRole("button", { name: /^Default/ })).toHaveTextContent("your machine");
+    expect(screen.getByText("Your machine decides the Codex model and effort.")).toBeInTheDocument();
+  });
+
+  it("the Claude model help line uses the shared shape", () => {
+    renderDialog();
+    expect(
+      screen.getByText(/Uses the site default: new Claude Code sessions start on Opus\. Resumed sessions keep their model\./)
+    ).toBeInTheDocument();
   });
 });

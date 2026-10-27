@@ -67,6 +67,14 @@ import {
   type ReasoningEffort,
 } from "@/lib/codex-models";
 import { SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS, type AgentAwareUserModelTierMap, type AgentKind, type AgentTierEntry } from "@/lib/platform-model-defaults";
+import {
+  claudeModelHelp,
+  codexModelHelp,
+  codexEffortHelp,
+  codexEffortDefaultSubLabel,
+  codexPrefillEffort,
+  siteModelOptionLabel,
+} from "@/lib/terminal/terminal-settings-copy";
 import { EffortSegmentedControl, AutoCompactSegmentedControl } from "@/components/shared/effort-segmented-control";
 import { usePlatformTerminalAutoCompactDefault } from "@/hooks/use-platform-terminal-auto-compact-default";
 import { setViewerTerminalAutoCompactCache } from "@/hooks/use-viewer-terminal-auto-compact";
@@ -427,6 +435,22 @@ export function ModelTierSettings({
     isValidEffort: (effort) => validateReasoningEffort(effort).ok,
   });
 
+  const codexOnDefault = terminalCodexStaged === null;
+  const codexMachine = terminalCodexStaged === MACHINE_DEFAULT_TERMINAL_MODEL;
+  const codexEffortValue: ReasoningEffort | null | undefined = codexOnDefault
+    ? null
+    : codexMachine
+      ? undefined
+      : ((terminalCodexEffortStaged ?? undefined) as ReasoningEffort | undefined);
+  const claudeDefaultOptionLabel = siteModelOptionLabel(
+    platformTerminalDefault ? capitalizeTerminalModelName(platformTerminalDefault) : null,
+    "your machine decides"
+  );
+  const codexSiteFallback = platformDefaults.defaults.standard.codex;
+  const codexDefaultOptionLabel = platformTerminalCodexDefault
+    ? siteModelOptionLabel(platformTerminalCodexDefault.model, "")
+    : `Default (Standard tier: ${codexSiteFallback.model})`;
+
   // AC-3: a tier entry with a model but no effort blocks Save — find the
   // first offender (tier + agent) to name in the Save hint.
   let missingEffortHint: string | null = null;
@@ -499,6 +523,24 @@ export function ModelTierSettings({
     }
     setTerminalCustomMode(false);
     setTerminalStaged(value === PLATFORM_DEFAULT_VALUE ? null : value);
+  }
+
+  function handleCodexModelChange(value: string) {
+    if (value === PLATFORM_DEFAULT_VALUE) {
+      setTerminalCodexStaged(null);
+      setTerminalCodexEffortStaged(null);
+    } else if (value === MACHINE_DEFAULT_TERMINAL_MODEL) {
+      setTerminalCodexStaged(value);
+      setTerminalCodexEffortStaged(null);
+    } else {
+      setTerminalCodexStaged(value);
+      if (!terminalCodexEffortStaged) {
+        // Pre-fill with the level the Default row was showing, so the pair a user sees doesn't jump.
+        setTerminalCodexEffortStaged(
+          codexPrefillEffort(platformTerminalCodexDefault, codexSiteFallback, (e) => validateReasoningEffort(e).ok)
+        );
+      }
+    }
   }
 
   function handleReset() {
@@ -694,10 +736,10 @@ export function ModelTierSettings({
           <p className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Terminal sessions
           </p>
+          <p className="border-b pb-1 text-[13px] font-semibold">Claude Code</p>
           <div className="space-y-1.5">
             <Label htmlFor="terminal-starting-model" className="text-sm">
-              Starting model{" "}
-              <span className="font-normal text-muted-foreground">— for new in-browser Claude Code sessions</span>
+              Starting model
             </Label>
             {terminalCustomMode ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -736,13 +778,10 @@ export function ModelTierSettings({
               </div>
             ) : (
               <Select value={terminalStaged ?? PLATFORM_DEFAULT_VALUE} onValueChange={handleTerminalSelectChange} disabled={isPending}>
-                <SelectTrigger id="terminal-starting-model" aria-describedby="terminal-model-help" className="w-full">
+                <SelectTrigger id="terminal-starting-model" aria-label="Claude starting model" aria-describedby="terminal-model-help" className="w-full">
                   <SelectValue>
                     {terminalStaged === null ? (
-                      <span className="text-muted-foreground">
-                        Platform default
-                        {platformTerminalDefault ? ` (${capitalizeTerminalModelName(platformTerminalDefault)})` : " (your machine decides)"}
-                      </span>
+                      <span className="text-muted-foreground">{claudeDefaultOptionLabel}</span>
                     ) : terminalStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? (
                       "My machine's default"
                     ) : (
@@ -751,10 +790,7 @@ export function ModelTierSettings({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={PLATFORM_DEFAULT_VALUE}>
-                    Platform default
-                    {platformTerminalDefault ? ` (${capitalizeTerminalModelName(platformTerminalDefault)})` : " (your machine decides)"}
-                  </SelectItem>
+                  <SelectItem value={PLATFORM_DEFAULT_VALUE}>{claudeDefaultOptionLabel}</SelectItem>
                   <SelectItem value={MACHINE_DEFAULT_TERMINAL_MODEL}>My machine&apos;s default</SelectItem>
                   <SelectSeparator />
                   {TERMINAL_MODEL_OPTIONS.map((opt) => (
@@ -782,15 +818,14 @@ export function ModelTierSettings({
             )}
             {!terminalCustomMode && (
               <p id="terminal-model-help" className="text-[11px] text-muted-foreground">
-                Applies to new Claude Code sessions. Choose the Codex starting model below. Resumed sessions
-                keep their existing model; you can switch any time by typing /model in the terminal.
+                {claudeModelHelp({ userValue: terminalStaged, platformValue: platformTerminalDefault })}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
             <Label id="terminal-claude-effort-label" className="block text-sm leading-snug">
-              Starting effort <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
+              Starting effort
             </Label>
             <EffortSegmentedControl
               agent="claude"
@@ -812,7 +847,7 @@ export function ModelTierSettings({
 
           <div className="space-y-1.5">
             <Label id="terminal-claude-auto-compact-label" className="block text-sm leading-snug">
-              Claude memory limit <span className="font-normal text-muted-foreground">— for in-browser Claude Code sessions</span>
+              Memory limit
             </Label>
             <AutoCompactSegmentedControl
               agent="claude"
@@ -832,47 +867,60 @@ export function ModelTierSettings({
             </p>
           </div>
 
+          <p className="border-b pb-1 pt-1 text-[13px] font-semibold">Codex</p>
           <div className="space-y-1.5">
             <Label htmlFor="terminal-codex-starting-model" className="text-sm">
-              Codex starting model <span className="font-normal text-muted-foreground">— for new in-browser Codex sessions</span>
+              Starting model
             </Label>
-            <Select value={terminalCodexStaged ?? PLATFORM_DEFAULT_VALUE} onValueChange={(value) => {
-              if (value === PLATFORM_DEFAULT_VALUE) { setTerminalCodexStaged(null); setTerminalCodexEffortStaged(null); }
-              else if (value === MACHINE_DEFAULT_TERMINAL_MODEL) { setTerminalCodexStaged(value); setTerminalCodexEffortStaged(null); }
-              else { setTerminalCodexStaged(value); if (!terminalCodexEffortStaged) setTerminalCodexEffortStaged("medium"); }
-            }} disabled={isPending}>
-              <SelectTrigger id="terminal-codex-starting-model" className="w-full"><SelectValue /></SelectTrigger>
+            <Select value={terminalCodexStaged ?? PLATFORM_DEFAULT_VALUE} onValueChange={handleCodexModelChange} disabled={isPending}>
+              <SelectTrigger
+                id="terminal-codex-starting-model"
+                aria-label="Codex starting model"
+                aria-describedby="terminal-codex-model-help"
+                className="w-full"
+              >
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value={PLATFORM_DEFAULT_VALUE}>Use organization default</SelectItem>
+                <SelectItem value={PLATFORM_DEFAULT_VALUE}>{codexDefaultOptionLabel}</SelectItem>
                 <SelectItem value={MACHINE_DEFAULT_TERMINAL_MODEL}>My machine&apos;s default</SelectItem>
                 <SelectSeparator />
                 {KNOWN_CODEX_MODELS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            {terminalCodexStaged !== null && terminalCodexStaged !== MACHINE_DEFAULT_TERMINAL_MODEL && (
-              <EffortSegmentedControl
-                agent="codex"
-                value={(terminalCodexEffortStaged ?? "medium") as ReasoningEffort}
-                onChange={(effort) => setTerminalCodexEffortStaged(effort)}
-                disabled={isPending}
-              />
-            )}
             {codexTerminalBlocked && <p role="alert" className="flex items-center gap-1.5 text-xs text-rose-500"><TriangleAlert className="h-3.5 w-3.5 shrink-0" />Choose a valid Codex model and reasoning effort.</p>}
-            <p className="text-[11px] text-muted-foreground">
-              {terminalCodexResolution === null
-                ? "Checking the Codex terminal default…"
-                : terminalCodexResolution.source === "machine"
-                  ? "Your machine decides the Codex model and effort."
-                  : terminalCodexResolution.pair === undefined
-                  ? "No valid Codex terminal default is available"
-                  : `${terminalCodexResolution.source === "user" ? "Your saved Codex pair" : terminalCodexResolution.source === "platform" ? "Organization Codex terminal pair" : "Standard Codex fallback"}: ${terminalCodexResolution.pair.model} (${terminalCodexResolution.pair.effort}).`}
-              {" "}Resumed sessions keep their existing model.
+            <p id="terminal-codex-model-help" className="text-[11px] text-muted-foreground">
+              {codexModelHelp(terminalCodexResolution)}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label id="terminal-codex-effort-label" className="block text-sm leading-snug">
+              Starting effort
+            </Label>
+            <EffortSegmentedControl
+              agent="codex"
+              value={codexEffortValue}
+              showDefaultPressed={codexOnDefault ? (terminalCodexResolution?.pair?.effort as ReasoningEffort | undefined) : undefined}
+              levelsDisabled={codexOnDefault || codexMachine}
+              onChange={(effort) => setTerminalCodexEffortStaged(effort)}
+              disabled={isPending}
+              describedById="terminal-codex-effort-help"
+              groupLabel="Codex starting effort"
+              defaultOption={{
+                onSelect: () => { setTerminalCodexStaged(null); setTerminalCodexEffortStaged(null); },
+                subLabel: codexEffortDefaultSubLabel(platformTerminalCodexDefault, codexMachine),
+                disabled: codexMachine,
+              }}
+            />
+            <p id="terminal-codex-effort-help" className="text-[11px] text-muted-foreground">
+              {codexEffortHelp(terminalCodexResolution)}
             </p>
           </div>
 
           <div className="space-y-1.5">
             <Label id="terminal-codex-auto-compact-label" className="block text-sm leading-snug">
-              Codex memory limit <span className="font-normal text-muted-foreground">— for in-browser Codex sessions</span>
+              Memory limit
             </Label>
             <AutoCompactSegmentedControl
               agent="codex"

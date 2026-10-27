@@ -155,8 +155,15 @@ function minutes(step: ReportStepRow): number | null {
 
 interface Signals { caught: boolean; rejected: boolean; redo: boolean }
 
+/** What stepSignals reads, so the weekly cost report can call it without a full ReportInput. */
+export interface SignalInput {
+  steps: { id: string; run_id: string | null; human_check_required: boolean }[];
+  comments: ReportCommentRow[];
+  botIds: Set<string>;
+}
+
 /** Per step: did its agent send work back, did a person reject it at its gate, was work sent back to it. */
-function stepSignals(input: ReportInput): Map<string, Signals> {
+function stepSignals(input: SignalInput): Map<string, Signals> {
   const stepById = new Map(input.steps.map((s) => [s.id, s]));
   const signals = new Map<string, Signals>();
   const get = (id: string) => {
@@ -196,6 +203,21 @@ function stepSignals(input: ReportInput): Map<string, Signals> {
     }
   }
   return signals;
+}
+
+/**
+ * Steps that finished an attempt without being completed: caught (their agent's
+ * failure paired with a send-back on another step of the run) or rejected (a
+ * person's failure at a human-check step). The Admin report counts these as run
+ * even when they are waiting to re-run; the weekly cost report uses this too so
+ * the two agree.
+ */
+export function caughtOrRejectedStepIds(input: SignalInput): Set<string> {
+  const ids = new Set<string>();
+  for (const [id, sig] of stepSignals(input)) {
+    if (sig.caught || sig.rejected) ids.add(id);
+  }
+  return ids;
 }
 
 /**

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Terminal Settings Consistency</title>
+<!--
+  Design mock for card fae2ce4f: the Claude and Codex terminal starting settings
+  laid out and worded the same way, on Settings -> Model Tiers and on
+  Admin -> Platform. Built from model-tier-settings.tsx, admin-platform-dashboard.tsx
+  and effort-segmented-control.tsx at origin/master 06e7ef8. Colours are the .dark
+  tokens in src/app/globals.css (zinc, dark default). Values shown are the live
+  site defaults on 27 Oct 2026.
+-->
+<style>
+  :root {
+    --background: oklch(0.141 0.005 285.823); --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885); --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067); --primary: oklch(0.92 0.004 286.32);
+    --primary-foreground: oklch(0.21 0.006 285.885); --accent: oklch(0.274 0.006 286.033);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%);
+    --zinc-500: #71717a; --new: #38bdf8; --new-bg: rgba(56,189,248,.07);
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --background: #ffffff; --foreground: #09090b; --card: #ffffff; --muted: #f4f4f5;
+    --muted-foreground: #71717a; --primary: #18181b; --primary-foreground: #fafafa;
+    --accent: #f4f4f5; --destructive: #dc2626; --border: #e4e4e7; --input: #e4e4e7;
+    --new: #0284c7; --new-bg: rgba(2,132,199,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 18px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--new); font-weight: 600; }
+  h1 { font-size: 26px; margin: 6px 0 8px; letter-spacing: -.01em; }
+  h2 { font-size: 19px; margin: 44px 0 6px; }
+  .lede, .note { color: var(--muted-foreground); max-width: 820px; }
+  .note { font-size: 13.5px; margin: 4px 0 16px; }
+  button.theme { background: var(--muted); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .row { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .cap { font-size: 12px; color: var(--zinc-500); margin: 8px 2px 0; }
+  .frame { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .frame.phone { width: 375px; max-width: 100%; padding: 0 16px; border: 1px dashed var(--border); border-radius: 14px; padding-top: 16px; padding-bottom: 16px; }
+  .frame .lbl { font-size: 11px; color: var(--zinc-500); margin-bottom: 8px; }
+
+  /* Model Tiers dialog: sm:max-w-2xl = 672px */
+  .dialog { width: 672px; max-width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 24px; box-shadow: 0 16px 48px -20px rgba(0,0,0,.6); }
+  .phone .dialog { width: 100%; padding: 16px; }
+  .dtitle { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .ddesc { font-size: 14px; color: var(--muted-foreground); margin: 0 0 16px; }
+  .elided { font-size: 12px; color: var(--zinc-500); border: 1px dashed var(--border); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 14px; }
+  .group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); padding-top: 4px; margin: 0 0 10px; }
+  .agenthead { font-size: 13px; font-weight: 600; margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .field { margin: 0 0 16px; }
+  .field > * + * { margin-top: 6px; }
+  .label { font-size: 14px; font-weight: 500; line-height: 1.35; }
+  .select { display: flex; justify-content: space-between; align-items: center; min-height: 36px; border: 1px solid var(--input); border-radius: 6px; padding: 0 12px; font-size: 14px; position: relative; }
+  .select select { appearance: none; -webkit-appearance: none; background: transparent; color: var(--foreground); border: 0; font: inherit; width: 100%; height: 34px; cursor: pointer; outline: none; }
+  .select select option { background: var(--background); color: var(--foreground); }
+  .select::after { content: "\2304"; color: var(--muted-foreground); transform: translateY(-3px); pointer-events: none; position: absolute; right: 12px; }
+  .help { font-size: 11px; color: var(--muted-foreground); margin: 6px 0 0; }
+
+  /* Same classes as EffortSegmentedControl */
+  .seg { display: flex; overflow: hidden; border: 1px solid var(--input); border-radius: 6px; }
+  .seg span { flex: 1 1 0; min-width: 0; min-height: 36px; display: flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 11px; font-weight: 500; border-right: 1px solid var(--input); padding: 0 2px; cursor: pointer; user-select: none; }
+  .seg span:last-child { border-right: 0; }
+  .seg span:hover { background: var(--accent); }
+  .seg span.on { background: var(--foreground); color: var(--background); }
+  .seg span.def { flex-grow: 1.5; flex-direction: column; line-height: 1.15; padding-top: 3px; padding-bottom: 3px; }
+  .seg span .sub { font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
+  .seg span.on .sub { color: var(--background); opacity: .75; }
+  .seg span.off { opacity: .45; cursor: not-allowed; }
+  .seg span.off:hover { background: transparent; }
+  .seg span.ghost { background: color-mix(in oklab, var(--foreground) 35%, transparent); color: var(--background); }
+
+  .switchrow { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  .switch { width: 32px; height: 18px; border-radius: 99px; background: var(--muted); border: 1px solid var(--input); flex: none; }
+  .footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .footer .r { display: flex; gap: 8px; }
+  .btn { height: 32px; padding: 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; border: 1px solid var(--input); }
+  .btn.ghost { border-color: transparent; }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+  .btn.off { opacity: .5; }
+  .why { font-size: 11px; color: var(--muted-foreground); text-align: right; margin: 6px 0 0; }
+
+  /* Admin Platform card: rounded-lg border p-6 space-y-6 */
+  .acard { width: 900px; max-width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 24px; background: var(--background); }
+  .phone .acard { width: 100%; padding: 16px; }
+  .acard + .acard { margin-top: 24px; }
+  .acard h3 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .acard .desc { font-size: 14px; color: var(--muted-foreground); margin: 0 0 20px; }
+  .acard .xs { font-size: 12px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .acard .ctl { max-width: 420px; margin-bottom: 18px; }
+  .acard .ctl .select { font-size: 14px; }
+  .audit { font-size: 11px; color: var(--muted-foreground); margin-top: 6px; }
+  .audit b { color: var(--foreground); font-weight: 500; }
+  .abar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 6px; }
+  .abar .w { margin-right: auto; font-size: 12px; color: var(--muted-foreground); }
+  .toast { display: inline-flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 6px 0; }
+  .toast i { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; flex: none; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); }
+  td.old { color: var(--muted-foreground); }
+  .tbl { overflow-x: auto; }
+  ol.dec li { margin-bottom: 10px; max-width: 860px; }
+  ol.dec .rec { color: var(--new); font-weight: 600; }
+  @media (max-width: 520px) { h1 { font-size: 22px; } header { flex-direction: column; } .frame.phone { border: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="kicker">Design mock · for approval</div>
+      <h1>Claude and Codex terminal settings, laid out the same way</h1>
+      <p class="lede">Both agents get the same three settings, in the same order, with the same names, the same "go back to the site's choice" button and the same shape of help line, on your Settings screen and on the Admin page. Nothing about how sessions start changes. The controls are clickable so you can try the help lines.</p>
+    </div>
+    <button class="theme" id="themeBtn" type="button">Light theme</button>
+  </header>
+
+  <h2>1. Settings → Model Tiers → Terminal sessions</h2>
+  <p class="note">One small heading per agent, then the same three rows under each: <b>Starting model</b>, <b>Starting effort</b>, <b>Memory limit</b>. Every row starts with a "Default" choice that names the site's setting. Codex keeps its model and effort together, so on Codex picking "Default" on either row puts both back to the site's pair, and the effort buttons grey out while the model is on Default. The dialog keeps its single Save.</p>
+  <div class="row">
+    <div class="frame"><div class="lbl">Desktop (dialog 672px)</div><div id="userDesk"></div></div>
+    <div class="frame phone"><div class="lbl">Phone (375px)</div><div id="userPhone"></div></div>
+  </div>
+
+  <h2>2. Admin → Platform: one card per agent instead of five cards</h2>
+  <p class="note">The five cards (Codex model and effort, Claude model, Claude effort, Claude memory limit, Codex memory limit) become two: <b>Claude Code terminal sessions</b> and <b>Codex terminal sessions</b>, with the same three rows as Settings. Each choice starts with "Not set", which replaces the red Clear button. Each row says who last changed it. One Save per card saves only the rows you changed, each in its own place, so changing one never wipes another.</p>
+  <div class="row">
+    <div class="frame"><div class="lbl">Desktop (1280px page)</div><div id="adminDesk"></div></div>
+    <div class="frame phone"><div class="lbl">Phone (375px)</div><div id="adminPhone"></div></div>
+  </div>
+  <p class="note" style="margin-top:14px">What Save says (only the rows that changed are listed):</p>
+  <div class="toast"><i></i>Claude Code site defaults saved · effort High, memory limit 400k</div><br>
+  <div class="toast"><i></i>Codex site defaults saved · model and effort not set (Standard tier's Codex model)</div>
+
+  <h2>3. Every wording change</h2>
+  <div class="tbl"><table>
+    <tr><th>Where</th><th>Today</th><th>After</th></tr>
+    <tr><td>Settings, Claude model label</td><td class="old">Starting model — for new in-browser Claude Code sessions</td><td>Under "Claude Code": Starting model</td></tr>
+    <tr><td>Settings, Claude effort label</td><td class="old">Starting effort — for in-browser Claude Code sessions</td><td>Under "Claude Code": Starting effort</td></tr>
+    <tr><td>Settings, Claude memory label</td><td class="old">Claude memory limit — for in-browser Claude Code sessions</td><td>Under "Claude Code": Memory limit</td></tr>
+    <tr><td>Settings, Codex model label</td><td class="old">Codex starting model — for new in-browser Codex sessions</td><td>Under "Codex": Starting model</td></tr>
+    <tr><td>Settings, Codex effort</td><td class="old">(no label, no Default button; hidden when the model is on the site's choice)</td><td>Under "Codex": Starting effort, always shown, with Default first</td></tr>
+    <tr><td>Settings, Codex memory label</td><td class="old">Codex memory limit — for in-browser Codex sessions</td><td>Under "Codex": Memory limit</td></tr>
+    <tr><td>Settings, site choice in model lists</td><td class="old">Claude: "Platform default (Opus)". Codex: "Use organization default"</td><td>Both: "Default (site: Opus)" / "Default (site: gpt-5.6-terra)"</td></tr>
+    <tr><td>Settings, Claude model help</td><td class="old">Applies to new Claude Code sessions. Choose the Codex starting model below. Resumed sessions keep their existing model; you can switch any time by typing /model in the terminal.</td><td>New Claude Code sessions start on Opus (your setting). Resumed sessions keep their model. Change it any time by typing /model in the terminal.</td></tr>
+    <tr><td>Settings, Codex model help</td><td class="old">Your saved Codex pair: gpt-5.6-terra (medium). Resumed sessions keep their existing model.</td><td>New Codex sessions start on gpt-5.6-terra (your setting). Resumed sessions keep their model. Change it any time by typing /model in the terminal.*</td></tr>
+    <tr><td>Settings, Codex effort help</td><td class="old">(none)</td><td>New Codex sessions start at Medium (your setting). Resumed sessions keep theirs.</td></tr>
+    <tr><td>Settings row description</td><td class="old">Which Claude model each tier and the in-app terminal use.</td><td>Which model and effort each tier and the in-app terminal use, for Claude and Codex.</td></tr>
+    <tr><td>Admin card titles</td><td class="old">Codex terminal starting model · Claude terminal starting model · Claude terminal starting effort · Claude terminal memory limit · Codex terminal memory limit</td><td>Claude Code terminal sessions · Codex terminal sessions</td></tr>
+    <tr><td>Admin, effort label</td><td class="old">Codex: "Reasoning effort". Claude: "Starting effort"</td><td>Both: Starting effort</td></tr>
+    <tr><td>Admin, name of the user screen</td><td class="old">"Profile → Model Tiers" (2 cards), "Settings → Model Tiers" (3 cards)</td><td>Settings → Model Tiers everywhere (the guide's troubleshooting line and the step-tier tooltip too)</td></tr>
+    <tr><td>Admin, "nothing set" choice</td><td class="old">Claude model: "No platform default (nothing passed)". Codex model: "Use Standard-tier fallback". Strips: nothing pressed, red Clear button</td><td>"Not set" first in every list and strip, saying what happens instead</td></tr>
+  </table></div>
+  <p class="cap">* Only if Codex really has a /model command; the builder checks before keeping that sentence.</p>
+
+  <h2>4. Your decisions</h2>
+  <ol class="dec">
+    <li><b>Admin: two cards, one per agent, instead of five.</b> Each holds model, effort and memory limit with one Save. Behind the scenes every setting is still saved on its own. <span class="rec">Recommended.</span> The other way: keep five cards and only fix names and widths; it fixes the wording but not the "one feature" feel.</li>
+    <li><b>Admin: "Not set" as the first choice replaces the red Clear button.</b> It matches the "Default" first choice users see, and a card-wide Clear would wipe three settings at once. <span class="rec">Recommended.</span></li>
+    <li><b>Codex gets a "Default" button on its effort row.</b> Codex saves model and effort together, so Default puts both back to the site's pair, and the effort buttons grey out (showing the site's level) while the model is on Default. <span class="rec">Recommended.</span> The other way, letting Codex effort follow the site on its own while you pick the model, changes how Codex settings are saved and is a bigger job.</li>
+    <li><b>One word for the site's setting: "site".</b> Today the screens say "Platform default", "organization default" and "site". The Admin tab keeps its name, Platform. <span class="rec">Recommended.</span></li>
+    <li><b>Claude first, then Codex, on both screens.</b> Admin shows Codex first today. <span class="rec">Recommended.</span></li>
+    <li><b>Differences kept, because the agents really differ:</b>
+      <ul>
+        <li>Codex has three memory-limit sizes and Claude five, so the Codex buttons are wider.</li>
+        <li>Claude's effort also applies when you resume a session; Codex's doesn't (unchanged). The help lines say so.</li>
+        <li>Only Claude's lines mention typing /effort and /autocompact; Codex has no such commands.</li>
+        <li>Claude's model list on Settings has "Custom…" (type any name); Codex's doesn't, although Admin's does. Recommended: leave it, as today.</li>
+        <li>Admin asks you to tick "I've checked this works" for an unknown Claude model name, but not for Codex. Recommended: leave it, as today.</li>
+      </ul>
+    </li>
+    <li><b>Help guide:</b> fix the old "Profile → Model Tiers" wording, and add a short "Starting model and effort" paragraph next to the existing "Memory limit" one. <span class="rec">Recommended.</span></li>
+  </ol>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById("themeBtn");
+  btn.addEventListener("click", function () {
+    var light = document.documentElement.getAttribute("data-theme") === "light";
+    document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+    btn.textContent = light ? "Light theme" : "Dark theme";
+  });
+
+  var SITE = { claudeModel: "Opus", claudeEffort: "Medium", claudeMem: "300k", codexModel: "gpt-5.6-terra", codexEffort: "Medium", codexMem: null };
+  var CLAUDE_EFFORTS = ["Low", "Medium", "High", "X-High", "Max"];
+  var CODEX_EFFORTS = ["Minimal", "Low", "Medium", "High", "X-High"];
+  var CLAUDE_MEM = ["200k", "300k", "400k", "500k", "1M"];
+  var CODEX_MEM = ["100k", "150k", "200k"];
+  var TOK = { "100k": "100,000", "150k": "150,000", "200k": "200,000", "300k": "300,000", "400k": "400,000", "500k": "500,000", "1M": "1,000,000" };
+
+  // Settings dialog state (Nick's live choices on 27 Oct)
+  var u = { claudeModel: "Opus", claudeEffort: "Medium", claudeMem: null, codexModel: "gpt-5.6-terra", codexEffort: "Medium", codexMem: null };
+  // Admin state (live site defaults)
+  var a = { claudeModel: "Opus", claudeEffort: "Medium", claudeMem: "300k", codexModel: "gpt-5.6-terra", codexEffort: "Medium", codexMem: null };
+
+  function esc(s) { return String(s); }
+  function strip(opts) {
+    // opts: {lead:{label,sub,on,off}, items:[], value, disabledItems, ghost}
+    var h = '<div class="seg" role="group">';
+    if (opts.lead) {
+      h += '<span class="def' + (opts.lead.on ? " on" : "") + (opts.lead.off ? " off" : "") + '" data-k="' + opts.key + '" data-v="">' + opts.lead.label + (opts.lead.sub ? '<span class="sub">' + opts.lead.sub + "</span>" : "") + "</span>";
+    }
+    opts.items.forEach(function (it) {
+      var cls = "";
+      if (opts.disabledItems) cls += " off";
+      if (opts.disabledItems && opts.ghost === it) cls += " ghost";
+      else if (!opts.disabledItems && opts.value === it) cls += " on";
+      h += '<span class="' + cls.trim() + '" data-k="' + opts.key + '" data-v="' + it + '">' + it + "</span>";
+    });
+    return h + "</div>";
+  }
+
+  function claudeModelHelp() {
+    if (u.claudeModel === "machine") return "Your machine decides which model new Claude Code sessions start on. Resumed sessions keep their model. Change it any time by typing /model in the terminal.";
+    if (u.claudeModel) return "New Claude Code sessions start on " + u.claudeModel + " (your setting). Resumed sessions keep their model. Change it any time by typing /model in the terminal.";
+    return "Uses the site default: new Claude Code sessions start on " + SITE.claudeModel + ". Resumed sessions keep their model. Change it any time by typing /model in the terminal.";
+  }
+  function claudeEffortHelp() {
+    var tail = " Workflow steps keep their own tier's effort. Change it any time by typing /effort in the terminal.";
+    if (u.claudeEffort) return "New and resumed Claude Code sessions start at " + u.claudeEffort + " (your setting)." + tail;
+    return "Uses the site default: new and resumed Claude Code sessions start at " + SITE.claudeEffort + "." + tail;
+  }
+  function claudeMemHelp() {
+    var tail = " Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower. Change it any time by typing /autocompact in the terminal.";
+    if (u.claudeMem) return "New and resumed Claude Code sessions tidy up their memory when it reaches " + TOK[u.claudeMem] + " tokens (your setting)." + tail;
+    return "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches " + TOK[SITE.claudeMem] + " tokens." + tail;
+  }
+  function codexModelHelp() {
+    if (u.codexModel === "machine") return "Your machine decides the Codex model and effort. Resumed sessions keep their model.";
+    if (u.codexModel) return "New Codex sessions start on " + u.codexModel + " (your setting). Resumed sessions keep their model. Change it any time by typing /model in the terminal.";
+    return "Uses the site default: new Codex sessions start on " + SITE.codexModel + ". Resumed sessions keep their model. Change it any time by typing /model in the terminal.";
+  }
+  function codexEffortHelp() {
+    if (u.codexModel === "machine") return "Your machine decides the Codex model and effort.";
+    if (u.codexModel) return "New Codex sessions start at " + u.codexEffort + " (your setting). Resumed sessions keep theirs. Codex saves the model and effort together.";
+    return "Uses the site default: new Codex sessions start at " + SITE.codexEffort + ", with the site's model. Pick a model above to choose your own effort.";
+  }
+  function codexMemHelp() {
+    if (u.codexMem) return "New and resumed Codex sessions tidy up their memory when it reaches " + TOK[u.codexMem] + " tokens (your setting). Takes effect from your next launch or resume.";
+    return "Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions.";
+  }
+
+  function modelSelect(key, value, opts) {
+    var h = '<div class="select"><select data-sel="' + key + '">';
+    opts.forEach(function (o) { h += '<option value="' + o[0] + '"' + (o[0] === (value || "") ? " selected" : "") + ">" + o[1] + "</option>"; });
+    return h + "</select></div>";
+  }
+
+  function userDialog() {
+    var codexOnDefault = !u.codexModel;
+    var codexMachine = u.codexModel === "machine";
+    var h = '<div class="dialog"><p class="dtitle">Model tier mapping</p><p class="ddesc">Choose which model and reasoning effort run each workflow tier, for Claude Code and for Codex. Tiers you leave unset use the platform default.</p>';
+    h += '<div class="elided">Frontier / Standard / Cheap tier grid (unchanged)</div><p class="group">Terminal sessions</p>';
+    h += '<div class="agenthead">Claude Code</div>';
+    h += '<div class="field"><div class="label">Starting model</div>' + modelSelect("u.claudeModel", u.claudeModel, [["", "Default (site: Opus)"], ["machine", "My machine's default"], ["Fable", "Fable — Most capable — frontier reasoning"], ["Opus", "Opus — Deep reasoning — previous flagship"], ["Sonnet", "Sonnet — Balanced speed & quality"], ["Haiku", "Haiku — Fastest & lowest cost"], ["custom", "Custom… (type an alias or model id)"]]) + '<p class="help">' + claudeModelHelp() + "</p></div>";
+    h += '<div class="field"><div class="label">Starting effort</div>' + strip({ key: "u.claudeEffort", lead: { label: "Default", sub: "site: " + SITE.claudeEffort, on: !u.claudeEffort }, items: CLAUDE_EFFORTS, value: u.claudeEffort }) + '<p class="help">' + claudeEffortHelp() + "</p></div>";
+    h += '<div class="field"><div class="label">Memory limit</div>' + strip({ key: "u.claudeMem", lead: { label: "Default", sub: "site: " + SITE.claudeMem, on: !u.claudeMem }, items: CLAUDE_MEM, value: u.claudeMem }) + '<p class="help">' + claudeMemHelp() + "</p></div>";
+    h += '<div class="agenthead">Codex</div>';
+    h += '<div class="field"><div class="label">Starting model</div>' + modelSelect("u.codexModel", u.codexModel, [["", "Default (site: gpt-5.6-terra)"], ["machine", "My machine's default"], ["gpt-6-astra", "gpt-6-astra"], ["gpt-5.6-sol", "gpt-5.6-sol"], ["gpt-5.6-terra", "gpt-5.6-terra"], ["gpt-5.6-luna", "gpt-5.6-luna"], ["gpt-5.5", "gpt-5.5"]]) + '<p class="help">' + codexModelHelp() + "</p></div>";
+    h += '<div class="field"><div class="label">Starting effort</div>' + strip({ key: "u.codexEffort", lead: { label: "Default", sub: codexMachine ? "your machine" : "site: " + SITE.codexEffort, on: codexOnDefault, off: codexMachine }, items: CODEX_EFFORTS, value: u.codexEffort, disabledItems: codexOnDefault || codexMachine, ghost: codexOnDefault ? SITE.codexEffort : null }) + '<p class="help">' + codexEffortHelp() + "</p></div>";
+    h += '<div class="field"><div class="label">Memory limit</div>' + strip({ key: "u.codexMem", lead: { label: "Default", sub: "Codex's own", on: !u.codexMem }, items: CODEX_MEM, value: u.codexMem }) + '<p class="help">' + codexMemHelp() + "</p></div>";
+    h += '<div class="field"><div class="switchrow"><span>Start in auto mode</span><span class="switch"></span></div></div>';
+    h += '<div class="field"><div class="switchrow"><span>Remote Control</span><span class="switch"></span></div></div>';
+    h += '<div class="footer"><span class="btn ghost">Reset to defaults</span><span class="r"><span class="btn">Cancel</span><span class="btn primary">Save</span></span></div></div>';
+    return h;
+  }
+
+  function adminCards() {
+    var h = '<div class="acard"><h3>Claude Code terminal sessions</h3><p class="desc">What new in-browser Claude Code sessions start with, site-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.</p>';
+    h += '<div class="ctl"><span class="xs">Starting model</span>' + modelSelect("a.claudeModel", a.claudeModel, [["", "Not set — each user's machine decides"], ["Fable", "Fable — Most capable — frontier reasoning"], ["Opus", "Opus — Deep reasoning — previous flagship"], ["Sonnet", "Sonnet — Balanced speed & quality"], ["Haiku", "Haiku — Fastest & lowest cost"], ["custom", "Custom… (type a new family)"]]) + '<p class="audit">Last changed by <b>Nick Ball</b> · 13d ago</p></div>';
+    h += '<div class="ctl"><span class="xs">Starting effort</span>' + strip({ key: "a.claudeEffort", lead: { label: "Not set", sub: "Claude decides", on: !a.claudeEffort }, items: CLAUDE_EFFORTS, value: a.claudeEffort }) + '<p class="audit">Last changed by <b>Nick Ball</b> · 13d ago</p></div>';
+    h += '<div class="ctl"><span class="xs">Memory limit</span>' + strip({ key: "a.claudeMem", lead: { label: "Not set", sub: "Claude decides", on: !a.claudeMem }, items: CLAUDE_MEM, value: a.claudeMem }) + '<p class="audit">Last changed by <b>Nick Ball</b> · 3d ago</p></div>';
+    h += '<div class="abar"><span class="w">Save enables when you change a value.</span><span class="btn off">Cancel</span><span class="btn primary off">Save</span></div></div>';
+
+    var codexOff = !a.codexModel;
+    h += '<div class="acard"><h3>Codex terminal sessions</h3><p class="desc">What new in-browser Codex sessions start with, site-wide. Takes effect on the <b>next</b> session launched (memory limit: launched or resumed), with no deploy, and running sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.</p>';
+    h += '<div class="ctl"><span class="xs">Starting model</span>' + modelSelect("a.codexModel", a.codexModel, [["", "Not set — the Standard tier's Codex model"], ["gpt-6-astra", "gpt-6-astra"], ["gpt-5.6-sol", "gpt-5.6-sol"], ["gpt-5.6-terra", "gpt-5.6-terra"], ["gpt-5.6-luna", "gpt-5.6-luna"], ["gpt-5.5", "gpt-5.5"], ["custom", "Custom…"]]) + '<p class="audit">Last changed by <b>Nick Ball</b> · 1mo ago</p></div>';
+    h += '<div class="ctl"><span class="xs">Starting effort</span>' + strip({ key: "a.codexEffort", lead: { label: "Not set", sub: "with the model", on: codexOff, off: !codexOff }, items: CODEX_EFFORTS, value: a.codexEffort, disabledItems: codexOff }) + '<p class="audit">' + (codexOff ? "Saved together with the model: pick a model to choose an effort." : "Saved together with the model.") + "</p></div>";
+    h += '<div class="ctl"><span class="xs">Memory limit</span>' + strip({ key: "a.codexMem", lead: { label: "Not set", sub: "Codex decides", on: !a.codexMem }, items: CODEX_MEM, value: a.codexMem }) + '<p class="audit">Not set: Codex decides (about 245,000 tokens on today\'s Codex models).</p></div>';
+    h += '<div class="abar"><span class="w">Save enables when you change a value.</span><span class="btn off">Cancel</span><span class="btn primary off">Save</span></div></div>';
+    return h;
+  }
+
+  function render() {
+    document.getElementById("userDesk").innerHTML = userDialog();
+    document.getElementById("userPhone").innerHTML = userDialog();
+    document.getElementById("adminDesk").innerHTML = adminCards();
+    document.getElementById("adminPhone").innerHTML = adminCards();
+  }
+
+  function set(path, v) {
+    var parts = path.split("."); var obj = parts[0] === "u" ? u : a; var k = parts[1];
+    if (v === "custom") return;
+    obj[k] = v || null;
+    if (k === "codexModel") {
+      if (!obj.codexModel || obj.codexModel === "machine") obj.codexEffort = obj === a ? null : null;
+      else if (!obj.codexEffort) obj.codexEffort = SITE.codexEffort;
+    }
+    if (k === "codexEffort" && !v) { obj.codexModel = null; obj.codexEffort = null; }
+  }
+
+  document.addEventListener("click", function (e) {
+    var s = e.target.closest(".seg span[data-k]");
+    if (!s || s.classList.contains("off")) return;
+    set(s.getAttribute("data-k"), s.getAttribute("data-v")); render();
+  });
+  document.addEventListener("change", function (e) {
+    var s = e.target.closest("select[data-sel]");
+    if (!s) return;
+    set(s.getAttribute("data-sel"), s.value); render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
