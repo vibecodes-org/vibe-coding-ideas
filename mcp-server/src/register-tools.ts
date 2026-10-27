@@ -213,6 +213,7 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
+import { compactResult, getCostReport, getCostReportSchema } from "./tools/cost-report";
 import {
   SYNC_MAX_RESULT_SIZE_CHARS,
   syncBoardAgents,
@@ -380,6 +381,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await getMyTasks(ctx, getMyTasksSchema.parse(args)), { live: true });
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_cost_report",
+    "Read-only weekly cost figures for the boards you belong to, the same figures as the Admin step-cost report: per board, workflow and step, with runs, send-backs and cost per week (7-day windows, newest last, the latest ending at week_ends_at), the price table used and this week's runs. Raw series only, no trends. Dollar figures are list-price estimates. Names and numbers only, never card content or prompts. Reply is capped near 12,000 characters; lists are cut to the biggest spenders and a truncated field says so.",
+    getCostReportSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return compactResult(await getCostReport(ctx, getCostReportSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

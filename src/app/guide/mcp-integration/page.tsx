@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 87 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 88 tools.",
 };
 
 function ToolTable({
@@ -296,7 +296,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">87 tools</strong> across 10
+            <strong className="text-foreground">88 tools</strong> across 10
             categories:
           </p>
 
@@ -338,9 +338,10 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflows" toolCount={23}>
+            <CollapsibleTools title="Workflows" toolCount={24}>
               <ToolTable
                 tools={[
+                  { name: "get_cost_report", description: "Weekly cost figures for your boards (per board, workflow and step, with runs and send-backs), the same figures as the Admin step report. Read-only, names and numbers only" },
                   { name: "list_workflow_templates", description: "List workflow templates for an idea (short summary each; pass template_id or include_steps for full steps)" },
                   { name: "create_workflow_template", description: "Create a new workflow template with steps" },
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },

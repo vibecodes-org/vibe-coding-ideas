@@ -11,6 +11,7 @@ const EXPECTED_TOOL_NAMES = [
   "get_board",
   "get_task",
   "get_my_tasks",
+  "get_cost_report",
   "create_task",
   "update_task",
   "move_task",
@@ -98,13 +99,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 87 tools", () => {
+  it("registers exactly 88 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(87);
+    expect(server.tool).toHaveBeenCalledTimes(88);
   });
 
   it("declares a result size limit on sync_board_agents so its file isn't saved to disk", () => {

@@ -175,6 +175,33 @@ function stepSignals(input: ReportInput): Map<string, Signals> {
   return signals;
 }
 
+/**
+ * Cost per step (every attempt, every model) for the steps in `counted`. A step
+ * with any usage from a model that has no price gets no cost rather than a cost
+ * that's too low; those models are listed. Shared by the admin report and the
+ * weekly cost report (mcp-server get_cost_report) so both always agree.
+ */
+export function stepCostsFor(
+  usage: ReportUsageRow[],
+  counted: Set<string>
+): { stepCost: Map<string, number>; unpricedModels: Set<string> } {
+  const stepCost = new Map<string, number>();
+  const unpricedSteps = new Set<string>();
+  const unpricedModels = new Set<string>();
+  for (const u of usage) {
+    if (!counted.has(u.step_id)) continue;
+    const cost = usageCost(u);
+    if (cost === null) {
+      unpricedSteps.add(u.step_id);
+      if (!priceKey(u.model)) unpricedModels.add(u.model);
+      continue;
+    }
+    stepCost.set(u.step_id, (stepCost.get(u.step_id) ?? 0) + cost);
+  }
+  for (const id of unpricedSteps) stepCost.delete(id);
+  return { stepCost, unpricedModels };
+}
+
 export function buildStepPerformanceReport(input: ReportInput): StepPerformanceReport {
   const runs = new Map(input.runs.map((r) => [r.id, r]));
   const templates = new Map(input.templates.map((t) => [t.id, t]));
@@ -221,22 +248,8 @@ export function buildStepPerformanceReport(input: ReportInput): StepPerformanceR
     return want.size > 0 && !!have && have.size === want.size && [...want].every((t) => have.has(t));
   };
 
-  // Cost per step row (every attempt). A step with any usage from a model that
-  // has no price shows no cost rather than a cost that's too low.
-  const stepCost = new Map<string, number>();
-  const unpricedSteps = new Set<string>();
-  const unpricedModels = new Set<string>();
-  for (const u of input.usage) {
-    if (!counted.has(u.step_id)) continue;
-    const cost = usageCost(u);
-    if (cost === null) {
-      unpricedSteps.add(u.step_id);
-      if (!priceKey(u.model)) unpricedModels.add(u.model);
-      continue;
-    }
-    stepCost.set(u.step_id, (stepCost.get(u.step_id) ?? 0) + cost);
-  }
-  for (const id of unpricedSteps) stepCost.delete(id);
+  // Cost per step row (every attempt); see stepCostsFor.
+  const { stepCost, unpricedModels } = stepCostsFor(input.usage, counted);
   const runOfStep = new Map(input.steps.map((s) => [s.id, s.run_id]));
   const runsWithCost = new Set([...stepCost.keys()].map((id) => runOfStep.get(id)).filter((r): r is string => !!r));
   const costRecorded = [...stepCost.values()].reduce((a, c) => a + c, 0);
