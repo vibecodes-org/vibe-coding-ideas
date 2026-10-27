@@ -213,7 +213,7 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
-import { getCostReport, getCostReportSchema } from "./tools/cost-report";
+import { compactResult, getCostReport, getCostReportSchema } from "./tools/cost-report";
 import {
   SYNC_MAX_RESULT_SIZE_CHARS,
   syncBoardAgents,
@@ -394,7 +394,7 @@ export function registerTools(
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await getCostReport(ctx, getCostReportSchema.parse(args)));
+        return compactResult(await getCostReport(ctx, getCostReportSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

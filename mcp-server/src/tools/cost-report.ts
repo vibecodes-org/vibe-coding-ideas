@@ -2,7 +2,6 @@ import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import { stripClaudeWorktreeSuffix } from "../../../src/lib/launch-claude-code";
 import { readAll, readByIds } from "../../../src/lib/step-cost/paging";
-import type { ReportUsageRow } from "../../../src/lib/step-cost/report";
 import {
   buildWeeklyReport,
   type WeeklyIdeaRow,
@@ -11,6 +10,7 @@ import {
   type WeeklyRunRow,
   type WeeklyStepRow,
   type WeeklyTemplateRow,
+  type WeeklyUsageRow,
 } from "../../../src/lib/step-cost/weekly";
 import type { McpContext } from "../context";
 
@@ -20,7 +20,7 @@ import type { McpContext } from "../context";
 // outputs. Pricing, per-step cost and medians come from src/lib/step-cost, the
 // same code as Admin > Reports > Step Performance.
 
-/** The reply (pretty-printed, as jsonResult sends it) stays under this many characters. */
+/** The reply (compact JSON, see compactResult) stays under this many characters. */
 export const MAX_REPORT_CHARS = 12_000;
 const TARGET_CHARS = 11_500;
 /** Boards are read this many at a time. */
@@ -52,10 +52,15 @@ interface BoardRows {
   runs: WeeklyRunRow[];
   templates: WeeklyTemplateRow[];
   sentBackStepIds: string[];
-  usage: ReportUsageRow[];
+  usage: WeeklyUsageRow[];
 }
 
-/** Everything for one board, always scoped by idea_id. */
+/**
+ * Everything for one board, always scoped by idea_id. Comments and cost rows
+ * are read without a date filter, as the admin report does: a step that ran in
+ * the window may have been sent back or costed before it, and dropping those
+ * would under-count the oldest week.
+ */
 async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRows> {
   const templates = await readAll<WeeklyTemplateRow>((from, to) =>
     db.from("workflow_templates").select("id, idea_id, name, updated_at").eq("idea_id", ideaId).order("id").range(from, to)
@@ -70,28 +75,45 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
       .order("id")
       .range(from, to)
   );
+  const comments = await readAll<{ step_id: string; created_at: string }>((from, to) =>
+    db
+      .from("workflow_step_comments")
+      .select("step_id, created_at")
+      .eq("idea_id", ideaId)
+      .eq("type", "changes_requested")
+      .order("id")
+      .range(from, to)
+  );
+  const usage = await readAll<WeeklyUsageRow>((from, to) =>
+    db
+      .from("workflow_step_usage")
+      .select("step_id, run_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens, created_at")
+      .eq("idea_id", ideaId)
+      .order("id")
+      .range(from, to)
+  );
+  // A step sent back to re-run has its times cleared, so the date filter above
+  // misses it. Fetch the steps that were costed or sent back inside the window.
+  const have = new Set(steps.map((s) => s.id));
+  const extraIds = [
+    ...new Set([
+      ...usage.filter((u) => u.created_at && u.created_at >= since).map((u) => u.step_id),
+      ...comments.filter((c) => c.created_at >= since).map((c) => c.step_id),
+    ]),
+  ].filter((id) => !have.has(id));
+  steps.push(
+    ...(await readByIds<WeeklyStepRow>(extraIds, (chunk) =>
+      db
+        .from("task_workflow_steps")
+        .select("id, idea_id, run_id, title, status, started_at, completed_at, model_tier, effort_override, description")
+        .eq("idea_id", ideaId)
+        .not("run_id", "is", null)
+        .in("id", chunk)
+    ))
+  );
   if (steps.length === 0) return { steps, runs: [], templates, sentBackStepIds: [], usage: [] };
   const runIds = [...new Set(steps.map((s) => s.run_id).filter((id): id is string => !!id))];
   const runs = await readByIds<WeeklyRunRow>(runIds, (chunk) => db.from("workflow_runs").select("id, template_id").in("id", chunk));
-  const comments = await readAll<{ step_id: string }>((from, to) =>
-    db
-      .from("workflow_step_comments")
-      .select("step_id")
-      .eq("idea_id", ideaId)
-      .eq("type", "changes_requested")
-      .gte("created_at", since)
-      .order("id")
-      .range(from, to)
-  );
-  const usage = await readAll<ReportUsageRow>((from, to) =>
-    db
-      .from("workflow_step_usage")
-      .select("step_id, run_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens")
-      .eq("idea_id", ideaId)
-      .gte("created_at", since)
-      .order("id")
-      .range(from, to)
-  );
   return { steps, runs, templates, sentBackStepIds: comments.map((c) => c.step_id), usage };
 }
 
@@ -124,7 +146,7 @@ export function fitReport(data: WeeklyReportData, generatedAt: string, maxChars 
       ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
     };
   };
-  const size = (o: unknown) => JSON.stringify(o, null, 2).length;
+  const size = (o: unknown) => JSON.stringify(o).length;
   let out = build();
   while (size(out) > maxChars) {
     // Cut the list with the most items still shown; the first in order wins ties.
@@ -134,6 +156,11 @@ export function fitReport(data: WeeklyReportData, generatedAt: string, maxChars 
     out = build();
   }
   return out;
+}
+
+/** MCP text result as compact JSON: no pretty-print spacing, so long series stay small. */
+export function compactResult(data: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
 }
 
 export async function getCostReport(ctx: McpContext, params: z.infer<typeof getCostReportSchema>) {

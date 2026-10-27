@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { McpContext } from "../context";
-import { fitReport, getCostReport, getCostReportSchema, MAX_REPORT_CHARS } from "./cost-report";
+import { compactResult, fitReport, getCostReport, getCostReportSchema, MAX_REPORT_CHARS } from "./cost-report";
 import { buildWeeklyReport } from "../../../src/lib/step-cost/weekly";
-import { jsonResult } from "../register-tools";
 
 const ME = "00000000-0000-4000-a000-00000000000a";
 const END = "2026-10-31T06:00:00.000Z";
@@ -65,7 +64,7 @@ const world = (): Record<string, Row[]> => ({
   ],
   workflow_step_comments: [{ step_id: "s1", idea_id: "mine", type: "changes_requested" }],
   workflow_step_usage: [
-    { step_id: "s1", run_id: "r1", idea_id: "mine", model: "claude-opus-5-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 5_000_000, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 },
+    { step_id: "s1", run_id: "r1", idea_id: "mine", model: "claude-opus-5-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 5_000_000, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0, created_at: "2026-09-01T00:00:00Z" },
     { step_id: "s2", run_id: "r2", idea_id: "other", model: "claude-opus-5-5", input_tokens: 0, output_tokens: 0, cache_read_tokens: 50_000_000, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 },
   ],
 });
@@ -91,6 +90,23 @@ describe("getCostReport", () => {
     expect(JSON.stringify(out)).not.toContain("SECRET PROMPT");
   });
 
+  it("counts cost and send-backs recorded before the oldest window against a step that ran inside it", async () => {
+    const { db } = fakeDb(world());
+    const out = await getCostReport({ supabase: db, userId: ME }, getCostReportSchema.parse({ week_ends_at: END, weeks: 1 }));
+    // The cost row is dated September, outside the one-week window, yet the step ran inside it.
+    expect(out.vibecodes_total_usd).toEqual([1]);
+    expect(out.cost_missing).toEqual([0]);
+  });
+
+  it("shows cost as missing, not $0, when no cost rows can be read", async () => {
+    const w = world();
+    w.workflow_step_usage = [];
+    const { db } = fakeDb(w);
+    const out = await getCostReport({ supabase: db, userId: ME }, getCostReportSchema.parse({ week_ends_at: END, weeks: 2 }));
+    expect(out.cost_missing).toEqual([0, 1]);
+    expect(out.steps[0].median_usd).toEqual([null, null]);
+  });
+
   it("rejects weeks outside 1-26", () => {
     expect(() => getCostReportSchema.parse({ weeks: 27 })).toThrow();
     expect(() => getCostReportSchema.parse({ weeks: 0 })).toThrow();
@@ -106,20 +122,28 @@ describe("fitReport", () => {
     return {
       ...base,
       boards: Array.from({ length: n }, (_, i) => ({ idea_id: `00000000-0000-4000-a000-${String(i).padStart(12, "0")}`, title: `Board number ${i}`, project_path: `/Users/someone/projects/board-${i}`, usd: series(123.45), runs: series(3) })),
-      workflows: Array.from({ length: n }, (_, i) => ({ name: `Workflow ${i}`, runs: series(3), usd: series(99.12), median_usd: series(12.34), sent_back: series(1) })),
-      steps: Array.from({ length: n * 3 }, (_, i) => ({ workflow: `Workflow ${i}`, step: `Step ${i}`, version: "a1b2c3", runs: series(3), median_usd: series(2.5), usd: series(7.77) })),
+      workflows: Array.from({ length: n }, (_, i) => ({ name: `Workflow ${i}`, runs: series(3), usd: series(99.12), median_usd: series(12.34), sent_back: series(1), cost_missing: series(0) })),
+      steps: Array.from({ length: n * 3 }, (_, i) => ({ workflow: `Workflow ${i}`, step: `Step ${i}`, version: "a1b2c3", runs: series(3), median_usd: series(2.5), usd: series(7.77), cost_missing: series(0) })),
       runs_this_week: Array.from({ length: n }, (_, i) => ({ run_id: `00000000-0000-4000-b000-${String(i).padStart(12, "0")}`, workflow: `Workflow ${i}`, usd: 12.5, sent_back: i % 2 === 0 })),
     };
   }
 
   it("keeps a large report under 12,000 characters as jsonResult sends it, and says what was cut", () => {
     const out = fitReport(big(26, 60), "2026-10-31T06:00:00.000Z");
-    const text = jsonResult(out).content[0].text;
+    const text = compactResult(out).content[0].text;
     expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
     expect(out.truncated?.steps?.total).toBe(180);
     expect(out.truncated?.steps?.shown).toBeLessThan(180);
     // The biggest spenders stay: lists arrive sorted and are only cut from the tail.
     expect(out.steps[0].step).toBe("Step 0");
+  });
+
+  it("fits 26 weeks as compact JSON with no pretty-print spacing", () => {
+    const out = fitReport(big(26, 30), "2026-10-31T06:00:00.000Z");
+    const text = compactResult(out).content[0].text;
+    expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    expect(text).not.toContain("\n");
+    expect(out.steps.length).toBeGreaterThan(0);
   });
 
   it("leaves a small report whole, with no truncated field", () => {

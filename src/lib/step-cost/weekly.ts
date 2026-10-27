@@ -8,6 +8,9 @@
 import { MODEL_PRICES, priceKey } from "./pricing";
 import { median, stepCostsFor, type ReportUsageRow } from "./report";
 
+/** A recorded attempt; created_at says when, for a step that was sent back and is waiting to re-run. */
+export type WeeklyUsageRow = ReportUsageRow & { created_at?: string };
+
 const WEEK_MS = 7 * 86_400_000;
 /** Statuses that mean the step finished an attempt (same set as the admin report). */
 const RAN = new Set(["completed", "failed", "awaiting_approval"]);
@@ -36,7 +39,7 @@ export interface WeeklyInput {
   templates: WeeklyTemplateRow[];
   /** Step ids that have a changes_requested comment (the work was sent back). */
   sentBackStepIds: Set<string>;
-  usage: ReportUsageRow[];
+  usage: WeeklyUsageRow[];
   ideas: WeeklyIdeaRow[];
   paths: WeeklyPathRow[];
   weekEndsAt: Date;
@@ -48,9 +51,11 @@ export interface WeeklyReportData {
   prices: Record<string, { in: number; out: number; cache_read: number; cache_write_5m: number; cache_write_1h: number }>;
   unpriced_models: string[];
   vibecodes_total_usd: number[];
+  /** Finished steps per week with no cost recorded (or an unpriced model). Their cost is missing, not zero. */
+  cost_missing: number[];
   boards: { idea_id: string; title: string; project_path: string | null; usd: number[]; runs: number[] }[];
-  workflows: { name: string; runs: number[]; usd: number[]; median_usd: (number | null)[]; sent_back: number[] }[];
-  steps: { workflow: string; step: string; version: string; runs: number[]; median_usd: (number | null)[]; usd: number[] }[];
+  workflows: { name: string; runs: number[]; usd: number[]; median_usd: (number | null)[]; sent_back: number[]; cost_missing: number[] }[];
+  steps: { workflow: string; step: string; version: string; runs: number[]; median_usd: (number | null)[]; usd: number[]; cost_missing: number[] }[];
   runs_this_week: { run_id: string; workflow: string; usd: number; sent_back: boolean }[];
 }
 
@@ -114,11 +119,20 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     }
   }
 
-  // Steps that finished an attempt inside the windows, on a run with a known workflow.
+  // Steps that finished an attempt inside the windows, on a run with a known
+  // workflow. A step sent back and waiting to re-run (pending or in progress
+  // again) still counts when it has recorded cost or a send-back, in the week of
+  // its latest recorded attempt, so its earlier attempt's cost doesn't vanish.
+  const lastUsage = new Map<string, string>();
+  for (const u of input.usage) {
+    if (u.created_at && u.created_at > (lastUsage.get(u.step_id) ?? "")) lastUsage.set(u.step_id, u.created_at);
+  }
   const counted: (WeeklyStepRow & { week: number; wf: string })[] = [];
   for (const s of input.steps) {
-    if (!s.run_id || !RAN.has(s.status)) continue;
-    const week = idx(stepWhen(s));
+    if (!s.run_id) continue;
+    const waiting = !RAN.has(s.status) && (lastUsage.has(s.id) || input.sentBackStepIds.has(s.id));
+    if (!RAN.has(s.status) && !waiting) continue;
+    const week = idx(waiting ? lastUsage.get(s.id) ?? stepWhen(s) : stepWhen(s));
     if (week < 0) continue;
     const template = templates.get(runs.get(s.run_id)?.template_id ?? "");
     if (!template) continue;
@@ -153,7 +167,11 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   }
 
   const total = zeros(weeks);
-  for (const s of counted) total[s.week] += stepCost.get(s.id) ?? 0;
+  const missing = zeros(weeks);
+  for (const s of counted) {
+    total[s.week] += stepCost.get(s.id) ?? 0;
+    if (!stepCost.has(s.id)) missing[s.week]++;
+  }
 
   // Boards
   const titles = new Map(input.ideas.map((i) => [i.id, i.title]));
@@ -185,16 +203,19 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     .sort((a, b) => sum(b.usd) - sum(a.usd) || a.title.localeCompare(b.title));
 
   // Workflows
-  const wfs = new Map<string, { usd: number[]; runs: number[]; sent: number[]; runCosts: number[][] }>();
+  const wfs = new Map<string, { usd: number[]; runs: number[]; sent: number[]; miss: number[]; runCosts: number[][] }>();
   const wf = (key: string) => {
     let w = wfs.get(key);
     if (!w) {
-      w = { usd: zeros(weeks), runs: zeros(weeks), sent: zeros(weeks), runCosts: Array.from({ length: weeks }, () => []) };
+      w = { usd: zeros(weeks), runs: zeros(weeks), sent: zeros(weeks), miss: zeros(weeks), runCosts: Array.from({ length: weeks }, () => []) };
       wfs.set(key, w);
     }
     return w;
   };
-  for (const s of counted) wf(s.wf).usd[s.week] += stepCost.get(s.id) ?? 0;
+  for (const s of counted) {
+    wf(s.wf).usd[s.week] += stepCost.get(s.id) ?? 0;
+    if (!stepCost.has(s.id)) wf(s.wf).miss[s.week]++;
+  }
   for (const r of runAcc.values()) {
     const w = wf(r.wf);
     w.runs[r.week]++;
@@ -211,17 +232,18 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
         return m === null ? null : roundUsd(m);
       }),
       sent_back: w.sent,
+      cost_missing: w.miss,
     }))
     .sort((a, b) => sum(b.usd) - sum(a.usd) || a.name.localeCompare(b.name));
 
   // Steps: one row per workflow + step title + version.
-  const stepGroups = new Map<string, { wf: string; title: string; version: string; runs: number[]; usd: number[]; costs: number[][] }>();
+  const stepGroups = new Map<string, { wf: string; title: string; version: string; runs: number[]; usd: number[]; miss: number[]; costs: number[][] }>();
   for (const s of counted) {
     const version = stepVersion(s);
     const key = `${s.wf}\u0000${s.title}\u0000${version}`;
     let g = stepGroups.get(key);
     if (!g) {
-      g = { wf: s.wf, title: s.title, version, runs: zeros(weeks), usd: zeros(weeks), costs: Array.from({ length: weeks }, () => []) };
+      g = { wf: s.wf, title: s.title, version, runs: zeros(weeks), usd: zeros(weeks), miss: zeros(weeks), costs: Array.from({ length: weeks }, () => []) };
       stepGroups.set(key, g);
     }
     g.runs[s.week]++;
@@ -229,6 +251,8 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     if (c !== undefined) {
       g.usd[s.week] += c;
       g.costs[s.week].push(c);
+    } else {
+      g.miss[s.week]++;
     }
   }
   const steps = [...stepGroups.values()]
@@ -242,6 +266,7 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
         return m === null ? null : roundUsd(m);
       }),
       usd: g.usd.map(roundUsd),
+      cost_missing: g.miss,
     }))
     .sort((a, b) => sum(b.usd) - sum(a.usd) || a.step.localeCompare(b.step));
 
@@ -256,6 +281,7 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     prices,
     unpriced_models: [...unpricedModels].sort(),
     vibecodes_total_usd: total.map(roundUsd),
+    cost_missing: missing,
     boards,
     workflows,
     steps,

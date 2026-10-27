@@ -66,7 +66,7 @@ describe("buildWeeklyReport", () => {
     const r = buildWeeklyReport(input({ steps, usage: us }));
     expect(r.vibecodes_total_usd).toEqual([0, 2, 4]);
     expect(r.boards).toEqual([{ idea_id: "i1", title: "Board One", project_path: null, usd: [0, 2, 4], runs: [0, 1, 1] }]);
-    expect(r.workflows).toEqual([{ name: "Bug Fix", runs: [0, 1, 1], usd: [0, 2, 4], median_usd: [null, 2, 4], sent_back: [0, 0, 0] }]);
+    expect(r.workflows).toEqual([{ name: "Bug Fix", runs: [0, 1, 1], usd: [0, 2, 4], median_usd: [null, 2, 4], sent_back: [0, 0, 0], cost_missing: [0, 0, 0] }]);
     const build = r.steps.find((s) => s.step === "Build")!;
     expect(build.runs).toEqual([0, 1, 1]);
     expect(build.usd).toEqual([0, 2, 3]);
@@ -154,5 +154,33 @@ describe("buildWeeklyReport", () => {
   it("carries no card text: only names, ids and numbers", () => {
     const r = buildWeeklyReport(input({ steps, usage: us }));
     expect(JSON.stringify(r)).not.toContain("do it");
+  });
+
+  it("reports a step with no recorded cost as missing, never as zero dollars", () => {
+    const r = buildWeeklyReport(input({ steps, usage: [usage("s1", "r1", ONE_DOLLAR)] }));
+    // s2 (this week) and s3 (last week) have no cost rows.
+    expect(r.cost_missing).toEqual([0, 1, 1]);
+    expect(r.workflows[0].cost_missing).toEqual([0, 1, 1]);
+    expect(r.steps.find((x) => x.step === "Review")!.cost_missing).toEqual([0, 0, 1]);
+    expect(r.steps.find((x) => x.step === "Review")!.median_usd).toEqual([null, null, null]);
+    // Nothing read at all (no cost rows visible): every finished step is missing.
+    const none = buildWeeklyReport(input({ steps, usage: [] }));
+    expect(none.cost_missing).toEqual([0, 1, 2]);
+  });
+
+  it("counts an unpriced model's step as missing", () => {
+    const r = buildWeeklyReport(input({ steps: [step("a", "r1", "Build", at(1))], usage: [usage("a", "r1", ONE_DOLLAR, "claude-mystery-9")] }));
+    expect(r.cost_missing).toEqual([0, 0, 1]);
+  });
+
+  it("keeps a sent-back step that is waiting to re-run, in the week of its last costed attempt", () => {
+    const waiting = step("w", "r1", "Build", at(2), { status: "pending", started_at: null, completed_at: null });
+    const u = { ...usage("w", "r1", ONE_DOLLAR * 2), created_at: at(2) };
+    const r = buildWeeklyReport(input({ steps: [waiting], usage: [u], sentBackStepIds: new Set(["w"]) }));
+    expect(r.vibecodes_total_usd).toEqual([0, 0, 2]);
+    expect(r.workflows[0].sent_back).toEqual([0, 0, 1]);
+    // A pending step with no cost and no send-back is still left out.
+    const idle = buildWeeklyReport(input({ steps: [step("p", "r1", "Build", at(2), { status: "pending" })] }));
+    expect(idle.workflows).toEqual([]);
   });
 });
