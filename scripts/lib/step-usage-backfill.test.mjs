@@ -125,6 +125,52 @@ describe("backfillSession", () => {
   });
 });
 
+describe("session share only (stage 3)", () => {
+  it("counts only the session's own calls, never reads a subagent, and marks the attempt as an addition", () => {
+    let reads = 0;
+    const { attempts, skipped } = backfillSession(
+      session(),
+      () => {
+        reads++;
+        return null;
+      },
+      { sessionShareOnly: true }
+    );
+    expect(reads).toBe(0);
+    expect(skipped).toBe(0);
+    expect(attempts.map((a) => a.step_id)).toEqual([STEP, STEP2]);
+    expect(attempts.every((a) => a.adds_to_existing === true)).toBe(true);
+    expect(attempts[0].models).toEqual([expect.objectContaining({ model: "claude-opus-5-5", calls: 3, cache_read_tokens: 3000 })]);
+  });
+
+  it("uses the same split as the normal mode", () => {
+    const lines = session();
+    const normal = backfillSession(lines, () => []).attempts;
+    const share = backfillSession(lines, () => null, { sessionShareOnly: true }).attempts;
+    expect(share.map((a) => a.models)).toEqual(normal.map((a) => a.models.filter((m) => m.model.includes("opus"))));
+  });
+
+  it("leaves the flag off in the normal mode", () => {
+    const { attempts } = backfillSession(session(), () => []);
+    expect(attempts.some((a) => "adds_to_existing" in a)).toBe(false);
+  });
+
+  it("takes the nearest earlier timestamp when the completion line has none", () => {
+    clock = 0;
+    const done = result("u2", { step: { id: STEP, status: "completed" } });
+    const noTime = JSON.stringify({ ...JSON.parse(done), timestamp: undefined });
+    const lines = [
+      call("msg_0", { uses: [["u1", CLAIM, {}]] }),
+      result("u1", claimed(STEP, "ct_a")),
+      call("msg_1", { uses: [["u2", COMPLETE, { step_id: STEP, claim_token: "ct_a" }]], time: "2026-10-15T10:30:00.000Z" }),
+      noTime,
+    ];
+    expect(lines[3]).not.toContain("timestamp");
+    const [a] = backfillSession(lines, () => null).attempts;
+    expect(a.ended_at).toBe("2026-10-15T10:30:00.000Z");
+  });
+});
+
 describe("totalCalls", () => {
   it("counts a call once across its content-block lines and estimates output from what was written", () => {
     const line = (text, read) => call("msg_1", { text, read });

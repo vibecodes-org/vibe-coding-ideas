@@ -204,7 +204,13 @@ export default function AdminPage() {
             writes a file holding only step ids, times and token counts. Choose{" "}
             <strong className="text-foreground">Import past cost</strong> on the
             report and pick that file. Steps that already have a cost are left
-            alone, so importing a file twice changes nothing.
+            alone, so importing a file twice changes nothing. If a step&apos;s
+            helper cost was imported on its own, run the script with{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              --session-share --steps &lt;file&gt;
+            </code>{" "}
+            to add just the claiming session&apos;s share to steps that already
+            have a cost; importing that file twice still changes nothing.
           </p>
         </section>
 

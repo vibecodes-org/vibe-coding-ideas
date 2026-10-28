@@ -13,6 +13,11 @@
 // not yet completed, including claims that never finished), as the live
 // command does. Subagent calls count in full.
 //
+// Session share only (stage 3 of card 1117ac6b): with `sessionShareOnly`, no
+// subagent lines are read and each attempt is marked `adds_to_existing`, so the
+// import stores it even on a step that already has a cost (a helper-only
+// import left the claiming session's share out).
+//
 // Input/cache counts are exact; output is estimated from the length of what
 // the model wrote, exactly as the live command's awk does it.
 
@@ -108,6 +113,15 @@ function parseJson(text) {
 
 const timestampOf = (line) => /"timestamp":"([^"]+)"/.exec(line)?.[1] ?? null;
 
+/** The nearest timestamp at or before `index`, looking back at most 200 lines. */
+function nearestEarlierTimestamp(lines, index) {
+  for (let i = index; i >= 0 && i > index - 200; i--) {
+    const t = timestampOf(lines[i]);
+    if (t) return t;
+  }
+  return null;
+}
+
 /**
  * Finds every finished step attempt in one session transcript.
  * Returns [{ stepId, outcome, endedAt, from, to, agentIds }] where from/to are
@@ -161,7 +175,7 @@ function scanAttempts(lines) {
       done.push({
         stepId: attempt.stepId,
         outcome,
-        endedAt: o.timestamp ?? timestampOf(line),
+        endedAt: o.timestamp ?? timestampOf(line) ?? nearestEarlierTimestamp(lines, index),
         from: attempt.from,
         to: use.index,
         agentIds: [...attempt.agentIds],
@@ -175,8 +189,9 @@ function scanAttempts(lines) {
  * Every finished attempt in one session, costed. readAgent(agentId) returns
  * that subagent's transcript lines, or null if it's gone. An attempt whose
  * subagent transcript is gone is skipped rather than under-counted.
+ * With sessionShareOnly, only the session's own calls count and readAgent is never called.
  */
-export function backfillSession(lines, readAgent) {
+export function backfillSession(lines, readAgent, { sessionShareOnly = false } = {}) {
   const attempts = [];
   let skipped = 0;
   const { done, unfinished } = scanAttempts(lines);
@@ -192,7 +207,7 @@ export function backfillSession(lines, readAgent) {
     }
     const agentLines = [];
     let missing = false;
-    for (const id of a.agentIds) {
+    for (const id of sessionShareOnly ? [] : a.agentIds) {
       const agent = readAgent(id);
       if (!agent) {
         missing = true;
@@ -206,7 +221,14 @@ export function backfillSession(lines, readAgent) {
       skipped++;
       continue;
     }
-    attempts.push({ step_id: a.stepId, outcome: a.outcome, ended_at: a.endedAt, models, output_estimated: true });
+    attempts.push({
+      step_id: a.stepId,
+      outcome: a.outcome,
+      ended_at: a.endedAt,
+      models,
+      output_estimated: true,
+      ...(sessionShareOnly ? { adds_to_existing: true } : {}),
+    });
   }
   return { attempts, skipped };
 }

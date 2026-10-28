@@ -16,6 +16,12 @@
 //
 // Usage:
 //   node scripts/step-usage-backfill.mjs [--out step-usage-backfill.json] [--since 2026-09-01]
+//                                        [--session-share] [--steps steps.txt]
+//
+// --steps <file>      only these steps (one step id per line; # starts a comment).
+// --session-share     only the claiming session's own calls, no subagents, marked
+//                     so the import adds them to steps that already have a cost
+//                     (for a step whose helper cost was imported on its own).
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -32,6 +38,31 @@ const since = opt("--since", "");
 if (since && Number.isNaN(Date.parse(since))) {
   console.error(`--since must be a date, like 2026-09-01 (got "${since}")`);
   process.exit(1);
+}
+
+const sessionShare = args.includes("--session-share");
+let onlySteps = null;
+const stepsFile = opt("--steps", "");
+if (args.includes("--steps") && !stepsFile) {
+  console.error("--steps needs a file of step ids, one per line");
+  process.exit(1);
+}
+if (stepsFile) {
+  if (!existsSync(stepsFile)) {
+    console.error(`No such file: ${stepsFile}`);
+    process.exit(1);
+  }
+  onlySteps = new Set(
+    readFileSync(stepsFile, "utf8")
+      .split("\n")
+      .map((l) => l.replace(/#.*/, "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const bad = [...onlySteps].filter((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id));
+  if (bad.length) {
+    console.error(`Not step ids (uuid): ${bad.slice(0, 3).join(", ")}`);
+    process.exit(1);
+  }
 }
 
 const root = join(process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude"), "projects");
@@ -62,10 +93,11 @@ for (const project of readdirSync(root)) {
     const result = backfillSession(text.split("\n").filter(Boolean), (id) => {
       const f = join(subagents, `agent-${id}.jsonl`);
       return existsSync(f) ? linesOf(f) : null;
-    });
+    }, { sessionShareOnly: sessionShare });
     skipped += result.skipped;
     for (const a of result.attempts) {
       if (since && a.ended_at < since) continue;
+      if (onlySteps && !onlySteps.has(a.step_id)) continue;
       // A resumed or forked session repeats its history in a new file.
       const key = `${a.step_id} ${a.ended_at}`;
       if (seen.has(key)) continue;
@@ -79,7 +111,8 @@ attempts.sort((a, b) => a.ended_at.localeCompare(b.ended_at));
 writeFileSync(out, JSON.stringify({ kind: "vibecodes-step-usage-backfill", version: 1, attempts }) + "\n");
 const range = attempts.length ? ` from ${attempts[0].ended_at.slice(0, 10)} to ${attempts.at(-1).ended_at.slice(0, 10)}` : "";
 console.error(
-  `Read ${sessions} session${sessions === 1 ? "" : "s"} with workflow steps: ${attempts.length} step attempt${attempts.length === 1 ? "" : "s"} costed${range}.` +
+  (sessionShare ? "Session share only (no subagents). " : "") +
+    `Read ${sessions} session${sessions === 1 ? "" : "s"} with workflow steps: ${attempts.length} step attempt${attempts.length === 1 ? "" : "s"} costed${range}.` +
     (skipped ? ` ${skipped} left out (a subagent's transcript is gone, or no model calls).` : "") +
     `\nWrote ${out}. Import it on Admin → Reports → Step Performance → Import past cost.`
 );
