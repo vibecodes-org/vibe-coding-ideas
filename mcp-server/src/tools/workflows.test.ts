@@ -1463,7 +1463,9 @@ describe("claimNextStep — persona embedding", () => {
         expect(explicit).not.toHaveProperty("execution");
         // Task 59889027 added one NATIVE SUBAGENT paragraph on the embedded
         // paths and card ba37039b one STEP COST paragraph on every Claude
-        // claim; everything else must stay byte-identical, so pin the rest.
+        // claim; everything else must stay byte-identical, so pin the rest. (db4c7f7b round 2
+        // deliberately changed the inline EXCEPTION sentence: it now says to report
+        // persona_used "adapted", so every hash below was regenerated once.)
         const preexisting = implicit.instruction!
           .replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "")
           .replace(/\n\nSTEP COST: [^\n]*/, "");
@@ -1473,14 +1475,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "d5b3f08ac144decb41493c9befacd7be56ac8b86321d10ac13a67c9e53a7212d",
-        "auto/missing": "8a71456840d0baf752a8d0606f44520a3dafce4b802e9d6719e94dbe8d7eb0ef",
-        "cheap/embedded": "27311d871224a2da45b2be29b8a64246811de8f66ca05f1cdd61495fe16b5072",
-        "cheap/missing": "a646a28985dfade02a59b1dd7bb0e1dfa40243d0d7fc5285cc38cde0d7a610e3",
-        "frontier/embedded": "c2c98a0a3e22fb3df28740b0becdebc75273570981b5dcbd4622916d9484b39c",
-        "frontier/missing": "eb9f4ea3c3f5c9f0e4561c4c868cc2ff01145193c34883413adea2ad8030e58c",
-        "standard/embedded": "486f9a09744087c472d90061ad16155726662451364015ad886ff9867b0850fb",
-        "standard/missing": "58c038966bf90e6fbe3707a15046fac95b73ffc99ac873fc41f4437d7bb59bfe",
+        "auto/embedded": "731f5c756cc714243111aaf506e7f443721101027676aaf310e53d9a99ab1870",
+        "auto/missing": "85d12f5a8e61c2ab8283083998838f09cf7202053e40299eefb32d6bacda5028",
+        "cheap/embedded": "d06d0263a9a30fc10857fdfbfadd22e0374f58211453c2f8ff39d7f311978940",
+        "cheap/missing": "5464701d77ae8b29b00496338c1b09a5a7542241efc74ca8e77efa74cb0cc9ce",
+        "frontier/embedded": "8e0050e7e23cdd900ee5a498f4670f889f63a677f7cf5e8e08574bc02414d5c9",
+        "frontier/missing": "607780efdab48470a7ecd79e217e016a32e99795e15fff443d7985619411a09a",
+        "standard/embedded": "130cfc7fb7c5357b94e2c4e6ba93fb2383858e5b7a676ab8ffd24ab9347b43a8",
+        "standard/missing": "18c2ce267e5d7d0b4b8d6e3711b91a8450436a1c70a6c6c22792db4ed19a5e6b",
       }
     `);
   });
@@ -7020,12 +7022,12 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10600); // db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10750); // db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
     const r = (await midRunClaim()) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(5950); // db4c7f7b: +~850; stage 3: 4,476 -> 5,013 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(6100); // db4c7f7b: +~850; stage 3: 4,476 -> 5,013 (+537)
   });
 
   it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {
@@ -7034,7 +7036,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
       pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, systemPrompt: RULE_PERSONA,
     });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(4950); // db4c7f7b: +~850; stage 3: 3,445 -> 3,982 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(5100); // db4c7f7b: +~850; stage 3: 3,445 -> 3,982 (+537)
   });
 
   it("sends available_agents only when the step has no assigned agent (AC1.4)", async () => {
@@ -7099,6 +7101,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     // retry / resume, inline exception, usage
     expect(t).toContain("retry or resume it");
     expect(t).toContain("Completed inline — no subagent capability.");
+    expect(t).toContain('persona_used "adapted" (an inline run is never verbatim)'); // db4c7f7b round 2
     expect(t).toContain("run the usage_command");
     expect(t).toContain("pass its JSON line as usage");
   });

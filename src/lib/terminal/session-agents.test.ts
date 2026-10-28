@@ -235,6 +235,8 @@ describe("sessionAgentClaimHint", () => {
       const hash = /^\[vc (\S+) /.exec(tag)![1];
       expect(instruction).toContain(`AND its description ends with a tag starting "[vc ${hash} "`);
       expect(instruction).toContain('"[vc skills-names-only" does not count');
+      // The exact name counts too when only its model or effort word differs (same hash).
+      expect(instruction).toContain('If that exact tag isn\'t offered but the same agent is (a type starting "vc-atlas-37e8ffb2", this exact name included');
       expect(instruction).toContain("subagent_type its name");
     });
 

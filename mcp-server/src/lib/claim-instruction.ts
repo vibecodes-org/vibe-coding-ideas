@@ -154,7 +154,7 @@ function claudeIdentity(i: ClaimInstructionInput): string {
     `Call complete_step with this step's id, the claim_token, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion), without output, because the helper saved it (after asking it for changes, have it save again first). ` +
     `If it couldn't save, pass its full write-up as output, never the summary. On failure call fail_step the same way.\n` +
     `EXCEPTION: only if your client has no subagent/Agent tool at all, do the step inline as that persona (persona_prompt, or get_agent_prompt with as_persona true), ` +
-    `pass the work_token on comments, and call complete_step with the claim_token and your full write-up as output, stating verbatim in your output: "Completed inline — no subagent capability." ` +
+    `pass the work_token on comments, and call complete_step with the claim_token and your full write-up as output, stating verbatim in your output: "Completed inline — no subagent capability." and reporting persona_used "adapted" (an inline run is never verbatim). ` +
     `This is the only exception.`
   );
 }

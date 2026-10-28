@@ -40,8 +40,8 @@ export const syncBoardAgentsSchema = z.object({
  */
 export const NO_LOAD_STEPS =
   "NO-LOAD steps: the board-named agent is never optional, and there is no silent general-purpose fallback. " +
-  "(1) If your Agent tool offers the same agent under another tier or effort suffix (a name starting " +
-  "vc-<role>-<same agent id>) AND its description ends with a tag starting with the same `[vc <hash> ` as this " +
+  "(1) If your Agent tool offers the same agent under another tier or effort suffix, or this exact name with a " +
+  "different model or effort word in its tag (a name starting vc-<role>-<same agent id>) AND its description ends with a tag starting with the same `[vc <hash> ` as this " +
   "step's claim (native_subagent.tag; an out-of-date copy or `[vc skills-names-only` does not count), spawn it and " +
   "pass the claim's model and effort explicitly on the Agent tool; it counts as the named agent, so report " +
   "persona_used \"verbatim\", subagent_type its name, and the model and effort you actually used. (2) Otherwise " +
@@ -60,9 +60,10 @@ const INSTRUCTION =
   "SECOND block exactly as given, byte for byte, to `script_path` (a path under your home folder: expand ~ to the " +
   "absolute home directory; create the folder if needed). If `script_path` already exists it is this same script " +
   "(its name follows the files' fingerprints): don't overwrite or read it, just run `run_command`. If writing " +
-  "under your home folder is refused, save it to `fallback_script_path` inside the project instead (a folder " +
-  "Claude Code doesn't watch, so it can't be mistaken for an agent; it isn't git-ignored, so never commit it and " +
-  "delete it once the run ends) and run `fallback_run_command`. (2) From the project folder (the repo root), run exactly " +
+  "under your home folder is refused, first write `.claude/vibecodes/.gitignore` containing the single line `*`, " +
+  "then save the script to `fallback_script_path` inside the project (a folder Claude Code doesn't watch, so it " +
+  "can't be mistaken for an agent) and run `fallback_run_command`. Never commit it; the script deletes itself " +
+  "when it runs. (2) From the project folder (the repo root), run exactly " +
   "`run_command` (one short line) with " +
   "run_in_background, then end your turn. Only if you have no file-write tool, run the SECOND block itself as " +
   "one command instead, copied exactly. The script saves every agent listed in `agents` (this step's, then the rest of " +

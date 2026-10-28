@@ -177,6 +177,8 @@ const OLD_ATIME = "200001010000";
  *  - without access-time support it cannot confirm, so it waits a fixed
  *    `noAtimeFirstSeconds`, re-touches, waits `noAtimeSecondSeconds` and says
  *    READY (unconfirmed, sized to the 30 s poll).
+ * Run as a saved script (\`sh <file>.sh\`) it deletes itself first, since it holds
+ * agent prompts (card db4c7f7b); run inline it has no file to delete.
  * Files are quoted heredocs, so nothing in them is expanded. No network.
  * Last line of output: READY, NEW_FOLDER, MISMATCH or NOT_LOADED.
  */
@@ -207,6 +209,7 @@ export function agentFilesSyncCommand(opts: { files: AgentSyncFile[]; confirm?: 
     .join("\n  ");
 
   return `(
+case "$0" in *.sh) rm -f -- "$0" ;; esac
 user_dir="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents"
 new=0
 project=0

@@ -183,6 +183,9 @@ describe("sync_board_agents", () => {
     expect(res.instruction).toContain("If `script_path` already exists it is this same script");
     expect(res.instruction).toContain("don't overwrite or read it, just run `run_command`");
     expect(res.instruction).toContain("`fallback_script_path`");
+    expect(res.instruction).toContain("first write `.claude/vibecodes/.gitignore` containing the single line `*`");
+    expect(res.instruction).toContain("the script deletes itself");
+    expect(res.instruction).toContain("this exact name with a different model or effort word");
     if (res.status !== "ok") throw new Error("expected ok");
     expect(res.fallback_script_path).toBe(res.script_path.replace("~/.claude/vibecodes/", ".claude/vibecodes/"));
     expect(res.fallback_run_command).toBe(`sh ${res.fallback_script_path}`);

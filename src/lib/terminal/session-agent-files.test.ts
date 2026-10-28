@@ -148,6 +148,8 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
     const out = spawnSync("sh", [script], { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, NODE_ENV: "test" as const } });
     expect(last(out.stdout)).toBe("NEW_FOLDER");
     expect(existsSync(join(repo, ".claude", "agents", `${NAME}.md`))).toBe(true);
+    // The script holds agent prompts, so it deletes itself first (card db4c7f7b).
+    expect(existsSync(script)).toBe(false);
   });
 
   it("run as a script, a fingerprint mismatch still deletes everything", () => {
@@ -158,6 +160,7 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
     expect(out.status).toBe(3);
     expect(out.stdout).toContain("MISMATCH");
     expect(readdirSync(join(repo, ".claude", "agents"))).toEqual([]);
+    expect(existsSync(script)).toBe(false);
   });
 
   it("is valid bash and contains no network tool", () => {

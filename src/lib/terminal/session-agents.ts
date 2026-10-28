@@ -308,7 +308,8 @@ export function sessionAgentClaimHint(input: {
   const base = sessionAgentName(input.bot, null);
   const hash = /^\[vc (\S+) /.exec(tag)?.[1] ?? "";
   const sameAgentStep =
-    `If that name isn't offered but the same agent is (a type starting "${base}", any tier or effort suffix) ` +
+    `If that exact tag isn't offered but the same agent is (a type starting "${base}", this exact name included, ` +
+    `any tier or effort suffix) ` +
     `AND its description ends with a tag starting "[vc ${hash} " (an out-of-date copy or "[vc skills-names-only" ` +
     `does not count), spawn that one with the model and effort above passed explicitly on the Agent tool: it ` +
     `counts as the named agent (persona_used "verbatim", subagent_type its name, and the model and effort actually used). `;

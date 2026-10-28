@@ -23,3 +23,8 @@ Text that offered the fallback: `sessionAgentClaimHint` (src/lib/terminal/sessio
 - Too large or names-only is a VibeCodes fault (Nick: live agents are ~5k chars, skills ~1.3k, far under the 90k/40k limits). The session is told to stop and ask the user to report it; warn-level logs at the source (namesOnly branch in session-agents.ts, too_large in agent-sync.ts). namesOnlyTag comment updated.
 - E additions: an existing script_path is the same script (run, don't overwrite/read); `fallback_script_path` (`.claude/vibecodes/agent-sync-<id>.sh`, a folder Claude Code doesn't watch, not git-ignored, delete after the run) if writing under ~ is refused.
 - Model-switch case of "claim named no native" is recomputed from live availability at completion; it is not covered by a unit test (needs the full claim fixture).
+
+## Rework round 2 (28 Oct)
+- The in-project fallback script held agent prompts and was not git-ignored. (a) The installer now deletes itself first when run as a saved script (`case "$0" in *.sh) rm -f -- "$0"`); tests show the file is gone after NEW_FOLDER and MISMATCH runs. (b) The text tells the session to write `.claude/vibecodes/.gitignore` containing `*` before the fallback script; "never commit it" kept.
+- Rule A also accepts this exact name when its hash matches but the model/effort word differs, spawned with explicit model and effort, so a tier-model change no longer causes a needless Restart stop.
+- The inline EXCEPTION now says to report persona_used "adapted". That sentence sits in the byte-pinned part of the claim, so the inline snapshot hashes in workflows.test.ts were regenerated once, on purpose.
