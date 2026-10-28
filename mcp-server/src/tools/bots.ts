@@ -24,7 +24,7 @@ export const getBotPromptSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      "true: return the agent's persona exactly as claim_next_step would have sent it as persona_prompt — the system prompt, the read-only Tools note when it applies, and the agent's skills in full — as `persona_prompt`. Use it when claim_next_step named a native vc- helper you can't use. Omit for the raw profile."
+      "true: return the agent's persona exactly as claim_next_step would have sent it as persona_prompt — the system prompt, the read-only Tools note when it applies, and the agent's skills in full — as `persona_prompt`. Never use it to swap in for a native vc- helper claim_next_step named: that agent is never optional. If it can't be loaded, try the same agent under another tier/effort name, otherwise tell the user and stop; use this only after they explicitly say yes. Omit for the raw profile."
     ),
 });
 

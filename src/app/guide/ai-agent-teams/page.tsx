@@ -372,7 +372,9 @@ export default function AiAgentTeamsPage() {
               agent, so each step of the run runs on its own agent without
               another sync (one retry is allowed if a spawn is not found). When
               background tasks are available, the first step needs no wait for
-              another message either.
+              another message either. If a board agent can&apos;t be loaded,
+              Claude Code stops and asks you rather than substituting another
+              agent.
               Connect VibeCodes to cloud sessions with the claude.ai
               connector.
             </li>
