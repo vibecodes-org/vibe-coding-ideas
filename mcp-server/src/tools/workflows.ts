@@ -54,7 +54,7 @@ import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
 import { buildClaimInstruction } from "../lib/claim-instruction";
 import { stepUsageCommandForClaim } from "../lib/step-usage-delivery";
-import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
+import { recordStepUsage, stepUsageParam, usageUnavailableParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1481,6 +1481,7 @@ export const completeStepSchema = z.object({
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
   usage: stepUsageParam,
+  usage_unavailable: usageUnavailableParam,
 });
 
 /**
@@ -1676,7 +1677,7 @@ export async function completeStep(
   }
 
   // Card ba37039b: this attempt's token use, for the admin step report.
-  await recordStepUsage(ctx, step, newStatus, params.usage);
+  await recordStepUsage(ctx, step, newStatus, params.usage, params.usage_unavailable);
 
   // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
   // write after the main completion update. On a DB where migration 00195
@@ -1897,6 +1898,7 @@ export const failStepSchema = z.object({
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
   usage: stepUsageParam,
+  usage_unavailable: usageUnavailableParam,
   // Auto-switch (card 5d0665a2). UX Design §2b wording, verbatim.
   model_unavailable: z.boolean().optional()
     .describe(
@@ -2150,7 +2152,7 @@ export async function failStep(
 
   // Card ba37039b: the failed attempt still cost tokens. A human rejecting an
   // awaiting_approval step ran no subagent, so only in_progress attempts count.
-  if (step.status === "in_progress") await recordStepUsage(ctx, step, "failed", params.usage);
+  if (step.status === "in_progress") await recordStepUsage(ctx, step, "failed", params.usage, params.usage_unavailable);
 
   if (archiveSaved) {
     await ctx.supabase.from("workflow_step_comments").insert({

@@ -521,4 +521,30 @@ describe("registerTools", () => {
     // by side they'd read as two slightly different rules (design doc §3b).
     expect(description).not.toContain("NEVER write scripts to parse it");
   });
+  // Card 1117ac6b: a missing usage report is refused before anything is read
+  // or written, for complete_step and fail_step alike.
+  it("complete_step and fail_step refuse a Claude attempt with no usage and touch nothing", async () => {
+    for (const name of ["complete_step", "fail_step"]) {
+      const server = createMockServer();
+      const from = vi.fn(() => { throw new Error("database touched"); });
+      registerTools(server, vi.fn(() => ({ supabase: { from } as unknown as McpContext["supabase"], userId: "u" })));
+      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name)!;
+      const result = await call[3]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done" }, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("usage_command");
+      expect(from).not.toHaveBeenCalled();
+    }
+  });
+
+  it("complete_step goes ahead with usage_unavailable, and for a Codex run", async () => {
+    for (const extra of [{ usage_unavailable: "client has no shell" }, { agent: "codex" }]) {
+      const server = createMockServer();
+      const from = vi.fn(() => { throw new Error("database touched"); });
+      registerTools(server, vi.fn(() => ({ supabase: { from } as unknown as McpContext["supabase"], userId: "u" })));
+      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "complete_step")!;
+      const result = await call[3]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done", ...extra }, {});
+      expect(from).toHaveBeenCalled();
+      expect(result.content[0].text).toContain("database touched");
+    }
+  });
 });

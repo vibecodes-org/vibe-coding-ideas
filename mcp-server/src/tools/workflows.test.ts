@@ -1465,7 +1465,9 @@ describe("claimNextStep — persona embedding", () => {
         // paths and card ba37039b one STEP COST paragraph on every Claude
         // claim; everything else must stay byte-identical, so pin the rest. (db4c7f7b round 2
         // deliberately changed the inline EXCEPTION sentence: it now says to report
-        // persona_used "adapted", so every hash below was regenerated once.)
+        // persona_used "adapted", so every hash below was regenerated once.
+        // Card 1117ac6b changed the finish item's usage sentence on purpose —
+        // usage is now required — and regenerated them again.)
         const preexisting = implicit.instruction!
           .replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "")
           .replace(/\n\nSTEP COST: [^\n]*/, "");
@@ -1475,14 +1477,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "731f5c756cc714243111aaf506e7f443721101027676aaf310e53d9a99ab1870",
-        "auto/missing": "85d12f5a8e61c2ab8283083998838f09cf7202053e40299eefb32d6bacda5028",
-        "cheap/embedded": "d06d0263a9a30fc10857fdfbfadd22e0374f58211453c2f8ff39d7f311978940",
-        "cheap/missing": "5464701d77ae8b29b00496338c1b09a5a7542241efc74ca8e77efa74cb0cc9ce",
-        "frontier/embedded": "8e0050e7e23cdd900ee5a498f4670f889f63a677f7cf5e8e08574bc02414d5c9",
-        "frontier/missing": "607780efdab48470a7ecd79e217e016a32e99795e15fff443d7985619411a09a",
-        "standard/embedded": "130cfc7fb7c5357b94e2c4e6ba93fb2383858e5b7a676ab8ffd24ab9347b43a8",
-        "standard/missing": "18c2ce267e5d7d0b4b8d6e3711b91a8450436a1c70a6c6c22792db4ed19a5e6b",
+        "auto/embedded": "004ad04b32287521815815d70cab61955da2be8077969f8a5fe5bfde5da13e05",
+        "auto/missing": "c8c1da610f9348efe1c5852049dce73cfe3bc8e5281f9f00df6889634b4d4ffe",
+        "cheap/embedded": "8f5c7b2c2b5027f6bd1aa98a6c6fef42c7e1b43b7654fa4e9540ccdc26f24464",
+        "cheap/missing": "ab2129f33329d3d59da315b152a85e8032de90991da65d02e4f39054c1627bc0",
+        "frontier/embedded": "10bcd2ebf8abef323ca96ffe94587ed061dec6e52ab7beac36f161a43687328d",
+        "frontier/missing": "5118c75445d51697a1534756caa02259d686db35e9ec4a276c1d6cedfe7f1baf",
+        "standard/embedded": "dca6a2ba4b91c696ed5d3edf0d0533ceed3cab6369f4b32906c999ccb69e136b",
+        "standard/missing": "888e53d2ca0f6f9dadf563137c555f7db780e236226d9971b0f4020160e7b431",
       }
     `);
   });
@@ -7101,9 +7103,10 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     // retry / resume, inline exception, usage
     expect(t).toContain("retry or resume it");
     expect(t).toContain("Completed inline — no subagent capability.");
+    expect(t).toContain("call complete_step with the claim_token, usage (run usage_command as is, or pass usage_unavailable + why)");
     expect(t).toContain('persona_used "adapted" (an inline run is never verbatim)'); // db4c7f7b round 2
     expect(t).toContain("run the usage_command");
-    expect(t).toContain("pass its JSON line as usage");
+    expect(t).toContain("pass the line it prints as usage");
   });
 
   it("the model switch notice still comes first and the native helper is left out (AC1.10)", async () => {
@@ -7132,7 +7135,7 @@ describe("step cost (card ba37039b)", () => {
     // Near the top, so the session transcript holds the marker even if a long claim is cut short.
     expect(Object.keys(claude).slice(0, 2)).toEqual(["done", "usage_command"]);
     expect(claude.instruction).toContain("run the usage_command (swap AGENT_ID for the helper's agentId)");
-    expect(claude.instruction).toContain("omit usage on NO_TRANSCRIPT; never let it hold up the step");
+    expect(claude.instruction).toContain("pass the line it prints as usage, NO_TRANSCRIPT included (required, never skip it)");
     const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
     expect(codex).not.toHaveProperty("usage_command");
     expect(codex.instruction).not.toContain("usage_command");
