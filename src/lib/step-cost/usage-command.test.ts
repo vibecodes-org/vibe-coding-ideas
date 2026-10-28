@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 // One transcript line per content block, shaped like Claude Code 2.1.300's.
-function line(o: { id: string; model: string; block: object; input?: number; read?: number; write?: number; write1h?: number; out?: number; main?: boolean }) {
+function line(o: { id: string; model: string; block: object; input?: number; read?: number; write?: number; write1h?: number; out?: number; main?: boolean; ts?: string }) {
   return JSON.stringify({
     parentUuid: "p", isSidechain: !o.main, ...(o.main ? {} : { agentId: "x" }),
     message: {
@@ -20,17 +20,20 @@ function line(o: { id: string; model: string; block: object; input?: number; rea
         output_tokens: o.out ?? 3, service_tier: "standard",
       },
     },
-    type: "assistant", uuid: "u", timestamp: "2026-10-15T00:00:00Z",
+    type: "assistant", uuid: "u", timestamp: o.ts ?? "2026-10-15T00:00:00Z",
   });
 }
 const userLine = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", content: '"type":"assistant" "usage":{"input_tokens":999999}' }] } });
 
 const MARK = "vcu_0123456789abcdef01234567";
 /** The claim_next_step result as the session transcript records it: the marker sits inside usage_command. */
-const claimLine = JSON.stringify({
-  type: "user", isSidechain: false,
-  message: { role: "user", content: [{ type: "tool_result", content: [{ type: "text", text: `{"done":false,"usage_command":"(\\nmark='${MARK}'"}` }] }] },
+const CT1 = "ct_" + "a1".repeat(24);
+const CT2 = "ct_" + "b2".repeat(24);
+const mkClaim = (mark: string, ct: string | null) => JSON.stringify({
+  type: "user", isSidechain: false, timestamp: "2026-10-15T00:00:00Z",
+  message: { role: "user", content: [{ type: "tool_result", content: [{ type: "text", text: `{"done":false,${ct ? `"claim_token":"${ct}",` : ""}"usage_command":"(\\nmark='${mark}'"}` }] }] },
 });
+const claimLine = mkClaim(MARK, CT1);
 
 function sandbox(files: Record<string, string[]>, main?: string[]) {
   const root = mkdtempSync(join(tmpdir(), "step-usage-"));
@@ -191,7 +194,7 @@ describe("stepUsageCommand", () => {
 
   // Card 5e654dd1, stage 16: one session holding several claims at once.
   const MARK2 = "vcu_fedcba9876543210fedcba98";
-  const claim2 = claimLine.replace(MARK, MARK2);
+  const claim2 = mkClaim(MARK2, CT2);
   const runUsage = (id: string, mark: string, read: number) =>
     line({ id, model: "claude-opus-5-5", block: { type: "tool_use", id: `toolu_${id}`, name: "Bash", input: { command: `sh f '${mark}' 'AGENT_ID'` } }, read, main: true });
   const call = (id: string, read: number) => line({ id, model: "claude-opus-5-5", block: text("x".repeat(35)), read, main: true });
@@ -231,6 +234,100 @@ describe("stepUsageCommand", () => {
     try {
       const models = JSON.parse(run(root, "a1")).models as { model: string; cache_read_tokens: number }[];
       expect(models.map((m) => `${m.model}:${m.cache_read_tokens}`).sort()).toEqual(["claude-opus-5-5:1000", "claude-sonnet-5-5:500"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Card 1117ac6b, stage 5: who joins and leaves the split.
+  const stray = JSON.stringify({ type: "user", isSidechain: false, message: { role: "user", content: [{ type: "tool_result", content: `grep found vcu_00000000000000000000aaaa in an old file` }] } });
+  const callTool = (id: string, tool: string, ct: string) =>
+    line({ id, model: "claude-opus-5-5", block: { type: "tool_use", id: `toolu_${id}`, name: tool, input: { claim_token: ct } }, read: 10, main: true });
+  const result = (id: string, error: boolean) => JSON.stringify({ type: "user", isSidechain: false, message: { role: "user", content: [{ type: "tool_result", tool_use_id: `toolu_${id}`, ...(error ? { is_error: true } : {}), content: "x" }] } });
+  const reads = (c: string) => (JSON.parse(c).models as { model: string; cache_read_tokens: number }[]).find((m) => m.model === "claude-opus-5-5")?.cache_read_tokens;
+
+  it("ignores a stray marker that is not on a claim (it never dilutes the split)", () => {
+    const root = sandbox({}, [claimLine, stray, call("msg_a", 1000), runUsage("msg_b", MARK, 100)]);
+    try {
+      expect(reads(run(root, USAGE_COMMAND_PLACEHOLDER))).toBe(1100);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("closes another claim at its accepted complete, even if its usage never ran", () => {
+    const root = sandbox({}, [
+      claimLine, claim2, callTool("msg_x", "mcp__vibecodes__complete_step", CT2), result("msg_x", false),
+      call("msg_a", 1000), call("msg_b", 2000), runUsage("msg_c", MARK, 100),
+    ]);
+    try {
+      // msg_x is shared two ways (10 / 2), then everything after counts in full.
+      expect(reads(run(root, USAGE_COMMAND_PLACEHOLDER))).toBe(5 + 1000 + 2000 + 100);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a claim open when its complete or fail was refused", () => {
+    for (const tool of ["mcp__vibecodes__complete_step", "mcp__vibecodes__fail_step"]) {
+      const root = sandbox({}, [
+        claimLine, claim2, callTool("msg_x", tool, CT2), result("msg_x", true),
+        call("msg_a", 1000), runUsage("msg_c", MARK, 100),
+      ]);
+      try {
+        expect(reads(run(root, USAGE_COMMAND_PLACEHOLDER))).toBe(5 + 500 + 50);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("stops this step's own count at its own usage run even after it was closed by a complete", () => {
+    const root = sandbox({}, [
+      claimLine, callTool("msg_x", "mcp__vibecodes__complete_step", CT1), result("msg_x", false),
+      call("msg_a", 1000), runUsage("msg_c", MARK, 100), call("msg_z", 900_000),
+    ]);
+    try {
+      expect(reads(run(root, USAGE_COMMAND_PLACEHOLDER))).toBe(10 + 1000 + 100);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // A subagent resumed for rework keeps round 1 in its file.
+  const round = (id: string, read: number, ts: string) => line({ id, model: "claude-sonnet-5-5", block: text("hi"), read, ts });
+  const twoRounds = { a1: [round("msg_r1", 700, "2026-10-14T10:00:00Z"), round("msg_r2", 300, "2026-10-16T10:00:00Z")] };
+
+  it("counts only the subagent calls made after this claim (a resumed helper's first round is not counted again)", () => {
+    const root = sandbox(twoRounds, [claimLine, call("msg_a", 1)]);
+    try {
+      const models = JSON.parse(run(root, "a1")).models as { model: string; cache_read_tokens: number }[];
+      expect(models.find((m) => m.model === "claude-sonnet-5-5")?.cache_read_tokens).toBe(300);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("counts every subagent call when the claim line has no timestamp", () => {
+    const noTs = mkClaim(MARK, CT1).replace('"timestamp":"2026-10-15T00:00:00Z",', "");
+    const root = sandbox(twoRounds, [noTs, call("msg_a", 1)]);
+    try {
+      const models = JSON.parse(run(root, "a1")).models as { model: string; cache_read_tokens: number }[];
+      expect(models.find((m) => m.model === "claude-sonnet-5-5")?.cache_read_tokens).toBe(1000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("the short and long forms agree on the new rules", () => {
+    const root = sandbox(twoRounds, [claimLine, claim2, callTool("msg_x", "mcp__vibecodes__complete_step", CT2), result("msg_x", false), stray, call("msg_a", 1000), runUsage("msg_c", MARK, 100)]);
+    mkdirSync(join(root, "vibecodes"), { recursive: true });
+    writeFileSync(join(root, "vibecodes", stepUsageScript().file), stepUsageScript().body);
+    try {
+      for (const shell of hasZsh ? ["bash", "zsh"] : ["bash"]) {
+        expect(runCommand(root, stepUsageShortCommand(MARK, stepUsageScript().file, "a1"), shell)).toBe(runCommand(root, stepUsageCommand(MARK, "a1"), shell));
+      }
+      expect(reads(runCommand(root, stepUsageCommand(MARK, "a1")))).toBe(5 + 1000 + 100);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

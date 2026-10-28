@@ -11,7 +11,9 @@
 // Steps run side by side (card 5e654dd1, stage 16): each of the session's own
 // calls is split equally across the attempts open at that line (claimed and
 // not yet completed, including claims that never finished), as the live
-// command does. Subagent calls count in full.
+// command does. Subagent calls count in full, but only those made from the
+// claim's time onward (a helper resumed for rework keeps its earlier rounds in
+// its file, and those belong to the earlier claim; card 1117ac6b, stage 5).
 //
 // Session share only (stage 3 of card 1117ac6b): with `sessionShareOnly`, no
 // subagent lines are read and each attempt is marked `adds_to_existing`, so the
@@ -160,7 +162,7 @@ function scanAttempts(lines) {
       const result = parseJson(resultText(b));
       if (kind === "claim_next_step") {
         if (result && result.done === false && result.step?.id && result.claim_token) {
-          latest = { stepId: result.step.id, from: index, agentIds: new Set() };
+          latest = { stepId: result.step.id, from: index, startedAt: o.timestamp ?? timestampOf(line) ?? nearestEarlierTimestamp(lines, index), agentIds: new Set() };
           open.set(result.claim_token, latest);
         }
         continue;
@@ -176,6 +178,7 @@ function scanAttempts(lines) {
         stepId: attempt.stepId,
         outcome,
         endedAt: o.timestamp ?? timestampOf(line) ?? nearestEarlierTimestamp(lines, index),
+        startedAt: attempt.startedAt,
         from: attempt.from,
         to: use.index,
         agentIds: [...attempt.agentIds],
@@ -213,8 +216,15 @@ export function backfillSession(lines, readAgent, { sessionShareOnly = false } =
         missing = true;
         break;
       }
-      // Only what the subagent did before the step closed: a later SendMessage isn't this step's.
-      agentLines.push(...agent.filter((l) => (timestampOf(l) ?? "") <= a.endedAt));
+      // Only what the subagent did while the step was open: a later SendMessage isn't this step's,
+      // and neither is an earlier round of a helper resumed for rework (card 1117ac6b, stage 5).
+      // A line with no timestamp is kept; with no claim time there is no lower bound.
+      agentLines.push(
+        ...agent.filter((l) => {
+          const t = timestampOf(l);
+          return (t ?? "") <= a.endedAt && !(a.startedAt && t && t < a.startedAt);
+        }),
+      );
     }
     const models = missing ? [] : totalCalls([...own, ...agentLines], weights);
     if (missing || models.length === 0 || !a.endedAt) {

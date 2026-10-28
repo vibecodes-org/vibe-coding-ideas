@@ -7024,7 +7024,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10750); // db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(11700); // card 1117ac6b stage 5: +~1,000 for the claim-closing and rework rules (long form only; live claims carry the short command); db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
