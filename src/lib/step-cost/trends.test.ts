@@ -202,3 +202,59 @@ describe("buildCostTrends run charts", () => {
     expect(few.summary.lastFullWeek).toMatchObject({ comparedWeeks: 1, changePct: null });
   });
 });
+
+describe("buildCostTrends unmeasured (card 1117ac6b stage 2)", () => {
+  const steps = [
+    step("s1", "r1", "Build", "2026-10-20T10:00:00Z"),
+    step("s2", "r1", "Review", "2026-10-21T10:00:00Z"),
+    step("s3", "r2", "Build", "2026-10-27T10:00:00Z"),
+    step("s4", "r2", "Review", "2026-10-27T11:00:00Z"),
+    step("s5", "r2", "Test", "2026-10-27T12:00:00Z"),
+  ];
+  const us = [usage("s1", "r1", 3), usage("s3", "r2", 2)];
+  const rec = (step_id: string, kind: "unavailable" | "no_transcript" | "unreadable" | "codex", reason: string | null, created_at: string) => ({ step_id, kind, reason, created_at });
+  const unmeasured = [
+    rec("s2", "no_transcript", "no-script", "2026-10-21T10:00:00Z"),
+    rec("s4", "no_transcript", "no-script", "2026-10-27T11:00:00Z"),
+    rec("s1", "unavailable", "no shell", "2026-10-19T10:00:00Z"), // s1 has a cost: stays costed
+  ];
+  const base = (o: Partial<TrendsInput> = {}) => input({ steps, runs: [run("r1"), run("r2")], usage: us, unmeasured, ...o });
+
+  it("costed + unmeasured + missing = finished in every bucket, at week and day grain", () => {
+    for (const grain of ["week", "day"] as const) {
+      const t = buildCostTrends(base({ grain }));
+      for (const b of t.cost) expect(b.costed + b.unmeasured).toBeLessThanOrEqual(b.finished);
+      const sum = (k: "finished" | "costed" | "unmeasured") => t.cost.reduce((a, b) => a + b[k], 0);
+      expect(sum("finished")).toBe(5);
+      expect(sum("costed")).toBe(2);
+      expect(sum("unmeasured")).toBe(2);
+    }
+    const wk = buildCostTrends(base()).cost.find((b) => b.start === "2026-10-26")!;
+    expect(wk).toMatchObject({ finished: 3, costed: 1, unmeasured: 1 }); // s5 is missing
+  });
+
+  it("a step with a cost counts as costed even if an attempt couldn't be measured", () => {
+    const t = buildCostTrends(base());
+    expect(t.cost.find((b) => b.start === "2026-10-19")).toMatchObject({ finished: 2, costed: 1, unmeasured: 1 });
+    expect(t.unmeasuredReasons.map((r) => r.steps).reduce((a, b) => a + b, 0)).toBe(2);
+  });
+
+  it("groups the reasons, uses each step's latest record, and sorts by steps then recency", () => {
+    const more = [
+      ...unmeasured,
+      rec("s5", "unavailable", "No  Shell", "2026-10-27T12:00:00Z"),
+      rec("s5", "unreadable", "not JSON", "2026-10-27T12:30:00Z"), // later record replaces s5's earlier one
+    ];
+    const t = buildCostTrends(base({ unmeasured: more }));
+    expect(t.unmeasuredReasons).toEqual([
+      { key: "no_transcript:no-script", kind: "no_transcript", reason: "no-script", steps: 2, lastAt: "2026-10-27T11:00:00Z" },
+      { key: "unreadable", kind: "unreadable", reason: "not JSON", steps: 1, lastAt: "2026-10-27T12:30:00Z" },
+    ]);
+  });
+
+  it("with no unmeasured input everything is zero and the list is empty", () => {
+    const t = buildCostTrends(base({ unmeasured: undefined }));
+    expect(t.cost.every((b) => b.unmeasured === 0)).toBe(true);
+    expect(t.unmeasuredReasons).toEqual([]);
+  });
+});

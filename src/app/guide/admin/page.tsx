@@ -179,7 +179,10 @@ export default function AdminPage() {
             work, from its local transcripts, and reports it with the step.
             A Claude step can&apos;t be finished without that report, or a
             stated reason it couldn&apos;t be made, so a cost is never lost
-            silently.
+            silently. When a session says why a step&apos;s cost couldn&apos;t
+            be measured, the reason is kept with the step, and the Token usage
+            page counts those steps separately from ones where nothing was
+            reported.
             Output tokens are estimated from text length, so totals are within
             about 10%. Codex steps and steps run in a different session from
             the one that claimed them show no cost.

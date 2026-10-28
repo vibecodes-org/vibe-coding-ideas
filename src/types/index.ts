@@ -57,6 +57,7 @@ export type AiPromptTemplate = Database["public"]["Tables"]["ai_prompt_templates
 export type TaskWorkflowStep = Database["public"]["Tables"]["task_workflow_steps"]["Row"];
 export type WorkflowStepComment = Database["public"]["Tables"]["workflow_step_comments"]["Row"];
 export type WorkflowStepUsage = Database["public"]["Tables"]["workflow_step_usage"]["Row"];
+export type WorkflowStepUnmeasured = Database["public"]["Tables"]["workflow_step_unmeasured"]["Row"];
 export type WorkflowTemplate = Database["public"]["Tables"]["workflow_templates"]["Row"];
 export type WorkflowAutoRule = Database["public"]["Tables"]["workflow_auto_rules"]["Row"];
 export type WorkflowRun = Database["public"]["Tables"]["workflow_runs"]["Row"];

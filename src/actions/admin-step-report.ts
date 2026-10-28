@@ -14,7 +14,7 @@ import {
   type ReportUsageRow,
   type StepPerformanceReport,
 } from "@/lib/step-cost/report";
-import { buildCostTrends, type CostTrends } from "@/lib/step-cost/trends";
+import { buildCostTrends, type CostTrends, type TrendsUnmeasuredRow } from "@/lib/step-cost/trends";
 import { backfillFileSchema } from "@/lib/step-cost/usage-schema";
 import { readAll, readAllByIds, readByIds } from "@/lib/step-cost/paging";
 
@@ -118,6 +118,17 @@ export async function getStepPerformanceReport(params: {
     return [] as (ReportUsageRow & { created_at?: string })[];
   });
 
+  // Card 1117ac6b stage 2: why some steps have no cost. Until migration 00204 is applied the table
+  // is absent: show no reasons rather than no report.
+  const unmeasured = await readAll<TrendsUnmeasuredRow>((from, to) => {
+    let q = db.from("workflow_step_unmeasured").select("step_id, kind, reason, created_at");
+    if (board) q = q.eq("idea_id", board);
+    return q.order("id").range(from, to);
+  }).catch((err: unknown) => {
+    logger.warn("step report: unmeasured read failed, showing no reasons", { error: err instanceof Error ? err.message : String(err) });
+    return [] as TrendsUnmeasuredRow[];
+  });
+
   // Board choices: every board that has a workflow template.
   const boardIdeaIds = [...new Set(templates.map((t) => t.idea_id))];
   const boards = (
@@ -134,6 +145,7 @@ export async function getStepPerformanceReport(params: {
       comments,
       botIds,
       usage,
+      unmeasured,
       grain: params.period === "30" ? "day" : "week",
       from: since,
       now: new Date(),

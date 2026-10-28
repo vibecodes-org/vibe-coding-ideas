@@ -5,6 +5,7 @@
 // Days and weeks are UK time; weeks run Monday to Sunday.
 
 import { priceKey, usageCost } from "./pricing";
+import { unmeasuredGroupKey, type UnmeasuredKind } from "./unmeasured";
 import {
   countedSteps,
   median,
@@ -20,6 +21,14 @@ import {
 /** A recorded attempt; created_at says when, for a step that was sent back and is waiting to re-run. */
 export type TrendsUsageRow = ReportUsageRow & { created_at?: string };
 
+/** A "couldn't measure" record (workflow_step_unmeasured), one per finished attempt. */
+export interface TrendsUnmeasuredRow {
+  step_id: string;
+  kind: UnmeasuredKind;
+  reason: string | null;
+  created_at: string;
+}
+
 export type TrendsGrain = "day" | "week";
 
 export interface TrendsInput {
@@ -30,6 +39,8 @@ export interface TrendsInput {
   comments: ReportCommentRow[];
   botIds: Set<string>;
   usage: TrendsUsageRow[];
+  /** Why some finished steps have no cost. Optional: absent (or empty) means every gap is "missing". */
+  unmeasured?: TrendsUnmeasuredRow[];
   /** Bars are days or weeks; the run charts are always weeks. */
   grain: TrendsGrain;
   /** Start of the period (ISO), or null for all time: then the first recorded step starts the chart. */
@@ -51,6 +62,18 @@ export interface CostBucket {
   /** Finished steps in the bucket, and how many of them have a cost recorded. */
   finished: number;
   costed: number;
+  /** Of the rest: no cost, but a record says why. Missing (nothing reported) is finished - costed - unmeasured. */
+  unmeasured: number;
+}
+
+/** One reason a cost couldn't be measured, over the steps in the period that have no cost. */
+export interface UnmeasuredReason {
+  key: string;
+  kind: UnmeasuredKind;
+  reason: string | null;
+  steps: number;
+  /** When the latest such record was made (ISO). */
+  lastAt: string;
 }
 
 export interface RunCostSeries {
@@ -80,6 +103,8 @@ export interface CostTrends {
   weeks: CostBucket[];
   runCost: RunCostSeries[];
   sentBack: SentBackWeek[];
+  /** Most common first. Built from each uncosted counted step's latest record. */
+  unmeasuredReasons: UnmeasuredReason[];
   summary: TrendsSummary;
 }
 
@@ -145,6 +170,13 @@ export function buildCostTrends(input: TrendsInput): CostTrends {
   const days = new Map(counted.map((c) => [c.step.id, ukDay(c.when!)]));
   const { stepCost } = stepCostsFor(input.usage, new Set(counted.map((c) => c.step.id)));
 
+  // The latest "couldn't measure" record of each step (a cost, if any, wins over it).
+  const latestUnmeasured = new Map<string, TrendsUnmeasuredRow>();
+  for (const u of input.unmeasured ?? []) {
+    const prev = latestUnmeasured.get(u.step_id);
+    if (!prev || u.created_at > prev.created_at) latestUnmeasured.set(u.step_id, u);
+  }
+
   // Cost by model family, per step (only steps with a cost; the rest are "no cost", never zero).
   const familyCost = new Map<string, { opus: number; sonnet: number; other: number }>();
   for (const u of input.usage) {
@@ -167,7 +199,7 @@ export function buildCostTrends(input: TrendsInput): CostTrends {
     const byStart = new Map<string, CostBucket>(
       starts.map((start) => [
         start,
-        { start, partial: grain === "day" ? start === today : addDays(start, 6) >= today, cutShort: grain === "week" && !!input.from && start < firstDay, opus: 0, sonnet: 0, other: 0, total: 0, finished: 0, costed: 0 },
+        { start, partial: grain === "day" ? start === today : addDays(start, 6) >= today, cutShort: grain === "week" && !!input.from && start < firstDay, opus: 0, sonnet: 0, other: 0, total: 0, finished: 0, costed: 0, unmeasured: 0 },
       ])
     );
     for (const c of counted) {
@@ -175,7 +207,10 @@ export function buildCostTrends(input: TrendsInput): CostTrends {
       if (!b) continue; // a step dated after today (clock skew)
       b.finished++;
       const cost = stepCost.get(c.step.id);
-      if (cost === undefined) continue;
+      if (cost === undefined) {
+        if (latestUnmeasured.has(c.step.id)) b.unmeasured++;
+        continue;
+      }
       b.costed++;
       b.total += cost;
       const f = familyCost.get(c.step.id)!;
@@ -244,6 +279,23 @@ export function buildCostTrends(input: TrendsInput): CostTrends {
         return { start: w.start, median: median(costs), runs: costs.length };
       }),
     }));
+  const weekStarts = new Set(weeks.map((w) => w.start));
+  // Reasons: one line per reason over every counted step in view that has no cost.
+  const reasons = new Map<string, UnmeasuredReason>();
+  for (const c of counted) {
+    const rec = latestUnmeasured.get(c.step.id);
+    if (!rec || stepCost.has(c.step.id) || !weekStarts.has(mondayOf(days.get(c.step.id)!))) continue;
+    const key = unmeasuredGroupKey(rec.kind, rec.reason);
+    const cur = reasons.get(key);
+    if (cur) {
+      cur.steps++;
+      if (rec.created_at > cur.lastAt) cur.lastAt = rec.created_at;
+    } else {
+      reasons.set(key, { key, kind: rec.kind, reason: rec.reason, steps: 1, lastAt: rec.created_at });
+    }
+  }
+  const unmeasuredReasons = [...reasons.values()].sort((a, b) => b.steps - a.steps || (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
+
   const sentBack: SentBackWeek[] = weeks.map((w) => ({ start: w.start, partial: w.partial, ...sent.get(w.start)! }));
 
   // Summary
@@ -264,5 +316,5 @@ export function buildCostTrends(input: TrendsInput): CostTrends {
     workflowMoves.push({ name: series.name, fromStart: a.start, toStart: b.start, from: a.median!, to: b.median! });
   }
 
-  return { grain: input.grain, cost, weeks, runCost, sentBack, summary: { lastFullWeek, workflowMoves } };
+  return { grain: input.grain, cost, weeks, runCost, sentBack, unmeasuredReasons, summary: { lastFullWeek, workflowMoves } };
 }
