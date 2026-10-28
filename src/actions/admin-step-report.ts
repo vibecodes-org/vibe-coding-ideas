@@ -14,6 +14,7 @@ import {
   type ReportUsageRow,
   type StepPerformanceReport,
 } from "@/lib/step-cost/report";
+import { buildCostTrends, type CostTrends } from "@/lib/step-cost/trends";
 import { backfillFileSchema } from "@/lib/step-cost/usage-schema";
 import { readAll, readAllByIds, readByIds } from "@/lib/step-cost/paging";
 
@@ -27,6 +28,7 @@ export interface StepReportBoard { id: string; title: string }
 
 export interface StepReportResult {
   report: StepPerformanceReport;
+  trends: CostTrends;
   boards: StepReportBoard[];
 }
 
@@ -104,16 +106,16 @@ export async function getStepPerformanceReport(params: {
   );
 
   // Until migration 00196 is applied there is no usage table: show no cost rather than no report.
-  const usage = await readAll<ReportUsageRow>((from, to) => {
+  const usage = await readAll<ReportUsageRow & { created_at?: string }>((from, to) => {
     let q = db
       .from("workflow_step_usage")
-      .select("step_id, run_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens");
+      .select("step_id, run_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens, created_at");
     // No date filter: every attempt of a step that ran in the period counts, even one before it.
     if (board) q = q.eq("idea_id", board);
     return q.order("id").range(from, to);
   }).catch((err: unknown) => {
     logger.warn("step report: usage read failed, showing no cost", { error: err instanceof Error ? err.message : String(err) });
-    return [] as ReportUsageRow[];
+    return [] as (ReportUsageRow & { created_at?: string })[];
   });
 
   // Board choices: every board that has a workflow template.
@@ -124,6 +126,18 @@ export async function getStepPerformanceReport(params: {
 
   return {
     report: buildStepPerformanceReport({ steps, runs, templates, comments, botIds, usage, runSteps, singleBoard: !!board }),
+    // Bars are days for the 30-day view, weeks otherwise; same rows as the report, so the bars add up to its tiles.
+    trends: buildCostTrends({
+      steps,
+      runs,
+      templates,
+      comments,
+      botIds,
+      usage,
+      grain: params.period === "30" ? "day" : "week",
+      from: since,
+      now: new Date(),
+    }),
     boards,
   };
 }

@@ -7,7 +7,7 @@
 
 import { MODEL_PRICES, priceKey } from "./pricing";
 import {
-  caughtOrRejectedStepIds,
+  countedSteps,
   isWholeRun,
   median,
   stepCostsFor,
@@ -20,8 +20,6 @@ import {
 export type WeeklyUsageRow = ReportUsageRow & { created_at?: string };
 
 const WEEK_MS = 7 * 86_400_000;
-/** Statuses that mean the step finished an attempt (same set as the admin report). */
-const RAN = new Set(["completed", "failed", "awaiting_approval"]);
 
 export interface WeeklyStepRow {
   id: string;
@@ -116,7 +114,6 @@ const zeros = (n: number) => Array.from({ length: n }, () => 0);
 export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   const { weekEndsAt, weeks } = input;
   const idx = (iso: string | null) => weekIndex(iso, weekEndsAt, weeks);
-  const stepWhen = (s: WeeklyStepRow) => s.completed_at ?? s.started_at;
 
   const runs = new Map(input.runs.map((r) => [r.id, r]));
   // Same-named workflows on different boards are combined, as in the admin all-boards report.
@@ -138,21 +135,22 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   // earlier attempt's cost doesn't vanish. A step that only has cost (for
   // example one from a run that was reset) does not.
   const sentBackStepIds = new Set(input.comments.filter((c) => c.type === "changes_requested").map((c) => c.step_id));
-  const waitingCounted = caughtOrRejectedStepIds({ steps: input.steps, comments: input.comments, botIds: input.botIds });
   const lastUsage = new Map<string, string>();
   for (const u of input.usage) {
     if (u.created_at && u.created_at > (lastUsage.get(u.step_id) ?? "")) lastUsage.set(u.step_id, u.created_at);
   }
   const counted: (WeeklyStepRow & { week: number; wf: string })[] = [];
-  for (const s of input.steps) {
-    if (!s.run_id) continue;
-    const waiting = !RAN.has(s.status) && waitingCounted.has(s.id);
-    if (!RAN.has(s.status) && !waiting) continue;
-    const week = idx(waiting ? lastUsage.get(s.id) ?? stepWhen(s) : stepWhen(s));
+  for (const { step: s, when, templateId } of countedSteps({
+    steps: input.steps,
+    runs: input.runs,
+    templates: input.templates,
+    comments: input.comments,
+    botIds: input.botIds,
+    lastUsage,
+  })) {
+    const week = idx(when);
     if (week < 0) continue;
-    const template = templates.get(runs.get(s.run_id)?.template_id ?? "");
-    if (!template) continue;
-    counted.push({ ...s, week, wf: template.name.trim().toLowerCase() });
+    counted.push({ ...s, week, wf: templates.get(templateId)!.name.trim().toLowerCase() });
   }
 
   const { stepCost, unpricedModels } = stepCostsFor(input.usage, new Set(counted.map((s) => s.id)));

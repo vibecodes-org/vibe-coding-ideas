@@ -16,6 +16,22 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    isoDate: "2026-10-28",
+    date: "28 October 2026",
+    title: "Token usage: see whether costs are going up or down",
+    items: [
+      {
+        type: "feature",
+        description:
+          "The admin Reports tab is now Token usage. Above the tables it has three charts: cost per week (or per day for 30 days) split by model with the dates cost-saving changes went live marked, the typical cost of a finished run for each busy workflow, and the share of runs sent back at least once.",
+      },
+      {
+        type: "improvement",
+        description: "The admin AI Usage tab is now called In-app AI, since it only covers the app's own AI buttons.",
+      },
+    ],
+  },
+  {
     isoDate: "2026-10-24",
     date: "24 October 2026",
     title: "Shorter workflow replies, helpers save their own write-ups",

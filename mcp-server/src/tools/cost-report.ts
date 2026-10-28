@@ -19,7 +19,7 @@ import type { McpContext } from "../context";
 // figures as raw weekly series, for the caller's own boards only. Read-only.
 // Returns names, ids and numbers: never card titles, card content, prompts or
 // outputs. Pricing, per-step cost and medians come from src/lib/step-cost, the
-// same code as Admin > Reports > Step Performance.
+// same code as Admin > Token usage.
 
 /** The reply (compact JSON, see compactResult) stays under this many characters. */
 export const MAX_REPORT_CHARS = 12_000;

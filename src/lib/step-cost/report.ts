@@ -220,6 +220,47 @@ export function caughtOrRejectedStepIds(input: SignalInput): Set<string> {
   return ids;
 }
 
+export interface CountableStep {
+  id: string;
+  run_id: string | null;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  human_check_required: boolean;
+}
+
+/**
+ * Which steps count, and when each one happened. Shared by the weekly cost
+ * tool and the Token usage charts so they agree with the report's own rule:
+ * a step that finished an attempt, on a run whose workflow is known. A step
+ * waiting to re-run (caught by a send-back, or rejected at its gate) still
+ * counts, at the time of its latest recorded attempt (`lastUsage`), so its
+ * earlier attempt's cost doesn't vanish. `when` is null when there is no time.
+ */
+export function countedSteps<S extends CountableStep>(input: {
+  steps: S[];
+  runs: { id: string; template_id: string | null }[];
+  templates: { id: string }[];
+  comments: ReportCommentRow[];
+  botIds: Set<string>;
+  lastUsage?: Map<string, string>;
+}): { step: S; when: string | null; templateId: string }[] {
+  const runs = new Map(input.runs.map((r) => [r.id, r]));
+  const templateIds = new Set(input.templates.map((t) => t.id));
+  const waitingCounted = caughtOrRejectedStepIds({ steps: input.steps, comments: input.comments, botIds: input.botIds });
+  const out: { step: S; when: string | null; templateId: string }[] = [];
+  for (const s of input.steps) {
+    if (!s.run_id) continue;
+    const waiting = !RAN.has(s.status) && waitingCounted.has(s.id);
+    if (!RAN.has(s.status) && !waiting) continue;
+    const templateId = runs.get(s.run_id)?.template_id ?? "";
+    if (!templateIds.has(templateId)) continue;
+    const own = s.completed_at ?? s.started_at;
+    out.push({ step: s, when: waiting ? input.lastUsage?.get(s.id) ?? own : own, templateId });
+  }
+  return out;
+}
+
 /**
  * Cost per step (every attempt, every model) for the steps in `counted`. A step
  * with any usage from a model that has no price gets no cost rather than a cost
