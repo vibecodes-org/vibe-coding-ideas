@@ -139,6 +139,27 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
   }
   const last = (out: string) => out.trim().split("\n").pop();
 
+  // Card db4c7f7b: the command is saved to a file by the session's write tool
+  // and run as `sh <file>`, so it must work under plain sh, not only bash -c.
+  it("saved to a script file, runs under plain sh with the same outcome", () => {
+    const { repo, home } = sandbox();
+    const script = join(repo, "agent-sync.sh");
+    writeFileSync(script, cmd());
+    const out = spawnSync("sh", [script], { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, NODE_ENV: "test" as const } });
+    expect(last(out.stdout)).toBe("NEW_FOLDER");
+    expect(existsSync(join(repo, ".claude", "agents", `${NAME}.md`))).toBe(true);
+  });
+
+  it("run as a script, a fingerprint mismatch still deletes everything", () => {
+    const { repo, home } = sandbox();
+    const script = join(repo, "agent-sync.sh");
+    writeFileSync(script, cmd({ sha256: "0".repeat(64) }));
+    const out = spawnSync("sh", [script], { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: home, NODE_ENV: "test" as const } });
+    expect(out.status).toBe(3);
+    expect(out.stdout).toContain("MISMATCH");
+    expect(readdirSync(join(repo, ".claude", "agents"))).toEqual([]);
+  });
+
   it("is valid bash and contains no network tool", () => {
     expect(spawnSync("bash", ["-n"], { input: cmd(), encoding: "utf8" }).status).toBe(0);
     expect(cmd()).not.toMatch(/curl|wget|http/i);

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { McpContext } from "../context";
-import { syncBoardAgents, syncBoardAgentsContent, SYNC_MAX_RESULT_SIZE_CHARS } from "./agent-sync";
+import { syncBoardAgents, syncBoardAgentsContent, agentSyncScriptPath, SYNC_MAX_RESULT_SIZE_CHARS } from "./agent-sync";
 import { agentFileFingerprint, parseAgentFile, AGENT_FILE_MAX_BYTES } from "../../../src/lib/terminal/session-agent-files";
 import { sessionAgentClaimHint } from "../../../src/lib/terminal/session-agents";
 
@@ -85,7 +85,7 @@ describe("sync_board_agents", () => {
     expect(res.omitted_agents).toBe(0);
     for (const a of res.agents) expect(res.command).toContain(a.name);
     expect(syncBoardAgentsContent(res).content).toHaveLength(2);
-    expect(Object.keys(JSON.parse(syncBoardAgentsContent(res).content[0].text))).toEqual(["status", "agents", "omitted_agents", "instruction"]);
+    expect(Object.keys(JSON.parse(syncBoardAgentsContent(res).content[0].text))).toEqual(["status", "script_path", "run_command", "agents", "omitted_agents", "instruction"]);
   });
 
   it("needs no network and no secret: the command has no download tool", async () => {
@@ -110,7 +110,7 @@ describe("sync_board_agents", () => {
     const { content } = syncBoardAgentsContent(res);
     expect(content).toHaveLength(2);
     const summary = JSON.parse(content[0].text);
-    expect(Object.keys(summary)).toEqual(["status", "agents", "omitted_agents", "instruction"]);
+    expect(Object.keys(summary)).toEqual(["status", "script_path", "run_command", "agents", "omitted_agents", "instruction"]);
     expect(summary.agents[0]).toMatchObject({ name: "vc-atlas-37e8ffb2-frontier", bytes: expect.any(Number) });
     if (res.status !== "ok") throw new Error("expected ok");
     expect(content[1].text).toBe(res.command);
@@ -143,6 +143,31 @@ describe("sync_board_agents", () => {
     expect(instruction).toMatch(/another tier or effort suffix/);
     expect(instruction).toMatch(/STOP: tell the user plainly/);
     expect(instruction).toMatch(/explicitly say yes/);
+  });
+
+  // Card db4c7f7b (E): a long multi-line command was refused by a session's
+  // command-safety check. The install now goes through the file-write tool and
+  // one short line. These fail on the old text, which had no script_path.
+  it("hands back a script path and a one-line run command, and tells the session to write the script with its file-write tool", async () => {
+    const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.script_path).toMatch(/^~\/\.claude\/vibecodes\/agent-sync-[0-9a-f]{8}\.sh$/);
+    expect(res.run_command).toBe(`sh ${res.script_path}`);
+    expect(res.run_command.length).toBeLessThan(80);
+    expect(res.run_command).not.toContain("\n");
+    expect(res.instruction).toMatch(/file-write tool/);
+    expect(res.instruction).toContain("`script_path`");
+    expect(res.instruction).toContain("`run_command`");
+    expect(res.instruction).toMatch(/Only if you have no file-write tool, run the SECOND block itself/);
+    // Same files give the same path; different files a different one.
+    const again = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    if (again.status !== "ok") throw new Error("expected ok");
+    expect(again.script_path).toBe(res.script_path);
+    expect(agentSyncScriptPath(["a"])).not.toBe(agentSyncScriptPath(["b"]));
+    
+    // The reply summary carries both fields; the script itself stays the raw second block.
+    const summary = JSON.parse(syncBoardAgentsContent(res).content[0].text);
+    expect(summary.run_command).toBe(res.run_command);
   });
 
   it("tells the session every listed agent is loaded after READY, even if its listing shows an older tag", async () => {
