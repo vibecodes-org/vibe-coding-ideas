@@ -21,7 +21,7 @@ describe("step usage command delivery (stage 2b)", () => {
   it("on: the claim carries the short command, which falls back to NO_TRANSCRIPT", () => {
     const command = stepUsageCommandForClaim(MARK, { STEP_USAGE_SHORT_COMMAND: "1" });
     expect(command).toBe(stepUsageShortCommand(MARK));
-    expect(command).toContain('echo "NO_TRANSCRIPT no-script"');
-    expect(command.length).toBeLessThan(260);
+    expect(command).toContain(`echo "NO_TRANSCRIPT no-script $m"`);
+    expect(command.length).toBeLessThan(275);
   });
 });

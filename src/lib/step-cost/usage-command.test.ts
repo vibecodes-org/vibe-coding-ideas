@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newUsageMarker, stepUsageCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -299,7 +299,7 @@ describe("saved step-usage script and the short command", () => {
 
   it("the short command is about 200 characters and carries the marker, not the program", () => {
     const command = stepUsageShortCommand(MARK);
-    expect(command.length).toBeLessThan(260);
+    expect(command.length).toBeLessThan(275);
     expect(command).toContain(MARK);
     expect(command).toContain(`ids='${USAGE_COMMAND_PLACEHOLDER}'`.replace("ids=", ""));
     expect(command).not.toContain("awk");
@@ -320,10 +320,73 @@ describe("saved step-usage script and the short command", () => {
     for (const contents of [null, ""]) {
       const root = withScript(contents);
       try {
-        expect(runCommand(root, stepUsageShortCommand(MARK))).toBe("NO_TRANSCRIPT no-script");
+        expect(runCommand(root, stepUsageShortCommand(MARK))).toBe(`NO_TRANSCRIPT no-script ${MARK}`);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("prints only the script's own output when the script exits non-zero (no second no-script line)", () => {
+    const root = withScript("#!/bin/sh\necho partial\nexit 1\n");
+    try {
+      expect(runCommand(root, stepUsageShortCommand(MARK))).toBe("partial");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("noScriptMarker reads only the exact marker-carrying line", () => {
+    expect(noScriptMarker(`NO_TRANSCRIPT no-script ${MARK}`)).toBe(MARK);
+    expect(noScriptMarker(`  NO_TRANSCRIPT no-script ${MARK}\n`)).toBe(MARK);
+    for (const v of ["NO_TRANSCRIPT no-script", "NO_TRANSCRIPT", `NO_TRANSCRIPT no-script ${MARK} x`, "NO_TRANSCRIPT no-script vcu_XYZ", undefined, 5, {}]) {
+      expect(noScriptMarker(v)).toBeNull();
+    }
+  });
+
+  it("end to end with no saved script: the no-script line, then the full command's real totals, and nothing written", () => {
+    const root = withScript(null);
+    try {
+      const first = runCommand(root, stepUsageShortCommand(MARK));
+      const marker = noScriptMarker(first);
+      expect(marker).toBe(MARK);
+      const second = runCommand(root, stepUsageCommand(marker as string));
+      expect(JSON.parse(second).models[0].calls).toBeGreaterThan(0);
+      expect(second).not.toContain("no-script");
+      expect(existsSync(join(root, "vibecodes"))).toBe(false);
+      expect(existsSync(join(root, "nohome"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("the full command never prints a no-script line, so it can't be refused twice", () => {
+    const root = sandbox({}, []);
+    try {
+      for (const cmd of [stepUsageCommand(MARK), stepUsageCommand(MARK, "missing1"), stepUsageCommand(MARK, "bad;id")]) {
+        expect(runCommand(root, cmd)).toMatch(/^NO_TRANSCRIPT/);
+        expect(runCommand(root, cmd)).not.toContain("no-script");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("a top-level cache write of 0 beside a 1h figure floors the 5-minute share at 0, in both forms", () => {
+    const odd = JSON.parse(line({ id: "msg_neg", model: "claude-opus-5-5", block: text("x".repeat(35)), read: 10, main: true }));
+    odd.message.usage.cache_creation_input_tokens = 0;
+    odd.message.usage.cache_creation = { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 789 };
+    const root = sandbox({}, [claimLine, JSON.stringify(odd)]);
+    mkdirSync(join(root, "vibecodes"), { recursive: true });
+    writeFileSync(join(root, "vibecodes", file), body);
+    try {
+      for (const out of [runCommand(root, stepUsageCommand(MARK)), runCommand(root, stepUsageShortCommand(MARK))]) {
+        const m = JSON.parse(out).models[0];
+        expect(m.cache_write_5m_tokens).toBe(0);
+        expect(m.cache_write_1h_tokens).toBe(789);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

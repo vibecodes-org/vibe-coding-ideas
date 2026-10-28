@@ -8,8 +8,10 @@
 // reach Nick's Mac, then switch this on. Off, every claim is unchanged.
 //
 // Even switched on, a session without the file (not launched by the helper)
-// prints "NO_TRANSCRIPT no-script", which the hand-off already treats as "leave
-// usage out": the step's cost is missing, the step is never blocked.
+// prints "NO_TRANSCRIPT no-script <marker>". complete_step/fail_step answer
+// that once with the full command to run instead (step-usage.ts); nothing is
+// ever saved to the machine. The older marker-less line is still accepted as
+// "couldn't measure".
 
 import { stepUsageCommand, stepUsageShortCommand } from "../../../src/lib/step-cost/usage-command";
 

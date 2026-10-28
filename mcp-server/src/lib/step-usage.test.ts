@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { missingUsageError, recordStepUsage, stepUsageSchema, type StepUsage } from "./step-usage";
+import { floorNegativeTokens, missingUsageError, noScriptRetryMessage, recordStepUsage, stepUsageSchema, type StepUsage } from "./step-usage";
+import { noScriptMarker, stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
 import type { McpContext } from "../context";
 import { logger } from "../../../src/lib/logger";
 
@@ -87,6 +88,27 @@ describe("recordStepUsage", () => {
 // with no cost, and complete_step accepted it silently.
 describe("missingUsageError", () => {
   const CT = "ct_abc";
+  const MARK = "vcu_0123456789abcdef01234567";
+  it("answers a marker-carrying no-script line with the full command, once, and no wording about saving anything", () => {
+    const msg = missingUsageError({ claim_token: CT, usage: `NO_TRANSCRIPT no-script ${MARK}` });
+    expect(msg).toBe(noScriptRetryMessage(MARK));
+    expect(msg).toContain(stepUsageCommand(MARK));
+    expect(msg).toContain("AGENT_ID");
+    expect(msg).toContain("usage_unavailable");
+    expect(msg).toMatch(/claim_token is still valid/);
+    const prose = msg!.replace(stepUsageCommand(MARK), "");
+    expect(prose).not.toMatch(/save|write|install/i);
+    // The command itself never produces a line that would be refused again.
+    expect(noScriptMarker(msg!)).toBeNull();
+  });
+
+  it("leaves the older marker-less no-script line, other NO_TRANSCRIPT lines, Codex and no-claim calls alone", () => {
+    expect(missingUsageError({ claim_token: CT, usage: "NO_TRANSCRIPT no-script" })).toBeNull();
+    expect(missingUsageError({ claim_token: CT, usage: "NO_TRANSCRIPT a1b2" })).toBeNull();
+    expect(missingUsageError({ claim_token: CT, agent: "codex", usage: `NO_TRANSCRIPT no-script ${MARK}` })).toBeNull();
+    expect(missingUsageError({ usage: `NO_TRANSCRIPT no-script ${MARK}` })).toBeNull();
+  });
+
   it("refuses a Claude-claimed attempt that reports no usage at all", () => {
     for (const usage of [undefined, null, "", "   "]) {
       expect(missingUsageError({ claim_token: CT, usage })).toMatch(/usage_command/);
@@ -167,6 +189,26 @@ describe("recordStepUsage — lasting record when the cost couldn't be measured"
     expect(wrong.row).toMatchObject({ kind: "unreadable" });
     expect(typeof wrong.row!.reason).toBe("string");
     expect(wrong.insert).not.toHaveBeenCalled();
+  });
+
+  it("a negative token count is floored at zero and the cost is stored, not dropped", async () => {
+    const neg = { models: [{ ...USAGE.models[0], cache_write_5m_tokens: -789 }], output_estimated: true };
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    try {
+      const { insert, unmeasured } = await run(neg);
+      expect(unmeasured).not.toHaveBeenCalled();
+      expect(((insert.mock.calls[0] as unknown[])[0] as Record<string, unknown>[])[0]).toMatchObject({ cache_write_5m_tokens: 0, input_tokens: 18 });
+      expect(info).toHaveBeenCalledWith(expect.stringContaining("floored"), expect.objectContaining({ stepId: STEP.id }));
+      expect((await run(JSON.stringify(neg))).insert).toHaveBeenCalledTimes(1);
+    } finally {
+      info.mockRestore();
+    }
+    expect(floorNegativeTokens(USAGE)).toBe(USAGE);
+    expect((await run({ models: [{ ...USAGE.models[0], input_tokens: 1.5 }] })).row).toMatchObject({ kind: "unreadable" });
+  });
+
+  it("a marker-carrying no-script line that gets past the refusal is stored as the plain no-script reason", async () => {
+    expect((await run("NO_TRANSCRIPT no-script vcu_0123456789abcdef01234567")).row).toMatchObject({ kind: "no_transcript", reason: "no-script" });
   });
 
   it("valid usage writes cost rows and no unmeasured record", async () => {
