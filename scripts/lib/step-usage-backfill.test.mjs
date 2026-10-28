@@ -118,6 +118,16 @@ describe("backfillSession", () => {
     expect(read[STEP2]).toBe(2300);
   });
 
+  it("leaves out a resumed subagent's rounds from before the claim (card 1117ac6b, stage 5)", () => {
+    const twoRounds = [
+      call("msg_r1", { model: "claude-sonnet-5-5", read: 700, sidechain: true, time: "2026-10-15T09:00:00.000Z" }),
+      ...agent,
+    ];
+    const { attempts } = backfillSession(session(), (id) => (id === "agentA" ? twoRounds : null));
+    const sonnet = attempts[0].models.find((m) => m.model === "claude-sonnet-5-5");
+    expect(sonnet).toMatchObject({ calls: 1, cache_read_tokens: 300 });
+  });
+
   it("skips an attempt whose subagent transcript is gone rather than under-counting it", () => {
     const { attempts, skipped } = backfillSession(session(), () => null);
     expect(skipped).toBe(1);

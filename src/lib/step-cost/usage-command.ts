@@ -11,9 +11,20 @@
 // the session's calls is split equally across the steps open at that moment,
 // so the coordinator's work is counted once in total rather than once per
 // open step (26 Oct 2026: five bugs at once showed Opus $21, about $16 real).
-// A step is open from the first line holding its marker (the claim) until a
-// Bash call holding it (the session running that step's usage command); the
-// step's own count stops there. Subagent calls always count in full.
+// A step is open from its claim to the first of: a Bash call holding its
+// marker (the session running that step's usage command), or the accepted
+// result (no is_error) of a complete_step/fail_step call carrying its claim
+// token (card 1117ac6b, stage 5: a step finished without its usage run used
+// to stay open for ever and shrink every later step's share). Only a real
+// claim opens a step: the line where a marker first appears must also hold a
+// claim token (ct_ + 48 hex), or the marker is this command's own. Stray
+// copies of a marker (a search of old transcripts, say) never join. The
+// step's own count stops at its own usage run. Subagent calls count in full,
+// from the claim's time onward: a subagent resumed for rework keeps its
+// earlier rounds in its file, and those belong to the earlier claim. A claim
+// line with no timestamp counts every subagent call. The script's file name
+// carries its hash, so a machine keeps running its older saved copy until the
+// helper next starts a session and saves this one.
 //
 // Claude Code writes the session's transcript to
 // ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<project>/<session>.jsonl and each
@@ -47,17 +58,28 @@ export const USAGE_COMMAND_PLACEHOLDER = "AGENT_ID";
 const AWK_PROGRAM = String.raw`
 FILENAME == main {
   if (done) next
-  sk = !on; if (!on && index($0, mark)) on = 1
+  sk = !on; if (!on && index($0, mark)) { on = 1; if (match($0, /"timestamp":"[^"]+"/)) t0 = substr($0, RSTART + 13, RLENGTH - 14) }
   if (/"isSidechain":true/) next
-  cl = /"type":"assistant"/ && /"name":"Bash"/; r = $0; nk = 0; split("", ln)
-  while (match(r, /vcu_[0-9a-f]+/)) { k = substr(r, RSTART, RLENGTH); r = substr(r, RSTART + RLENGTH); if (k in ln) continue; ln[k] = 1; if (!(k in sn)) { sn[k] = 1; lv[k] = 1; nl++ } else if (cl && (k in lv)) sh[++nk] = k }
+  cl = /"type":"assistant"/ && /"name":"Bash"/; r = $0; nk = 0; split("", ln); ct = ctok($0)
+  while (match(r, /vcu_[0-9a-f]+/)) {
+    k = substr(r, RSTART, RLENGTH); r = substr(r, RSTART + RLENGTH); if (k in ln) continue; ln[k] = 1
+    if (!(k in sn)) { sn[k] = 1; if (ct != "" || k == mark) { lv[k] = 1; nl++; if (ct != "") tk[ct] = tk[ct] " " k } }
+    else { if (cl && (k in lv)) sh[++nk] = k; if (cl && k == mark && !sk) done = 1 }
+  }
+  if (/"type":"assistant"/ && /"name":"[^"]*__(complete|fail)_step"/ && ct != "" && match($0, /"id":"toolu_[A-Za-z0-9_]+"/)) pc[substr($0, RSTART + 6, RLENGTH - 7)] = ct
+  if (match($0, /"tool_use_id":"[A-Za-z0-9_]+"/)) {
+    tid = substr($0, RSTART + 15, RLENGTH - 16)
+    if (tid in pc) { if (!/"is_error":true/) { nn = split(tk[pc[tid]], cm, " "); for (j = 1; j <= nn; j++) if (cm[j] in lv) sh[++nk] = cm[j] } delete pc[tid] }
+  }
   lw = 1 / (nl ? nl : 1)
-  for (j = 1; j <= nk; j++) { delete lv[sh[j]]; nl--; if (sh[j] == mark) done = 1 }
+  for (j = 1; j <= nk; j++) if (sh[j] in lv) { delete lv[sh[j]]; nl-- }
   if (sk) next
 }
+function ctok(s) { while (match(s, /ct_[0-9a-f]+/)) { if (RLENGTH == 51) return substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH) } return "" }
 function q(x) { return int(x + 0.5) }
 function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return substr(s, RSTART + length(key) + 3, RLENGTH - length(key) - 3) + 0; return 0 }
 /"type":"assistant"/ {
+  if (FILENAME != main && t0 != "" && match($0, /"timestamp":"[^"]+"/) && substr($0, RSTART + 13, RLENGTH - 14) < t0) next
   if (!match($0, /"id":"msg_[A-Za-z0-9_]+"/)) next
   id = substr($0, RSTART + 6, RLENGTH - 7)
   rest = $0; u = ""
