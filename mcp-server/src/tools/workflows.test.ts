@@ -33,6 +33,7 @@ import {
   resolveModelTier,
   resolveTierAdherence,
   resolvePersonaAdherence,
+  personaReportNativeNamed,
   addStepComment,
   addStepCommentSchema,
   resetWorkflow,
@@ -6133,21 +6134,25 @@ describe("resolvePersonaAdherence", () => {
   // Card db4c7f7b: a stand-in subagent can't have run the persona verbatim.
   const BOT = "54dc8eca-1111-4222-8333-444455556666";
   it("downgrades 'verbatim' to 'adapted' when the spawned subagent is general-purpose", () => {
-    expect(resolvePersonaAdherence("verbatim", "general-purpose", BOT)).toEqual({ personaUsed: "adapted", personaHonored: false });
+    expect(resolvePersonaAdherence("verbatim", "general-purpose", BOT, true)).toEqual({ personaUsed: "adapted", personaHonored: false });
   });
   it("downgrades 'verbatim' for another agent's vc- name", () => {
-    expect(resolvePersonaAdherence("verbatim", "vc-atlas-37e8ffb2-frontier", BOT)).toEqual({ personaUsed: "adapted", personaHonored: false });
+    expect(resolvePersonaAdherence("verbatim", "vc-atlas-37e8ffb2-frontier", BOT, true)).toEqual({ personaUsed: "adapted", personaHonored: false });
+  });
+  it("keeps 'verbatim' for a general-purpose type when the claim named no native subagent (nothing was swapped)", () => {
+    expect(resolvePersonaAdherence("verbatim", "general-purpose", BOT, false)).toEqual({ personaUsed: "verbatim", personaHonored: true });
+    expect(resolvePersonaAdherence("verbatim", "general-purpose", BOT)).toEqual({ personaUsed: "verbatim", personaHonored: true });
   });
   it("keeps 'verbatim' for the board-named agent, any tier or effort suffix", () => {
     for (const t of ["vc-planner-54dc8eca", "vc-planner-54dc8eca-frontier", "vc-planner-54dc8eca-frontier-high"]) {
-      expect(resolvePersonaAdherence("verbatim", t, BOT)).toEqual({ personaUsed: "verbatim", personaHonored: true });
+      expect(resolvePersonaAdherence("verbatim", t, BOT, true)).toEqual({ personaUsed: "verbatim", personaHonored: true });
     }
   });
   it("leaves 'verbatim' alone when no subagent_type is reported", () => {
     expect(resolvePersonaAdherence("verbatim", undefined, BOT)).toEqual({ personaUsed: "verbatim", personaHonored: true });
   });
   it("does not touch 'none' or 'adapted' for a general-purpose subagent", () => {
-    expect(resolvePersonaAdherence("none", "general-purpose", BOT).personaUsed).toBe("none");
+    expect(resolvePersonaAdherence("none", "general-purpose", BOT, true).personaUsed).toBe("none");
   });
 
   it("'verbatim' -> personaUsed='verbatim', personaHonored=true", () => {
@@ -7006,7 +7011,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
       const r = await midRunClaim();
-      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7000);
+      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7400); // db4c7f7b round 2: +~400 (hash rule, restart message)
       expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
     } finally {
       vi.unstubAllEnvs();
@@ -7015,12 +7020,12 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10100); // db4c7f7b: +~400 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10600); // db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
     const r = (await midRunClaim()) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(5450); // db4c7f7b: +~400; stage 3: 4,476 -> 5,013 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(5950); // db4c7f7b: +~850; stage 3: 4,476 -> 5,013 (+537)
   });
 
   it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {
@@ -7029,7 +7034,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
       pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, systemPrompt: RULE_PERSONA,
     });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(4450); // db4c7f7b: +~400; stage 3: 3,445 -> 3,982 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(4950); // db4c7f7b: +~850; stage 3: 3,445 -> 3,982 (+537)
   });
 
   it("sends available_agents only when the step has no assigned agent (AC1.4)", async () => {
@@ -7445,5 +7450,45 @@ describe("updateStep — role change puts the right agent on the step (card a5ec
     await updateStep(ctx, { step_id: STEP_ID, agent_role: " qa engineer ", title: "Renamed" });
     expect(state.bot_id).toBe("sentinel");
     expect(state.match_tier).toBe("manual");
+  });
+});
+
+
+// Card db4c7f7b: subagent_type is required with "verbatim" only when the claim
+// actually named a native subagent. Codex is exempt (no board-native agents).
+describe("personaReportNativeNamed", () => {
+  const BOT = "54dc8eca-1111-4222-8333-444455556666";
+  const step = { bot_id: BOT, idea_id: "i", model_tier: null, effort_override: null };
+  const ctxWith = (systemPrompt: string | null) =>
+    ({
+      userId: "u",
+      ownerUserId: "u",
+      supabase: {
+        from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { system_prompt: systemPrompt } }) }) }) }),
+      },
+    }) as unknown as McpContext;
+
+  it("rejects 'verbatim' without subagent_type when the claim named a native subagent, saying exactly what to pass", async () => {
+    await expect(personaReportNativeNamed(ctxWith("You are the Planner."), step, { persona_used: "verbatim" })).rejects.toThrow(
+      /subagent_type.*vc-<role>-54dc8eca-…/
+    );
+  });
+  it("accepts it with subagent_type", async () => {
+    await expect(
+      personaReportNativeNamed(ctxWith("You are the Planner."), step, { persona_used: "verbatim", subagent_type: "vc-planner-54dc8eca-frontier" })
+    ).resolves.toBe(true);
+  });
+  it("does not require it when the agent has no persona text (the claim named no native subagent)", async () => {
+    await expect(personaReportNativeNamed(ctxWith(null), step, { persona_used: "verbatim" })).resolves.toBe(false);
+    await expect(personaReportNativeNamed(ctxWith("   "), step, { persona_used: "verbatim" })).resolves.toBe(false);
+  });
+  it("does not require it for Codex (exempt) or an unassigned step", async () => {
+    await expect(personaReportNativeNamed(ctxWith("persona"), step, { persona_used: "verbatim", agent: "codex" })).resolves.toBe(false);
+    await expect(personaReportNativeNamed(ctxWith("persona"), { ...step, bot_id: null }, { persona_used: "verbatim" })).resolves.toBe(false);
+  });
+  it("does not look at anything for adapted, none or unreported", async () => {
+    for (const persona_used of ["adapted", "none", undefined]) {
+      await expect(personaReportNativeNamed(ctxWith("persona"), step, { persona_used })).resolves.toBe(false);
+    }
   });
 });

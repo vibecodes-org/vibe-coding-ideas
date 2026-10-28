@@ -85,7 +85,7 @@ describe("sync_board_agents", () => {
     expect(res.omitted_agents).toBe(0);
     for (const a of res.agents) expect(res.command).toContain(a.name);
     expect(syncBoardAgentsContent(res).content).toHaveLength(2);
-    expect(Object.keys(JSON.parse(syncBoardAgentsContent(res).content[0].text))).toEqual(["status", "script_path", "run_command", "agents", "omitted_agents", "instruction"]);
+    expect(Object.keys(JSON.parse(syncBoardAgentsContent(res).content[0].text))).toEqual(["status", "script_path", "run_command", "fallback_script_path", "fallback_run_command", "agents", "omitted_agents", "instruction"]);
   });
 
   it("needs no network and no secret: the command has no download tool", async () => {
@@ -110,7 +110,7 @@ describe("sync_board_agents", () => {
     const { content } = syncBoardAgentsContent(res);
     expect(content).toHaveLength(2);
     const summary = JSON.parse(content[0].text);
-    expect(Object.keys(summary)).toEqual(["status", "script_path", "run_command", "agents", "omitted_agents", "instruction"]);
+    expect(Object.keys(summary)).toEqual(["status", "script_path", "run_command", "fallback_script_path", "fallback_run_command", "agents", "omitted_agents", "instruction"]);
     expect(summary.agents[0]).toMatchObject({ name: "vc-atlas-37e8ffb2-frontier", bytes: expect.any(Number) });
     if (res.status !== "ok") throw new Error("expected ok");
     expect(content[1].text).toBe(res.command);
@@ -168,6 +168,24 @@ describe("sync_board_agents", () => {
     // The reply summary carries both fields; the script itself stays the raw second block.
     const summary = JSON.parse(syncBoardAgentsContent(res).content[0].text);
     expect(summary.run_command).toBe(res.run_command);
+  });
+
+  it("keys the NO-LOAD alternative on the claim's persona hash, never names alone", async () => {
+    const { instruction } = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    expect(instruction).toContain("same `[vc <hash> ` as this step's claim");
+    expect(instruction).toContain("`[vc skills-names-only` does not count");
+    expect(instruction).toContain("subagent_type its name");
+  });
+
+  it("an out-of-date launch copy stops with the restart message, and a script that already exists is just run", async () => {
+    const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    expect(res.instruction).toContain("Restart or Resume the session to load the current version");
+    expect(res.instruction).toContain("If `script_path` already exists it is this same script");
+    expect(res.instruction).toContain("don't overwrite or read it, just run `run_command`");
+    expect(res.instruction).toContain("`fallback_script_path`");
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.fallback_script_path).toBe(res.script_path.replace("~/.claude/vibecodes/", ".claude/vibecodes/"));
+    expect(res.fallback_run_command).toBe(`sh ${res.fallback_script_path}`);
   });
 
   it("tells the session every listed agent is loaded after READY, even if its listing shows an older tag", async () => {
@@ -231,6 +249,10 @@ describe("sync_board_agents", () => {
     expect(res.status).toBe("too_large");
     expect(res).not.toHaveProperty("command");
     expect(syncBoardAgentsContent(res).content).toHaveLength(1);
+    // Too large is a VibeCodes fault (live agents are ~5k chars): stop and report, no stand-in.
+    expect(res.instruction).toContain("This is a VibeCodes fault");
+    expect(res.instruction).toContain("report it");
+    expect(res.instruction).toContain("NO-LOAD steps");
   });
 
   it("declares a result size limit above the largest possible agent file", () => {

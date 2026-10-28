@@ -14,3 +14,12 @@ Text that offered the fallback: `sessionAgentClaimHint` (src/lib/terminal/sessio
 ## Ruled out / notes
 - The "general-purpose" label Nick saw is not rendered by our UI (no such string in src); it comes from the session's own agent display / transcript.
 - Test pins changed deliberately: session-agents.test.ts (fallback wording, length budgets), workflows.test.ts (fallback wording; three hand-off size budgets +~400 chars), agent-sync.test.ts (general-purpose assertion replaced).
+
+## Rework round 1 (28 Oct)
+- Rule A now needs the claim's persona hash: the same-bot alternative counts only if its tag starts `[vc <hash> `; out-of-date copies and `[vc skills-names-only` don't. It reports the alternative's name as subagent_type.
+- The sync clause is "If none is offered with that tag", so a stale synced copy still re-syncs; an unmarked launch copy that is out of date stops with "Agent X was changed after this session started. Restart or Resume the session to load the current version."
+- D tightened: the downgrade to "adapted" and the subagent_type requirement apply only when the claim named a native subagent, recomputed at complete/fail (`claimNamedNativeSubagent`: Claude, assigned bot with persona text, no model switch). subagent_type is REQUIRED with "verbatim" in that case (rejected before any write, error says what to pass). No persona text, unassigned step, model switch: no requirement, no downgrade.
+- Codex is EXEMPT, explicitly: it has no board-native agents, so its persona path (persona in the child's message / optional role file) is not a swap. Comments in session-agents.ts and claimNamedNativeSubagent say so; behaviour unchanged.
+- Too large or names-only is a VibeCodes fault (Nick: live agents are ~5k chars, skills ~1.3k, far under the 90k/40k limits). The session is told to stop and ask the user to report it; warn-level logs at the source (namesOnly branch in session-agents.ts, too_large in agent-sync.ts). namesOnlyTag comment updated.
+- E additions: an existing script_path is the same script (run, don't overwrite/read); `fallback_script_path` (`.claude/vibecodes/agent-sync-<id>.sh`, a folder Claude Code doesn't watch, not git-ignored, delete after the run) if writing under ~ is refused.
+- Model-switch case of "claim named no native" is recomputed from live availability at completion; it is not covered by a unit test (needs the full claim fixture).

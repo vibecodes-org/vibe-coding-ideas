@@ -311,17 +311,80 @@ export function resolvePersonaAdherence(
   /** The subagent type actually spawned, when the caller says (card db4c7f7b). */
   subagentType?: string | null,
   /** The step's assigned bot; with subagentType, decides whether "verbatim" is believable. */
-  botId?: string | null
+  botId?: string | null,
+  /** True only when this step's claim actually named a native subagent (see claimNamedNativeSubagent). */
+  nativeNamed = false
 ): PersonaAdherenceResult {
   if (personaUsed === undefined) return { personaUsed: null, personaHonored: null };
   // A general-purpose (or another persona's) subagent can't have run this
   // step's persona verbatim: the persona is only "verbatim" inside the
   // board-named agent type. Downgrade rather than reject, so a completed
   // step is never lost over a label; the board then shows "adapted".
-  if (personaUsed === "verbatim" && subagentType && botId && !isNamedAgentFor(subagentType, botId)) {
+  // Only when the claim named a native subagent: a claim that named none
+  // (skills-only persona, a model switch, Codex) sent the persona in the
+  // prompt, and a general helper on it is the instructed path, not a swap.
+  if (nativeNamed && personaUsed === "verbatim" && subagentType && botId && !isNamedAgentFor(subagentType, botId)) {
     return { personaUsed: "adapted", personaHonored: false };
   }
   return { personaUsed, personaHonored: personaUsed === "verbatim" };
+}
+
+/**
+ * Did this step's claim name a native subagent? Recomputed from the same
+ * inputs claim_next_step used (no column records it): a Claude claim, an
+ * assigned bot with persona text, and no model switch. Codex is EXEMPT: it
+ * has no board-native agents, so its persona path is not a swap (card
+ * db4c7f7b). Only called for a "verbatim" report, so other completions pay
+ * nothing.
+ */
+export async function claimNamedNativeSubagent(
+  ctx: McpContext,
+  step: { bot_id: string | null; idea_id: string; model_tier: string | null; effort_override: string | null },
+  agent: AgentKind
+): Promise<boolean> {
+  if (agent === "codex" || !step.bot_id) return false;
+  const { data: bot } = await ctx.supabase
+    .from("bot_profiles")
+    .select("system_prompt")
+    .eq("id", step.bot_id)
+    .maybeSingle();
+  if (!bot?.system_prompt?.trim()) return false;
+  if (step.model_tier) {
+    const tier = step.model_tier as "frontier" | "standard" | "cheap";
+    const [{ data: userRow }, platformDefaults] = await Promise.all([
+      ctx.supabase.from("users").select("model_tier_map").eq("id", ctx.ownerUserId ?? ctx.userId).maybeSingle(),
+      getAgentAwarePlatformModelDefaults(ctx.supabase),
+    ]);
+    const unavailable = await readLiveUnavailableModel(ctx, step.idea_id);
+    const base = resolveModelTier(tier, agent, userRow?.model_tier_map ?? null, platformDefaults, step.effort_override);
+    if (base && applyModelAvailability(base, unavailable).switched) return false;
+  }
+  return true;
+}
+
+/**
+ * Validates a "verbatim" report against the claim before anything is written.
+ * When the claim named a native subagent, subagent_type is required (so a
+ * stand-in can't hide behind a missing field); a wrong one is downgraded later
+ * by resolvePersonaAdherence.
+ */
+export async function personaReportNativeNamed(
+  ctx: McpContext,
+  step: { bot_id: string | null; idea_id: string; model_tier: string | null; effort_override: string | null },
+  params: { persona_used?: string; subagent_type?: string; agent?: AgentKind }
+): Promise<boolean> {
+  if (params.persona_used !== "verbatim") return false;
+  const named = await claimNamedNativeSubagent(ctx, step, params.agent ?? "claude");
+  if (named && !params.subagent_type?.trim()) {
+    const id8 = (step.bot_id ?? "").replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
+    throw new Error(
+      `persona_used "verbatim" needs subagent_type: this step's claim named a native subagent, so pass subagent_type ` +
+      `with the exact type you spawned (the name from the claim's native_subagent, vc-<role>-${id8}-…). ` +
+      `If you spawned a general helper instead, pass persona_used "adapted" and subagent_type "general-purpose". ` +
+      `Nothing was changed.`
+    );
+  }
+  return named;
 }
 
 /** True for a board-agent subagent name of this bot: `vc-<slug>-<first 8 of bot id>[-<tier>][-<effort>]`. */
@@ -1411,7 +1474,7 @@ export const completeStepSchema = z.object({
   subagent_type: z.string().max(100).optional()
     .describe(
       "The subagent type you actually spawned for this step (for example \"vc-planner-54dc8eca-frontier\" or \"general-purpose\"). " +
-      "If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), persona_used \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
+      "REQUIRED with persona_used \"verbatim\" when the claim named a native subagent (the call is rejected without it). If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
     ),
   skills_used: z.array(z.string()).optional()
     .describe(
@@ -1485,6 +1548,8 @@ export async function completeStep(
   // passed output is stored as before (sessions in flight, inline runs, Codex
   // children without board tools). With neither, refuse before any write: the
   // step stays in progress and the tokens stay valid.
+  const nativeNamed = await personaReportNativeNamed(ctx, step, params);
+
   const savedOutput = typeof step.output === "string" && step.output.trim() !== "" ? step.output : null;
   const passedOutput = typeof params.output === "string" && params.output.trim() !== "" ? params.output : null;
   if (!savedOutput && !passedOutput) {
@@ -1550,7 +1615,7 @@ export async function completeStep(
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
-  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id);
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
 
   // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
   // obeyed the directive's advisory line and substituted the backup has
@@ -1825,7 +1890,7 @@ export const failStepSchema = z.object({
   subagent_type: z.string().max(100).optional()
     .describe(
       "The subagent type you actually spawned for this step (for example \"vc-planner-54dc8eca-frontier\" or \"general-purpose\"). " +
-      "If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), persona_used \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
+      "REQUIRED with persona_used \"verbatim\" when the claim named a native subagent (the call is rejected without it). If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
     ),
   skills_used: z.array(z.string()).optional()
     .describe(
@@ -1894,6 +1959,8 @@ export async function failStep(
     }
   }
 
+  const nativeNamed = step.status === "awaiting_approval" ? false : await personaReportNativeNamed(ctx, step, params);
+
   const savedOutput = typeof step.output === "string" && step.output.trim() !== "" ? step.output : null;
 
   // Attribute this failure to the persona the claim token was minted for
@@ -1938,7 +2005,7 @@ export async function failStep(
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
-  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id);
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
 
   // Auto-switch, rescue half (card 5d0665a2, AC-1). Never for awaiting_approval
   // rejections (human gate — UX Design §2b) or Auto steps (no tier to resolve

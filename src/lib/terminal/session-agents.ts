@@ -20,6 +20,7 @@
 // edited, tier remapped) simply doesn't match and falls back to the old path.
 
 import { createHash } from "node:crypto";
+import { logger } from "../logger";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
 import { SYNC_MARKER } from "./session-agent-files";
 import { agentPersonaBody, disallowedToolsFor, type ToolAccess } from "../agent-tool-access";
@@ -83,8 +84,14 @@ export function sessionAgentTag(
 
 /**
  * Tag for a definition that couldn't carry the full skill text (payload over
- * budget). The hash slot isn't hex, so it can never equal a claim's tag: the
- * step runs on the general path, whose persona carries the skills in full.
+ * budget). The hash slot isn't hex, so it can never equal a claim's tag, and
+ * the claim text also refuses it as a same-persona alternative.
+ *
+ * This is a VibeCodes fault, never normal (card db4c7f7b, Nick 28 Oct): the
+ * largest live agent prompt is about 5k characters and the largest skills
+ * total about 1.3k, far under the budgets. It is logged at warn level, and
+ * the session is told to stop and report it rather than run a stand-in. It no
+ * longer means "run the step on the general path".
  */
 function namesOnlyTag(model: string | null, effort: string | null): string {
   return `[vc skills-names-only ${model ?? "auto"} ${effort ?? "auto"}]`;
@@ -157,6 +164,10 @@ function definitionFor(
       `\n\n## Skills\nLoad these with get_agent_skill_content (agent_id "${bot.id}") when one is relevant: ` +
       `${skills.map((s) => s.name).join(", ")}.`;
     tag = namesOnlyTag(model, effort);
+    logger.warn("session agent skills trimmed to names only (VibeCodes fault: far under the size budgets)", {
+      botId: bot.id,
+      skills: skills.length,
+    });
   }
 
   const description =
@@ -269,6 +280,10 @@ export function sessionAgentClaimHint(input: {
     ? ` and model_used "${input.model}"${input.effort ? `, reasoning_effort_used "${input.effort}"` : ""}`
     : "";
   if (input.agent === "codex") {
+    // EXEMPT from the never-swap rule (card db4c7f7b, Nick 28 Oct): Codex has
+    // no board-native agents of its own, so its persona path (the persona in
+    // the child's message, or an optional role file) is not a swap and is
+    // deliberately unchanged. subagent_type is neither asked for nor checked.
     // Codex's spawn tool has no instructions field; a custom agent type's
     // role file is the only way the persona becomes the child's own
     // instructions. A role's model/effort override the spawn call's.
@@ -289,22 +304,28 @@ export function sessionAgentClaimHint(input: {
   // The board-named agent is never optional (card db4c7f7b). There is no
   // silent general-purpose stand-in: the only way down is to stop, tell the
   // user which agent could not be loaded and why, and get an explicit yes.
+  // (Codex is exempt, see above: it has no board-native agents.)
   const base = sessionAgentName(input.bot, null);
+  const hash = /^\[vc (\S+) /.exec(tag)?.[1] ?? "";
   const sameAgentStep =
-    `If that name isn't offered but the same agent is (a type starting "${base}", any tier or effort suffix), ` +
-    `spawn that one with the model and effort above passed explicitly on the Agent tool: it counts as the ` +
-    `named agent (persona_used "verbatim"; report the model and effort actually used). `;
+    `If that name isn't offered but the same agent is (a type starting "${base}", any tier or effort suffix) ` +
+    `AND its description ends with a tag starting "[vc ${hash} " (an out-of-date copy or "[vc skills-names-only" ` +
+    `does not count), spawn that one with the model and effort above passed explicitly on the Agent tool: it ` +
+    `counts as the named agent (persona_used "verbatim", subagent_type its name, and the model and effort actually used). `;
   const syncStep =
     input.ideaId && input.stepId
-      ? `If none is offered: when the listing has this name without "${SYNC_MARKER}" at the start of ` +
-        `its description, VibeCodes launched this session with its own copy, so don't sync. Otherwise call ` +
+      ? `If none is offered with that tag (a listed copy with an older tag counts as not offered): when the listing ` +
+        `has this name without "${SYNC_MARKER}" at the start of its description, VibeCodes launched this session ` +
+        `with its own copy, which a sync can't replace: STOP and tell the user "Agent ${input.bot.name} was changed ` +
+        `after this session started. Restart or Resume the session to load the current version." Otherwise call ` +
         `sync_board_agents (idea_id "${input.ideaId}", step_id "${input.stepId}") and do what its instruction ` +
         `says; once a sync this session has ended READY with that tag, it is loaded, so spawn it by name even if ` +
         `the listing looks stale. `
       : ``;
   const stopStep =
     `If it still can't be used, STOP: tell the user plainly which agent ("${input.bot.name}") couldn't be loaded ` +
-    `and why, and wait. Only on their explicit yes may you spawn a general helper on get_agent_prompt ` +
+    `and why (a "too large" or "names only" agent is a VibeCodes fault: say so and ask them to report it), and ` +
+    `wait. Only on their explicit yes may you spawn a general helper on get_agent_prompt ` +
     `(agent_id "${input.bot.id}", as_persona true), then report persona_used "adapted" and subagent_type "general-purpose".`;
   const instruction =
     `NATIVE SUBAGENT: the board-named agent is never optional. If your Agent tool offers the type ` +
