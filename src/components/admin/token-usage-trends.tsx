@@ -180,7 +180,9 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
     .map((m) => ({ ...m, at: ukWeekStart(`${m.date}T12:00:00Z`) }))
     .filter((m) => weekStarts.has(m.at));
 
-  const bars = cost.map((b) => ({ ...b }));
+  const maxTotal = Math.max(0, ...cost.map((b) => b.total));
+  // A sliver on top of each stack, so there is always a bar to hang the total label on.
+  const bars = cost.map((b) => ({ ...b, cap: maxTotal * 0.001 }));
   const runRows = weeks.map((w, i) => {
     const row: Record<string, string | number | null> = { start: w.start, partial: w.partial ? 1 : 0 };
     runCost.forEach((s, k) => {
@@ -223,8 +225,8 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
             <ChartContainer config={costConfig} className="aspect-auto h-[260px] w-full">
               <BarChart data={bars} margin={{ top: 14 + placed.reduce((m, p) => Math.max(m, p.row), 0) * 16 + 14, right: 8, left: 0, bottom: 14 }}>
                 <CartesianGrid vertical={false} />
-                <XAxis dataKey="start" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={grain === "day" ? 14 : 4} height={36} tick={<CoverageTick byStart={byStart} grain={grain} />} />
-                <YAxis width={44} tickLine={false} axisLine={false} tickFormatter={money} />
+                <XAxis dataKey="start" tickLine={false} axisLine={false} interval="equidistantPreserveStart" minTickGap={grain === "day" ? 14 : 2} height={36} tick={<CoverageTick byStart={byStart} grain={grain} />} />
+                <YAxis width={44} tickLine={false} axisLine={false} tickFormatter={money} domain={[0, (max: number) => max * 1.15]} />
                 <ChartTooltip
                   cursor={{ fill: "var(--muted)", opacity: 0.4 }}
                   content={({ active, payload }) => {
@@ -277,11 +279,14 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
                   {bars.map((b) => <Cell key={b.start} fill="var(--tu-sonnet)" fillOpacity={b.partial ? 0.55 : 1} />)}
                 </Bar>
                 <Bar isAnimationActive={false} dataKey="other" stackId="c" fill="var(--tu-other)" maxBarSize={grain === "week" ? 44 : 14} radius={[4, 4, 0, 0]}>
-                  {grain === "week" && (
+                  {bars.map((b) => <Cell key={b.start} fill="var(--tu-other)" fillOpacity={b.partial ? 0.55 : 1} />)}
+                </Bar>
+                {grain === "week" && (
+                  <Bar isAnimationActive={false} dataKey="cap" stackId="c" fill="transparent" stroke="none" maxBarSize={44}>
                     <LabelList
                       dataKey="start"
-                      content={(p: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
-                        const b = bars[p.index ?? -1];
+                      content={(p: { x?: number | string; y?: number | string; width?: number | string; value?: unknown }) => {
+                        const b = byStart.get(String(p.value));
                         if (!b || b.total <= 0) return null;
                         return (
                           <text x={Number(p.x) + Number(p.width) / 2} y={Number(p.y) - 5} textAnchor="middle" fontSize={10} fontWeight={600} className="fill-foreground">
@@ -290,9 +295,8 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
                         );
                       }}
                     />
-                  )}
-                  {bars.map((b) => <Cell key={b.start} fill="var(--tu-other)" fillOpacity={b.partial ? 0.55 : 1} />)}
-                </Bar>
+                  </Bar>
+                )}
               </BarChart>
             </ChartContainer>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
