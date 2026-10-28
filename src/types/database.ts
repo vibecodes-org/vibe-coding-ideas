@@ -1172,6 +1172,71 @@ export type Database = {
           },
         ];
       };
+      workflow_step_unmeasured: {
+        Row: {
+          id: string;
+          step_id: string;
+          run_id: string | null;
+          idea_id: string;
+          outcome: "completed" | "awaiting_approval" | "failed";
+          kind: "unavailable" | "no_transcript" | "unreadable" | "codex";
+          reason: string | null;
+          reported_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          step_id: string;
+          run_id?: string | null;
+          idea_id: string;
+          outcome: "completed" | "awaiting_approval" | "failed";
+          kind: "unavailable" | "no_transcript" | "unreadable" | "codex";
+          reason?: string | null;
+          reported_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          step_id?: string;
+          run_id?: string | null;
+          idea_id?: string;
+          outcome?: "completed" | "awaiting_approval" | "failed";
+          kind?: "unavailable" | "no_transcript" | "unreadable" | "codex";
+          reason?: string | null;
+          reported_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "workflow_step_unmeasured_step_id_fkey";
+            columns: ["step_id"];
+            isOneToOne: false;
+            referencedRelation: "task_workflow_steps";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_step_unmeasured_run_id_fkey";
+            columns: ["run_id"];
+            isOneToOne: false;
+            referencedRelation: "workflow_runs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_step_unmeasured_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_step_unmeasured_reported_by_fkey";
+            columns: ["reported_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       workflow_step_comments: {
         Row: {
           id: string;

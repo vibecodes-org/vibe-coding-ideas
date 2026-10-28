@@ -3,7 +3,8 @@
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { visibleMarkers } from "@/lib/step-cost/change-markers";
-import { ukWeekStart, type CostBucket, type CostTrends } from "@/lib/step-cost/trends";
+import { ukDay, ukWeekStart, type CostBucket, type CostTrends } from "@/lib/step-cost/trends";
+import { unmeasuredLabel } from "@/lib/step-cost/unmeasured";
 
 // Card a1790638: how costs are trending. Drawn with the shadcn chart (recharts);
 // this file is loaded only on the Token usage tab. Layout and wording follow
@@ -96,6 +97,36 @@ function DataTable({ head, rows }: { head: string[]; rows: (string | number)[][]
         </table>
       </div>
     </details>
+  );
+}
+
+const MAX_REASONS = 5;
+
+function UnmeasuredReasons({ reasons }: { reasons: CostTrends["unmeasuredReasons"] }) {
+  if (reasons.length === 0) return null;
+  const shown = reasons.slice(0, MAX_REASONS);
+  return (
+    <div className="mt-3 border-t border-border pt-2.5">
+      <h3 className="text-xs font-semibold">Why some costs couldn&apos;t be measured</h3>
+      <ul className="mt-1.5 grid gap-1 text-xs">
+        {shown.map((r) => {
+          const label = unmeasuredLabel(r.kind, r.reason);
+          return (
+            <li key={r.key} className="grid grid-cols-[22px_1fr] items-baseline gap-x-2 sm:grid-cols-[22px_auto_1fr]">
+              <span className="min-w-[22px] text-right font-semibold tabular-nums">{r.steps}</span>
+              <span>
+                {label.text}
+                {label.quote && <q className="ml-1 text-muted-foreground">{label.quote}</q>}
+              </span>
+              <span className="col-start-2 text-[11px] text-muted-foreground sm:col-start-auto">last {fmtDay(ukDay(r.lastAt))}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {reasons.length > MAX_REASONS && (
+        <p className="mt-1 pl-[30px] text-[11px] text-muted-foreground">and {reasons.length - MAX_REASONS} more reason{reasons.length - MAX_REASONS === 1 ? "" : "s"}</p>
+      )}
+    </div>
   );
 }
 
@@ -249,6 +280,10 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
                         <b className="font-semibold">Total {money2(b.total)}</b>
                         <br />
                         {b.costed} of {b.finished} finished steps have a cost
+                        <div className="my-1 border-t border-border" />
+                        {b.unmeasured} couldn&apos;t be measured (reason given)
+                        <br />
+                        {b.finished - b.costed - b.unmeasured} missing: nothing reported
                       </Tip>
                     );
                   }}
@@ -300,8 +335,9 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
               </BarChart>
             </ChartContainer>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Under each {unit}: the share of finished steps with a cost recorded. Amber under 80% (a ▲ under a day) means that bar is short of the real cost.
+              Under each {unit}: the share of finished steps with a cost recorded. Amber under 80% (a ▲ under a day) means that bar is short of the real cost. Hover a bar to see how many of the rest couldn&apos;t be measured and why, and how many are missing because nothing was reported.
             </p>
+            <UnmeasuredReasons reasons={trends.unmeasuredReasons} />
             {placed.length > 0 && (
               <ol className="mt-2.5 grid gap-1 text-[11px] text-muted-foreground">
                 {markers.map((m) => (
@@ -317,8 +353,8 @@ export function TokenUsageTrends({ trends }: { trends: CostTrends }) {
               </ol>
             )}
             <DataTable
-              head={[grain === "week" ? "Week of" : "Day", "Opus", "Sonnet", "Other", "Total", "Steps with a cost"]}
-              rows={cost.map((b) => [fmtDay(b.start), money2(b.opus), money2(b.sonnet), money2(b.other), money2(b.total), `${b.costed} of ${b.finished}`])}
+              head={[grain === "week" ? "Week of" : "Day", "Opus", "Sonnet", "Other", "Total", "With a cost", "Couldn't measure", "Missing"]}
+              rows={cost.map((b) => [fmtDay(b.start), money2(b.opus), money2(b.sonnet), money2(b.other), money2(b.total), `${b.costed} of ${b.finished}`, b.unmeasured, b.finished - b.costed - b.unmeasured])}
             />
           </>
         ) : (

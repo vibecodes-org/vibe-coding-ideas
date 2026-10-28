@@ -12,9 +12,15 @@ const USAGE: StepUsage = {
   output_estimated: true,
 };
 
-function ctxWith(insert: ReturnType<typeof vi.fn>, extra: Partial<McpContext> = {}): McpContext {
+function ctxWith(
+  insert: ReturnType<typeof vi.fn>,
+  extra: Partial<McpContext> = {},
+  unmeasured: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve({ error: null }))
+): McpContext {
   return {
-    supabase: { from: vi.fn(() => ({ insert })) } as unknown as McpContext["supabase"],
+    supabase: {
+      from: vi.fn((table: string) => ({ insert: table === "workflow_step_unmeasured" ? unmeasured : insert })),
+    } as unknown as McpContext["supabase"],
     userId: "bot-user",
     ...extra,
   };
@@ -118,6 +124,80 @@ describe("recordStepUsage — skipped costs are logged at warn", () => {
       await recordStepUsage(ctxWith(insert), STEP, "completed", undefined, "client has no shell");
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("unavailable"), expect.objectContaining({ stepId: STEP.id, reason: "client has no shell" }));
       expect(insert).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+// Card 1117ac6b stage 2: the reason is kept, not only logged.
+describe("recordStepUsage — lasting record when the cost couldn't be measured", () => {
+  const quiet = () => vi.spyOn(logger, "warn").mockImplementation(() => {});
+  async function run(raw: unknown, reason?: string | null, agent: "claude" | "codex" = "claude", extra: Partial<McpContext> = {}) {
+    const insert = vi.fn(() => Promise.resolve({ error: null }));
+    const unmeasured = vi.fn(() => Promise.resolve({ error: null }));
+    const warn = quiet();
+    try {
+      await recordStepUsage(ctxWith(insert, extra, unmeasured), STEP, "completed", raw, reason, agent);
+    } finally {
+      warn.mockRestore();
+    }
+    return { insert, unmeasured, row: (unmeasured.mock.calls[0] as unknown[] | undefined)?.[0] as Record<string, unknown> | undefined };
+  }
+
+  it("usage_unavailable stores kind unavailable with the reason, outcome, step, run, board and reporter", async () => {
+    const { row, insert, unmeasured } = await run(undefined, "  client has no shell ", "claude", { ownerUserId: "human" });
+    expect(unmeasured).toHaveBeenCalledTimes(1);
+    expect(insert).not.toHaveBeenCalled();
+    expect(row).toEqual({
+      step_id: STEP.id, run_id: STEP.run_id, idea_id: STEP.idea_id, outcome: "completed",
+      kind: "unavailable", reason: "client has no shell", reported_by: "human",
+    });
+  });
+
+  it("NO_TRANSCRIPT: no-script, an agent id, or nothing", async () => {
+    expect((await run("NO_TRANSCRIPT no-script")).row).toMatchObject({ kind: "no_transcript", reason: "no-script" });
+    expect((await run("NO_TRANSCRIPT a1b2c3")).row).toMatchObject({ kind: "no_transcript", reason: "a1b2c3" });
+    expect((await run("NO_TRANSCRIPT")).row).toMatchObject({ kind: "no_transcript", reason: null });
+  });
+
+  it("a line that isn't JSON, or has the wrong shape, is unreadable", async () => {
+    expect((await run("{not json")).row).toMatchObject({ kind: "unreadable", reason: "not JSON" });
+    const wrong = await run({ models: [{ model: "x" }] });
+    expect(wrong.row).toMatchObject({ kind: "unreadable" });
+    expect(typeof wrong.row!.reason).toBe("string");
+    expect(wrong.insert).not.toHaveBeenCalled();
+  });
+
+  it("valid usage writes cost rows and no unmeasured record", async () => {
+    const { insert, unmeasured } = await run(USAGE);
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(unmeasured).not.toHaveBeenCalled();
+  });
+
+  it("a Codex step with no usage is recorded as codex", async () => {
+    expect((await run(undefined, null, "codex")).row).toMatchObject({ kind: "codex", reason: null });
+  });
+
+  it("nothing is recorded when nothing was reported and no reason given (no claim token)", async () => {
+    expect((await run(undefined)).unmeasured).not.toHaveBeenCalled();
+  });
+
+  it("cuts a long reason to 300 characters", async () => {
+    expect(((await run(undefined, "x".repeat(500))).row!.reason as string).length).toBe(300);
+  });
+
+  it("never throws when the record can't be written (error, throw, table missing)", async () => {
+    const warn = quiet();
+    try {
+      const insert = vi.fn();
+      for (const u of [
+        vi.fn(() => Promise.resolve({ error: { message: "relation does not exist" } })),
+        vi.fn(() => { throw new Error("boom"); }),
+      ]) {
+        await expect(recordStepUsage(ctxWith(insert, {}, u), STEP, "failed", "NO_TRANSCRIPT")).resolves.toBeUndefined();
+      }
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("unmeasured write"), expect.objectContaining({ stepId: STEP.id }));
     } finally {
       warn.mockRestore();
     }

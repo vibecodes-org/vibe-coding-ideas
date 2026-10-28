@@ -64,29 +64,72 @@ export function missingUsageError(params: {
   );
 }
 
+type Outcome = "completed" | "awaiting_approval" | "failed";
+export type UnmeasuredKind = "unavailable" | "no_transcript" | "unreadable" | "codex";
+
+/**
+ * Card 1117ac6b stage 2: a lasting record that a finished attempt's cost
+ * couldn't be measured, and why. Best effort like the cost rows: a failure
+ * (including a database where migration 00204 hasn't landed yet) is logged
+ * and never takes completion down with it.
+ */
+export async function recordUnmeasured(
+  ctx: McpContext,
+  step: { id: string; run_id: string | null; idea_id: string },
+  outcome: Outcome,
+  kind: UnmeasuredKind,
+  reason: string | null
+): Promise<void> {
+  try {
+    const { error } = await ctx.supabase.from("workflow_step_unmeasured").insert({
+      step_id: step.id,
+      run_id: step.run_id,
+      idea_id: step.idea_id,
+      outcome,
+      kind,
+      reason: reason?.trim() ? reason.trim().slice(0, 300) : null,
+      reported_by: ctx.ownerUserId ?? ctx.userId,
+    });
+    if (error) {
+      logger.warn("step unmeasured write failed — completion unaffected", { stepId: step.id, error: error.message });
+    }
+  } catch (err) {
+    logger.warn("step unmeasured write threw — completion unaffected", {
+      stepId: step.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /**
  * Stores one attempt's usage, one row per model. Best effort: a failure here
  * (including a database where migration 00196 hasn't landed yet) is logged
- * and never takes completion down with it.
+ * and never takes completion down with it. When no cost can be stored, the
+ * reason is recorded in workflow_step_unmeasured instead (card 1117ac6b).
  */
 export async function recordStepUsage(
   ctx: McpContext,
   step: { id: string; run_id: string | null; idea_id: string },
-  outcome: "completed" | "awaiting_approval" | "failed",
+  outcome: Outcome,
   raw: unknown,
-  unavailableReason?: string | null
+  unavailableReason?: string | null,
+  agent: "claude" | "codex" = "claude"
 ): Promise<void> {
   // Card 1117ac6b: a step finished without a cost is logged at warn, so a
   // gap shows in production logs instead of vanishing.
   if (raw === undefined || raw === null || raw === "") {
-    if (unavailableReason?.trim()) {
+    if (agent === "codex") {
+      await recordUnmeasured(ctx, step, outcome, "codex", null);
+    } else if (unavailableReason?.trim()) {
       logger.warn("step usage unavailable", { stepId: step.id, reason: unavailableReason.trim().slice(0, 300) });
+      await recordUnmeasured(ctx, step, outcome, "unavailable", unavailableReason);
     }
     return;
   }
   let value = raw;
   if (typeof value === "string" && value.trim().startsWith("NO_TRANSCRIPT")) {
     logger.warn("step usage skipped: NO_TRANSCRIPT", { stepId: step.id, detail: value.trim().slice(0, 120) });
+    await recordUnmeasured(ctx, step, outcome, "no_transcript", value.trim().slice("NO_TRANSCRIPT".length));
     return;
   }
   if (typeof value === "string") {
@@ -94,12 +137,15 @@ export async function recordStepUsage(
       value = JSON.parse(value);
     } catch {
       logger.warn("step usage skipped: not JSON", { stepId: step.id });
+      await recordUnmeasured(ctx, step, outcome, "unreadable", "not JSON");
       return;
     }
   }
   const parsed = stepUsageSchema.safeParse(value);
   if (!parsed.success) {
-    logger.warn("step usage skipped: unexpected shape", { stepId: step.id, issue: parsed.error.issues[0]?.message });
+    const issue = parsed.error.issues[0]?.message;
+    logger.warn("step usage skipped: unexpected shape", { stepId: step.id, issue });
+    await recordUnmeasured(ctx, step, outcome, "unreadable", issue ?? "unexpected shape");
     return;
   }
   const usage = parsed.data;

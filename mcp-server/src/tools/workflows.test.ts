@@ -7157,11 +7157,12 @@ describe("step cost (card ba37039b)", () => {
     }
   });
 
-  function completionContext(stepStatus: string, usageInsert: ReturnType<typeof vi.fn>) {
+  function completionContext(stepStatus: string, usageInsert: ReturnType<typeof vi.fn>, unmeasuredInsert: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve({ error: null }))) {
     const stepData = { claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, step_order: 2, human_check_required: false, status: stepStatus };
     const updatedStep = { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Build", agent_role: "developer", status: "completed", output: "done" };
     return makeContext(((table: string) => {
       if (table === "workflow_step_usage") return { insert: usageInsert };
+      if (table === "workflow_step_unmeasured") return { insert: unmeasuredInsert };
       if (table === "task_workflow_steps") {
         const chain = createChain(null);
         chain.chain.single = vi.fn(() => Promise.resolve({ data: stepData, error: null }));
@@ -7207,6 +7208,24 @@ describe("step cost (card ba37039b)", () => {
     const insert = vi.fn(() => Promise.resolve({ error: { message: "relation \"workflow_step_usage\" does not exist" } }));
     const result = await completeStep(completionContext("in_progress", insert), { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage: USAGE });
     expect(result.status).toBe("completed");
+  });
+
+  it("complete_step keeps the reason when the cost couldn't be measured, and still completes (card 1117ac6b)", async () => {
+    const unmeasured = vi.fn(() => Promise.resolve({ error: null }));
+    const result = await completeStep(completionContext("in_progress", vi.fn(), unmeasured), { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage_unavailable: "no shell" });
+    expect(result.status).toBe("completed");
+    expect(unmeasured).toHaveBeenCalledTimes(1);
+    expect((unmeasured.mock.calls[0] as unknown[])[0]).toMatchObject({ step_id: STEP_ID, idea_id: IDEA_ID, outcome: "completed", kind: "unavailable", reason: "no shell" });
+  });
+
+  it("fail_step records an unmeasured failed attempt, but a human rejecting an approval gate records nothing", async () => {
+    const unmeasured = vi.fn(() => Promise.resolve({ error: null }));
+    await failStep(completionContext("in_progress", vi.fn(), unmeasured), { claim_token: TCT.token, step_id: STEP_ID, output: "broken", usage: "NO_TRANSCRIPT no-script" });
+    expect((unmeasured.mock.calls[0] as unknown[])[0]).toMatchObject({ outcome: "failed", kind: "no_transcript", reason: "no-script" });
+
+    const rejected = vi.fn(() => Promise.resolve({ error: null }));
+    await failStep(completionContext("awaiting_approval", vi.fn(), rejected), { step_id: STEP_ID, output: "no" });
+    expect(rejected).not.toHaveBeenCalled();
   });
 
   it("fail_step stores a failed attempt's usage, but not a human rejecting an approval gate", async () => {
