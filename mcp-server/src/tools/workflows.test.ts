@@ -7015,7 +7015,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
       const r = await midRunClaim();
-      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7400); // db4c7f7b round 2: +~400 (hash rule, restart message)
+      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7420); // card 1117ac6b stage 4: +20 (marker in the no-script line; was 7400); db4c7f7b round 2: +~400 (hash rule, restart message)
       expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
     } finally {
       vi.unstubAllEnvs();
@@ -7151,7 +7151,7 @@ describe("step cost (card ba37039b)", () => {
       const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string };
       expect(on.usage_command).not.toContain("awk");
       expect(on.usage_command).toContain("NO_TRANSCRIPT no-script");
-      expect(on.usage_command.length).toBeLessThan(260);
+      expect(on.usage_command.length).toBeLessThan(275);
     } finally {
       vi.unstubAllEnvs();
     }

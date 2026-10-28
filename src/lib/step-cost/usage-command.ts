@@ -66,7 +66,7 @@ function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return su
   m = "unknown"; if (match($0, /"model":"[^"]+"/)) m = substr($0, RSTART + 9, RLENGTH - 10)
   i = num(u, "input_tokens"); r = num(u, "cache_read_input_tokens"); w = num(u, "cache_creation_input_tokens"); h = num(u, "ephemeral_1h_input_tokens")
   if (m ~ /haiku-5-5/ && i + r + w > 100000) m = m "+long"
-  model[id] = m; inp[id] = i; rd[id] = r; w1h[id] = h; w5m[id] = w - h
+  model[id] = m; inp[id] = i; rd[id] = r; w1h[id] = h; w5m[id] = (w > h) ? w - h : 0
   if (!(id in wt)) wt[id] = (FILENAME == main) ? lw : 1
   o = num(u, "output_tokens"); if (o > rep[id]) rep[id] = o
   s = index($0, "\"content\":["); e = index($0, ",\"stop_reason\":")
@@ -164,8 +164,10 @@ export function stepUsageScript(): { file: string; body: string } {
  * when it isn't there (a session the helper didn't launch, or an older
  * helper). A session launched before the script last changed only has the
  * older copy, so it falls back to the newest saved one (same arguments) rather
- * than losing the step's cost until a relaunch. The session passes a NO_TRANSCRIPT line as usage and the server stores nothing for it, so a
- * missing file never blocks a step.
+ * than losing the step's cost until a relaunch. When there is no file at all
+ * the line carries the marker ("NO_TRANSCRIPT no-script <marker>"), so the
+ * server can answer it with the full command to run once (card 1117ac6b,
+ * stage 4). The site never asks a session to save a file; only the helper does.
  */
 export function stepUsageShortCommand(
   marker: string,
@@ -174,5 +176,15 @@ export function stepUsageShortCommand(
 ): string {
   if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
   if (!STEP_USAGE_SCRIPT_FILE.test(file)) throw new Error("bad usage script name");
-  return `d="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes"; f="$d/${file}"; [ -s "$f" ] || f=$(ls -t "$d"/step-usage-*.sh 2>/dev/null | head -n 1); [ -s "$f" ] && sh "$f" '${marker}' '${agentIds}' || echo "NO_TRANSCRIPT no-script"`;
+  return `m=${marker}; d="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes"; f="$d/${file}"; [ -s "$f" ] || f=$(ls -t "$d"/step-usage-*.sh 2>/dev/null | head -n 1); if [ -s "$f" ]; then sh "$f" $m '${agentIds}'; else echo "NO_TRANSCRIPT no-script $m"; fi`;
+}
+
+/** The line the short command prints when the saved script is missing; the capture is the claim's marker. */
+export const NO_SCRIPT_LINE = /^NO_TRANSCRIPT no-script (vcu_[0-9a-f]+)$/;
+
+/** The marker from a no-script line, or null for anything else (including the older marker-less line). */
+export function noScriptMarker(usage: unknown): string | null {
+  if (typeof usage !== "string") return null;
+  const m = NO_SCRIPT_LINE.exec(usage.trim());
+  return m ? m[1] : null;
 }
