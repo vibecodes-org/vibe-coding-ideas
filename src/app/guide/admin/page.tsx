@@ -54,7 +54,7 @@ export default function AdminPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">AI Usage Dashboard</h2>
+          <h2 className="mb-4 text-2xl font-semibold">In-app AI Dashboard</h2>
           <p className="mb-4 text-muted-foreground">
             The admin page at{" "}
             <strong className="text-foreground">/admin</strong> provides a
@@ -128,10 +128,11 @@ export default function AdminPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Step Performance Report</h2>
+          <h2 className="mb-4 text-2xl font-semibold">Token Usage</h2>
           <p className="mb-4 text-muted-foreground">
-            The <strong className="text-foreground">Reports</strong> tab shows
-            what each workflow step contributes, for one board or all boards,
+            The <strong className="text-foreground">Token usage</strong> tab
+            shows what workflow steps cost, whether that is going up or down,
+            and what each step contributes, for one board or all boards,
             over the last 30, 60 or 90 days or all time. For each template it
             lists every step&apos;s runs, how often its agent caught a problem
             and sent work back, how often a person rejected it at its approval
@@ -147,6 +148,29 @@ export default function AdminPage() {
             run (incl. redos)</strong> is the median of real finished runs,
             redo rounds counted. The two won&apos;t match, because the step
             rows are medians of single steps.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            Above the tables, three charts follow the Board and Period
+            filters. <strong className="text-foreground">Cost per week, by model</strong>{" "}
+            stacks Opus, Sonnet and other models (bars are days when the period
+            is 30 days, weeks otherwise; this week is drawn lighter and marked
+            &ldquo;so far&rdquo;). Under each bar is the share of finished steps
+            that recorded a cost, shown in amber when it is under 80%, because
+            that bar is then short of the real cost. Numbered dashed lines mark
+            the dates a change to how steps run went live, with a list under the
+            chart. <strong className="text-foreground">Typical cost of a finished run</strong>{" "}
+            draws one line per workflow (the three with the most runs): the
+            median per week of runs where every finished step has a cost.
+            That is looser than the &ldquo;Typical whole run&rdquo; figure in
+            the tables, which also needs the run to use exactly today&apos;s
+            steps, so the two differ a little.{" "}
+            <strong className="text-foreground">Runs sent back at least once</strong>{" "}
+            shows the share of finished runs that had work sent back, so a
+            cheaper run can&apos;t hide worse work. Only workflow steps record
+            their cost: terminal chat between cards, Codex steps, steps
+            finished in a different session from the one that started them and
+            the app&apos;s own AI buttons (the In-app AI tab) are not counted.
+            Each chart has a &ldquo;Show these figures as a table&rdquo; link.
           </p>
           <p className="mb-4 text-muted-foreground">
             Cost is what the tokens would cost at Anthropic API prices. When a

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CircleDollarSign, GitBranch, RotateCcw, Undo2, Upload, Workflow } from "lucide-react";
@@ -15,7 +16,25 @@ import {
   type StepReportPeriod,
 } from "@/actions/admin-step-report";
 import { chunkBackfillFile } from "@/lib/step-cost/backfill-chunks";
+import type { CostTrends } from "@/lib/step-cost/trends";
 import type { StepPerformanceReport, StepPerformanceRow, TemplatePerformance } from "@/lib/step-cost/report";
+
+// The chart library is loaded only when this tab is opened, so no other page gets heavier.
+const TokenUsageTrends = dynamic(() => import("./token-usage-trends").then((m) => m.TokenUsageTrends), {
+  ssr: false,
+  loading: () => <TrendsSkeleton />,
+});
+
+function TrendsSkeleton() {
+  return (
+    <div className="space-y-6" aria-hidden>
+      <div className="rounded-lg border p-4">
+        <Skeleton className="mb-4 h-5 w-48" />
+        <Skeleton className="h-[260px] w-full" />
+      </div>
+    </div>
+  );
+}
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -45,6 +64,7 @@ function shortDate(iso: string | null): string {
 export function StepPerformanceReportView() {
   const [state, setState] = useState<LoadState>("loading");
   const [report, setReport] = useState<StepPerformanceReport | null>(null);
+  const [trends, setTrends] = useState<CostTrends | null>(null);
   const [boards, setBoards] = useState<StepReportBoard[]>([]);
   const [board, setBoard] = useState("all");
   const [period, setPeriod] = useState<StepReportPeriod>("60");
@@ -58,6 +78,7 @@ export function StepPerformanceReportView() {
       .then((result) => {
         if (cancelled) return;
         setReport(result.report);
+        setTrends(result.trends);
         setBoards(result.boards);
         setState("ready");
       })
@@ -170,6 +191,7 @@ export function StepPerformanceReportView() {
             </div>
           ))}
         </div>
+        <TrendsSkeleton />
         <div className="rounded-lg border p-4">
           <Skeleton className="mb-4 h-5 w-40" />
           <div className="space-y-3">
@@ -236,6 +258,12 @@ export function StepPerformanceReportView() {
           Add {r.summary.unpricedModels.length === 1 ? "it" : "them"} to <code className="font-mono">src/lib/step-cost/pricing.ts</code>.
         </div>
       )}
+
+      {trends && <TokenUsageTrends trends={trends} />}
+
+      <div>
+        <h3 className="text-base font-semibold">Step performance by workflow</h3>
+      </div>
 
       {r.templates.length === 0 ? (
         <div className="rounded-lg border p-8 text-center">

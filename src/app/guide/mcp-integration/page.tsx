@@ -341,7 +341,7 @@ export default function McpIntegrationPage() {
             <CollapsibleTools title="Workflows" toolCount={24}>
               <ToolTable
                 tools={[
-                  { name: "get_cost_report", description: "Weekly cost figures for your boards (per board, workflow and step, with runs and send-backs), the same figures as the Admin step report. Read-only, names and numbers only" },
+                  { name: "get_cost_report", description: "Weekly cost figures for your boards (per board, workflow and step, with runs and send-backs), the same figures as the Admin Token usage page. Read-only, names and numbers only" },
                   { name: "list_workflow_templates", description: "List workflow templates for an idea (short summary each; pass template_id or include_steps for full steps)" },
                   { name: "create_workflow_template", description: "Create a new workflow template with steps" },
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },

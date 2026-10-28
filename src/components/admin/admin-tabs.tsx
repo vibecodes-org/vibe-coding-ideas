@@ -69,7 +69,7 @@ export function AdminTabs({
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
       <TabsList>
-        <TabsTrigger value="ai-usage">AI Usage</TabsTrigger>
+        <TabsTrigger value="ai-usage">In-app AI</TabsTrigger>
         <TabsTrigger value="feedback" className="relative">
           Feedback
           {newFeedbackCount > 0 && (
@@ -82,7 +82,7 @@ export function AdminTabs({
         <TabsTrigger value="teams">Teams</TabsTrigger>
         <TabsTrigger value="templates">Workflows</TabsTrigger>
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
-        <TabsTrigger value="reports">Reports</TabsTrigger>
+        <TabsTrigger value="token-usage">Token usage</TabsTrigger>
         {isSuperAdmin && <TabsTrigger value="platform">Platform</TabsTrigger>}
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6 space-y-10">
@@ -112,9 +112,9 @@ export function AdminTabs({
       <TabsContent value="mcp-tools" className="mt-6">
         <AdminMcpToolsDashboard recentLogs={mcpToolLogs} stats={mcpToolStats} allToolNames={allMcpToolNames} />
       </TabsContent>
-      <TabsContent value="reports" className="mt-6">
-        <h2 className="mb-1 text-lg font-semibold">Step Performance</h2>
-        <p className="mb-4 text-sm text-muted-foreground">What each workflow step contributes: problems it catches, rework it causes, time and cost.</p>
+      <TabsContent value="token-usage" className="mt-6">
+        <h2 className="mb-1 text-lg font-semibold">Token usage</h2>
+        <p className="mb-4 text-sm text-muted-foreground">What workflow steps cost, whether that&apos;s going up or down, and what each step contributes.</p>
         <StepPerformanceReportView />
       </TabsContent>
       {/* No trigger renders this tab for non-super-admins, but a direct
