@@ -230,6 +230,7 @@ import {
   getNewIdeaEnhancementPromptSchema,
 } from "./tools/new-idea-enhance";
 import { LIVE_DATA_SENTENCE, RESPONSE_REMINDER } from "./steering-copy";
+import { missingUsageError } from "./lib/step-usage";
 
 /**
  * `{ live: true }` stamps a freshness envelope (design doc §4, Surface C):
@@ -1275,12 +1276,15 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed (the reply reports output_chars and output_source, not the write-up). The step's helper saves its own full write-up with save_step_output, so normally pass NO `output`: the saved write-up is stored, and a pasted one is ignored (passed_output_ignored). Pass `output` only when nothing was saved (no helper ran the step, inline run, or the helper could not save); with neither, the call is refused and nothing changes. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The write-up is stored on the step's `output` column (later steps read it with get_task step_ids). If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
+    "Mark a workflow step as completed (the reply reports output_chars and output_source, not the write-up). The step's helper saves its own full write-up with save_step_output, so normally pass NO `output`: the saved write-up is stored, and a pasted one is ignored (passed_output_ignored). Pass `output` only when nothing was saved (no helper ran the step, inline run, or the helper could not save); with neither, the call is refused and nothing changes. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The write-up is stored on the step's `output` column (later steps read it with get_task step_ids). If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it). On a Claude step pass `usage` (the line the claim's usage_command prints, NO_TRANSCRIPT included) or, only if the command can't run, `usage_unavailable` with the reason; without either the call is refused and nothing changes.",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await completeStep(ctx, completeStepSchema.parse(args)));
+        const params = completeStepSchema.parse(args);
+        const missingUsage = missingUsageError(params);
+        if (missingUsage) throw new Error(missingUsage);
+        return jsonResult(await completeStep(ctx, params));
       } catch (e) {
         return errorResult(e);
       }
@@ -1303,7 +1307,7 @@ export function registerTools(
 
   server.tool(
     "fail_step",
-    "Mark a workflow step as failed. Pass the `claim_token` from claim_next_step (not needed when rejecting an awaiting_approval step — human gate). Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it). If the step failed because the MODEL ITSELF could not be reached (out of credits, overloaded, rate-limited, not on this plan) — not an ordinary failure like a bug or a failing test — pass `model_unavailable: true`: the step returns to pending and is re-run on the tier's configured backup model, and later steps on this board are steered away from the unavailable model until midnight UTC. A step is rescued this way at most once; a second such failure leaves it failed.",
+    "Mark a workflow step as failed. Pass the `claim_token` from claim_next_step (not needed when rejecting an awaiting_approval step — human gate). Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it). If the step failed because the MODEL ITSELF could not be reached (out of credits, overloaded, rate-limited, not on this plan) — not an ordinary failure like a bug or a failing test — pass `model_unavailable: true`: the step returns to pending and is re-run on the tier's configured backup model, and later steps on this board are steered away from the unavailable model until midnight UTC. A step is rescued this way at most once; a second such failure leaves it failed. When failing your own claimed Claude step, pass `usage` (the line the claim's usage_command prints, NO_TRANSCRIPT included) or, only if the command can't run, `usage_unavailable` with the reason; without either the call is refused and nothing changes.",
     failStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1313,7 +1317,10 @@ export function registerTools(
           args.output = args.reason;
           delete args.reason;
         }
-        return jsonResult(await failStep(ctx, failStepSchema.parse(args)));
+        const params = failStepSchema.parse(args);
+        const missingUsage = missingUsageError(params);
+        if (missingUsage) throw new Error(missingUsage);
+        return jsonResult(await failStep(ctx, params));
       } catch (e) {
         return errorResult(e);
       }

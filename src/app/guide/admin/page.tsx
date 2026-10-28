@@ -177,6 +177,9 @@ export default function AdminPage() {
             step&apos;s work is done, the Claude Code session totals its own
             token use since the claim, plus that of any subagent that did the
             work, from its local transcripts, and reports it with the step.
+            A Claude step can&apos;t be finished without that report, or a
+            stated reason it couldn&apos;t be made, so a cost is never lost
+            silently.
             Output tokens are estimated from text length, so totals are within
             about 10%. Codex steps and steps run in a different session from
             the one that claimed them show no cost.

@@ -150,7 +150,7 @@ function claudeIdentity(i: ClaimInstructionInput): string {
     `1. Keep the claim_token (ct_…) yourself and never give it to the helper; the helper gets the work_token (wt_…) so it comments in the persona's voice.\n` +
     `2. ${personaLine} ${brief}\n` +
     `3. RELIABILITY: if the helper errors or drops, retry or resume it (you have its agent id) rather than finishing the step yourself.\n` +
-    `4. When it returns, run the usage_command (swap AGENT_ID for the helper's agentId) and pass its JSON line as usage (omit usage on NO_TRANSCRIPT; never let it hold up the step). ` +
+    `4. When it returns, run the usage_command (swap AGENT_ID for the helper's agentId) and pass the line it prints as usage, NO_TRANSCRIPT included (required: complete_step refuses a call without usage). ` +
     `Call complete_step with this step's id, the claim_token, usage,${personaUsed} model_used and reasoning_effort_used (honest self-report, never blocks completion), without output, because the helper saved it (after asking it for changes, have it save again first). ` +
     `If it couldn't save, pass its full write-up as output, never the summary. On failure call fail_step the same way.\n` +
     `EXCEPTION: only if your client has no subagent/Agent tool at all, do the step inline as that persona (persona_prompt, or get_agent_prompt with as_persona true), ` +

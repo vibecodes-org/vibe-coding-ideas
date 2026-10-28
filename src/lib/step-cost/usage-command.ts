@@ -164,7 +164,7 @@ export function stepUsageScript(): { file: string; body: string } {
  * when it isn't there (a session the helper didn't launch, or an older
  * helper). A session launched before the script last changed only has the
  * older copy, so it falls back to the newest saved one (same arguments) rather
- * than losing the step's cost until a relaunch. The session already treats NO_TRANSCRIPT as "omit usage", so a
+ * than losing the step's cost until a relaunch. The session passes a NO_TRANSCRIPT line as usage and the server stores nothing for it, so a
  * missing file never blocks a step.
  */
 export function stepUsageShortCommand(

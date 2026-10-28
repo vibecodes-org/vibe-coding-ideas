@@ -54,7 +54,7 @@ import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
 import { buildClaimInstruction } from "../lib/claim-instruction";
 import { stepUsageCommandForClaim } from "../lib/step-usage-delivery";
-import { recordStepUsage, stepUsageParam } from "../lib/step-usage";
+import { recordStepUsage, stepUsageParam, usageUnavailableParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1481,6 +1481,7 @@ export const completeStepSchema = z.object({
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
   usage: stepUsageParam,
+  usage_unavailable: usageUnavailableParam,
 });
 
 /**
@@ -1897,6 +1898,7 @@ export const failStepSchema = z.object({
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
     ),
   usage: stepUsageParam,
+  usage_unavailable: usageUnavailableParam,
   // Auto-switch (card 5d0665a2). UX Design §2b wording, verbatim.
   model_unavailable: z.boolean().optional()
     .describe(

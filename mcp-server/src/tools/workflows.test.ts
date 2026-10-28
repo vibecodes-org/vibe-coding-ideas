@@ -1465,7 +1465,9 @@ describe("claimNextStep — persona embedding", () => {
         // paths and card ba37039b one STEP COST paragraph on every Claude
         // claim; everything else must stay byte-identical, so pin the rest. (db4c7f7b round 2
         // deliberately changed the inline EXCEPTION sentence: it now says to report
-        // persona_used "adapted", so every hash below was regenerated once.)
+        // persona_used "adapted", so every hash below was regenerated once.
+        // Card 1117ac6b changed the finish item's usage sentence on purpose —
+        // usage is now required — and regenerated them again.)
         const preexisting = implicit.instruction!
           .replace(/\n\nNATIVE SUBAGENT: [^\n]*/, "")
           .replace(/\n\nSTEP COST: [^\n]*/, "");
@@ -1475,14 +1477,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "731f5c756cc714243111aaf506e7f443721101027676aaf310e53d9a99ab1870",
-        "auto/missing": "85d12f5a8e61c2ab8283083998838f09cf7202053e40299eefb32d6bacda5028",
-        "cheap/embedded": "d06d0263a9a30fc10857fdfbfadd22e0374f58211453c2f8ff39d7f311978940",
-        "cheap/missing": "5464701d77ae8b29b00496338c1b09a5a7542241efc74ca8e77efa74cb0cc9ce",
-        "frontier/embedded": "8e0050e7e23cdd900ee5a498f4670f889f63a677f7cf5e8e08574bc02414d5c9",
-        "frontier/missing": "607780efdab48470a7ecd79e217e016a32e99795e15fff443d7985619411a09a",
-        "standard/embedded": "130cfc7fb7c5357b94e2c4e6ba93fb2383858e5b7a676ab8ffd24ab9347b43a8",
-        "standard/missing": "18c2ce267e5d7d0b4b8d6e3711b91a8450436a1c70a6c6c22792db4ed19a5e6b",
+        "auto/embedded": "c648e5935fa162d37be12c6758a5378621e4010e87df74bade1b380f5403beb9",
+        "auto/missing": "445b2b0e6be582b7c94ddc3dbabb574f267c0d098990aec3c5bc9cc1f3d1f777",
+        "cheap/embedded": "4abbe78d2b240f764fce1e084764adcbeebe9ef2b08e4641c6c3d87dc672d804",
+        "cheap/missing": "fec965896f4f911f2c1eb21010095b9d3f18f70d9deeb7f396ac36ffbb62d0cc",
+        "frontier/embedded": "b3fb896c284e5c25111d2ac68711a98eac0dd9358a5eac70d9d4e97fb48cdefc",
+        "frontier/missing": "b710c5bfe8e4cd6f3ee4f6f7785c3cafda867ca055570979b542770f301f5a8f",
+        "standard/embedded": "2666a8b5d7e8d35ce97ae5aa286e0aa6d0e0c408f0f150bbd513019c42ff5e4a",
+        "standard/missing": "47d007865491facd9376ce8fc940d671510ab16b7668ecae10d3cb80a1552b7e",
       }
     `);
   });
@@ -7103,7 +7105,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     expect(t).toContain("Completed inline — no subagent capability.");
     expect(t).toContain('persona_used "adapted" (an inline run is never verbatim)'); // db4c7f7b round 2
     expect(t).toContain("run the usage_command");
-    expect(t).toContain("pass its JSON line as usage");
+    expect(t).toContain("pass the line it prints as usage");
   });
 
   it("the model switch notice still comes first and the native helper is left out (AC1.10)", async () => {
@@ -7132,7 +7134,7 @@ describe("step cost (card ba37039b)", () => {
     // Near the top, so the session transcript holds the marker even if a long claim is cut short.
     expect(Object.keys(claude).slice(0, 2)).toEqual(["done", "usage_command"]);
     expect(claude.instruction).toContain("run the usage_command (swap AGENT_ID for the helper's agentId)");
-    expect(claude.instruction).toContain("omit usage on NO_TRANSCRIPT; never let it hold up the step");
+    expect(claude.instruction).toContain("pass the line it prints as usage, NO_TRANSCRIPT included (required: complete_step refuses a call without usage)");
     const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
     expect(codex).not.toHaveProperty("usage_command");
     expect(codex.instruction).not.toContain("usage_command");
