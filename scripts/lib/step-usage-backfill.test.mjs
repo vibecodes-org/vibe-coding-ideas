@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { backfillSession, findAttempts, totalCalls } from "./step-usage-backfill.mjs";
+import { backfillSession, findAttempts, readCall, totalCalls } from "./step-usage-backfill.mjs";
 
 // Lines shaped like Claude Code 2.1.300's session transcript.
 let clock = 0;
@@ -122,6 +122,67 @@ describe("backfillSession", () => {
     const { attempts, skipped } = backfillSession(session(), () => null);
     expect(skipped).toBe(1);
     expect(attempts.map((a) => a.step_id)).toEqual([STEP2]);
+  });
+});
+
+describe("session share only (stage 3)", () => {
+  it("counts only the session's own calls, never reads a subagent, and marks the attempt as an addition", () => {
+    let reads = 0;
+    const { attempts, skipped } = backfillSession(
+      session(),
+      () => {
+        reads++;
+        return null;
+      },
+      { sessionShareOnly: true }
+    );
+    expect(reads).toBe(0);
+    expect(skipped).toBe(0);
+    expect(attempts.map((a) => a.step_id)).toEqual([STEP, STEP2]);
+    expect(attempts.every((a) => a.adds_to_existing === true)).toBe(true);
+    expect(attempts[0].models).toEqual([expect.objectContaining({ model: "claude-opus-5-5", calls: 3, cache_read_tokens: 3000 })]);
+  });
+
+  it("uses the same split as the normal mode", () => {
+    const lines = session();
+    const normal = backfillSession(lines, () => []).attempts;
+    const share = backfillSession(lines, () => null, { sessionShareOnly: true }).attempts;
+    expect(share.map((a) => a.models)).toEqual(normal.map((a) => a.models.filter((m) => m.model.includes("opus"))));
+  });
+
+  it("leaves the flag off in the normal mode", () => {
+    const { attempts } = backfillSession(session(), () => []);
+    expect(attempts.some((a) => "adds_to_existing" in a)).toBe(false);
+  });
+
+  it("takes the nearest earlier timestamp when the completion line has none", () => {
+    clock = 0;
+    const done = result("u2", { step: { id: STEP, status: "completed" } });
+    const noTime = JSON.stringify({ ...JSON.parse(done), timestamp: undefined });
+    const lines = [
+      call("msg_0", { uses: [["u1", CLAIM, {}]] }),
+      result("u1", claimed(STEP, "ct_a")),
+      call("msg_1", { uses: [["u2", COMPLETE, { step_id: STEP, claim_token: "ct_a" }]], time: "2026-10-15T10:30:00.000Z" }),
+      noTime,
+    ];
+    expect(lines[3]).not.toContain("timestamp");
+    const [a] = backfillSession(lines, () => null).attempts;
+    expect(a.ended_at).toBe("2026-10-15T10:30:00.000Z");
+  });
+});
+
+describe("readCall", () => {
+  it("never reports a negative 5-minute cache write when the 1-hour figure is larger than the total", () => {
+    const line = JSON.stringify({
+      type: "assistant",
+      message: {
+        model: "claude-opus-5-5", id: "msg_odd", content: [{ type: "text", text: "x" }], stop_reason: null,
+        usage: { input_tokens: 2, cache_creation_input_tokens: 0, cache_read_input_tokens: 5, output_tokens: 1, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 789 } },
+      },
+    });
+    const c = readCall(line);
+    expect(c.write1h).toBe(789);
+    expect(c.write5m).toBe(0);
   });
 });
 

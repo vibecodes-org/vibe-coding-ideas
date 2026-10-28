@@ -17,6 +17,7 @@ import {
 import { buildCostTrends, type CostTrends, type TrendsUnmeasuredRow } from "@/lib/step-cost/trends";
 import { backfillFileSchema } from "@/lib/step-cost/usage-schema";
 import { readAll, readAllByIds, readByIds } from "@/lib/step-cost/paging";
+import { importKey, planImport, type UsageInsert } from "@/lib/step-cost/backfill-import";
 
 // Admin step report (card ba37039b). Admins can read every workflow step, but
 // not every board's runs, templates or step comments, so after the admin
@@ -166,11 +167,11 @@ export interface StepUsageImportResult {
 // The page sends a big file in pieces (src/lib/step-cost/backfill-chunks.ts); one call is capped at 1 MB.
 const MAX_IMPORT_CHARS = 1_000_000;
 
-type UsageInsert = Database["public"]["Tables"]["workflow_step_usage"]["Insert"];
-
 /**
  * Stores past step costs from the file scripts/step-usage-backfill.mjs writes.
- * A step that already has a cost is left alone, so importing a file twice, or
+ * A step that already has a cost is left alone, except attempts marked
+ * adds_to_existing (session share only), which are stored unless a row with the
+ * same step, model and time exists. Either way, importing a file twice, or
  * files from two machines, never counts anything twice.
  */
 export async function importStepUsageBackfill(fileText: string): Promise<StepUsageImportResult> {
@@ -203,41 +204,20 @@ export async function importStepUsageBackfill(fileText: string): Promise<StepUsa
     ).map((r) => r.step_id)
   );
 
-  const result: StepUsageImportResult = { imported: 0, alreadyCosted: 0, unknownSteps: 0 };
-  // Grouped by step: a batch never splits one, so a partly stored file can be imported again.
-  const byStep = new Map<string, UsageInsert[]>();
-  for (const a of attempts) {
-    const step = steps.get(a.step_id);
-    if (!step) {
-      result.unknownSteps++;
-      continue;
-    }
-    if (costed.has(a.step_id)) {
-      result.alreadyCosted++;
-      continue;
-    }
-    result.imported++;
-    const rows = byStep.get(step.id) ?? [];
-    byStep.set(step.id, rows);
-    for (const m of a.models) {
-      rows.push({
-        step_id: step.id,
-        run_id: step.run_id,
-        idea_id: step.idea_id,
-        outcome: a.outcome,
-        model: m.model,
-        calls: m.calls ?? 0,
-        input_tokens: m.input_tokens,
-        output_tokens: m.output_tokens,
-        cache_read_tokens: m.cache_read_tokens,
-        cache_write_5m_tokens: m.cache_write_5m_tokens,
-        cache_write_1h_tokens: m.cache_write_1h_tokens,
-        output_estimated: a.output_estimated ?? true,
-        reported_by: adminId,
-        created_at: a.ended_at,
-      });
-    }
+  // Session-share attempts are matched against rows already stored, so a re-import adds nothing.
+  const existingKeys = new Set<string>();
+  const addIds = [...new Set(attempts.filter((a) => a.adds_to_existing).map((a) => a.step_id))];
+  if (addIds.length > 0) {
+    const rows = await readAllByIds<{ step_id: string; model: string; created_at: string }>(addIds, (chunk, from, to) =>
+      db.from("workflow_step_usage").select("step_id, model, created_at").in("step_id", chunk).order("id").range(from, to)
+    );
+    for (const r of rows) existingKeys.add(importKey(r.step_id, r.model, r.created_at));
   }
+
+  // Grouped by step: a batch never splits one, so a partly stored file can be imported again.
+  const plan = planImport(attempts, { steps, costedStepIds: costed, existingKeys, reportedBy: adminId });
+  const result: StepUsageImportResult = { imported: plan.imported, alreadyCosted: plan.alreadyCosted, unknownSteps: plan.unknownSteps };
+  const byStep = plan.rowsByStep;
   const batches: UsageInsert[][] = [[]];
   for (const rows of byStep.values()) {
     if (batches[batches.length - 1].length + rows.length > 500) batches.push([]);

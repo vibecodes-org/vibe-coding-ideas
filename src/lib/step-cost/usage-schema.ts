@@ -33,6 +33,8 @@ export const backfillAttemptSchema = stepUsageSchema.extend({
   step_id: z.string().uuid(),
   outcome: z.enum(["completed", "awaiting_approval", "failed"]),
   ended_at: z.string().datetime({ offset: true }),
+  /** Stage 3 of card 1117ac6b: a session-share-only attempt, stored even on a step that already has a cost. */
+  adds_to_existing: z.boolean().optional(),
 });
 
 export const backfillFileSchema = z.object({
