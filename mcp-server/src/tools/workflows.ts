@@ -307,10 +307,28 @@ export type PersonaAdherenceResult = { personaUsed: string | null; personaHonore
  * "dishonored").
  */
 export function resolvePersonaAdherence(
-  personaUsed: "verbatim" | "adapted" | "none" | undefined
+  personaUsed: "verbatim" | "adapted" | "none" | undefined,
+  /** The subagent type actually spawned, when the caller says (card db4c7f7b). */
+  subagentType?: string | null,
+  /** The step's assigned bot; with subagentType, decides whether "verbatim" is believable. */
+  botId?: string | null
 ): PersonaAdherenceResult {
   if (personaUsed === undefined) return { personaUsed: null, personaHonored: null };
+  // A general-purpose (or another persona's) subagent can't have run this
+  // step's persona verbatim: the persona is only "verbatim" inside the
+  // board-named agent type. Downgrade rather than reject, so a completed
+  // step is never lost over a label; the board then shows "adapted".
+  if (personaUsed === "verbatim" && subagentType && botId && !isNamedAgentFor(subagentType, botId)) {
+    return { personaUsed: "adapted", personaHonored: false };
+  }
   return { personaUsed, personaHonored: personaUsed === "verbatim" };
+}
+
+/** True for a board-agent subagent name of this bot: `vc-<slug>-<first 8 of bot id>[-<tier>][-<effort>]`. */
+export function isNamedAgentFor(subagentType: string, botId: string): boolean {
+  const id8 = botId.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
+  if (!id8) return false;
+  return new RegExp(`^vc-[a-z0-9-]*-${id8}(-[a-z]+)*$`).test(subagentType.trim().toLowerCase());
 }
 
 /** File-format words a deliverable's trailing parenthetical can name, mapped to how the claim text spells them. */
@@ -1390,6 +1408,11 @@ export const completeStepSchema = z.object({
       "'none' = did not use the persona prompt. " +
       "Omit if there was no assigned persona or you don't know. VibeCodes records this as an adherence signal — not verified, never blocks completion."
     ),
+  subagent_type: z.string().max(100).optional()
+    .describe(
+      "The subagent type you actually spawned for this step (for example \"vc-planner-54dc8eca-frontier\" or \"general-purpose\"). " +
+      "If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), persona_used \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
+    ),
   skills_used: z.array(z.string()).optional()
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
@@ -1527,7 +1550,7 @@ export async function completeStep(
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
-  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id);
 
   // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
   // obeyed the directive's advisory line and substituted the backup has
@@ -1799,6 +1822,11 @@ export const failStepSchema = z.object({
       "'none' = did not use the persona prompt. " +
       "Omit if there was no assigned persona or you don't know. VibeCodes records this as an adherence signal — not verified, never blocks completion."
     ),
+  subagent_type: z.string().max(100).optional()
+    .describe(
+      "The subagent type you actually spawned for this step (for example \"vc-planner-54dc8eca-frontier\" or \"general-purpose\"). " +
+      "If it is not the board-named agent for this step (a vc-<role>-<that agent's id>-… name), persona_used \"verbatim\" is recorded as \"adapted\", so the board shows the step did not run in its assigned agent. Omit when no subagent was spawned."
+    ),
   skills_used: z.array(z.string()).optional()
     .describe(
       "Ignored. VibeCodes records which skills it sent at claim time, so there is nothing to report here; the parameter is still accepted so existing callers don't break."
@@ -1910,7 +1938,7 @@ export async function failStep(
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
-  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id);
 
   // Auto-switch, rescue half (card 5d0665a2, AC-1). Never for awaiting_approval
   // rejections (human gate — UX Design §2b) or Auto steps (no tier to resolve

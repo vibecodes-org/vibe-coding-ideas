@@ -123,10 +123,26 @@ describe("sync_board_agents", () => {
     expect(instruction).toMatch(/end your turn/);
     expect(instruction).toMatch(/wakes you/);
     for (const word of ["READY", "NEW_FOLDER", "MISMATCH", "NOT_LOADED"]) expect(instruction).toContain(word);
-    expect(instruction).toMatch(/general-purpose/);
     expect(instruction).toMatch(/foreground/);
     expect(instruction).toMatch(/Never print/);
     expect(instruction).toMatch(/sync again this session/);
+  });
+
+  // Card db4c7f7b: every outcome that leaves the named agent unloaded points at
+  // the same-persona agent first, then at telling the user, never a quiet fallback.
+  it("never offers a silent general-purpose fallback on any failure outcome", async () => {
+    const { instruction } = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
+    expect(instruction).not.toMatch(/use the general-purpose steps/);
+    for (const outcome of ["NEW_FOLDER", "MISMATCH", "NOT_LOADED"]) {
+      const at = instruction.indexOf(`${outcome}:`);
+      expect(at, outcome).toBeGreaterThan(-1);
+      expect(instruction.slice(at, at + 400), outcome).toContain("NO-LOAD steps");
+    }
+    expect(instruction).toContain("declining it");
+    expect(instruction).toMatch(/NO-LOAD steps: the board-named agent is never optional/);
+    expect(instruction).toMatch(/another tier or effort suffix/);
+    expect(instruction).toMatch(/STOP: tell the user plainly/);
+    expect(instruction).toMatch(/explicitly say yes/);
   });
 
   it("tells the session every listed agent is loaded after READY, even if its listing shows an older tag", async () => {

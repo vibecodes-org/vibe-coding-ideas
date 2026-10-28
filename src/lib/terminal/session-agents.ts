@@ -286,21 +286,31 @@ export function sessionAgentClaimHint(input: {
   // The sync's own reply (sync_board_agents, mcp-server/src/tools/agent-sync.ts)
   // spells out the command, NEW_FOLDER, MISMATCH, NOT_LOADED and the two-sync
   // limit, so this note keeps only what decides whether to sync at all.
-  const personaFallback =
-    `spawn a general helper instead: call get_agent_prompt with agent_id "${input.bot.id}" and as_persona true, ` +
-    `and give the helper the returned persona_prompt as its system prompt, at the model and effort above.`;
+  // The board-named agent is never optional (card db4c7f7b). There is no
+  // silent general-purpose stand-in: the only way down is to stop, tell the
+  // user which agent could not be loaded and why, and get an explicit yes.
+  const base = sessionAgentName(input.bot, null);
+  const sameAgentStep =
+    `If that name isn't offered but the same agent is (a type starting "${base}", any tier or effort suffix), ` +
+    `spawn that one with the model and effort above passed explicitly on the Agent tool: it counts as the ` +
+    `named agent (persona_used "verbatim"; report the model and effort actually used). `;
   const syncStep =
     input.ideaId && input.stepId
-      ? `If it isn't offered with that tag: when the listing has this name without "${SYNC_MARKER}" at the start of ` +
+      ? `If none is offered: when the listing has this name without "${SYNC_MARKER}" at the start of ` +
         `its description, VibeCodes launched this session with its own copy, so don't sync. Otherwise call ` +
         `sync_board_agents (idea_id "${input.ideaId}", step_id "${input.stepId}") and do what its instruction ` +
         `says; once a sync this session has ended READY with that tag, it is loaded, so spawn it by name even if ` +
-        `the listing looks stale. If it still can't be used, `
-      : `If no subagent with that exact name and tag is available, `;
+        `the listing looks stale. `
+      : ``;
+  const stopStep =
+    `If it still can't be used, STOP: tell the user plainly which agent ("${input.bot.name}") couldn't be loaded ` +
+    `and why, and wait. Only on their explicit yes may you spawn a general helper on get_agent_prompt ` +
+    `(agent_id "${input.bot.id}", as_persona true), then report persona_used "adapted" and subagent_type "general-purpose".`;
   const instruction =
-    `NATIVE SUBAGENT: If your Agent tool offers a subagent type named "${name}" whose description ends with ` +
-    `${tag}, spawn it for this step instead of a general-purpose one: its system prompt already is this step's ` +
-    `persona and its definition sets this step's model and effort, so pass no persona text or model parameter. ` +
-    `Report persona_used "verbatim"${reportTier}. ${syncStep}${personaFallback}`;
+    `NATIVE SUBAGENT: the board-named agent is never optional. If your Agent tool offers the type ` +
+    `"${name}" whose description ends with ${tag}, spawn it for this step: its system prompt already is this ` +
+    `step's persona and its definition sets this step's model and effort, so pass no persona text or model ` +
+    `parameter. Report persona_used "verbatim"${reportTier} and subagent_type "${name}". ` +
+    `${sameAgentStep}${syncStep}${stopStep}`;
   return { name, tag, instruction };
 }

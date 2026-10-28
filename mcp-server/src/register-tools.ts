@@ -998,7 +998,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Pass as_persona: true to get `persona_prompt` instead: the persona exactly as a workflow hand-off would embed it (system prompt, tools note and skills), for a session that has to run a step inline.",
+    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Pass as_persona: true to get `persona_prompt` instead: the persona exactly as a workflow hand-off would embed it (system prompt, tools note and skills), for a session that has to run a step inline, or whose user explicitly agreed to a general helper after a named agent could not be loaded. Never use it to replace a board-named subagent without that yes.",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1554,7 +1554,7 @@ export function registerTools(
 
   const syncTool = server.tool(
     "sync_board_agents",
-    "Save the agents of a step you just claimed, and of the rest of its workflow run, as real Claude Code subagents (untracked .claude/agents/vc-*.md files), for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, with that step's id. Returns a JSON summary (each agent's name, tag, sha256) and, in a second text block, a self-checking shell command that carries the files: no download, so it works on any network. Run the command exactly as given with run_in_background and end your turn; it waits until Claude Code has loaded every file, and the completion wakes you with the subagents loaded, so later steps need no sync. If it fails, carry on with claim_next_step's general-purpose steps.",
+    "Save the agents of a step you just claimed, and of the rest of its workflow run, as real Claude Code subagents (untracked .claude/agents/vc-*.md files), for a session VibeCodes didn't launch (a terminal you started yourself, or a Claude Code cloud session). Call it only when claim_next_step names a native subagent your Agent tool doesn't offer, with that step's id. Returns a JSON summary (each agent's name, tag, sha256) and, in a second text block, a self-checking shell command that carries the files: no download, so it works on any network. Run the command exactly as given with run_in_background and end your turn; it waits until Claude Code has loaded every file, and the completion wakes you with the subagents loaded, so later steps need no sync. If it fails or is refused, follow the instruction in its reply: use the same agent under another tier/effort name with explicit model and effort, otherwise tell the user and stop; never fall back to a general-purpose helper without their explicit yes.",
     syncBoardAgentsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

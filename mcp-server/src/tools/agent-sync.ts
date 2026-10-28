@@ -33,6 +33,16 @@ export const syncBoardAgentsSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step you just claimed: its agent, and the agents of the rest of its run, are saved"),
 });
 
+/** Shared by every outcome that leaves the named agent unloaded (card db4c7f7b). */
+export const NO_LOAD_STEPS =
+  "NO-LOAD steps: the board-named agent is never optional, and there is no silent general-purpose fallback. " +
+  "(1) If your Agent tool offers the same agent under another tier or effort suffix (a name starting " +
+  "vc-<role>-<same agent id>, same id), spawn that one and pass the claim's model and effort explicitly on the " +
+  "Agent tool; it counts as the named agent, so report persona_used \"verbatim\" with the model and effort you " +
+  "actually used. (2) Otherwise STOP: tell the user plainly which agent could not be loaded and why, and wait. " +
+  "Only if they explicitly say yes in this session may you spawn a general helper with get_agent_prompt " +
+  "(as_persona true), and then report persona_used \"adapted\" and subagent_type \"general-purpose\".";
+
 const INSTRUCTION =
   "Run the command in the SECOND block, copied exactly as given, from the project folder (the repo root), with " +
   "run_in_background, then end your turn. It saves every agent listed in `agents` (this step's, then the rest of " +
@@ -43,18 +53,19 @@ const INSTRUCTION =
   "names the same tag as listed here, even if your Agent tool's listing still shows an older description or tag " +
   "for that name (the listing is not refreshed), but only when the name is not offered at all or its listed " +
   "description starts with \"Saved by sync_board_agents.\": a name offered without that marker is a copy the " +
-  "session was launched with, which a sync can't replace, so use the general-purpose steps for it instead. If " +
+  "session was launched with, which a sync can't replace, so use the NO-LOAD steps below for it. If " +
   "one is not offered at all after READY, run the same command once more (at most 2 syncs per step). NEW_FOLDER: no agents folder existed when this session started, so the " +
   "command created one (and the user-level one, so later sessions in any repo on this machine are covered), " +
-  "which Claude Code won't load until the next session; use the general-purpose steps, don't sync again this " +
+  "which Claude Code won't load until the next session; use the NO-LOAD steps below, don't sync again this " +
   "session, and include the new .claude/agents/.gitignore in your next commit. MISMATCH: a file " +
-  "did not match its fingerprint and none were saved; don't retry, use the general-purpose steps. NOT_LOADED: " +
-  "Claude Code had not read the files after about 75 seconds; use the general-purpose steps and don't sync again " +
+  "did not match its fingerprint and none were saved; don't retry, use the NO-LOAD steps below. NOT_LOADED: " +
+  "Claude Code had not read the files after about 75 seconds; use the NO-LOAD steps below and don't sync again " +
   "this session. If you can't run in the background (you are a subagent, or background tasks are disabled), run " +
-  "it in the foreground and use the general-purpose steps for this step: the agents are then loaded for the " +
-  "claims after it. If the command fails for any other reason, use the general-purpose steps and don't sync " +
+  "it in the foreground and use the NO-LOAD steps below for this step: the agents are then loaded for the " +
+  "claims after it. If the command fails or is refused for any other reason (including your command-safety check declining it), use the NO-LOAD steps below and don't sync " +
   "again this session. Never print, show, edit or commit the files: they hold agent instructions and are kept " +
-  "out of git.";
+  "out of git. " +
+  NO_LOAD_STEPS;
 
 type AgentSummary = { name: string; tag: string; sha256: string; bytes: number };
 
@@ -88,7 +99,7 @@ export async function syncBoardAgents(
   if (!built) {
     throw new Error(
       "That step has no agent with a persona on this board, so there is nothing to sync. " +
-        "Carry on with the general-purpose steps from claim_next_step.",
+        NO_LOAD_STEPS,
     );
   }
 
@@ -110,8 +121,8 @@ export async function syncBoardAgents(
       status: "too_large",
       agent: { name: claimed.name, tag: claimed.tag ?? "", bytes: claimed.bytes },
       instruction:
-        "This agent's file is too large to hand over in one command. Use the general-purpose steps from " +
-        "claim_next_step for this step and don't sync again this session.",
+        "This agent's file is too large to hand over in one command. Don't sync again this session. " +
+        NO_LOAD_STEPS,
     };
   }
 

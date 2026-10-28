@@ -201,22 +201,41 @@ describe("sessionAgentClaimHint", () => {
     expect(agents[bare.name].description.endsWith(bare.tag)).toBe(false);
   });
 
-  it("tells the orchestrator what to report, and to fetch the persona itself when the helper can't be used", () => {
+  it("tells the orchestrator what to report, and to stop rather than swap in a stand-in when the helper can't be used", () => {
     const { instruction } = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
     expect(instruction).toContain('"vc-atlas-37e8ffb2-frontier"');
     expect(instruction).toContain('persona_used "verbatim"');
     expect(instruction).toContain('model_used "opus", reasoning_effort_used "high"');
-    // The reply no longer carries persona_prompt when this helper is named, so
-    // the fallback fetches the same text (card 5e654dd1).
-    expect(instruction).toContain(`get_agent_prompt with agent_id "${ATLAS.id}" and as_persona true`);
-    expect(instruction.trim().endsWith("at the model and effort above.")).toBe(true);
+    expect(instruction).toContain('subagent_type "vc-atlas-37e8ffb2-frontier"');
   });
 
-  it("is short: about 450 characters without the sync clause, under 1,000 with it", () => {
+  // Card db4c7f7b: the board-named agent is never optional.
+  describe("never silently swaps the named agent for a stand-in (card db4c7f7b)", () => {
+    const hint = () => sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" }).instruction;
+
+    it("tries the same agent under another tier/effort name first, with explicit model and effort", () => {
+      const i = hint();
+      expect(i).toContain('a type starting "vc-atlas-37e8ffb2"');
+      expect(i).toContain("model and effort above passed explicitly on the Agent tool");
+      expect(i).toContain("it counts as the named agent");
+      expect(i.indexOf("starting \"vc-atlas-37e8ffb2\"")).toBeLessThan(i.indexOf("STOP"));
+    });
+
+    it("stops and asks the user, allowing a general helper only on their explicit yes, recorded as adapted", () => {
+      const i = hint();
+      expect(i).toContain("STOP: tell the user plainly which agent");
+      expect(i).toContain("Only on their explicit yes may you spawn a general helper");
+      expect(i).toContain('persona_used "adapted" and subagent_type "general-purpose"');
+      expect(i).not.toContain("spawn a general helper instead");
+      expect(i.trim().endsWith('subagent_type "general-purpose".')).toBe(true);
+    });
+  });
+
+  it("stays compact: under 1,400 characters without the sync clause, under 1,900 with it", () => {
     const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
-    expect(sessionAgentClaimHint(base).instruction.length).toBeLessThan(800);
+    expect(sessionAgentClaimHint(base).instruction.length).toBeLessThan(1400);
     const withSync = sessionAgentClaimHint({ ...base, ideaId: "i", stepId: "s" }).instruction;
-    expect(withSync.length).toBeLessThan(1300);
+    expect(withSync.length).toBeLessThan(1900);
   });
 
   describe("when the session wasn't launched by VibeCodes (cards 7939ee17, b9205d04)", () => {
@@ -248,10 +267,10 @@ describe("sessionAgentClaimHint", () => {
       expect(instruction.indexOf("don't sync")).toBeLessThan(instruction.indexOf("call sync_board_agents"));
     });
 
-    it("falls back to the persona fetch as the last word, in one paragraph", () => {
+    it("ends by stopping to ask the user, never by falling back, in one paragraph", () => {
       const { instruction } = sessionAgentClaimHint(full);
-      expect(instruction).toContain("If it still can't be used, spawn a general helper instead");
-      expect(instruction.trim().endsWith("at the model and effort above.")).toBe(true);
+      expect(instruction).toContain("If it still can't be used, STOP");
+      expect(instruction.trim().endsWith('subagent_type "general-purpose".')).toBe(true);
       expect(instruction).not.toContain("\n");
     });
 

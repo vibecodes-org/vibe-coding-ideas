@@ -1139,15 +1139,16 @@ describe("claimNextStep — agent skills", () => {
   // The persona text itself is built by composePersonaPrompt (tested in
   // lib/persona-prompt.test.ts) and is what get_agent_prompt(as_persona) returns.
   // A claim that names a native helper no longer repeats it (card 5e654dd1).
-  it("leaves persona_prompt out when a native helper is named, and points at the fallback instead", async () => {
+  it("leaves persona_prompt out when a native helper is named, and gates the fallback behind the user's yes", async () => {
     const { ctx } = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: SKILLS });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as SkillClaim;
 
     expect(r.native_subagent).toBeDefined();
     expect(r).not.toHaveProperty("persona_prompt");
     expect(r).not.toHaveProperty("persona_name");
-    expect(r.instruction).toContain('get_agent_prompt with agent_id');
+    expect(r.instruction).toContain('get_agent_prompt (agent_id');
     expect(r.instruction).toContain("as_persona true");
+    expect(r.instruction).toContain("Only on their explicit yes");
     // The skills paragraph talks about persona_prompt, which isn't here.
     expect(r.instruction).not.toContain("SKILLS:");
   });
@@ -6129,6 +6130,26 @@ describe("resolveTierAdherence", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolvePersonaAdherence", () => {
+  // Card db4c7f7b: a stand-in subagent can't have run the persona verbatim.
+  const BOT = "54dc8eca-1111-4222-8333-444455556666";
+  it("downgrades 'verbatim' to 'adapted' when the spawned subagent is general-purpose", () => {
+    expect(resolvePersonaAdherence("verbatim", "general-purpose", BOT)).toEqual({ personaUsed: "adapted", personaHonored: false });
+  });
+  it("downgrades 'verbatim' for another agent's vc- name", () => {
+    expect(resolvePersonaAdherence("verbatim", "vc-atlas-37e8ffb2-frontier", BOT)).toEqual({ personaUsed: "adapted", personaHonored: false });
+  });
+  it("keeps 'verbatim' for the board-named agent, any tier or effort suffix", () => {
+    for (const t of ["vc-planner-54dc8eca", "vc-planner-54dc8eca-frontier", "vc-planner-54dc8eca-frontier-high"]) {
+      expect(resolvePersonaAdherence("verbatim", t, BOT)).toEqual({ personaUsed: "verbatim", personaHonored: true });
+    }
+  });
+  it("leaves 'verbatim' alone when no subagent_type is reported", () => {
+    expect(resolvePersonaAdherence("verbatim", undefined, BOT)).toEqual({ personaUsed: "verbatim", personaHonored: true });
+  });
+  it("does not touch 'none' or 'adapted' for a general-purpose subagent", () => {
+    expect(resolvePersonaAdherence("none", "general-purpose", BOT).personaUsed).toBe("none");
+  });
+
   it("'verbatim' -> personaUsed='verbatim', personaHonored=true", () => {
     expect(resolvePersonaAdherence("verbatim")).toEqual({ personaUsed: "verbatim", personaHonored: true });
   });
@@ -6994,12 +7015,12 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(9650); // stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(10100); // db4c7f7b: +~400 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
     const r = (await midRunClaim()) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(5050); // stage 3: 4,476 -> 5,013 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(5450); // db4c7f7b: +~400; stage 3: 4,476 -> 5,013 (+537)
   });
 
   it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {
@@ -7008,7 +7029,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
       pendingStep: step, updatedStep: { ...step, status: "in_progress" }, skills: SKILLS, systemPrompt: RULE_PERSONA,
     });
     const r = (await claimNextStep(ctx, { task_id: TASK_ID })) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(4000); // stage 3: 3,445 -> 3,982 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(4450); // db4c7f7b: +~400; stage 3: 3,445 -> 3,982 (+537)
   });
 
   it("sends available_agents only when the step has no assigned agent (AC1.4)", async () => {
