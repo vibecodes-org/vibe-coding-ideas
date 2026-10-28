@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { missingUsageError, recordStepUsage, stepUsageSchema, type StepUsage } from "./step-usage";
 import type { McpContext } from "../context";
+import { logger } from "../../../src/lib/logger";
 
 const STEP = { id: "11111111-1111-4111-8111-111111111111", run_id: "22222222-2222-4222-8222-222222222222", idea_id: "33333333-3333-4333-8333-333333333333" };
 const USAGE: StepUsage = {
@@ -102,5 +103,23 @@ describe("missingUsageError", () => {
     expect(missingUsageError({ claim_token: CT, agent: "codex" })).toBeNull();
     expect(missingUsageError({})).toBeNull();
     expect(missingUsageError({ claim_token: "" })).toBeNull();
+  });
+});
+
+// Card 1117ac6b review: a skipped cost must show in production logs.
+describe("recordStepUsage — skipped costs are logged at warn", () => {
+  it("warns with the step id for a NO_TRANSCRIPT line and for a usage_unavailable reason, and writes nothing", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const insert = vi.fn();
+      await recordStepUsage(ctxWith(insert), STEP, "completed", "NO_TRANSCRIPT abc");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("NO_TRANSCRIPT"), expect.objectContaining({ stepId: STEP.id }));
+      warn.mockClear();
+      await recordStepUsage(ctxWith(insert), STEP, "completed", undefined, "client has no shell");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("unavailable"), expect.objectContaining({ stepId: STEP.id, reason: "client has no shell" }));
+      expect(insert).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

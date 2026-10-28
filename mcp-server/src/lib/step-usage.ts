@@ -73,12 +73,20 @@ export async function recordStepUsage(
   ctx: McpContext,
   step: { id: string; run_id: string | null; idea_id: string },
   outcome: "completed" | "awaiting_approval" | "failed",
-  raw: unknown
+  raw: unknown,
+  unavailableReason?: string | null
 ): Promise<void> {
-  if (raw === undefined || raw === null || raw === "") return;
+  // Card 1117ac6b: a step finished without a cost is logged at warn, so a
+  // gap shows in production logs instead of vanishing.
+  if (raw === undefined || raw === null || raw === "") {
+    if (unavailableReason?.trim()) {
+      logger.warn("step usage unavailable", { stepId: step.id, reason: unavailableReason.trim().slice(0, 300) });
+    }
+    return;
+  }
   let value = raw;
   if (typeof value === "string" && value.trim().startsWith("NO_TRANSCRIPT")) {
-    logger.info("step usage not found in transcripts", { stepId: step.id, detail: value.trim().slice(0, 120) });
+    logger.warn("step usage skipped: NO_TRANSCRIPT", { stepId: step.id, detail: value.trim().slice(0, 120) });
     return;
   }
   if (typeof value === "string") {

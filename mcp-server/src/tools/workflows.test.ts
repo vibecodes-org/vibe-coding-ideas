@@ -1477,14 +1477,14 @@ describe("claimNextStep — persona embedding", () => {
     }
     expect(hashes).toMatchInlineSnapshot(`
       {
-        "auto/embedded": "c648e5935fa162d37be12c6758a5378621e4010e87df74bade1b380f5403beb9",
-        "auto/missing": "445b2b0e6be582b7c94ddc3dbabb574f267c0d098990aec3c5bc9cc1f3d1f777",
-        "cheap/embedded": "4abbe78d2b240f764fce1e084764adcbeebe9ef2b08e4641c6c3d87dc672d804",
-        "cheap/missing": "fec965896f4f911f2c1eb21010095b9d3f18f70d9deeb7f396ac36ffbb62d0cc",
-        "frontier/embedded": "b3fb896c284e5c25111d2ac68711a98eac0dd9358a5eac70d9d4e97fb48cdefc",
-        "frontier/missing": "b710c5bfe8e4cd6f3ee4f6f7785c3cafda867ca055570979b542770f301f5a8f",
-        "standard/embedded": "2666a8b5d7e8d35ce97ae5aa286e0aa6d0e0c408f0f150bbd513019c42ff5e4a",
-        "standard/missing": "47d007865491facd9376ce8fc940d671510ab16b7668ecae10d3cb80a1552b7e",
+        "auto/embedded": "004ad04b32287521815815d70cab61955da2be8077969f8a5fe5bfde5da13e05",
+        "auto/missing": "c8c1da610f9348efe1c5852049dce73cfe3bc8e5281f9f00df6889634b4d4ffe",
+        "cheap/embedded": "8f5c7b2c2b5027f6bd1aa98a6c6fef42c7e1b43b7654fa4e9540ccdc26f24464",
+        "cheap/missing": "ab2129f33329d3d59da315b152a85e8032de90991da65d02e4f39054c1627bc0",
+        "frontier/embedded": "10bcd2ebf8abef323ca96ffe94587ed061dec6e52ab7beac36f161a43687328d",
+        "frontier/missing": "5118c75445d51697a1534756caa02259d686db35e9ec4a276c1d6cedfe7f1baf",
+        "standard/embedded": "dca6a2ba4b91c696ed5d3edf0d0533ceed3cab6369f4b32906c999ccb69e136b",
+        "standard/missing": "888e53d2ca0f6f9dadf563137c555f7db780e236226d9971b0f4020160e7b431",
       }
     `);
   });
@@ -7103,6 +7103,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     // retry / resume, inline exception, usage
     expect(t).toContain("retry or resume it");
     expect(t).toContain("Completed inline — no subagent capability.");
+    expect(t).toContain("call complete_step with the claim_token, usage (run usage_command as is, or pass usage_unavailable + why)");
     expect(t).toContain('persona_used "adapted" (an inline run is never verbatim)'); // db4c7f7b round 2
     expect(t).toContain("run the usage_command");
     expect(t).toContain("pass the line it prints as usage");
@@ -7134,7 +7135,7 @@ describe("step cost (card ba37039b)", () => {
     // Near the top, so the session transcript holds the marker even if a long claim is cut short.
     expect(Object.keys(claude).slice(0, 2)).toEqual(["done", "usage_command"]);
     expect(claude.instruction).toContain("run the usage_command (swap AGENT_ID for the helper's agentId)");
-    expect(claude.instruction).toContain("pass the line it prints as usage, NO_TRANSCRIPT included (required: complete_step refuses a call without usage)");
+    expect(claude.instruction).toContain("pass the line it prints as usage, NO_TRANSCRIPT included (required, never skip it)");
     const codex = (await claimNextStep(ctx(), { task_id: TASK_ID, agent: "codex" })) as { usage_command?: string; instruction?: string };
     expect(codex).not.toHaveProperty("usage_command");
     expect(codex.instruction).not.toContain("usage_command");
