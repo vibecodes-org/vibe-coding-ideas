@@ -56,7 +56,7 @@ export function readCall(line) {
       .replace(/"(type|id|name|caller|container)":("[^"]*"|null|\{[^{}]*\})/g, "");
     len = Buffer.byteLength(seg, "utf8");
   }
-  return { id: idm[1], model, input, read, write5m: write - write1h, write1h, reported: num(u, "output_tokens"), len };
+  return { id: idm[1], model, input, read, write5m: Math.max(0, write - write1h), write1h, reported: num(u, "output_tokens"), len };
 }
 
 /**

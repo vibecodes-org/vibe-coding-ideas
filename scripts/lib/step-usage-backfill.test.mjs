@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { backfillSession, findAttempts, totalCalls } from "./step-usage-backfill.mjs";
+import { backfillSession, findAttempts, readCall, totalCalls } from "./step-usage-backfill.mjs";
 
 // Lines shaped like Claude Code 2.1.300's session transcript.
 let clock = 0;
@@ -168,6 +168,21 @@ describe("session share only (stage 3)", () => {
     expect(lines[3]).not.toContain("timestamp");
     const [a] = backfillSession(lines, () => null).attempts;
     expect(a.ended_at).toBe("2026-10-15T10:30:00.000Z");
+  });
+});
+
+describe("readCall", () => {
+  it("never reports a negative 5-minute cache write when the 1-hour figure is larger than the total", () => {
+    const line = JSON.stringify({
+      type: "assistant",
+      message: {
+        model: "claude-opus-5-5", id: "msg_odd", content: [{ type: "text", text: "x" }], stop_reason: null,
+        usage: { input_tokens: 2, cache_creation_input_tokens: 0, cache_read_input_tokens: 5, output_tokens: 1, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 789 } },
+      },
+    });
+    const c = readCall(line);
+    expect(c.write1h).toBe(789);
+    expect(c.write5m).toBe(0);
   });
 });
 

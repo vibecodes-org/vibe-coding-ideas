@@ -169,7 +169,9 @@ const MAX_IMPORT_CHARS = 1_000_000;
 
 /**
  * Stores past step costs from the file scripts/step-usage-backfill.mjs writes.
- * A step that already has a cost is left alone, so importing a file twice, or
+ * A step that already has a cost is left alone, except attempts marked
+ * adds_to_existing (session share only), which are stored unless a row with the
+ * same step, model and time exists. Either way, importing a file twice, or
  * files from two machines, never counts anything twice.
  */
 export async function importStepUsageBackfill(fileText: string): Promise<StepUsageImportResult> {
