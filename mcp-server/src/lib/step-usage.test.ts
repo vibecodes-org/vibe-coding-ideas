@@ -94,7 +94,7 @@ describe("missingUsageError", () => {
     expect(msg).toBe(noScriptRetryMessage(MARK));
     expect(msg).toContain(stepUsageCommand(MARK));
     expect(msg).toContain("AGENT_ID");
-    expect(msg).toContain("usage_unavailable");
+    expect(msg).toContain("usage_unavailable and the reason instead of usage");
     expect(msg).toMatch(/claim_token is still valid/);
     const prose = msg!.replace(stepUsageCommand(MARK), "");
     expect(prose).not.toMatch(/save|write|install/i);
@@ -205,6 +205,14 @@ describe("recordStepUsage — lasting record when the cost couldn't be measured"
     }
     expect(floorNegativeTokens(USAGE)).toBe(USAGE);
     expect((await run({ models: [{ ...USAGE.models[0], input_tokens: 1.5 }] })).row).toMatchObject({ kind: "unreadable" });
+  });
+
+  it("the no-script line plus a usage_unavailable reason is accepted and recorded as unavailable with that reason", async () => {
+    const line = "NO_TRANSCRIPT no-script vcu_0123456789abcdef01234567";
+    expect(missingUsageError({ claim_token: "ct_abc", usage: line, usage_unavailable: "client has no shell" })).toBeNull();
+    const { row, insert } = await run(line, "client has no shell");
+    expect(row).toMatchObject({ kind: "unavailable", reason: "client has no shell" });
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("a marker-carrying no-script line that gets past the refusal is stored as the plain no-script reason", async () => {

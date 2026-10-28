@@ -50,7 +50,7 @@ export function noScriptRetryMessage(marker: string): string {
     "Nothing was changed; the claim_token is still valid. Run the full command between the lines below once " +
     "(swap AGENT_ID for the agentId of each subagent that did the work, or leave it as it is if you did the work " +
     "yourself) and call again with the single line it prints as usage. It only reads Claude's session history; " +
-    "it changes nothing on this machine. If it can't be run, call again with usage_unavailable and the reason.\n" +
+    "it changes nothing on this machine. If it can't be run, call again with usage_unavailable and the reason instead of usage.\n" +
     "----- command start -----\n" +
     stepUsageCommand(marker) +
     "\n----- command end -----"
@@ -75,6 +75,8 @@ export function missingUsageError(params: {
   if (!params.claim_token) return null;
   if ((params.agent ?? "claude") !== "claude") return null;
   const u = params.usage;
+  // A stated reason always lets the call through, so the retry advice below can never loop.
+  if (params.usage_unavailable?.trim()) return null;
   const marker = noScriptMarker(u);
   if (marker) return noScriptRetryMessage(marker);
   const hasUsage = u !== undefined && u !== null && !(typeof u === "string" && u.trim() === "");
@@ -178,6 +180,12 @@ export async function recordStepUsage(
     return;
   }
   let value: unknown = raw;
+  if (noScriptMarker(value) && unavailableReason?.trim() && agent !== "codex") {
+    // The session ran the short command, got the no-script line, then said it can't run the full one either.
+    logger.warn("step usage unavailable", { stepId: step.id, reason: unavailableReason.trim().slice(0, 300) });
+    await recordUnmeasured(ctx, step, outcome, "unavailable", unavailableReason);
+    return;
+  }
   if (typeof value === "string" && value.trim().startsWith("NO_TRANSCRIPT")) {
     logger.warn("step usage skipped: NO_TRANSCRIPT", { stepId: step.id, detail: value.trim().slice(0, 120) });
     await recordUnmeasured(ctx, step, outcome, "no_transcript", noScriptMarker(value) ? " no-script" : value.trim().slice("NO_TRANSCRIPT".length));

@@ -348,6 +348,10 @@ describe("saved step-usage script and the short command", () => {
     const root = withScript(null);
     try {
       const first = runCommand(root, stepUsageShortCommand(MARK));
+      if (spawnSync("zsh", ["-c", "true"]).status === 0) {
+        expect(runCommand(root, stepUsageShortCommand(MARK), "zsh")).toBe(first);
+        expect(runCommand(root, stepUsageCommand(MARK), "zsh")).toBe(runCommand(root, stepUsageCommand(MARK)));
+      }
       const marker = noScriptMarker(first);
       expect(marker).toBe(MARK);
       const second = runCommand(root, stepUsageCommand(marker as string));
