@@ -856,6 +856,10 @@ export function KanbanBoard({
     showArchived,
   ]);
 
+  // Same test the toolbar uses to show "Clear filters"
+  const isFiltering =
+    !!searchQuery || assigneeFilter !== "all" || labelFilter.length > 0 || dueDateFilter !== "all";
+
   // Sensor configuration
   // MouseSensor: 8px distance to avoid accidental drags from clicks
   // TouchSensor: 200ms delay to distinguish drag from scroll, with 25px tolerance
@@ -1266,6 +1270,9 @@ export function KanbanBoard({
                       key={filteredCol.id}
                       column={filteredCol}
                       totalTaskCount={fullCol.tasks.filter((t) => !t.archived).length}
+                      matchingTaskCount={
+                        isFiltering ? filteredCol.tasks.filter((t) => !t.archived).length : undefined
+                      }
                       ideaId={ideaId}
                       teamMembers={teamMembers}
                       boardLabels={boardLabels}

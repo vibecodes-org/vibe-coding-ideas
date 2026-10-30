@@ -190,6 +190,10 @@ export default function KanbanBoardsPage() {
             <li>Filter by due date (overdue, due soon)</li>
             <li>Toggle visibility of archived tasks</li>
           </ul>
+          <p className="mt-4 text-muted-foreground">
+            While a search or filter is on, each column header shows how many of
+            its tasks match, for example <strong className="text-foreground">(3 of 40)</strong>.
+          </p>
         </section>
 
         <section>
