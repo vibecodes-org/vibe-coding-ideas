@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { parseDeliverablesText } from "@/lib/deliverables-text";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -376,10 +377,7 @@ export function AddTemplateDialog({
     try {
       const finalSteps = steps.map((s, i) => ({
         ...s,
-        deliverables: (deliverableStrings[i] ?? "")
-          .split(",")
-          .map((d) => d.trim())
-          .filter(Boolean),
+        deliverables: parseDeliverablesText(deliverableStrings[i] ?? ""),
       }));
       const result = await createWorkflowTemplate(
         ideaId,
@@ -773,17 +771,17 @@ export function AddTemplateDialog({
                     className="w-32"
                   />
                 </div>
-                <div className="flex items-center gap-3 pl-7">
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                <div className="flex items-start gap-3 pl-7">
+                  <span className="pt-1.5 text-[10px] text-muted-foreground whitespace-nowrap">
                     Description
                   </span>
-                  <Input
+                  <Textarea rows={1}
                     value={step.description ?? ""}
                     onChange={(e) =>
                       updateStep(idx, { description: e.target.value || undefined })
                     }
                     placeholder="Description (optional)"
-                    className="h-7 flex-1 text-xs"
+                    className="max-h-[150px] min-h-7 flex-1 resize-none overflow-y-auto py-1 text-xs md:text-xs"
                   />
                   <div className="flex items-center gap-1.5">
                     <Switch
@@ -794,11 +792,11 @@ export function AddTemplateDialog({
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">Approval</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 pl-7">
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                <div className="flex items-start gap-3 pl-7">
+                  <span className="pt-1.5 text-[10px] text-muted-foreground whitespace-nowrap">
                     Deliverables
                   </span>
-                  <Input
+                  <Textarea rows={1}
                     value={deliverableStrings[idx] ?? ""}
                     onChange={(e) =>
                       setDeliverableStrings((prev) => {
@@ -808,7 +806,7 @@ export function AddTemplateDialog({
                       })
                     }
                     placeholder="Deliverables (optional) — e.g. HTML mockups, API spec"
-                    className="h-7 flex-1 text-xs"
+                    className="max-h-[30vh] min-h-7 flex-1 resize-none overflow-y-auto py-1 text-xs md:text-xs"
                   />
                 </div>
                 <ModelTierSelect

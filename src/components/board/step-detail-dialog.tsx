@@ -38,6 +38,7 @@ import { RoleCombobox } from "@/components/ui/role-combobox";
 import { StepSkillsLine } from "./step-skills-line";
 import { ModelTierSelect, ModelTierBadge } from "@/components/shared/model-tier-select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDeliverablesText, parseDeliverablesText } from "@/lib/deliverables-text";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -494,7 +495,7 @@ export function StepDetailDialog({
     setEditTitle(step.title);
     setEditDescription(step.description ?? "");
     setEditRole(step.agent_role ?? "");
-    setEditDeliverables((step.expected_deliverables ?? []).join(", "));
+    setEditDeliverables(formatDeliverablesText(step.expected_deliverables));
     setEditModelTier(step.model_tier ?? null);
     setEditEffort(step.model_tier ? (step.effort_override ?? null) : null);
     setEditHumanCheck(step.human_check_required);
@@ -504,10 +505,7 @@ export function StepDetailDialog({
   async function handleSaveEdit() {
     setSaving(true);
     try {
-      const deliverables = editDeliverables
-        .split(",")
-        .map((d) => d.trim())
-        .filter(Boolean);
+      const deliverables = parseDeliverablesText(editDeliverables);
       await updateWorkflowStep(step.id, {
         title: editTitle,
         description: editDescription || null,
@@ -723,7 +721,7 @@ export function StepDetailDialog({
                   id="edit-description"
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
-                  className="text-sm min-h-[60px]"
+                  className="text-sm min-h-[60px] max-h-[45vh] overflow-y-auto"
                   rows={3}
                 />
               </div>
@@ -748,13 +746,17 @@ export function StepDetailDialog({
               />
               <div className="space-y-1.5">
                 <Label htmlFor="edit-deliverables" className="text-xs">Expected Deliverables</Label>
-                <Input
+                <Textarea
                   id="edit-deliverables"
                   value={editDeliverables}
                   onChange={(e) => setEditDeliverables(e.target.value)}
-                  className="text-sm"
+                  className="max-h-[30vh] min-h-9 overflow-y-auto text-sm"
+                  rows={1}
                   placeholder="Comma-separated, e.g. Design doc, API schema"
                 />
+                <p className="text-[11px] text-muted-foreground">
+                  Separate items with commas or new lines.
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Switch

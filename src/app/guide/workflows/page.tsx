@@ -79,7 +79,7 @@ export default function WorkflowsPage() {
             <li>
               <strong className="text-foreground">Expected deliverables</strong>{" "}
               (optional) — describe what the step should produce, guiding
-              agents on output format
+              agents on output format. Separate items with commas or new lines
             </li>
             <li>
               <strong className="text-foreground">Model tier</strong>{" "}
@@ -96,6 +96,12 @@ export default function WorkflowsPage() {
               X-High
             </li>
           </ul>
+          <p className="text-sm text-muted-foreground">
+            To change one step of an existing template, click it on the
+            Workflows tab. The box has the same settings as a step on a card,
+            and saving updates the template (waiting steps on cards using it
+            pick up the change).
+          </p>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="mb-3 text-sm text-muted-foreground">
               <strong className="text-foreground">Adding templates:</strong>{" "}
