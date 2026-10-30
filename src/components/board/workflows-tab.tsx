@@ -192,20 +192,25 @@ function DeliverablesBox({
   placeholder: string;
 }) {
   const [text, setText] = useState(formatDeliverablesText(value));
-  // Re-sync only when the parent's list differs from what our text parses to
-  // (e.g. steps were reordered or removed).
-  const parsed = parseDeliverablesText(text);
-  const current = value ?? [];
-  const same = parsed.length === current.length && parsed.every((d, i) => d === current[i]);
-  if (!same) {
+  // The list this box last knew about (opened with, or reported upward).
+  // Re-seed the text only when the parent's list differs from it, i.e. a
+  // step was removed or reordered. Never re-parse the text here: items that
+  // contain a comma would not round-trip and would loop.
+  const [known, setKnown] = useState(value);
+  const a = value ?? [];
+  const k = known ?? [];
+  if (a.length !== k.length || a.some((d, i) => d !== k[i])) {
+    setKnown(value);
     setText(formatDeliverablesText(value));
   }
   return (
     <Textarea
       value={text}
       onChange={(e) => {
+        const list = parseDeliverablesText(e.target.value);
         setText(e.target.value);
-        onChange(parseDeliverablesText(e.target.value));
+        setKnown(list);
+        onChange(list);
       }}
       placeholder={placeholder}
       rows={1}

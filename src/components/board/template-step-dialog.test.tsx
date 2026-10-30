@@ -126,4 +126,13 @@ describe("TemplateStepDialog", () => {
     fireEvent.keyDown(screen.getByLabelText("Description"), { key: "Enter" });
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("keeps stored deliverables with commas when the box is untouched", async () => {
+    const step = { ...STEP, deliverables: ["Design doc, v2", "Tests"] };
+    const { onSave } = setup({ step });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "New" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].deliverables).toEqual(["Design doc, v2", "Tests"]);
+  });
 });

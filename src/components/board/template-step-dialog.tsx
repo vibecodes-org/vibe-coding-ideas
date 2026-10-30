@@ -80,7 +80,9 @@ export function TemplateStepDialog({
   }, [open, index]);
 
   async function handleSave() {
-    const list = parseDeliverablesText(deliverables);
+    // Untouched box: keep the stored list exactly (items may contain commas).
+    const untouched = deliverables === formatDeliverablesText(step.deliverables);
+    const list = untouched ? (step.deliverables ?? []) : parseDeliverablesText(deliverables);
     const updated: WorkflowTemplateStep = {
       ...step,
       title: title.trim(),

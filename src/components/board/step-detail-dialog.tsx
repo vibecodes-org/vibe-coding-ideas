@@ -505,7 +505,10 @@ export function StepDetailDialog({
   async function handleSaveEdit() {
     setSaving(true);
     try {
-      const deliverables = parseDeliverablesText(editDeliverables);
+      const deliverables =
+        editDeliverables === formatDeliverablesText(step.expected_deliverables)
+          ? (step.expected_deliverables ?? [])
+          : parseDeliverablesText(editDeliverables);
       await updateWorkflowStep(step.id, {
         title: editTitle,
         description: editDescription || null,

@@ -24,7 +24,7 @@ Validator (src/lib/validation.ts ~294-306) rejects effort on a step with no tier
 ## Live data (read-only query, this board's templates)
 26 template steps; description median 538 chars, max 2,445; 2 contain line breaks; longest deliverables 230 chars.
 
-## Decisions (recommendations; awaiting Nick)
+## Decisions (recommendations; all six approved by Nick 30 Oct)
 1. Click opens the dialog straight into the edit form. Read-only viewers: same dialog, fields disabled, no Save.
 2. New help line at top: "Saving changes this template. Cards already using it pick up the change on any step that hasn't started yet."
 3. Closing with unsaved changes discards them (matches card box).
