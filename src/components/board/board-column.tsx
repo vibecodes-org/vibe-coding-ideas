@@ -20,6 +20,7 @@ import { BoardQuickAdd } from "./board-quick-add";
 import { useBoardOps } from "./board-context";
 import { deleteBoardColumn, archiveColumnTasks } from "@/actions/board";
 import { isInProgressColumnTitle } from "@/lib/board-defaults";
+import { formatColumnCount } from "@/lib/column-count";
 import { undoableAction } from "@/lib/undo-toast";
 import type {
   BoardColumnWithTasks,
@@ -34,6 +35,8 @@ const ColumnEditDialog = dynamic(() => import("./column-edit-dialog").then((m) =
 interface BoardColumnProps {
   column: BoardColumnWithTasks;
   totalTaskCount: number;
+  /** Cards matching the board's filters; set only while a filter is on. */
+  matchingTaskCount?: number;
   ideaId: string;
   teamMembers: User[];
   boardLabels: BoardLabel[];
@@ -55,6 +58,7 @@ interface BoardColumnProps {
 export const BoardColumn = memo(function BoardColumn({
   column,
   totalTaskCount,
+  matchingTaskCount,
   ideaId,
   teamMembers,
   boardLabels,
@@ -182,7 +186,9 @@ export const BoardColumn = memo(function BoardColumn({
             <h3 className="flex items-center gap-1 text-sm font-semibold">
               {column.title}
               {column.is_done_column && <CircleCheckBig className="h-3.5 w-3.5 text-emerald-500" />}
-              <span className="text-muted-foreground">({totalTaskCount})</span>
+              <span className="text-muted-foreground" data-testid="column-task-count">
+                ({formatColumnCount(totalTaskCount, matchingTaskCount)})
+              </span>
             </h3>
           </div>
           {!isReadOnly && (
