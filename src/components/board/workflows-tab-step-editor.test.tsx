@@ -54,3 +54,52 @@ describe("StepEditor tier + effort", () => {
     expect(effort).toHaveTextContent("Tier's own");
   });
 });
+
+describe("StepEditor deliverables box", () => {
+  function make(initial: WorkflowTemplateStep[]) {
+    const seen: WorkflowTemplateStep[][] = [];
+    function H() {
+      const [steps, setSteps] = useState<WorkflowTemplateStep[]>(initial);
+      seen.push(steps);
+      return <StepEditor steps={steps} onChange={setSteps} />;
+    }
+    return { H, seen };
+  }
+  const base = { role: "Dev", requires_approval: false };
+
+  it("renders an item that contains a comma without looping", () => {
+    const { H } = make([{ ...base, title: "A", deliverables: ["Design doc, v2"] }]);
+    render(<H />);
+    expect(screen.getByDisplayValue("Design doc, v2").tagName).toBe("TEXTAREA");
+  });
+
+  it("typing reports the parsed list, splitting on new lines", () => {
+    const { H, seen } = make([{ ...base, title: "A", deliverables: ["X", "Y"] }]);
+    render(<H />);
+    fireEvent.change(screen.getByDisplayValue("X, Y"), { target: { value: "X, Y\nZ" } });
+    expect(seen[seen.length - 1][0].deliverables).toEqual(["X", "Y", "Z"]);
+  });
+
+  it("removing a step shows the right text in the remaining box", () => {
+    const { H } = make([
+      { ...base, title: "A", deliverables: ["one"] },
+      { ...base, title: "B", deliverables: ["two"] },
+    ]);
+    render(<H />);
+    fireEvent.click(screen.getAllByRole("button").find((b) => b.className.includes("hover:text-destructive"))!);
+    expect(screen.getByDisplayValue("two")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("one")).toBeNull();
+  });
+
+  it("reordering steps moves the text with the step", () => {
+    const { H } = make([
+      { ...base, title: "A", deliverables: ["one"] },
+      { ...base, title: "B", deliverables: ["two"] },
+    ]);
+    render(<H />);
+    const down = screen.getAllByRole("button").filter((b) => b.className.includes("p-0.5"));
+    fireEvent.click(down[1]); // step 1 move down
+    const boxes = screen.getAllByPlaceholderText(/Deliverables/) as HTMLTextAreaElement[];
+    expect(boxes.map((b) => b.value)).toEqual(["two", "one"]);
+  });
+});

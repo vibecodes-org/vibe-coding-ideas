@@ -30,6 +30,8 @@ import { Input } from "@/components/ui/input";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
 import { ModelTierSelect, ModelTierBadge } from "@/components/shared/model-tier-select";
 import { Textarea } from "@/components/ui/textarea";
+import { TemplateStepDialog } from "./template-step-dialog";
+import { formatDeliverablesText, parseDeliverablesText } from "@/lib/deliverables-text";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -100,9 +102,13 @@ function StepRow({
   runner = null,
   skillNames,
   coverageKnown = false,
+  onOpen,
+  readOnly = false,
 }: {
   step: WorkflowTemplateStep;
   index: number;
+  onOpen?: () => void;
+  readOnly?: boolean;
   matchTier?: string | null;
   runner?: StepRunner | null;
   skillNames?: string[];
@@ -111,7 +117,27 @@ function StepRow({
   const dotColor = matchTier ? TIER_DOT_COLOR[matchTier] : undefined;
 
   return (
-    <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+    <div
+      className={`group flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5 ${
+        onOpen
+          ? "cursor-pointer hover:border-foreground/20 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          : ""
+      }`}
+      {...(onOpen
+        ? {
+            role: "button",
+            tabIndex: 0,
+            "aria-label": `${readOnly ? "View" : "Edit"} step ${index + 1}: ${step.title}`,
+            onClick: onOpen,
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen();
+              }
+            },
+          }
+        : {})}
+    >
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
         {index + 1}
       </span>
@@ -132,6 +158,9 @@ function StepRow({
         )}
       </span>
       {step.requires_approval && <ApprovalLockIcon />}
+      {onOpen && !readOnly && (
+        <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-focus-visible:opacity-100 group-hover:opacity-100" />
+      )}
     </div>
   );
 }
@@ -147,6 +176,47 @@ interface StepEditorProps {
   ideaId?: string;
   poolRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
   userRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
+}
+
+/**
+ * Growing deliverables box that keeps the raw text locally (so a trailing
+ * comma or new line survives typing) and reports the parsed list upward.
+ */
+function DeliverablesBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value?: string[];
+  onChange: (list: string[]) => void;
+  placeholder: string;
+}) {
+  const [text, setText] = useState(formatDeliverablesText(value));
+  // The list this box last knew about (opened with, or reported upward).
+  // Re-seed the text only when the parent's list differs from it, i.e. a
+  // step was removed or reordered. Never re-parse the text here: items that
+  // contain a comma would not round-trip and would loop.
+  const [known, setKnown] = useState(value);
+  const a = value ?? [];
+  const k = known ?? [];
+  if (a.length !== k.length || a.some((d, i) => d !== k[i])) {
+    setKnown(value);
+    setText(formatDeliverablesText(value));
+  }
+  return (
+    <Textarea
+      value={text}
+      onChange={(e) => {
+        const list = parseDeliverablesText(e.target.value);
+        setText(e.target.value);
+        setKnown(list);
+        onChange(list);
+      }}
+      placeholder={placeholder}
+      rows={1}
+      className="max-h-[30vh] min-h-7 flex-1 resize-none overflow-y-auto py-1 text-xs md:text-xs"
+    />
+  );
 }
 
 export function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
@@ -222,15 +292,16 @@ export function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: St
                 className="w-32"
               />
             </div>
-            <div className="flex items-center gap-3 pl-7">
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Description</span>
-              <Input
+            <div className="flex items-start gap-3 pl-7">
+              <span className="whitespace-nowrap pt-1.5 text-[10px] text-muted-foreground">Description</span>
+              <Textarea
                 value={step.description ?? ""}
                 onChange={(e) =>
                   updateStep(idx, { description: e.target.value || undefined })
                 }
                 placeholder="Description (optional)"
-                className="h-7 flex-1 text-xs"
+                rows={1}
+                className="max-h-[150px] min-h-7 flex-1 resize-none overflow-y-auto py-1 text-xs md:text-xs"
               />
               <div className="flex items-center gap-1.5">
                 <Switch
@@ -245,20 +316,12 @@ export function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: St
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-3 pl-7">
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Deliverables</span>
-              <Input
-                value={(step.deliverables ?? []).join(", ")}
-                onChange={(e) =>
-                  updateStep(idx, {
-                    deliverables: e.target.value
-                      .split(",")
-                      .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d.trimStart()))
-                      .filter((d, i, arr) => i === arr.length - 1 || d.length > 0),
-                  })
-                }
-                placeholder="Deliverables (comma-separated, optional)"
-                className="h-7 flex-1 text-xs"
+            <div className="flex items-start gap-3 pl-7">
+              <span className="whitespace-nowrap pt-1.5 text-[10px] text-muted-foreground">Deliverables</span>
+              <DeliverablesBox
+                value={step.deliverables}
+                onChange={(list) => updateStep(idx, { deliverables: list })}
+                placeholder="Deliverables (comma or new line separated, optional)"
               />
             </div>
             <ModelTierSelect
@@ -784,6 +847,10 @@ export function WorkflowsTab({
   const [savedTemplateIds, setSavedTemplateIds] = useState<Set<string>>(new Set());
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
+  const [openStepIdx, setOpenStepIdx] = useState<number | null>(null);
+  useEffect(() => {
+    setOpenStepIdx(null);
+  }, [selectedId]);
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
   // Role coverage from server (same data source as Agents tab)
@@ -900,6 +967,7 @@ export function WorkflowsTab({
 
   function startEditing() {
     if (!selected) return;
+    setOpenStepIdx(null);
     setEditName(selected.name);
     setEditDescription(selected.description ?? "");
     setEditSteps(selected.steps.map((s) => ({ ...s })));
@@ -1445,9 +1513,33 @@ export function WorkflowsTab({
                     coverageKnown={coverageMap.has(step.role)}
                     runner={stepRunner(step.role)}
                     skillNames={skillNamesByBot ? (skillNamesByBot[coverageMap.get(step.role)?.matchedBotId ?? ""] ?? []) : undefined}
+                    onOpen={() => setOpenStepIdx(idx)}
+                    readOnly={isReadOnly}
                   />
                 ))}
               </div>
+              {openStepIdx !== null && selected.steps[openStepIdx] && (
+                <TemplateStepDialog
+                  open
+                  onOpenChange={(o) => {
+                    if (!o) setOpenStepIdx(null);
+                  }}
+                  step={selected.steps[openStepIdx]}
+                  index={openStepIdx}
+                  templateName={selected.name}
+                  ideaId={ideaId}
+                  isReadOnly={isReadOnly}
+                  poolRoles={poolRoles}
+                  userRoles={userRoles}
+                  onSave={async (updated) => {
+                    const steps = selected.steps.map((s, i) =>
+                      i === openStepIdx ? updated : s
+                    );
+                    await updateWorkflowTemplate(selected.id, { steps });
+                    await fetchData();
+                  }}
+                />
+              )}
               {unmatchedRoles.length > 0 && (
                 <div className="mt-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
