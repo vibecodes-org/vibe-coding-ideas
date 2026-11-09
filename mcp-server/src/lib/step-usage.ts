@@ -25,7 +25,9 @@ export const stepUsageParam = z
       '{"models":[{"model","calls","input_tokens","output_tokens","cache_read_tokens","cache_write_5m_tokens",' +
       '"cache_write_1h_tokens"}],"output_estimated"}. If it prints NO_TRANSCRIPT no-script, the reply gives you a full ' +
       "command to run once instead. Required on a Claude step you claimed: without it (or " +
-      "usage_unavailable) the call is refused and nothing changes. A malformed line never blocks the step."
+      "usage_unavailable) the call is refused and nothing changes. If your shell refuses the command (a safety check, for example in a worktree), " +
+      "run it again as one plain command on its own, and if it prints that the file is missing run usage_command_if_script_missing. " +
+      "A malformed line never blocks the step."
   );
 
 /** The escape hatch, so a step can never be trapped by a command that can't run. */
@@ -35,7 +37,8 @@ export const usageUnavailableParam = z
   .optional()
   .describe(
     "Only when the usage_command could not be run at all (for example your client has no shell): say why in a few " +
-      "words. Pass usage instead whenever the command ran, even if it printed NO_TRANSCRIPT."
+      "words, and tell the person, because the step's cost is then lost. A refused command is not that: retry it as one plain " +
+      "command first. Pass usage instead whenever the command ran, even if it printed NO_TRANSCRIPT."
   );
 
 /**

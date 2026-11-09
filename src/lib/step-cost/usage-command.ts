@@ -201,6 +201,28 @@ export function stepUsageShortCommand(
   return `m=${marker}; d="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/vibecodes"; f="$d/${file}"; [ -s "$f" ] || f=$(ls -t "$d"/step-usage-*.sh 2>/dev/null | head -n 1); if [ -s "$f" ]; then sh "$f" $m '${agentIds}'; else echo "NO_TRANSCRIPT no-script $m"; fi`;
 }
 
+/**
+ * The first-choice command: one plain command with the script path written
+ * out, nothing else. Card 730f2549: in an isolated worktree Claude Code's
+ * safety check refuses the wrapper above ("runs sh inside a construct too
+ * complex to verify": a variable, a test, a pipe and an if, then sh "$f"), and
+ * a session that was refused passed usage_unavailable on every step. A single
+ * `sh <path> <args>` is checked as the plain command it is. The site can't see
+ * the machine's home folder, so the path starts with ~ (where the helper
+ * saves it). It has no fallback of its own: when the file is missing sh says
+ * so, and the session runs stepUsageShortCommand (which hands back the full
+ * command) instead.
+ */
+export function stepUsagePlainCommand(
+  marker: string,
+  file: string = stepUsageScript().file,
+  agentIds: string = USAGE_COMMAND_PLACEHOLDER,
+): string {
+  if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
+  if (!STEP_USAGE_SCRIPT_FILE.test(file)) throw new Error("bad usage script name");
+  return `sh ~/.claude/vibecodes/${file} ${marker} '${agentIds}'`;
+}
+
 /** The line the short command prints when the saved script is missing; the capture is the claim's marker. */
 export const NO_SCRIPT_LINE = /^NO_TRANSCRIPT no-script (vcu_[0-9a-f]+)$/;
 

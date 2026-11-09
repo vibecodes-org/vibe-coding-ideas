@@ -53,7 +53,7 @@ import { composePersonaPrompt } from "../lib/persona-prompt";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
 import { buildClaimInstruction } from "../lib/claim-instruction";
-import { stepUsageCommandForClaim } from "../lib/step-usage-delivery";
+import { usageCommandFields } from "../lib/step-usage-delivery";
 import { recordStepUsage, stepUsageParam, usageUnavailableParam } from "../lib/step-usage";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
@@ -1380,7 +1380,7 @@ export async function claimNextStep(
     done: false,
     // Early in the response: the session transcript must record the marker
     // inside it even if a long claim is cut short there.
-    ...(claimingAgent === "claude" ? { usage_command: stepUsageCommandForClaim(newUsageMarker()) } : {}),
+    ...(claimingAgent === "claude" ? usageCommandFields(newUsageMarker()) : {}),
     step: {
       id: updated.id,
       task_id: updated.task_id,
