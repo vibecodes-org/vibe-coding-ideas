@@ -233,17 +233,25 @@ export function noScriptMarker(usage: unknown): string | null {
   return m ? m[1] : null;
 }
 
+/** Where the session writes the newest saved script's file name in stepUsageNewestScriptCommand. */
+export const NEWEST_SCRIPT_PLACEHOLDER = "NEWEST_STEP_USAGE_SCRIPT";
+
 /**
  * Card 730f2549, stage 2: the step down from the first-choice command. A session
  * already open in a worktree when the script changes has only an older saved
  * copy, so the file named in stepUsagePlainCommand is missing. The wrapper that
- * used to cover that (stepUsageShortCommand) is the construct a worktree refuses,
- * so this is plain commands joined by pipes only: list the saved scripts newest
- * first, take the first, run it with the same arguments. With no saved script at
- * all it prints only ls's error and runs nothing; the session then goes on to
- * the wrapper (which also hands back the full command).
+ * used to cover that (stepUsageShortCommand) is what a worktree refuses, and so
+ * is any pipe that splices a name into `sh` (xargs, `| sh`). So this is two
+ * separate plain commands the session runs itself: first this one, to read the
+ * newest step-usage-*.sh name (newest first); then stepUsageNewestScriptCommand
+ * with that name filled in.
  */
+export function stepUsageListScriptsCommand(): string {
+  return "ls -t ~/.claude/vibecodes/";
+}
+
+/** The second half: one plain `sh` of the named script. The session swaps in the name from the list. */
 export function stepUsageNewestScriptCommand(marker: string, agentIds: string = USAGE_COMMAND_PLACEHOLDER): string {
   if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
-  return `ls -t ~/.claude/vibecodes/step-usage-*.sh | head -n 1 | xargs -I{} sh {} ${marker} '${agentIds}'`;
+  return `sh ~/.claude/vibecodes/${NEWEST_SCRIPT_PLACEHOLDER} ${marker} '${agentIds}'`;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { usageCommandFields, shortUsageCommandEnabled, stepUsageCommandForClaim, stepUsageFallbackCommandForClaim } from "./step-usage-delivery";
-import { stepUsageCommand, stepUsageNewestScriptCommand, stepUsagePlainCommand, stepUsageShortCommand, stepUsageScript } from "../../../src/lib/step-cost/usage-command";
+import { stepUsageCommand, stepUsageListScriptsCommand, stepUsageNewestScriptCommand, stepUsagePlainCommand, stepUsageShortCommand, stepUsageScript } from "../../../src/lib/step-cost/usage-command";
 
 const MARK = "vcu_0123456789abcdef01234567";
 
@@ -33,8 +33,10 @@ describe("step usage command delivery (stage 2b)", () => {
 
   it("on: the claim also carries a plain newest-script command between the plain one and the wrapper (card 730f2549, stage 2)", () => {
     const on = usageCommandFields(MARK, { STEP_USAGE_SHORT_COMMAND: "1" });
+    expect(on.usage_command_list_scripts).toBe(stepUsageListScriptsCommand());
     expect(on.usage_command_newest_script).toBe(stepUsageNewestScriptCommand(MARK));
     expect(on.usage_command_if_script_missing).toBe(stepUsageShortCommand(MARK));
     expect(usageCommandFields(MARK, {})).not.toHaveProperty("usage_command_newest_script");
+    expect(usageCommandFields(MARK, {})).not.toHaveProperty("usage_command_list_scripts");
   });
 });

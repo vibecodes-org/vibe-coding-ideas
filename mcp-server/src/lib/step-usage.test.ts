@@ -275,6 +275,21 @@ describe("usage_unavailable wording", () => {
     expect(usageUnavailableParam.description).toMatch(/refused command is not that/);
   });
 
+  it("the parameter text names the list-then-run steps, and says an error (not nothing) is what a missing folder shows", () => {
+    const d = stepUsageParam.description ?? "";
+    expect(d).toContain("usage_command_list_scripts");
+    expect(d.indexOf("usage_command_list_scripts")).toBeLessThan(d.indexOf("usage_command_newest_script"));
+    expect(d).not.toContain("prints nothing");
+  });
+
+  it("the no-script retry message no longer says 'if it can't be run, call again with usage_unavailable'", () => {
+    const msg = noScriptRetryMessage("vcu_0123456789abcdef01234567");
+    expect(msg).not.toMatch(/If it can't be run/);
+    expect(msg).toMatch(/refused/);
+    expect(msg).toMatch(/plain command/);
+    expect(msg).toMatch(/tell the person/);
+  });
+
   it("complete_step and fail_step descriptions no longer say 'only if the command can't run'", () => {
     const src = readFileSync(resolve(__dirname, "../register-tools.ts"), "utf8");
     expect(src).not.toContain("only if the command can't run");
