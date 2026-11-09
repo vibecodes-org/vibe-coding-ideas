@@ -13,11 +13,12 @@ export function composePersonaPrompt(
   botId: string,
   bot: { system_prompt: string | null; tool_access: ToolAccess | null },
   skillRows: SkillText[],
+  agent: "claude" | "codex" = "claude",
 ): { prompt: string; skills: SkillsSection } {
   const skills = buildSkillsSection(botId, skillRows);
-  // A Read-only agent's persona ends with the Tools note, ahead of the Skills
-  // section; Full access is the stored text unchanged. A bot with no persona
+  // The persona ends with the Tools note (Read-only agents) and the Waiting
+  // note (Claude only), ahead of the Skills section. A bot with no persona
   // text gets no note.
-  const body = bot.system_prompt ? agentPersonaBody(bot.system_prompt, bot.tool_access) : (bot.system_prompt ?? "");
+  const body = bot.system_prompt ? agentPersonaBody(bot.system_prompt, bot.tool_access, agent) : (bot.system_prompt ?? "");
   return { prompt: personaWithSkills(body, skills.text), skills };
 }

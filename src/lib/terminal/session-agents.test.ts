@@ -2,6 +2,7 @@ import { SYNC_MARKER } from "./session-agent-files";
 import { describe, it, expect, vi } from "vitest";
 import { logger } from "../logger";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
+import { agentPersonaBody } from "../agent-tool-access";
 import {
   agentNameLine,
   buildSessionAgents,
@@ -11,6 +12,9 @@ import {
   sessionAgentTag,
   type SessionAgentInput,
 } from "./session-agents";
+
+// What a Claude helper is delivered: the stored persona plus the Waiting note (card 11dc1212).
+const claudeBody = (p: string) => agentPersonaBody(p, "full", "claude");
 
 const ATLAS = {
   id: "37e8ffb2-3f88-49e5-9ab4-a516c1088f77",
@@ -81,10 +85,10 @@ describe("buildSessionAgents", () => {
     const agents = buildSessionAgents([input(), input({ tier: "standard", model: "sonnet", effort: "medium" })]);
     expect(Object.keys(agents!)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-atlas-37e8ffb2-standard"]);
     const frontier = agents!["vc-atlas-37e8ffb2-frontier"];
-    expect(frontier.prompt).toBe(`You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${ATLAS.system_prompt}`);
+    expect(frontier.prompt).toBe(`You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${claudeBody(ATLAS.system_prompt)}`);
     expect(frontier.model).toBe("opus");
     expect(frontier.effort).toBe("high");
-    expect(frontier.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+    expect(frontier.description.endsWith(sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high"))).toBe(true);
   });
 
   // Live persona test, 10 Oct 2026: Atlas and Sentinel couldn't name
@@ -94,7 +98,7 @@ describe("buildSessionAgents", () => {
     expect(def.prompt.startsWith("You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n")).toBe(true);
     // The tag hashes the persona alone, so the claim side (which never sees the
     // name line) still matches.
-    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+    expect(def.description.endsWith(sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high"))).toBe(true);
   });
 
   it("counts the name line against the size cap", () => {
@@ -118,7 +122,7 @@ describe("buildSessionAgents", () => {
     expect(prompt).toContain("### testing\nWrite the test first.");
     expect(prompt).toBe(
       personaWithSkills(
-        `You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${ATLAS.system_prompt}`,
+        `You are Atlas, the Full Stack Engineer on this VibeCodes board.\n\n${claudeBody(ATLAS.system_prompt)}`,
         buildSkillsSection(ATLAS.id, skills).text,
       ),
     );
@@ -132,7 +136,7 @@ describe("buildSessionAgents", () => {
       { name: "b", content: "Second." },
     ];
     const prompt = buildSessionAgents([input({ skills })])!["vc-atlas-37e8ffb2-frontier"].prompt;
-    const claimPersona = personaWithSkills(ATLAS.system_prompt, buildSkillsSection(ATLAS.id, skills).text);
+    const claimPersona = personaWithSkills(claudeBody(ATLAS.system_prompt), buildSkillsSection(ATLAS.id, skills).text);
     expect(prompt).toBe(`${agentNameLine(ATLAS)}\n\n${claimPersona}`);
   });
 
@@ -148,7 +152,7 @@ describe("buildSessionAgents", () => {
   // AC9
   it("never lets a names-only definition match a claim", () => {
     const skills = [{ name: "huge", content: "x".repeat(5000) }];
-    const claimTag = sessionAgentTag(ATLAS.system_prompt, "opus", "high", buildSkillsSection(ATLAS.id, skills).text);
+    const claimTag = sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high", buildSkillsSection(ATLAS.id, skills).text);
 
     const full = buildSessionAgents([input({ skills })])!["vc-atlas-37e8ffb2-frontier"];
     expect(full.description.endsWith(claimTag)).toBe(true);
@@ -173,7 +177,7 @@ describe("buildSessionAgents", () => {
       2200,
     )!;
     const plain = agents["vc-atlas-37e8ffb2-frontier"];
-    expect(plain.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+    expect(plain.description.endsWith(sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high"))).toBe(true);
   });
 
   it("returns null when even the slimmed payload can't fit", () => {
@@ -344,8 +348,11 @@ describe("sessionAgentClaimHint", () => {
     const codex = { bot: ATLAS, tier: "standard" as const, model: "gpt-5.6-sol", effort: "medium", agent: "codex" as const };
 
     it("names the same agent type and tag a Codex payload defines", () => {
-      const agents = buildSessionAgents([input({ tier: "standard", model: "gpt-5.6-sol", effort: "medium" })])!;
+      const agents = buildSessionAgents([input({ tier: "standard", model: "gpt-5.6-sol", effort: "medium" })], undefined, {
+        agent: "codex",
+      })!;
       const hint = sessionAgentClaimHint(codex);
+      expect(agents[hint.name].prompt).not.toContain("## Waiting on slow work");
       expect(agents[hint.name]).toBeDefined();
       expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
     });
@@ -417,7 +424,16 @@ describe("tool access", () => {
     const def = buildSessionAgents([input({ bot: READ_ONLY })])![key];
     expect(def.disallowedTools).toEqual(["Edit", "Write", "NotebookEdit"]);
     expect(def.prompt).toContain(NOTE);
-    expect(def.prompt.endsWith("Say what should change instead.")).toBe(true);
+    // Tools note first, then the Waiting note (card 11dc1212).
+    expect(def.prompt.indexOf("## Tools")).toBeLessThan(def.prompt.indexOf("## Waiting on slow work"));
+    expect(def.prompt.endsWith(agentPersonaBody("", "read_only", "claude").split("\n\n").slice(-1)[0])).toBe(true);
+  });
+
+  it("gives every Claude definition the Waiting note, and no Codex definition", () => {
+    const claude = buildSessionAgents([input()])![key];
+    expect(claude.prompt).toContain("## Waiting on slow work");
+    const codex = buildSessionAgents([input()], undefined, { agent: "codex" })![key];
+    expect(codex.prompt).not.toContain("## Waiting on slow work");
   });
 
   it("leaves a full-access definition exactly as it was, with no disallowedTools key", () => {
@@ -429,9 +445,9 @@ describe("tool access", () => {
   });
 
   // Regression: full-access tags must not move, or every running session stops matching.
-  it("keeps a full-access agent's tag identical to the persona-only tag", () => {
+  it("keeps a full-access Claude agent's tag equal to the tag of its delivered persona", () => {
     const def = buildSessionAgents([input({ bot: { ...ATLAS, tool_access: "full" } })])![key];
-    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(true);
+    expect(def.description.endsWith(sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high"))).toBe(true);
   });
 
   it("the claim-hint tag equals the definition tag for a read-only agent, with and without skills", () => {
@@ -450,7 +466,7 @@ describe("tool access", () => {
 
   it("a read-only agent no longer matches a full-access claim tag", () => {
     const def = buildSessionAgents([input({ bot: READ_ONLY })])![key];
-    expect(def.description.endsWith(sessionAgentTag(ATLAS.system_prompt, "opus", "high"))).toBe(false);
+    expect(def.description.endsWith(sessionAgentTag(claudeBody(ATLAS.system_prompt), "opus", "high"))).toBe(false);
   });
 });
 
@@ -474,7 +490,7 @@ describe("buildSessionAgents with optional agents", () => {
   it("skips an optional agent that does not fit but still takes a smaller one after it", () => {
     const small = input({ bot: { ...PLANNER, id: "11111111-0000-0000-0000-000000000000", name: "Tiny" } });
     const base = size(buildSessionAgents([waiting()])!);
-    const agents = buildSessionAgents([waiting()], base + 1500, { optional: [optional(), small] })!;
+    const agents = buildSessionAgents([waiting()], base + 1650, { optional: [optional(), small] })!;
     expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-tiny-11111111-frontier"]);
   });
 
@@ -494,7 +510,7 @@ describe("buildSessionAgents with optional agents", () => {
   it("keeps the waiting agents that fit instead of returning nothing when even names-only is over", () => {
     const big = input({ bot: { ...ATLAS, system_prompt: "z".repeat(3000) } });
     const small = input({ tier: "standard", model: "sonnet", effort: "medium" });
-    const agents = buildSessionAgents([big, small], 1200)!;
+    const agents = buildSessionAgents([big, small], 2600)!;
     expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-standard"]);
   });
 
@@ -511,6 +527,7 @@ describe("buildSessionAgents with optional agents", () => {
     for (const [model, effort, agent] of [["opus", "high", "claude"], ["gpt-6-astra", "high", "codex"]] as const) {
       const agents = buildSessionAgents([waiting()], undefined, {
         optional: [input({ bot: PLANNER, model, effort, skills })],
+        agent,
       })!;
       const hint = sessionAgentClaimHint({
         bot: PLANNER,

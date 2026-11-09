@@ -999,7 +999,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Pass as_persona: true to get `persona_prompt` instead: the persona exactly as a workflow hand-off would embed it (system prompt, tools note and skills), for a session that has to run a step inline, or whose user explicitly agreed to a general helper after a named agent could not be loaded. Never use it to replace a board-named subagent without that yes.",
+    "Get the system prompt (and tool_access: full or read_only) for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Pass as_persona: true to get `persona_prompt` instead: the persona exactly as a workflow hand-off would embed it (system prompt, tools note, the slow-work waiting note for Claude, and skills; pass agent: codex from Codex), for a session that has to run a step inline, or whose user explicitly agreed to a general helper after a named agent could not be loaded. Never use it to replace a board-named subagent without that yes.",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

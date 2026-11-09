@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { composePersonaPrompt } from "./persona-prompt";
+import { WAITING_NOTE_TEXT } from "../../../src/lib/agent-tool-access";
 
 const BOT = "00000000-0000-4000-a000-000000000070";
 const PERSONA = "## Goal\nShip it.";
@@ -12,14 +13,22 @@ describe("composePersonaPrompt", () => {
   it("appends each skill's stored text to the persona, in order, trimmed", () => {
     const { prompt, skills } = composePersonaPrompt(BOT, { system_prompt: PERSONA, tool_access: "full" }, SKILLS);
     expect(prompt).toBe(
-      `${PERSONA}\n\n## Skills\nThese are your reference skills. Apply the ones relevant to this step.\n\n` +
+      `${PERSONA}\n\n${WAITING_NOTE_TEXT}\n\n## Skills\nThese are your reference skills. Apply the ones relevant to this step.\n\n` +
         `### api-design-review\nCheck REST contracts first.\n\n### a11y-audit\nRun a WCAG 2.2 AA pass.`,
     );
     expect(skills.sent).toEqual(["api-design-review", "a11y-audit"]);
   });
 
-  it("is the persona alone for an agent without skills (no Tools note for Full access)", () => {
-    expect(composePersonaPrompt(BOT, { system_prompt: PERSONA, tool_access: "full" }, []).prompt).toBe(PERSONA);
+  it("is the persona plus the Waiting note for a Claude agent without skills (no Tools note for Full access)", () => {
+    expect(composePersonaPrompt(BOT, { system_prompt: PERSONA, tool_access: "full" }, []).prompt).toBe(
+      `${PERSONA}\n\n${WAITING_NOTE_TEXT}`,
+    );
+  });
+
+  it("leaves the Waiting note out for a Codex agent", () => {
+    const { prompt } = composePersonaPrompt(BOT, { system_prompt: PERSONA, tool_access: "full" }, SKILLS, "codex");
+    expect(prompt).not.toContain("## Waiting on slow work");
+    expect(prompt.startsWith(`${PERSONA}\n\n## Skills\n`)).toBe(true);
   });
 
   it("sends the skills alone when the agent has no persona text", () => {
@@ -56,7 +65,8 @@ describe("composePersonaPrompt", () => {
     const personaPart = prompt.split("\n\n## Skills\n")[0];
     expect(personaPart.startsWith(PERSONA)).toBe(true);
     expect(personaPart).toContain("## Tools\nYou're read-only: don't create, edit or delete files");
-    expect(personaPart.endsWith("Say what should change instead.")).toBe(true);
+    expect(personaPart.indexOf("## Tools")).toBeLessThan(personaPart.indexOf("## Waiting on slow work"));
+    expect(personaPart.endsWith(WAITING_NOTE_TEXT)).toBe(true);
     expect(prompt).toContain("### api-design-review");
   });
 });

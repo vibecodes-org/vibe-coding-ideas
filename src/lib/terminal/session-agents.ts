@@ -138,15 +138,16 @@ function definitionFor(
   input: SessionAgentInput,
   withSkillContent: boolean,
   autoCompactWindow?: number,
+  agent: "claude" | "codex" = "claude",
 ): ClaudeCodeAgentDefinition {
   const { bot, tier, model, effort, skills } = input;
   const role = bot.role ? ` (${bot.role})` : "";
   const scope = tier ? `${tier}-tier` : "untiered";
   const skillsSection = buildSkillsSection(bot.id, skills);
-  // The persona as delivered: a Read-only agent's stored prompt plus the Tools
-  // note, exactly as claim_next_step sends it. Full access is the stored text
-  // unchanged, so fingerprints made before tool access existed still match.
-  const persona = agentPersonaBody(bot.system_prompt, bot.tool_access);
+  // The persona as delivered, exactly as claim_next_step sends it: the stored
+  // prompt, the Tools note for a Read-only agent, and (Claude only) the Waiting
+  // note. The claim side builds the tag from the same function.
+  const persona = agentPersonaBody(bot.system_prompt, bot.tool_access, agent);
 
   // Personas describe the job but rarely the agent's own name, so in a live
   // test Atlas and Sentinel couldn't introduce themselves. The tag below
@@ -189,11 +190,12 @@ function build(
   inputs: SessionAgentInput[],
   withSkillContent: boolean,
   autoCompactWindow?: number,
+  agent: "claude" | "codex" = "claude",
 ): Record<string, ClaudeCodeAgentDefinition> {
   const agents: Record<string, ClaudeCodeAgentDefinition> = {};
   for (const input of inputs) {
     if (!input.bot.system_prompt.trim()) continue;
-    agents[sessionAgentName(input.bot, input.tier, input.stepEffort)] = definitionFor(input, withSkillContent, autoCompactWindow);
+    agents[sessionAgentName(input.bot, input.tier, input.stepEffort)] = definitionFor(input, withSkillContent, autoCompactWindow, agent);
   }
   return agents;
 }
@@ -213,13 +215,14 @@ function sizeOf(agents: Record<string, ClaudeCodeAgentDefinition>): number {
 export function buildSessionAgents(
   inputs: SessionAgentInput[],
   maxBytes: number = SESSION_AGENTS_MAX_BYTES,
-  options: { optional?: SessionAgentInput[]; autoCompactWindow?: number } = {},
+  options: { optional?: SessionAgentInput[]; autoCompactWindow?: number; agent?: "claude" | "codex" } = {},
 ): Record<string, ClaudeCodeAgentDefinition> | null {
   type Agents = Record<string, ClaudeCodeAgentDefinition>;
   const window = options.autoCompactWindow;
+  const agentKind = options.agent ?? "claude";
   let fitted: Agents | null = null;
   for (const withSkillContent of [true, false]) {
-    const candidate = build(inputs, withSkillContent, window);
+    const candidate = build(inputs, withSkillContent, window, agentKind);
     if (Object.keys(candidate).length === 0) break;
     if (sizeOf(candidate) <= maxBytes) {
       fitted = candidate;
@@ -228,16 +231,16 @@ export function buildSessionAgents(
   }
 
   let agents: Agents = fitted ?? {};
-  if (!fitted && Object.keys(build(inputs, false, window)).length > 0) {
+  if (!fitted && Object.keys(build(inputs, false, window, agentKind)).length > 0) {
     // Even names-only is over: keep as many waiting agents as fit, in order.
     for (const input of inputs) {
-      const next: Agents = { ...agents, ...build([input], true, window) };
+      const next: Agents = { ...agents, ...build([input], true, window, agentKind) };
       if (sizeOf(next) <= maxBytes) agents = next;
     }
   }
 
   for (const input of options.optional ?? []) {
-    const one = build([input], true, window);
+    const one = build([input], true, window, agentKind);
     const [name] = Object.keys(one);
     if (!name || name in agents) continue;
     const next: Agents = { ...agents, ...one };
@@ -271,7 +274,7 @@ export function sessionAgentClaimHint(input: {
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier, input.stepEffort);
   const tag = sessionAgentTag(
-    agentPersonaBody(input.bot.system_prompt, input.bot.tool_access),
+    agentPersonaBody(input.bot.system_prompt, input.bot.tool_access, input.agent),
     input.model,
     input.effort,
     input.skillsText ?? "",
