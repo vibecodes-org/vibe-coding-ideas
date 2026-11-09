@@ -13,7 +13,7 @@
 // ever saved to the machine. The older marker-less line is still accepted as
 // "couldn't measure".
 
-import { stepUsageCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand } from "../../../src/lib/step-cost/usage-command";
+import { stepUsageCommand, stepUsageListScriptsCommand, stepUsageNewestScriptCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand } from "../../../src/lib/step-cost/usage-command";
 
 /** Blank values count as off (Vercel can store a sensitive var as ""). */
 export function shortUsageCommandEnabled(env: Record<string, string | undefined> = process.env): boolean {
@@ -34,8 +34,14 @@ export function stepUsageFallbackCommandForClaim(marker: string, env: Record<str
 /** The claim response's usage fields: one marker in both commands. */
 export function usageCommandFields(marker: string, env: Record<string, string | undefined> = process.env): {
   usage_command: string;
+  usage_command_list_scripts?: string;
+  usage_command_newest_script?: string;
   usage_command_if_script_missing?: string;
 } {
   const fallback = stepUsageFallbackCommandForClaim(marker, env);
-  return { usage_command: stepUsageCommandForClaim(marker, env), ...(fallback ? { usage_command_if_script_missing: fallback } : {}) };
+  return {
+    usage_command: stepUsageCommandForClaim(marker, env),
+    ...(shortUsageCommandEnabled(env) ? { usage_command_list_scripts: stepUsageListScriptsCommand(), usage_command_newest_script: stepUsageNewestScriptCommand(marker) } : {}),
+    ...(fallback ? { usage_command_if_script_missing: fallback } : {}),
+  };
 }

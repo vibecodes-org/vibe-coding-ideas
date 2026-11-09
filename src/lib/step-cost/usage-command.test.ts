@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsageListScriptsCommand, NEWEST_SCRIPT_PLACEHOLDER, stepUsageNewestScriptCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -543,6 +543,52 @@ describe("stepUsagePlainCommand", () => {
         env: { PATH: process.env.PATH ?? "", HOME: home, CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
       });
       expect(r.stdout.trim()).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+// Card 730f2549, stage 2: a session already open in a worktree when the script
+// changes has only an older saved copy, so the first-choice file is missing.
+// The next step down is two separate plain commands the session runs itself:
+// list the folder, then run the newest step-usage-*.sh by its name. Nothing is
+// piped or spliced (the shell checker refuses xargs / `| sh`).
+describe("newest-script fallback (two plain commands)", () => {
+  const BANNED = [";", "&&", "||", "|", "$(", "`", "${", "[", "if ", "\n", "$m", "$f", "xargs", "| sh", "head", "*"];
+
+  it("the list command is a plain `ls -t` of the saved-scripts folder", () => {
+    const cmd = stepUsageListScriptsCommand();
+    expect(cmd).toBe("ls -t ~/.claude/vibecodes/");
+    for (const bad of BANNED) expect(cmd).not.toContain(bad);
+  });
+
+  it("the run command is one plain `sh <file> <marker> 'ids'`: no pipe, xargs, variable, test, substitution, list or if", () => {
+    const cmd = stepUsageNewestScriptCommand(MARK, "a1");
+    for (const bad of BANNED) expect(cmd).not.toContain(bad);
+    expect(cmd.startsWith("sh ~/.claude/vibecodes/")).toBe(true);
+    expect(cmd).toContain(MARK);
+    expect(cmd).not.toContain(USAGE_COMMAND_PLACEHOLDER); // 'a1' swapped in
+    expect(stepUsageNewestScriptCommand(MARK).split(USAGE_COMMAND_PLACEHOLDER)).toHaveLength(2);
+    expect(() => stepUsageNewestScriptCommand("vcu_'; rm -rf ~; '")).toThrow();
+  });
+
+  it("running the list, then the run command with the newest name filled in, gives the same totals as the full command", () => {
+    const root = sandbox({ a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("x".repeat(350)), read: 10 })] }, [claimLine]);
+    try {
+      const vc = join(root, "vibecodes");
+      mkdirSync(vc, { recursive: true });
+      writeFileSync(join(vc, "step-usage-00000000.sh"), "#!/bin/sh\necho OLD\n");
+      utimesSync(join(vc, "step-usage-00000000.sh"), new Date(1000), new Date(1000));
+      writeFileSync(join(vc, "step-usage-11111111.sh"), stepUsageScript().body);
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      spawnSync("ln", ["-s", root, join(home, ".claude")]);
+      const env = { PATH: process.env.PATH ?? "", HOME: home, CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const };
+      const listed = spawnSync("bash", ["-c", stepUsageListScriptsCommand()], { encoding: "utf8", env }).stdout.split("\n").filter(Boolean);
+      expect(listed[0]).toBe("step-usage-11111111.sh"); // newest first
+      const run = stepUsageNewestScriptCommand(MARK, "a1").replace(NEWEST_SCRIPT_PLACEHOLDER, listed[0]);
+      const r = spawnSync("bash", ["-c", run], { encoding: "utf8", env });
+      expect(r.stdout.trim()).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+      expect(STEP_USAGE_SCRIPT_FILE).toBeTruthy();
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

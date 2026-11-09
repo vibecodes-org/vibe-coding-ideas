@@ -7015,7 +7015,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
       const r = await midRunClaim();
-      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7700); // card 730f2549: +~270 (plain usage command plus the if-script-missing wrapper); card 1117ac6b stage 4: +20 (marker in the no-script line; was 7400); db4c7f7b round 2: +~400 (hash rule, restart message)
+      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7750); // card 730f2549 stage 2: +~130 (list-scripts and newest-script commands; was 7700); card 730f2549: +~270 (plain usage command plus the if-script-missing wrapper); card 1117ac6b stage 4: +20 (marker in the no-script line; was 7400); db4c7f7b round 2: +~400 (hash rule, restart message)
       expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
     } finally {
       vi.unstubAllEnvs();
@@ -7148,10 +7148,13 @@ describe("step cost (card ba37039b)", () => {
     expect(off.usage_command).toContain("awk");
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
-      const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string; usage_command_if_script_missing: string };
+      const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string; usage_command_list_scripts: string; usage_command_newest_script: string; usage_command_if_script_missing: string };
       expect(on.usage_command).not.toContain("awk");
       // Card 730f2549: the first choice is one plain command (a worktree refuses the wrapper)...
       expect(on.usage_command).toMatch(/^sh ~\/\.claude\/vibecodes\/step-usage-[0-9a-f]{8}\.sh vcu_[0-9a-f]{24} 'AGENT_ID'$/);
+      expect(on.usage_command_list_scripts).toBe("ls -t ~/.claude/vibecodes/");
+      expect(on.usage_command_newest_script).toMatch(/^sh ~\/\.claude\/vibecodes\/NEWEST_STEP_USAGE_SCRIPT vcu_[0-9a-f]{24} 'AGENT_ID'$/);
+      expect(on.usage_command_newest_script).not.toMatch(/xargs|\|/);
       // ...and the wrapper, with the same marker, is kept for a machine with no saved script.
       expect(on.usage_command_if_script_missing).toContain("NO_TRANSCRIPT no-script");
       expect(on.usage_command_if_script_missing.length).toBeLessThan(275);

@@ -26,7 +26,7 @@ export const stepUsageParam = z
       '"cache_write_1h_tokens"}],"output_estimated"}. If it prints NO_TRANSCRIPT no-script, the reply gives you a full ' +
       "command to run once instead. Required on a Claude step you claimed: without it (or " +
       "usage_unavailable) the call is refused and nothing changes. If your shell refuses the command (a safety check, for example in a worktree), " +
-      "run it again as one plain command on its own, and if it prints that the file is missing run usage_command_if_script_missing. " +
+      "run it again as one plain command on its own. If it errors because the file is missing, run usage_command_list_scripts on its own, then usage_command_newest_script on its own with NEWEST_STEP_USAGE_SCRIPT replaced by the first step-usage-*.sh name the list printed (never pipe one into the other); if the folder is missing or that errors too, run usage_command_if_script_missing. " +
       "A malformed line never blocks the step."
   );
 
@@ -53,7 +53,7 @@ export function noScriptRetryMessage(marker: string): string {
     "Nothing was changed; the claim_token is still valid. Run the full command between the lines below once " +
     "(swap AGENT_ID for the agentId of each subagent that did the work, or leave it as it is if you did the work " +
     "yourself) and call again with the single line it prints as usage. It only reads Claude's session history; " +
-    "it changes nothing on this machine. If it can't be run, call again with usage_unavailable and the reason instead of usage.\n" +
+    "it changes nothing on this machine. If your shell refused it, run it again as one plain command on its own; only if it still cannot be run at all, call again with usage_unavailable and the reason instead of usage, and tell the person, because the step's cost is then lost.\n" +
     "----- command start -----\n" +
     stepUsageCommand(marker) +
     "\n----- command end -----"
@@ -87,8 +87,10 @@ export function missingUsageError(params: {
   if (params.usage_unavailable?.trim()) return null;
   return (
     "usage is missing: run the usage_command from claim_next_step (AGENT_ID swapped for the helper's agentId) and " +
-    "call again with the line it prints as usage, NO_TRANSCRIPT included. Only if the command can't be run at all, " +
-    "pass usage_unavailable with the reason instead. Nothing was changed; the claim_token is still valid."
+    "call again with the line it prints as usage, NO_TRANSCRIPT included. If your shell refused the command, that is not " +
+    "a reason to skip it: run it again as one plain command on its own. Only if it still cannot be run at all, pass " +
+    "usage_unavailable with the reason and tell the person, because the step's cost is then lost. " +
+    "Nothing was changed; the claim_token is still valid."
   );
 }
 
