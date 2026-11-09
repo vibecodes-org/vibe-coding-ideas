@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -506,5 +506,43 @@ describe("saved step-usage script and the short command", () => {
     expect(() => stepUsageShortCommand("vcu_'; rm -rf ~; '")).toThrow();
     expect(() => stepUsageShortCommand(MARK, "../evil.sh")).toThrow();
     expect(() => stepUsageShortCommand(MARK, "step-usage-xyz.sh")).toThrow();
+  });
+});
+
+// Card 730f2549: in an isolated worktree Claude Code refuses a command that
+// runs sh inside a construct it can't verify (a variable, a test, a pipe, an
+// if). The first-choice command must be one plain command.
+describe("stepUsagePlainCommand", () => {
+  const file = stepUsageScript().file;
+
+  it("is one plain command: no variable assignment, test, substitution, pipe, list or if", () => {
+    const cmd = stepUsagePlainCommand(MARK, file, "a1");
+    expect(cmd).toBe(`sh ~/.claude/vibecodes/${file} ${MARK} 'a1'`);
+    for (const bad of [";", "&&", "||", "|", "$(", "`", "${", "[", "if ", "\n"]) expect(cmd).not.toContain(bad);
+    expect(cmd.startsWith("sh ")).toBe(true);
+  });
+
+  it("keeps the AGENT_ID placeholder once, and rejects a bad marker or file name", () => {
+    expect(stepUsagePlainCommand(MARK).split(USAGE_COMMAND_PLACEHOLDER)).toHaveLength(2);
+    expect(() => stepUsagePlainCommand("vcu_'; rm -rf ~; '")).toThrow();
+    expect(() => stepUsagePlainCommand(MARK, "../evil.sh")).toThrow();
+  });
+
+  it("runs the saved script and gives the same totals as the full command", () => {
+    const root = sandbox({ a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("x".repeat(350)), read: 10 })] }, [claimLine]);
+    try {
+      const vc = join(root, "vibecodes");
+      mkdirSync(vc, { recursive: true });
+      writeFileSync(join(vc, file), stepUsageScript().body);
+      // ~ resolves from HOME, so point HOME's .claude at the sandbox.
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      spawnSync("ln", ["-s", root, join(home, ".claude")]);
+      const r = spawnSync("bash", ["-c", stepUsagePlainCommand(MARK, file, "a1")], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH ?? "", HOME: home, CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
+      });
+      expect(r.stdout.trim()).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
