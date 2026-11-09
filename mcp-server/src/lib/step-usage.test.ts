@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi } from "vitest";
-import { floorNegativeTokens, missingUsageError, noScriptRetryMessage, recordStepUsage, stepUsageSchema, type StepUsage } from "./step-usage";
+import { usageUnavailableParam, stepUsageParam, floorNegativeTokens, missingUsageError, noScriptRetryMessage, recordStepUsage, stepUsageSchema, type StepUsage } from "./step-usage";
 import { noScriptMarker, stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
 import type { McpContext } from "../context";
 import { logger } from "../../../src/lib/logger";
@@ -251,5 +253,31 @@ describe("recordStepUsage — lasting record when the cost couldn't be measured"
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+// Card 730f2549, stage 2: every instruction that mentions usage_unavailable says a refused command is retried
+// in its plain form first, and that the person is told if the cost is lost.
+describe("usage_unavailable wording", () => {
+  const CT = "ct_abc";
+  it("the missing-usage refusal says a refused command is retried plain, and to tell the person", () => {
+    const msg = missingUsageError({ claim_token: CT, agent: "claude" })!;
+    expect(msg).not.toMatch(/can't be run at all/);
+    expect(msg).toMatch(/refused/);
+    expect(msg).toMatch(/plain command/);
+    expect(msg).toMatch(/tell the person/);
+  });
+
+  it("the parameter text names the plain newest-script step before the wrapper", () => {
+    const d = stepUsageParam.description ?? "";
+    expect(d).toContain("usage_command_newest_script");
+    expect(d.indexOf("usage_command_newest_script")).toBeLessThan(d.indexOf("usage_command_if_script_missing"));
+    expect(usageUnavailableParam.description).toMatch(/refused command is not that/);
+  });
+
+  it("complete_step and fail_step descriptions no longer say 'only if the command can't run'", () => {
+    const src = readFileSync(resolve(__dirname, "../register-tools.ts"), "utf8");
+    expect(src).not.toContain("only if the command can't run");
+    expect(src).toContain("A refused command is not that");
   });
 });

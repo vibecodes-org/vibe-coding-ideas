@@ -7148,10 +7148,11 @@ describe("step cost (card ba37039b)", () => {
     expect(off.usage_command).toContain("awk");
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
-      const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string; usage_command_if_script_missing: string };
+      const on = (await claimNextStep(ctx(), { task_id: TASK_ID })) as { usage_command: string; usage_command_newest_script: string; usage_command_if_script_missing: string };
       expect(on.usage_command).not.toContain("awk");
       // Card 730f2549: the first choice is one plain command (a worktree refuses the wrapper)...
       expect(on.usage_command).toMatch(/^sh ~\/\.claude\/vibecodes\/step-usage-[0-9a-f]{8}\.sh vcu_[0-9a-f]{24} 'AGENT_ID'$/);
+      expect(on.usage_command_newest_script).toMatch(/^ls -t ~\/\.claude\/vibecodes\/step-usage-\*\.sh \| head -n 1 \| xargs -I\{\} sh \{\} vcu_[0-9a-f]{24} 'AGENT_ID'$/);
       // ...and the wrapper, with the same marker, is kept for a machine with no saved script.
       expect(on.usage_command_if_script_missing).toContain("NO_TRANSCRIPT no-script");
       expect(on.usage_command_if_script_missing.length).toBeLessThan(275);

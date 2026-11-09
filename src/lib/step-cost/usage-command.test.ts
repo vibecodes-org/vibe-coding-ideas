@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
+import { newUsageMarker, noScriptMarker, stepUsageCommand, stepUsageNewestScriptCommand, stepUsagePlainCommand, stepUsageScript, stepUsageShortCommand, STEP_USAGE_SCRIPT_FILE, USAGE_COMMAND_PLACEHOLDER } from "./usage-command";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
@@ -543,6 +543,44 @@ describe("stepUsagePlainCommand", () => {
         env: { PATH: process.env.PATH ?? "", HOME: home, CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
       });
       expect(r.stdout.trim()).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+// Card 730f2549, stage 2: a session already open in a worktree when the script
+// changes has only an older saved copy, so the first-choice file is missing.
+// The next step down must also be a plain command (no variable, test or if).
+describe("stepUsageNewestScriptCommand", () => {
+  const file = stepUsageScript().file;
+
+  it("is plain commands joined only by pipes: no variable, test, substitution, list or if", () => {
+    const cmd = stepUsageNewestScriptCommand(MARK, "a1");
+    for (const bad of [";", "&&", "||", "$(", "`", "${", "[", "if ", "\n", "$m", "$f"]) expect(cmd).not.toContain(bad);
+    expect(cmd.startsWith("ls -t ")).toBe(true);
+    expect(cmd).toContain(MARK);
+    expect(cmd.split(USAGE_COMMAND_PLACEHOLDER)).toHaveLength(1); // 'a1' swapped in
+    expect(stepUsageNewestScriptCommand(MARK).split(USAGE_COMMAND_PLACEHOLDER)).toHaveLength(2);
+    expect(() => stepUsageNewestScriptCommand("vcu_'; rm -rf ~; '")).toThrow();
+  });
+
+  it("runs the newest saved script when several are saved, with the same totals as the full command", () => {
+    const root = sandbox({ a1: [line({ id: "msg_1", model: "claude-opus-5-5", block: text("x".repeat(350)), read: 10 })] }, [claimLine]);
+    try {
+      const vc = join(root, "vibecodes");
+      mkdirSync(vc, { recursive: true });
+      // An older copy that would print junk, and the real script saved later under another name.
+      writeFileSync(join(vc, "step-usage-00000000.sh"), "#!/bin/sh\necho OLD\n");
+      utimesSync(join(vc, "step-usage-00000000.sh"), new Date(1000), new Date(1000));
+      writeFileSync(join(vc, "step-usage-11111111.sh"), stepUsageScript().body);
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      spawnSync("ln", ["-s", root, join(home, ".claude")]);
+      const r = spawnSync("bash", ["-c", stepUsageNewestScriptCommand(MARK, "a1")], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH ?? "", HOME: home, CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
+      });
+      expect(r.stdout.trim()).toBe(runCommand(root, stepUsageCommand(MARK, "a1")));
+      expect(file).toMatch(STEP_USAGE_SCRIPT_FILE);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

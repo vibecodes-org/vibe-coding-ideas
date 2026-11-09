@@ -232,3 +232,18 @@ export function noScriptMarker(usage: unknown): string | null {
   const m = NO_SCRIPT_LINE.exec(usage.trim());
   return m ? m[1] : null;
 }
+
+/**
+ * Card 730f2549, stage 2: the step down from the first-choice command. A session
+ * already open in a worktree when the script changes has only an older saved
+ * copy, so the file named in stepUsagePlainCommand is missing. The wrapper that
+ * used to cover that (stepUsageShortCommand) is the construct a worktree refuses,
+ * so this is plain commands joined by pipes only: list the saved scripts newest
+ * first, take the first, run it with the same arguments. With no saved script at
+ * all it prints only ls's error and runs nothing; the session then goes on to
+ * the wrapper (which also hands back the full command).
+ */
+export function stepUsageNewestScriptCommand(marker: string, agentIds: string = USAGE_COMMAND_PLACEHOLDER): string {
+  if (!/^vcu_[0-9a-f]+$/.test(marker)) throw new Error("bad usage marker");
+  return `ls -t ~/.claude/vibecodes/step-usage-*.sh | head -n 1 | xargs -I{} sh {} ${marker} '${agentIds}'`;
+}

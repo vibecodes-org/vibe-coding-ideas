@@ -26,7 +26,7 @@ export const stepUsageParam = z
       '"cache_write_1h_tokens"}],"output_estimated"}. If it prints NO_TRANSCRIPT no-script, the reply gives you a full ' +
       "command to run once instead. Required on a Claude step you claimed: without it (or " +
       "usage_unavailable) the call is refused and nothing changes. If your shell refuses the command (a safety check, for example in a worktree), " +
-      "run it again as one plain command on its own, and if it prints that the file is missing run usage_command_if_script_missing. " +
+      "run it again as one plain command on its own. If the file is missing, run usage_command_newest_script (also plain), and if that prints nothing run usage_command_if_script_missing. " +
       "A malformed line never blocks the step."
   );
 
@@ -87,8 +87,10 @@ export function missingUsageError(params: {
   if (params.usage_unavailable?.trim()) return null;
   return (
     "usage is missing: run the usage_command from claim_next_step (AGENT_ID swapped for the helper's agentId) and " +
-    "call again with the line it prints as usage, NO_TRANSCRIPT included. Only if the command can't be run at all, " +
-    "pass usage_unavailable with the reason instead. Nothing was changed; the claim_token is still valid."
+    "call again with the line it prints as usage, NO_TRANSCRIPT included. If your shell refused the command, that is not " +
+    "a reason to skip it: run it again as one plain command on its own. Only if it still cannot be run at all, pass " +
+    "usage_unavailable with the reason and tell the person, because the step's cost is then lost. " +
+    "Nothing was changed; the claim_token is still valid."
   );
 }
 
