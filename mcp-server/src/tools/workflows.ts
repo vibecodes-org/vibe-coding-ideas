@@ -960,7 +960,7 @@ export async function claimNextStep(
     step.bot_id && matchedBot ? ((await fetchAgentSkills(ctx.supabase, [step.bot_id])).get(step.bot_id) ?? []) : [];
   // The same function get_agent_prompt(as_persona: true) uses.
   const composed = matchedBot
-    ? composePersonaPrompt(step.bot_id ?? "", matchedBot, skillRows)
+    ? composePersonaPrompt(step.bot_id ?? "", matchedBot, skillRows, params.agent ?? "claude")
     : { prompt: "", skills: buildSkillsSection(step.bot_id ?? "", skillRows) };
   const skillsSection = composed.skills;
   const personaPrompt = composed.prompt;

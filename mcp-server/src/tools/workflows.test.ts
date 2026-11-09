@@ -5,6 +5,7 @@ import type { McpContext } from "../context";
 import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
 import { getBotPrompt } from "./bots";
 import { sessionAgentClaimHint } from "../../../src/lib/terminal/session-agents";
+import { agentPersonaBody } from "../../../src/lib/agent-tool-access";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
 
 // AI role matching hits the network — stub it so applyWorkflowTemplate can run
@@ -1692,6 +1693,11 @@ describe("claimNextStep — persona embedding", () => {
     const viaTool = (await getBotPrompt(botCtx, { agent_id: PERSONA_BOT_ID, as_persona: true })) as { persona_prompt: string };
 
     expect(viaTool.persona_prompt).toBe(claimed.persona_prompt);
+    expect(viaTool.persona_prompt).toContain("## Waiting on slow work");
+    // A Codex caller asks for its own kind and gets no Waiting note.
+    const viaCodex = (await getBotPrompt(botCtx, { agent_id: PERSONA_BOT_ID, as_persona: true, agent: "codex" })) as { persona_prompt: string };
+    expect(viaCodex.persona_prompt).not.toContain("## Waiting on slow work");
+    expect(viaCodex.persona_prompt).toContain("### api-design-review");
     // Without as_persona the reply is the unchanged raw profile.
     const raw = (await getBotPrompt(botCtx, { agent_id: PERSONA_BOT_ID })) as Record<string, unknown>;
     expect(raw).not.toHaveProperty("persona_prompt");
@@ -1711,7 +1717,9 @@ describe("claimNextStep — persona embedding", () => {
     };
 
     expect(r.native_subagent).toBeUndefined();
-    expect(r.persona_prompt).toBe(systemPrompt);
+    // A Claude claim's persona ends with the Waiting note (card 11dc1212).
+    expect(r.persona_prompt).toBe(agentPersonaBody(systemPrompt, "full", "claude"));
+    expect(r.persona_prompt).toContain("## Waiting on slow work");
     expect(r.persona_name).toBe("Atlas");
     expect(r.persona_role).toBe("Full Stack Engineer");
     expect(r.instruction).toContain('Spawn it with the "persona_prompt" field in this response as its system prompt');

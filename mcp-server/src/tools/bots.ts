@@ -26,6 +26,12 @@ export const getBotPromptSchema = z.object({
     .describe(
       "true: return the agent's persona exactly as claim_next_step would have sent it as persona_prompt — the system prompt, the read-only Tools note when it applies, and the agent's skills in full — as `persona_prompt`. Never use it to swap in for a native vc- helper claim_next_step named: that agent is never optional. If it can't be loaded, try the same agent under another tier/effort name, otherwise tell the user and stop; use this only after they explicitly say yes. Omit for the raw profile."
     ),
+  agent: z
+    .enum(["claude", "codex"])
+    .optional()
+    .describe(
+      "With as_persona: which agent will run the persona. Defaults to claude. Claude's persona ends with a short note about checking back during slow work; codex's does not.",
+    ),
 });
 
 export const setBotIdentitySchema = z.object({
@@ -157,7 +163,7 @@ export async function getBotPrompt(
   if (args.as_persona) {
     // Same function and inputs as the claim's persona_prompt (card 5e654dd1).
     const skillRows = (await fetchAgentSkills(ctx.supabase, [data.id])).get(data.id) ?? [];
-    const { prompt } = composePersonaPrompt(data.id, data, skillRows);
+    const { prompt } = composePersonaPrompt(data.id, data, skillRows, args.agent ?? "claude");
     return { id: data.id, name: data.name, role: data.role, persona_prompt: prompt };
   }
 

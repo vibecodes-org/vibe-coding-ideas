@@ -32,14 +32,36 @@ export function disallowedToolsFor(access: ToolAccess | null | undefined): strin
   return normalizeToolAccess(access) === "read_only" ? [...FILE_WRITING_TOOLS] : null;
 }
 
+// Card 11dc1212: a helper's cached context expires after 5 minutes without a
+// call, and the next call then pays to read it all in again. This note is added
+// to every Claude helper at delivery (never stored), so it covers every board
+// and every future agent. Claude only: it names Claude Code's tools, and Codex
+// is unmeasured. Keep every rule if the wording is tightened.
+const WAITING_NOTE = [
+  "## Waiting on slow work",
+  "Your cached context expires after 5 minutes without a call, and the next call then pays to read all of it in again. So while you wait on anything slow (a full test run, an online check, a deploy), never let more than 4 minutes pass between your calls.",
+  "- Never give one command a timeout over 240000 ms. Start anything that may take longer with run_in_background, ending with an exit marker and writing to a temporary log named for your step, so helpers running at once never share one (`<step8>` is the first 8 characters of your step id), for example `(npm run test; echo \"EXIT $?\") > /tmp/vc-wait-<step8>.log 2>&1`. That log is fine even if you're read-only. Then check it with a loop that finishes inside 4 minutes: `for i in $(seq 1 14); do grep -q '^EXIT ' /tmp/vc-wait-<step8>.log && break; sleep 15; done; tail -5 /tmp/vc-wait-<step8>.log`. Repeat until it's done. Check online runs the same way (`gh pr checks`, `gh run view`), never with `--watch` or `gh run watch`. There's no `timeout` command on these Macs.",
+  "- Don't end your turn or use Monitor to wait for a background job: you'd sit idle and your context would expire.",
+  "- If the wait will clearly take more than 30 minutes, don't wait. Hand back, saying what's still running and how to check it.",
+].join("\n");
+
+/** The note every Claude helper gets about slow waits. */
+export const WAITING_NOTE_TEXT = WAITING_NOTE;
+
 /**
- * The persona text as delivered: the stored prompt, plus the Tools note for a
- * read-only agent. Full-access agents get exactly their stored prompt, so
- * session tags that were fingerprinted before this setting existed still match.
+ * The persona text as delivered: the stored prompt, then the Tools note for a
+ * read-only agent, then (Claude only) the Waiting note. Every delivery route
+ * and the session-tag fingerprint use this one function, so they always agree.
  */
-export function agentPersonaBody(systemPrompt: string, access: ToolAccess | null | undefined): string {
-  const section = toolAccessSection(access);
-  return section ? `${systemPrompt}\n\n${section}` : systemPrompt;
+export function agentPersonaBody(
+  systemPrompt: string,
+  access: ToolAccess | null | undefined,
+  agent: "claude" | "codex" = "claude",
+): string {
+  const parts = [systemPrompt, toolAccessSection(access), agent === "claude" ? WAITING_NOTE : ""].filter(
+    (p, i) => i === 0 || p,
+  );
+  return parts.join("\n\n");
 }
 
 function toList(value: unknown): string[] {

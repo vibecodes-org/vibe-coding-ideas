@@ -166,7 +166,7 @@ function codexIdentity(i: ClaimInstructionInput): string {
   const personaItem = i.personaPromptSent
     ? `2. Use persona_prompt verbatim as the child's persona instructions: ${i.personaRef}. It is already included; do not call get_agent_prompt.\n`
     : i.nativeInstruction
-      ? `2. The child's persona is ${i.personaRef}. The NATIVE SUBAGENT note below names an agent type that already carries it; if none is available, call get_agent_prompt with agent_id ${i.agentIdArg} and as_persona true, and use its persona_prompt verbatim as the child's persona instructions.\n`
+      ? `2. The child's persona is ${i.personaRef}. The NATIVE SUBAGENT note below names an agent type that already carries it; if none is available, call get_agent_prompt with agent_id ${i.agentIdArg} and as_persona true (and agent "codex"), and use its persona_prompt verbatim as the child's persona instructions.\n`
       : `2. Call get_agent_prompt with agent_id ${i.agentIdArg} to obtain ${i.personaRef}'s full persona instructions.\n`;
   const priorLine =
     i.priorSteps.length > 0
