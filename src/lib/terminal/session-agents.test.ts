@@ -416,6 +416,38 @@ describe("board agent memory limit (task 5e654dd1)", () => {
   });
 });
 
+describe("helper agents (card 9a308e9b)", () => {
+  const ALONE = { ...ATLAS, helper_agents: "blocked" as const };
+  const key = "vc-atlas-37e8ffb2-frontier";
+
+  it("adds Agent to disallowedTools and the note for a Works-alone agent", () => {
+    const def = buildSessionAgents([input({ bot: ALONE })])![key];
+    expect(def.disallowedTools).toEqual(["Agent"]);
+    expect(def.prompt).toContain("You can't start helper agents");
+  });
+
+  it("combines with read-only", () => {
+    const def = buildSessionAgents([input({ bot: { ...ALONE, tool_access: "read_only" } })])![key];
+    expect(def.disallowedTools).toEqual(["Edit", "Write", "NotebookEdit", "Agent"]);
+  });
+
+  it("leaves an allowed agent exactly as before, and Codex untouched", () => {
+    const plain = buildSessionAgents([input()])![key];
+    expect(buildSessionAgents([input({ bot: { ...ATLAS, helper_agents: "allowed" } })])![key]).toEqual(plain);
+    const codexPlain = buildSessionAgents([input()], undefined, { agent: "codex" })![key];
+    const codexAlone = buildSessionAgents([input({ bot: ALONE })], undefined, { agent: "codex" })![key];
+    expect(codexAlone).toEqual(codexPlain);
+  });
+
+  it("the claim-hint tag equals the definition tag for a Works-alone agent", () => {
+    const def = buildSessionAgents([input({ bot: ALONE })])![key];
+    const hint = sessionAgentClaimHint({ bot: ALONE, tier: "frontier", model: "opus", effort: "high" });
+    expect(def.description.endsWith(hint.tag)).toBe(true);
+    const plainHint = sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" });
+    expect(hint.tag).not.toBe(plainHint.tag);
+  });
+});
+
 describe("tool access", () => {
   const READ_ONLY = { ...ATLAS, tool_access: "read_only" as const };
   const NOTE = "## Tools\nYou're read-only: don't create, edit or delete files";

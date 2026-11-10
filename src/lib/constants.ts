@@ -1,7 +1,7 @@
 import type { IdeaStatus, CommentType, SortOption } from "@/types";
 import type { AgentInstructions } from "@/lib/agent-instructions";
 import { PLATFORM_AGENTS } from "@/lib/platform-agents";
-import type { ToolAccess } from "@/lib/agent-tool-access";
+import type { HelperAgents, ToolAccess } from "@/lib/agent-tool-access";
 
 export const VIBECODES_USER_ID = "a0000000-0000-4000-a000-000000000001";
 
@@ -361,6 +361,7 @@ export type BotRoleTemplate = {
   role: string;
   fields: AgentInstructions;
   toolAccess: ToolAccess;
+  helperAgents: HelperAgents;
 };
 
 /**
@@ -371,7 +372,7 @@ export type BotRoleTemplate = {
  * only Read-only one: checkers can't edit.
  */
 export const BOT_ROLE_TEMPLATES: BotRoleTemplate[] = PLATFORM_AGENTS.map(
-  (a): BotRoleTemplate => ({ role: a.role, fields: { ...a.instructions }, toolAccess: a.toolAccess })
+  (a): BotRoleTemplate => ({ role: a.role, fields: { ...a.instructions }, toolAccess: a.toolAccess, helperAgents: a.helperAgents })
 );
 
 /** The chips on the create-agent screens: one row, one chip per template. */

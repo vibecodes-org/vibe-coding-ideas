@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio } from "@/lib/validation";
-import { normalizeToolAccess, toolAccessFromFrontmatter, type ToolAccess } from "@/lib/agent-tool-access";
+import {
+  helperAgentsFromFrontmatter,
+  normalizeHelperAgents,
+  normalizeToolAccess,
+  toolAccessFromFrontmatter,
+  type HelperAgents,
+  type ToolAccess,
+} from "@/lib/agent-tool-access";
 import { fetchSkillNamesByBot } from "@/lib/fetch-skill-names";
 import { copyAgentSkills } from "@/lib/copy-agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
@@ -18,7 +25,8 @@ export async function createBot(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  toolAccess?: ToolAccess
+  toolAccess?: ToolAccess,
+  helperAgents?: HelperAgents
 ): Promise<string> {
   const supabase = await createClient();
   const {
@@ -32,6 +40,7 @@ export async function createBot(
 
   const validatedBio = validateBio(bio ?? null);
   const validatedToolAccess = normalizeToolAccess(toolAccess);
+  const validatedHelperAgents = normalizeHelperAgents(helperAgents);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -46,10 +55,11 @@ export async function createBot(
   const botId = data as string;
 
   // Set bio/tool access via follow-up UPDATE (RPC doesn't know about new columns)
-  if (validatedBio || validatedToolAccess !== "full") {
+  if (validatedBio || validatedToolAccess !== "full" || validatedHelperAgents !== "allowed") {
     const extras: Record<string, unknown> = {};
     if (validatedBio) extras.bio = validatedBio;
     if (validatedToolAccess !== "full") extras.tool_access = validatedToolAccess;
+    if (validatedHelperAgents !== "allowed") extras.helper_agents = validatedHelperAgents;
 
     await supabase
       .from("bot_profiles")
@@ -74,6 +84,7 @@ export async function updateBot(
     bio?: string | null;
     is_published?: boolean;
     tool_access?: ToolAccess;
+    helper_agents?: HelperAgents;
   }
 ) {
   const supabase = await createClient();
@@ -101,6 +112,8 @@ export async function updateBot(
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
   if (updates.is_published !== undefined) profileUpdates.is_published = updates.is_published;
   if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
+  if (updates.helper_agents !== undefined)
+    profileUpdates.helper_agents = normalizeHelperAgents(updates.helper_agents);
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase
@@ -234,6 +247,7 @@ export async function cloneBotProfile(
       .update({
         bio: source.bio,
         tool_access: source.tool_access,
+        helper_agents: source.helper_agents,
         cloned_from: source.id,
       })
       .eq("id", newBotId)
@@ -507,6 +521,11 @@ export async function importAgentFromSkill(
     disallowedTools: parsed.disallowedTools,
     metadataToolAccess: parsed.metadata.tool_access,
   });
+  const helperAgents = helperAgentsFromFrontmatter({
+    tools: parsed.tools,
+    disallowedTools: parsed.disallowedTools,
+    metadataHelperAgents: parsed.metadata.helper_agents,
+  });
   const displayName = parsed.name
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -526,6 +545,13 @@ export async function importAgentFromSkill(
       parsed.disallowedTools !== undefined
     ) {
       updates.tool_access = toolAccess;
+    }
+    if (
+      parsed.metadata.helper_agents !== undefined ||
+      parsed.tools !== undefined ||
+      parsed.disallowedTools !== undefined
+    ) {
+      updates.helper_agents = helperAgents;
     }
 
     const { error: updateErr } = await supabase
@@ -548,7 +574,8 @@ export async function importAgentFromSkill(
     parsed.body || null,
     null,
     parsed.metadata.bio ?? null,
-    toolAccess
+    toolAccess,
+    helperAgents
   );
 
   return botId;

@@ -45,6 +45,12 @@ describe("cloneBotProfile", () => {
     expect(fake.rpcCalls.map((c) => c.name)).toEqual(["create_bot_user", "increment_times_cloned"]);
   });
 
+  it("copies the source's helper-agents setting to the new agent", async () => {
+    const fake = setup({ data: [] });
+    await cloneBotProfile(fake.client, { ...SOURCE, helper_agents: "blocked" } as BotProfile, OWNER);
+    expect(fake.writesTo("bot_profiles", "update")[0].payload).toMatchObject({ helper_agents: "blocked" });
+  });
+
   it("copies the source's tool access to the new agent", async () => {
     const fake = setup({ data: [] });
     await cloneBotProfile(fake.client, { ...SOURCE, tool_access: "read_only" } as BotProfile, OWNER);

@@ -10,6 +10,12 @@ const SKILLS = [
 ];
 
 describe("composePersonaPrompt", () => {
+  it("adds the helper note for a Works-alone agent, Claude only", () => {
+    const bot = { system_prompt: PERSONA, tool_access: "full" as const, helper_agents: "blocked" as const };
+    expect(composePersonaPrompt(BOT, bot, []).prompt).toContain("You can't start helper agents");
+    expect(composePersonaPrompt(BOT, bot, [], "codex").prompt).not.toContain("helper agents");
+  });
+
   it("appends each skill's stored text to the persona, in order, trimmed", () => {
     const { prompt, skills } = composePersonaPrompt(BOT, { system_prompt: PERSONA, tool_access: "full" }, SKILLS);
     expect(prompt).toBe(

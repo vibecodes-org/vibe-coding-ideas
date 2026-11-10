@@ -16,10 +16,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
 import { createAdminAgent, updateAdminAgent } from "@/actions/admin-agents";
 import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { HelperAgentsPicker } from "@/components/agents/helper-agents-picker";
 import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
 import { RoleTemplateChips } from "@/components/agents/role-template-chips";
 import { generateInstructions } from "@/lib/agent-instructions";
-import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
+import { normalizeHelperAgents, normalizeToolAccess, type HelperAgents, type ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
 import type { BotProfile } from "@/types";
@@ -46,6 +47,7 @@ export function CreateAdminAgentDialog({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [toolAccess, setToolAccess] = useState<ToolAccess>("full");
+  const [helperAgents, setHelperAgents] = useState<HelperAgents>("allowed");
   const [promptKey, setPromptKey] = useState(0);
 
   // Avatar upload
@@ -62,6 +64,7 @@ export function CreateAdminAgentDialog({
       setBio(editAgent.bio ?? "");
       setSelectedTemplate(null);
       setToolAccess(normalizeToolAccess(editAgent.tool_access));
+      setHelperAgents(normalizeHelperAgents(editAgent.helper_agents));
       setPromptKey((k) => k + 1);
       setSelectedFile(null);
       setPreviewUrl(null);
@@ -75,6 +78,7 @@ export function CreateAdminAgentDialog({
       setRole(template.role);
       setSystemPrompt(generateInstructions(template.fields));
       setToolAccess(template.toolAccess);
+      setHelperAgents(template.helperAgents);
       setPromptKey((k) => k + 1);
     }
   }
@@ -86,6 +90,7 @@ export function CreateAdminAgentDialog({
     setBio("");
     setSelectedTemplate(null);
     setToolAccess("full");
+    setHelperAgents("allowed");
     setPromptKey((k) => k + 1);
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -149,6 +154,7 @@ export function CreateAdminAgentDialog({
           system_prompt: systemPrompt.trim() || null,
           bio: bio.trim() || null,
           tool_access: toolAccess,
+          helper_agents: helperAgents,
           ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
         });
         toast.success("Agent updated");
@@ -160,7 +166,8 @@ export function CreateAdminAgentDialog({
           systemPrompt.trim() || null,
           null,
           bio.trim() || null,
-          toolAccess
+          toolAccess,
+          helperAgents
         );
 
         // Upload avatar if selected
@@ -290,6 +297,8 @@ export function CreateAdminAgentDialog({
           />
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="admin-tool-access" />
+
+          <HelperAgentsPicker value={helperAgents} onChange={setHelperAgents} idPrefix="admin-helper-agents" />
 
           <p className="text-[10px] text-muted-foreground">
             Admin agents are auto-published to the community. Skills are added from the agent&apos;s own page.

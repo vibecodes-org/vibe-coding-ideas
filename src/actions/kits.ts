@@ -220,8 +220,9 @@ export async function applyKit(
 
           if (botUser) {
             newBotId = botUser;
-            const extras: { tool_access?: "read_only" } = {};
+            const extras: { tool_access?: "read_only"; helper_agents?: "blocked" } = {};
             if (template?.toolAccess === "read_only") extras.tool_access = "read_only";
+            if (template?.helperAgents === "blocked") extras.helper_agents = "blocked";
             if (Object.keys(extras).length > 0) {
               await supabase.from("bot_profiles").update(extras).eq("id", botUser);
             }

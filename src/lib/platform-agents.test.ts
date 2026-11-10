@@ -52,6 +52,11 @@ describe("platform-agents.ts vs docs/stage3-agents.json", () => {
     }
   });
 
+  it("builder, reviewer and tester start on Works alone; the rest can start helpers", () => {
+    const alone = PLATFORM_AGENTS.filter((a) => a.helperAgents === "blocked").map((a) => a.name);
+    expect(alone.sort()).toEqual(["Atlas", "Lens", "Sentinel"]);
+  });
+
   it("only Code Reviewer is Read-only", () => {
     expect(PLATFORM_AGENTS.filter((a) => a.toolAccess === "read_only").map((a) => a.role)).toEqual(["Code Reviewer"]);
   });

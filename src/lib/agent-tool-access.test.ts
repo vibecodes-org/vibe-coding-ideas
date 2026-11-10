@@ -5,6 +5,8 @@ import {
   normalizeToolAccess,
   toolAccessFromFrontmatter,
   toolAccessSection,
+  normalizeHelperAgents,
+  helperAgentsFromFrontmatter,
   WAITING_NOTE_TEXT,
 } from "./agent-tool-access";
 
@@ -85,5 +87,61 @@ describe("toolAccessFromFrontmatter", () => {
   it("is full when nothing is set", () => {
     expect(toolAccessFromFrontmatter({})).toBe("full");
     expect(toolAccessFromFrontmatter({ tools: "" })).toBe("full");
+  });
+});
+
+describe("helper agents (card 9a308e9b)", () => {
+  it("normalizes anything but 'blocked' to allowed", () => {
+    expect(normalizeHelperAgents("blocked")).toBe("blocked");
+    expect(normalizeHelperAgents("allowed")).toBe("allowed");
+    expect(normalizeHelperAgents(null)).toBe("allowed");
+    expect(normalizeHelperAgents("x")).toBe("allowed");
+  });
+
+  it("builds the deny list for all four combinations", () => {
+    expect(disallowedToolsFor("full", "allowed")).toBeNull();
+    expect(disallowedToolsFor("full")).toBeNull();
+    expect(disallowedToolsFor("read_only", "allowed")).toEqual(["Edit", "Write", "NotebookEdit"]);
+    expect(disallowedToolsFor("full", "blocked")).toEqual(["Agent"]);
+    expect(disallowedToolsFor("read_only", "blocked")).toEqual(["Edit", "Write", "NotebookEdit", "Agent"]);
+  });
+
+  it("never adds Agent for Codex", () => {
+    expect(disallowedToolsFor("full", "blocked", "codex")).toBeNull();
+  });
+
+  it("leaves the persona byte-identical when helpers are allowed or omitted", () => {
+    for (const access of ["full", "read_only"] as const) {
+      const base = agentPersonaBody("P", access, "claude");
+      expect(agentPersonaBody("P", access, "claude", "allowed")).toBe(base);
+      expect(agentPersonaBody("P", access, "claude", null)).toBe(base);
+    }
+  });
+
+  it("leaves the Codex persona identical for both settings", () => {
+    expect(agentPersonaBody("P", "full", "codex", "blocked")).toBe(agentPersonaBody("P", "full", "codex", "allowed"));
+    expect(agentPersonaBody("P", "read_only", "codex", "blocked")).toBe(
+      agentPersonaBody("P", "read_only", "codex", "allowed"),
+    );
+  });
+
+  it("adds one Tools note for a Works-alone agent, shared with read-only", () => {
+    const alone = agentPersonaBody("P", "full", "claude", "blocked");
+    expect(alone).toContain("## Tools\nYou can't start helper agents");
+    const both = agentPersonaBody("P", "read_only", "claude", "blocked");
+    expect(both.match(/## Tools/g)).toHaveLength(1);
+    expect(both).toContain("You're read-only");
+    expect(both).toContain("You can't start helper agents");
+    expect(alone).not.toBe(agentPersonaBody("P", "full", "claude", "allowed"));
+  });
+
+  it("reads the setting from agent file front matter", () => {
+    expect(helperAgentsFromFrontmatter({})).toBe("allowed");
+    expect(helperAgentsFromFrontmatter({ disallowedTools: "Edit, Agent" })).toBe("blocked");
+    expect(helperAgentsFromFrontmatter({ disallowedTools: ["Task"] })).toBe("blocked");
+    expect(helperAgentsFromFrontmatter({ tools: "Read, Grep" })).toBe("blocked");
+    expect(helperAgentsFromFrontmatter({ tools: "Read, Agent" })).toBe("allowed");
+    expect(helperAgentsFromFrontmatter({ disallowedTools: "Agent", metadataHelperAgents: "allowed" })).toBe("allowed");
+    expect(helperAgentsFromFrontmatter({ metadataHelperAgents: "blocked" })).toBe("blocked");
   });
 });

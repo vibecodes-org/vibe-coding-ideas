@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { VIBECODES_USER_ID } from "@/lib/constants";
-import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
+import { normalizeHelperAgents, normalizeToolAccess, type HelperAgents, type ToolAccess } from "@/lib/agent-tool-access";
 import {
   validateBio,
   validateTeamName,
@@ -33,7 +33,8 @@ export async function createAdminAgent(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  toolAccess?: ToolAccess
+  toolAccess?: ToolAccess,
+  helperAgents?: HelperAgents
 ): Promise<string> {
   const { supabase } = await requireAdmin();
 
@@ -60,6 +61,7 @@ export async function createAdminAgent(
   };
   if (validatedBio) extras.bio = validatedBio;
   if (normalizeToolAccess(toolAccess) !== "full") extras.tool_access = "read_only";
+  if (normalizeHelperAgents(helperAgents) !== "allowed") extras.helper_agents = "blocked";
 
   await supabase
     .from("bot_profiles")
@@ -81,6 +83,7 @@ export async function updateAdminAgent(
     avatar_url?: string | null;
     bio?: string | null;
     tool_access?: ToolAccess;
+    helper_agents?: HelperAgents;
   }
 ) {
   const { supabase } = await requireAdmin();
@@ -100,6 +103,8 @@ export async function updateAdminAgent(
     profileUpdates.avatar_url = updates.avatar_url?.trim() || null;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
   if (updates.tool_access !== undefined) profileUpdates.tool_access = normalizeToolAccess(updates.tool_access);
+  if (updates.helper_agents !== undefined)
+    profileUpdates.helper_agents = normalizeHelperAgents(updates.helper_agents);
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase

@@ -49,7 +49,7 @@ import {
 } from "./model-availability";
 import { sessionAgentClaimHint, type SessionAgentTier } from "../../../src/lib/terminal/session-agents";
 import { buildSkillsSection } from "../../../src/lib/skills-section";
-import type { ToolAccess } from "../../../src/lib/agent-tool-access";
+import type { HelperAgents, ToolAccess } from "../../../src/lib/agent-tool-access";
 import { composePersonaPrompt } from "../lib/persona-prompt";
 import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
@@ -953,7 +953,7 @@ export async function claimNextStep(
   // full prompt).
   const { data: ideaAgents, error: ideaAgentsError } = await ctx.supabase
     .from("idea_agents")
-    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt, tool_access)")
+    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt, tool_access, helper_agents)")
     .eq("idea_id", step.idea_id)
     .order("created_at", { ascending: true });
   // Read before the claim write, so a failure aborts with nothing changed:
@@ -973,6 +973,7 @@ export async function claimNextStep(
     role: string;
     system_prompt: string | null;
     tool_access: ToolAccess | null;
+    helper_agents: HelperAgents | null;
   } | null;
   const skillRows =
     step.bot_id && matchedBot ? ((await fetchAgentSkills(ctx.supabase, [step.bot_id])).get(step.bot_id) ?? []) : [];
@@ -1348,6 +1349,7 @@ export async function claimNextStep(
               name: matchedBot.name,
               system_prompt: matchedBot.system_prompt!,
               tool_access: matchedBot.tool_access,
+              helper_agents: matchedBot.helper_agents,
             },
             tier,
             model: resolution?.resolved ?? null,

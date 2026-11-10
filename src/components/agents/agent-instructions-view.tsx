@@ -1,6 +1,6 @@
-import { Eye } from "lucide-react";
+import { Eye, User } from "lucide-react";
 import { parseInstructions } from "@/lib/agent-instructions";
-import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
+import { normalizeHelperAgents, normalizeToolAccess, type HelperAgents, type ToolAccess } from "@/lib/agent-tool-access";
 
 interface AgentInstructionsViewProps {
   systemPrompt: string | null;
@@ -14,6 +14,17 @@ export function ReadOnlyBadge({ toolAccess }: { toolAccess: ToolAccess | string 
     <span className="inline-flex items-center gap-1 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-300">
       <Eye className="h-3 w-3" aria-hidden="true" />
       Read-only
+    </span>
+  );
+}
+
+/** "Works alone" badge: shown next to Read-only when the agent can't start helper agents. */
+export function WorksAloneBadge({ helperAgents }: { helperAgents: HelperAgents | string | null | undefined }) {
+  if (normalizeHelperAgents(helperAgents) !== "blocked") return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+      <User className="h-3 w-3" aria-hidden="true" />
+      Works alone
     </span>
   );
 }

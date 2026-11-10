@@ -9,7 +9,7 @@
 // independent checker, or a different risk. See docs/notes/472d5672.md.
 
 import type { AgentInstructions } from "./agent-instructions";
-import type { ToolAccess } from "./agent-tool-access";
+import type { HelperAgents, ToolAccess } from "./agent-tool-access";
 
 /**
  * Shared by all five (task 7d1ca3c1, real incident 7 Sep 2026: a spawned
@@ -25,6 +25,8 @@ export interface PlatformAgent {
   role: string;
   bio: string;
   toolAccess: ToolAccess;
+  /** Works alone = blocked: the builder, reviewer and tester start without their own helper agents (card 9a308e9b). */
+  helperAgents: HelperAgents;
   /** Emoji on the template chip. */
   chipIcon: string;
   instructions: AgentInstructions;
@@ -37,6 +39,7 @@ export const PLATFORM_AGENTS: PlatformAgent[] = [
     role: "Planner",
     bio: "Takes a card to an approved plan in one conversation: requirements, a design mock if users will see a change, and the build plan.",
     toolAccess: "full",
+    helperAgents: "allowed",
     chipIcon: "🗺️",
     instructions: {
       oneLine: "You take a card to an approved plan in one conversation, so the reasons behind every decision stay together.",
@@ -54,6 +57,7 @@ export const PLATFORM_AGENTS: PlatformAgent[] = [
     role: "Full Stack Engineer",
     bio: "Builds what the approved plan describes, in whatever stack the project uses, with tests.",
     toolAccess: "full",
+    helperAgents: "blocked",
     chipIcon: "💻",
     instructions: {
       oneLine: "You build what an approved plan describes, in whatever stack the project uses, and prove it works with tests.",
@@ -71,6 +75,7 @@ export const PLATFORM_AGENTS: PlatformAgent[] = [
     role: "Code Reviewer",
     bio: "Reviews someone else's change independently against the approved plan, and says whether it can ship.",
     toolAccess: "read_only",
+    helperAgents: "blocked",
     chipIcon: "📝",
     instructions: {
       oneLine: "You review someone else's change independently, against the approved plan, and decide whether it can ship.",
@@ -88,6 +93,7 @@ export const PLATFORM_AGENTS: PlatformAgent[] = [
     role: "QA Engineer",
     bio: "Tests someone else's change independently, as a user would, and writes the plain-English release summary.",
     toolAccess: "full",
+    helperAgents: "blocked",
     chipIcon: "🔍",
     instructions: {
       oneLine: "You test someone else's change independently, as a user would, and say plainly whether it's ready to release.",
@@ -105,6 +111,7 @@ export const PLATFORM_AGENTS: PlatformAgent[] = [
     role: "DevOps Engineer",
     bio: "Carries out approved infrastructure and deployment changes exactly as planned, and proves they worked.",
     toolAccess: "full",
+    helperAgents: "allowed",
     chipIcon: "⚙",
     instructions: {
       oneLine: "You carry out approved infrastructure and deployment changes on real systems, exactly as planned, and prove they worked.",

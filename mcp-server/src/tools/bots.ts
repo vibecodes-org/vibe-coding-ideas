@@ -71,6 +71,12 @@ export const createBotSchema = z.object({
     .describe(
       "What the agent can do. full (default): can read and change files. read_only: told not to create, edit or delete files, and in the in-app Claude Code terminal its file-editing tools are switched off. For reviewers and checkers."
     ),
+  helper_agents: z
+    .enum(["allowed", "blocked"])
+    .optional()
+    .describe(
+      "Whether the agent can start its own helper agents. allowed (default): it can. blocked (shown as Works alone): in Claude Code its helper-starting tool is switched off and it is told to do the work itself. Codex is not affected."
+    ),
 });
 
 export const toggleAgentVoteSchema = z.object({
@@ -136,6 +142,7 @@ export async function listBots(
       is_active: bot.is_active,
       bio: bot.bio,
       tool_access: bot.tool_access,
+      helper_agents: bot.helper_agents,
       is_published: bot.is_published,
       community_upvotes: bot.community_upvotes,
       times_cloned: bot.times_cloned,
@@ -153,7 +160,7 @@ export async function getBotPrompt(
 
   const { data, error } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, tool_access")
+    .select("id, name, role, system_prompt, tool_access, helper_agents")
     .eq("id", botId)
     .maybeSingle();
 
@@ -218,6 +225,7 @@ export async function createBot(
   const extras: Record<string, unknown> = {};
   if (args.bio) extras.bio = args.bio.trim();
   if (args.tool_access && args.tool_access !== "full") extras.tool_access = args.tool_access;
+  if (args.helper_agents === "blocked") extras.helper_agents = "blocked";
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
       .from("bot_profiles")
@@ -229,7 +237,7 @@ export async function createBot(
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url, bio, is_published, tool_access")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, is_published, tool_access, helper_agents")
     .eq("id", data)
     .single();
 
@@ -305,6 +313,7 @@ export async function cloneAgent(
       .update({
         bio: source.bio,
         tool_access: source.tool_access,
+        helper_agents: source.helper_agents,
         cloned_from: args.bot_id,
       })
       .eq("id", newId)
