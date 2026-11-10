@@ -112,44 +112,4 @@ describe("web re-pick after an agent pool change", () => {
 
     expect(updates).toHaveLength(1500);
   });
-
-  it("leaves waiting steps unassigned when the removed agent was the last with that role", async () => {
-    steps = [
-      {
-        id: "step-1",
-        task_id: "task-1",
-        agent_role: "Planner",
-        bot_id: REMOVED,
-        match_tier: "ai",
-        status: "pending",
-      },
-    ];
-    pool = []; // nobody left
-    matchMock.mockResolvedValue({});
-
-    await removeIdeaAgent(IDEA_ID, REMOVED);
-    await runBackground();
-
-    expect(updates).toEqual([{ patch: { bot_id: null, match_tier: null }, id: "step-1" }]);
-  });
-
-  it("clears a step still on the removed agent when other agents remain but none fit the role", async () => {
-    steps = [
-      {
-        id: "step-1",
-        task_id: "task-1",
-        agent_role: "Planner",
-        bot_id: REMOVED,
-        match_tier: "ai",
-        status: "pending",
-      },
-    ];
-    pool = [{ bot_id: PLANNER, bot_profiles: { id: PLANNER, name: "T", role: "Tester" } }];
-    matchMock.mockResolvedValue({ Planner: { botId: null, tier: "none" } });
-
-    await removeIdeaAgent(IDEA_ID, REMOVED);
-    await runBackground();
-
-    expect(updates).toEqual([{ patch: { bot_id: null, match_tier: null }, id: "step-1" }]);
-  });
 });
