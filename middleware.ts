@@ -28,9 +28,10 @@ export const config = {
      *   bumping mcp-handler to 1.1.0 (web-standard transport, no global mutation).)
      * - api/workflow/attest (Claude Code's "ran in its own agent" hook posts here with
      *   no cookies; the step's work token is the auth - card 24936814)
+     * - api/cron (Vercel cron calls - each route checks its own CRON_SECRET bearer)
      * - oauth (OAuth consent pages - handle their own auth)
      * - callback (auth callback - exchanges code for session, no getUser needed)
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|api/terminal|api/workflow/attest|oauth|callback|monitoring|ingest).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|api/terminal|api/workflow/attest|api/cron|oauth|callback|monitoring|ingest).*)",
   ],
 };

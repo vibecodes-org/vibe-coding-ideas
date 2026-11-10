@@ -26,7 +26,11 @@ const AI_SDK_CALLS = ["generateText", "generateObject", "streamText", "streamObj
  * chokepoint. Each entry needs a comment justifying the exemption.
  */
 const ALLOWLIST: ReadonlyArray<string> = [
-  // (none) — every current AI-calling file charges via the chokepoint.
+  // The daily model-watch test-drive runs on the platform key against a candidate
+  // model and is deliberately kept out of ai_usage_log (card 279b94ae, decision 1:
+  // the log feeds user cost reports and its action_type list is a DB CHECK). The
+  // card it creates shows the token counts instead.
+  "src/lib/model-watch-checks.ts",
 ];
 
 const repoRoot = process.cwd();
