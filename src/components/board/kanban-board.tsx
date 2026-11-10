@@ -63,7 +63,7 @@ import type {
   BotProfile,
   BoardSuggestionIndicator,
 } from "@/types";
-import { isLayoutEchoHop, type ColumnHop } from "./drag-column-hop";
+import { resolveDragOver, type ColumnHop } from "./drag-column-hop";
 
 // Context for auto-open state — bypasses memo chain so task cards can react to URL navigation
 export const TaskAutoOpenContext = createContext<{
@@ -923,26 +923,26 @@ export function KanbanBoard({
         }
       }
 
-      // Always update column highlight — even for same-column hover
-      setDragOverColumnId(overColumnId);
-
       // Use our ref for the current column (never mutate active.data)
       const activeColumnId = dragCurrentColumnRef.current;
-      if (!activeColumnId) return;
-
-      if (activeColumnId === overColumnId) return;
-
-      // Ignore a hop straight back that the pointer did not cause: the page
-      // shrank under it when the card left a tall column (see drag-column-hop.ts)
-      if (isLayoutEchoHop(lastColumnHopRef.current, overColumnId, event.delta.x, event.delta.y)) {
+      if (!activeColumnId) {
+        setDragOverColumnId(overColumnId);
         return;
       }
-      lastColumnHopRef.current = {
-        fromColumnId: activeColumnId,
-        toColumnId: overColumnId,
-        pointerX: event.delta.x,
-        pointerY: event.delta.y,
-      };
+
+      // A hop straight back that the pointer did not cause is ignored: the page
+      // shrank under it when the card left a tall column (see drag-column-hop.ts).
+      // The highlight follows where the card really is, so it matches the drop.
+      const { landingColumnId, hop } = resolveDragOver(
+        lastColumnHopRef.current,
+        activeColumnId,
+        overColumnId,
+        event.delta.x,
+        event.delta.y
+      );
+      setDragOverColumnId(landingColumnId);
+      if (!hop) return;
+      lastColumnHopRef.current = hop;
 
       // Update our tracking ref (replaces mutating active.data.current)
       dragCurrentColumnRef.current = overColumnId;
