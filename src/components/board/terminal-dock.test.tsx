@@ -626,6 +626,19 @@ function recentRowElsewhere(): ChooserRegistryRow {
   return { ...recentRowHere(), sid: "sid-recent-elsewhere", ideaId: "idea-OTHER" };
 }
 
+/**
+ * Wait for the dock's seeded (pristine) tab, AND for React to flush the
+ * passive effect that mirrors `sessions` into `sessionsRef` (card e4f3bfa2).
+ * A bare `waitFor(...session-view)` can resolve in the gap between the commit
+ * and that effect; a launch fired then can't see the pristine tab and appends
+ * a 2nd one ("Found multiple elements by session-view"). Use this before any
+ * `requestBrowserLaunch` that expects to reuse the seeded tab.
+ */
+async function waitForSeededTab() {
+  await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+  await act(async () => {});
+}
+
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_TERMINAL_ENABLED", "true");
 });
@@ -1354,7 +1367,7 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
     // slot (mintAndDeliver's pristine-reuse path), giving this tab a
     // recorded board that differs from the one currently open — exactly the
     // "already mis-filed" precondition this fix exists for.
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     act(() => {
       requestBrowserLaunch({ ideaId: "idea-OTHER" });
     });
@@ -1375,7 +1388,7 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
     stubFetch(Promise.resolve([]));
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     // Same setup as the cross-board test above, but the launch's `ideaId`
     // matches the currently-open board this time.
     act(() => {
@@ -1410,7 +1423,7 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
     stubFetch(Promise.resolve([]));
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     act(() => {
       requestBrowserLaunch({ ideaId: "idea-1" });
     });
@@ -1424,6 +1437,45 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
     // place, not replaced by a new one leaving the ended tab behind.
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
     expect(screen.getByTestId("session-view").dataset.key).toBe(key);
+  });
+
+  // Card e4f3bfa2 (flaky "Found multiple elements by session-view"): the
+  // dock keeps `sessionsRef` in step with `sessions` from a passive effect,
+  // so for a moment after the seeded tab lands in the DOM the ref still reads
+  // []. A launch fired in exactly that gap (a MutationObserver callback runs
+  // right after the commit, before React flushes passive effects — which is
+  // what a bare `waitFor(...session-view)` does under load) can't see the
+  // pristine tab and appends a 2nd one. This pins the interleaving, and
+  // proves `waitForSeededTab` closes it, so the other tests can rely on it.
+  it("a launch fired the instant the seeded tab appears does not see it yet; waitForSeededTab waits that out", async () => {
+    stubFetch(Promise.resolve([]));
+    let launchedInTheGap = false;
+    const observer = new MutationObserver(() => {
+      if (launchedInTheGap || !document.querySelector('[data-testid="session-view"]')) return;
+      launchedInTheGap = true;
+      requestBrowserLaunch({ ideaId: "idea-1" });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    // The observer's launch above stands in for a test that proceeds the
+    // moment the tab shows up. The dock must not have reused the pristine
+    // slot — that is the (harmless, test-only) gap being pinned.
+    await waitFor(() => expect(launchedInTheGap).toBe(true));
+    observer.disconnect();
+    await act(async () => {});
+    expect(screen.getAllByTestId("session-view").length).toBe(2);
+    cleanup();
+
+    // Same sequence through the helper: the launch fires only after the
+    // passive effects have flushed, so the pristine slot is reused.
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitForSeededTab();
+    act(() => {
+      requestBrowserLaunch({ ideaId: "idea-1" });
+    });
+    await waitFor(() => expect(screen.getByTestId("session-view").dataset.ideaId).toBe("idea-1"));
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
   });
 });
 
@@ -2035,7 +2087,7 @@ describe("TerminalDock — split view keyboard-focus sync (defect fix, task df7a
   async function mintTwoSessions(): Promise<[string, string]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     const firstKey = screen.getByTestId("session-view").dataset.key as string;
 
     act(() => {
@@ -2156,7 +2208,7 @@ describe("TerminalDock — a 3rd terminal gets its own pane (task eda6598b, D8/D
   async function mintSessions(count: number): Promise<string[]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
 
     for (let i = 1; i < count; i++) {
       act(() => {
@@ -2245,7 +2297,7 @@ describe("TerminalDock — wrong-tab-closes-on-confirm fix (task 9f30ae15)", () 
   async function mintThreeSessions(): Promise<[string, string, string]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     const firstKey = screen.getByTestId("session-view").dataset.key as string;
 
     act(() => {
@@ -2518,7 +2570,7 @@ describe("TerminalDock — closing a non-last tab must not collapse the panel (f
   async function mintTwoSessions(): Promise<[string, string]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     const firstKey = screen.getByTestId("session-view").dataset.key as string;
 
     act(() => {
@@ -2762,7 +2814,7 @@ describe("TerminalDock — pop-out with a second live tab (2 Sep 2026 fix)", () 
   async function mintTwo(): Promise<[string, string]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     const firstKey = screen.getByTestId("session-view").dataset.key as string;
     act(() => {
       requestBrowserLaunch();
@@ -2923,7 +2975,7 @@ describe("TerminalDock — popped-out chip popover (bug a9c37241)", () => {
   async function mintSessions(count: number): Promise<string[]> {
     await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
 
     for (let i = 1; i < count; i++) {
       act(() => {
@@ -3055,7 +3107,7 @@ describe("TerminalDock — a launched tab records its own agent (card 6b2cb8ac)"
     try {
       stubFetch(Promise.resolve([]));
       render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
-      await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+      await waitForSeededTab();
       act(() => {
         requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
       });
