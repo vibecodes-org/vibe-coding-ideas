@@ -26,6 +26,11 @@ export interface RoleMatchWithTier {
 
 const AI_TIMEOUT_MS = 90_000;
 
+export interface RoleMatchOptions {
+  /** Shorter AI wait than the default. On timeout the caller gets the plain (non-AI) match. */
+  aiTimeoutMs?: number;
+}
+
 const roleMatchSchema = z.object({
   matches: z.array(
     z.object({
@@ -70,7 +75,8 @@ export async function matchRolesWithAi(
   supabase: SupabaseClient<Database>,
   userId: string,
   stepRoles: string[],
-  agents: AiRoleMatchAgent[]
+  agents: AiRoleMatchAgent[],
+  options: RoleMatchOptions = {}
 ): Promise<Record<string, string | null> | null> {
   if (stepRoles.length === 0 || agents.length === 0) {
     logger.debug("AI role matching skipped: no roles or agents", {
@@ -108,7 +114,7 @@ export async function matchRolesWithAi(
       schema: roleMatchSchema,
       providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_LOW_EFFORT_OPTIONS,
       maxOutputTokens: 1000,
-      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      abortSignal: AbortSignal.timeout(options.aiTimeoutMs ?? AI_TIMEOUT_MS),
     });
 
     await chargeAiUsage(supabase, {
@@ -165,7 +171,8 @@ export async function matchRolesWithAiOrFuzzy(
   supabase: SupabaseClient<Database>,
   userId: string,
   stepRoles: string[],
-  agents: AiRoleMatchAgent[]
+  agents: AiRoleMatchAgent[],
+  options: RoleMatchOptions = {}
 ): Promise<Record<string, RoleMatchWithTier>> {
   const result: Record<string, RoleMatchWithTier> = {};
 
@@ -199,7 +206,7 @@ export async function matchRolesWithAiOrFuzzy(
   });
 
   // Tier 2: AI matching for unmatched roles only
-  const aiResult = await matchRolesWithAi(supabase, userId, unmatchedRoles, agents);
+  const aiResult = await matchRolesWithAi(supabase, userId, unmatchedRoles, agents, options);
   if (aiResult) {
     for (const role of unmatchedRoles) {
       const botId = aiResult[role] ?? null;

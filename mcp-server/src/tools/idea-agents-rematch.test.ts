@@ -108,4 +108,12 @@ describe("agent pool change on a board with many waiting steps", () => {
     expect(matchMock).toHaveBeenCalledTimes(1);
     expect(updates).toHaveLength(TASK_COUNT);
   });
+
+  it("caps the AI wait on the add/remove path so the reply stays quick", async () => {
+    const { ctx } = makeCtx();
+    await allocateAgent(ctx, { idea_id: IDEA_ID, bot_id: BOT_ID });
+    const options = matchMock.mock.calls[0][4] as { aiTimeoutMs?: number } | undefined;
+    expect(options?.aiTimeoutMs).toBeGreaterThan(0);
+    expect(options?.aiTimeoutMs).toBeLessThanOrEqual(15_000);
+  });
 });

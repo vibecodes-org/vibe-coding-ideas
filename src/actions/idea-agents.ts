@@ -23,6 +23,16 @@ function createServiceRoleClient() {
   );
 }
 
+const REMATCH_PAGE = 1000;
+type StepRow = {
+  id: string;
+  task_id: string;
+  agent_role: string | null;
+  bot_id: string | null;
+  match_tier: string | null;
+  status: string;
+};
+
 /**
  * Find all tasks in an idea with active workflow runs and rematch their steps.
  * Fire-and-forget — accepts pre-authenticated client to avoid session loss.
@@ -33,15 +43,24 @@ async function rematchActiveWorkflows(
   ideaId: string
 ) {
   try {
-    // 1. Fetch ALL pending steps with agent_role across the entire idea in one query
-    const { data: allSteps, error: stepsError } = await supabase
-      .from("task_workflow_steps")
-      .select("id, task_id, agent_role, bot_id, match_tier, status")
-      .eq("idea_id", ideaId)
-      .eq("status", "pending")
-      .not("agent_role", "is", null);
+    // 1. Fetch ALL pending steps with agent_role across the entire idea, paged
+    // (Supabase silently stops at 1,000 rows per read).
+    const allSteps: StepRow[] = [];
+    for (let from = 0; ; from += REMATCH_PAGE) {
+      const { data, error: stepsError } = await supabase
+        .from("task_workflow_steps")
+        .select("id, task_id, agent_role, bot_id, match_tier, status")
+        .eq("idea_id", ideaId)
+        .eq("status", "pending")
+        .not("agent_role", "is", null)
+        .order("id")
+        .range(from, from + REMATCH_PAGE - 1);
+      if (stepsError) return;
+      allSteps.push(...(data ?? []));
+      if (!data || data.length < REMATCH_PAGE) break;
+    }
 
-    if (stepsError || !allSteps || allSteps.length === 0) return;
+    if (allSteps.length === 0) return;
 
     // 2. Fetch the idea's agent pool once
     const { data: poolAgents } = await supabase
@@ -62,11 +81,14 @@ async function rematchActiveWorkflows(
       })
       .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
-    if (candidates.length === 0) return;
-
     // 3. Collect unique roles across ALL steps — one AI call for all of them
     const uniqueRoles = [...new Set(allSteps.map((s) => s.agent_role!))];
-    const roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, uniqueRoles, candidates);
+    // With an empty pool nothing can match, but steps still on a removed agent
+    // must be cleared below, so carry on with no matches.
+    const roleMatches =
+      candidates.length === 0
+        ? {}
+        : await matchRolesWithAiOrFuzzy(supabase, userId, uniqueRoles, candidates);
 
     // 4. Apply matches to all steps in parallel
     const roleByBot = new Map(candidates.map((c) => [c.botId, c.role]));
@@ -79,12 +101,17 @@ async function rematchActiveWorkflows(
       const newBotId = newMatch?.botId ?? null;
       const newTier = newMatch?.tier ?? "none";
 
-      const decision = decideStepRematch({
-        step,
+      // A step still pointing at an agent that is no longer in the pool has no
+      // real agent: judge it as unassigned, and clear it if nothing replaces it.
+      const orphaned =
+        step.bot_id !== null && step.match_tier !== "manual" && !roleByBot.has(step.bot_id);
+      let decision = decideStepRematch({
+        step: orphaned ? { ...step, bot_id: null, match_tier: null } : step,
         newBotId,
         newTier,
         assignedAgentRole: step.bot_id ? roleByBot.get(step.bot_id) : undefined,
       });
+      if (decision.action === "keep" && orphaned) decision = { action: "clear" };
       if (decision.action === "keep") continue;
 
       // Status guard: a step claimed since we read it must not be rewritten.
