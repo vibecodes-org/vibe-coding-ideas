@@ -307,6 +307,85 @@ function saveControlCredentials(creds) {
   }
 }
 
+// ── which VibeCodes account this helper belongs to (card 9efc01c3) ──────────
+// A launch / open-terminal link is only as trustworthy as the account that
+// minted it, and the helper cannot verify token signatures (it holds no
+// secret). Without a local owner, ANY signed-in VibeCodes account could mint a
+// link, get its owner to open it, start an agent on this Mac and drive it from
+// their own browser — and a `helperToken` in the link would also re-point the
+// saved always-on control connection. So the helper pins the account (the
+// token `sub`) it first paired with, in its own userData, and refuses every
+// link for another account. An existing helper that predates this pin adopts
+// the account of its already-saved control credentials. The only way to change
+// it is the tray's "Sign out this Mac", which clears it deliberately.
+function ownerPath() {
+  return path.join(app.getPath("userData"), "helper-owner.json");
+}
+/** @returns {Promise<string | null>} the pinned account id, or null when unpaired. */
+async function loadOwner() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(ownerPath(), "utf8"));
+    if (typeof raw?.sub === "string" && raw.sub) return raw.sub;
+  } catch { /* no pin yet */ }
+  const creds = loadControlCredentials();
+  if (creds) {
+    const { decodeTokenClaims } = await sessionTokenMod();
+    const sub = decodeTokenClaims(creds.token)?.sub;
+    if (typeof sub === "string" && sub) return sub;
+  }
+  return null;
+}
+function pinOwner(sub) {
+  try {
+    fs.mkdirSync(path.dirname(ownerPath()), { recursive: true });
+    fs.writeFileSync(ownerPath(), JSON.stringify({ sub }), "utf8");
+  } catch (e) {
+    log("warn", "could not persist helper owner", { err: String(e?.message || e) });
+  }
+}
+/**
+ * Decide whether a link whose tokens name `subs` may act on this Mac. Every
+ * token must carry an account id, all must agree, and it must be the pinned
+ * owner (or, on an unpaired helper, becomes it). Returns true to proceed.
+ * Never logs token text — only a short refusal reason.
+ */
+async function ownerAllows(subs, what) {
+  const unique = new Set(subs);
+  const sub = subs[0];
+  if (!sub || typeof sub !== "string" || unique.size !== 1) {
+    log("error", `${what} link has missing or conflicting account ids — refusing`);
+    reportRefusedLink();
+    return false;
+  }
+  const owner = await loadOwner();
+  if (owner && owner !== sub) {
+    log("error", `${what} link is for a different VibeCodes account than this helper's — refusing`);
+    reportRefusedLink();
+    return false;
+  }
+  return true;
+}
+function reportRefusedLink() {
+  try {
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "VibeCodes",
+        body: "That link is for a different VibeCodes account than this Mac's helper. Nothing was started. To switch accounts, choose \"Sign out this Mac\" from the helper's menu-bar icon.",
+      }).show();
+    }
+  } catch { /* a notification is a courtesy, never load-bearing */ }
+}
+/** Deliberate account switch: forget the pinned owner and saved connection. */
+function forgetOwner() {
+  closeControlConnection();
+  for (const f of [ownerPath(), controlCredentialsPath()]) {
+    try { fs.rmSync(f, { force: true }); } catch (e) {
+      log("warn", "could not remove helper account file", { err: String(e?.message || e) });
+    }
+  }
+  log("info", "helper signed out — account pin and saved connection cleared");
+}
+
 // ── crash handling (design §1 decision 5: log-and-exit, never a dialog) ──────
 // Registered FIRST, before anything else runs, so even a startup-time throw is
 // caught. Node shows its own fatal-error stack trace + exit(1) ONLY when
@@ -465,6 +544,17 @@ async function handleLaunchUrl(rawUrl) {
     try { host = new URL(parsed.relay).host; } catch { /* never echo the token */ }
     log("error", "relay host not allowed — refusing to launch bridge", { host });
     return;
+  }
+
+  // OWNER CHECK (card 9efc01c3): every token in the link must name this
+  // helper's own account, before anything is saved, connected or forked.
+  {
+    const { decodeTokenClaims } = await sessionTokenMod();
+    const subs = [parsed.token, ...(parsed.helperToken ? [parsed.helperToken] : [])].map(
+      (t) => decodeTokenClaims(t)?.sub,
+    );
+    if (!(await ownerAllows(subs, "launch"))) return;
+    pinOwner(subs[0]);
   }
 
   log("info", "launching bridge for deep link", { url: redactDeepLinkToken(rawUrl) });
@@ -673,6 +763,10 @@ async function handleOpenTerminalUrl(rawUrl) {
     return;
   }
 
+  // OWNER CHECK (card 9efc01c3): refuse a link for another account before the
+  // cooldown is armed, credentials are saved, or a socket is opened.
+  if (!(await ownerAllows([claims.sub], "open-terminal"))) return;
+
   // Window-spam guard — see OPEN_TERMINAL_COOLDOWN_MS's doc above. Armed only
   // once the request has cleared the cheap checks above, so a malformed/
   // disallowed link can't burn a legitimate request's cooldown window; a
@@ -740,6 +834,7 @@ async function handleOpenTerminalUrl(rawUrl) {
     try { controlSocket.close(); } catch { /* already closing */ }
   }
   log("info", "open-terminal request authorized by relay");
+  pinOwner(claims.sub); // the relay verified this token, so it is safe to pin on first pairing
 
   // Pre-flight "is codex installed?" (FR-13) — checked FRESH against the
   // real PATH, never trusted from an earlier control-connection announcement
@@ -1127,6 +1222,10 @@ function buildTrayMenu() {
       click: () => { void setAlwaysOn(!alwaysOn, { echo: true }); },
     },
     {
+      label: "Sign out this Mac",
+      click: () => { forgetOwner(); refreshTray(); },
+    },
+    {
       label: "Quit VibeCodes Helper",
       click: () => quitFromTray(),
     },
@@ -1308,6 +1407,8 @@ module.exports = {
     connectControl,
     connectOpenTerminalControl,
     handleOpenTerminalUrl,
+    handleLaunchUrl,
+    forgetOwner,
     closeControlConnection,
     getControlWs: () => controlWs,
     resetOpenTerminalCooldown: () => { openTerminalCooldownUntil = 0; },
