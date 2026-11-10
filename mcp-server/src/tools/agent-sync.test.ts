@@ -91,7 +91,8 @@ describe("sync_board_agents", () => {
   it("needs no network and no secret: the command has no download tool", async () => {
     const res = await syncBoardAgents(ctx(), { idea_id: IDEA, step_id: STEP });
     if (res.status !== "ok") throw new Error("expected ok");
-    expect(res.command).not.toMatch(/curl|wget|http/i);
+    // The agent file carries the one own-agent hook line (card 24936814): data for Claude Code, not a download.
+    expect(res.command.replace(/^hooks: .*$/gm, "")).not.toMatch(/curl|wget|http/i);
   });
 
   it("works for the local stdio identity (no signing secret anywhere)", async () => {

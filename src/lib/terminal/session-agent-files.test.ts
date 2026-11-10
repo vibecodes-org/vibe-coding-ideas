@@ -165,7 +165,8 @@ describe("agentFilesSyncCommand (one file; folder, verification and .gitignore r
 
   it("is valid bash and contains no network tool", () => {
     expect(spawnSync("bash", ["-n"], { input: cmd(), encoding: "utf8" }).status).toBe(0);
-    expect(cmd()).not.toMatch(/curl|wget|http/i);
+    // The agent file carries the one own-agent hook line (card 24936814): data for Claude Code, not a download.
+    expect(cmd().replace(/^hooks: .*$/gm, "")).not.toMatch(/curl|wget|http/i);
   });
 
   it("sets the cleanup trap before the first temp file is made", () => {
@@ -531,7 +532,7 @@ describe("agentFilesSyncCommand waits until Claude Code has read every file", ()
   it("is valid bash with no network tool and no command held in a variable (zsh-safe)", () => {
     const c = command();
     expect(spawnSync("bash", ["-n"], { input: c, encoding: "utf8" }).status).toBe(0);
-    expect(c).not.toMatch(/curl|wget|http/i);
+    expect(c.replace(/^hooks: .*$/gm, "")).not.toMatch(/curl|wget|http/i);
     expect(c).not.toMatch(/\|\s*\$\w/);
     expect(c).not.toMatch(/\b(status|path)=/);
   });

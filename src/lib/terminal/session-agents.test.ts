@@ -1,4 +1,5 @@
-import { SYNC_MARKER } from "./session-agent-files";
+import { SYNC_MARKER, renderAgentFile } from "./session-agent-files";
+import { OWN_AGENT_HOOK_VERSION, buildOwnAgentHooks } from "../workflow/own-agent";
 import { describe, it, expect, vi } from "vitest";
 import { logger } from "../logger";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
@@ -72,11 +73,11 @@ describe("sessionAgentTag", () => {
 
   it("is unchanged for an agent without skills, so sessions launched before skills were fingerprinted still match", () => {
     expect(sessionAgentTag("persona", "opus", "high", "")).toBe(sessionAgentTag("persona", "opus", "high"));
-    expect(sessionAgentTag("persona", "opus", "high")).toBe(`[vc ${personaHash("persona")} opus high]`);
+    expect(sessionAgentTag("persona", "opus", "high")).toBe(`[vc ${personaHash(`persona\n#own-agent-hook:${OWN_AGENT_HOOK_VERSION}`)} opus high]`);
   });
 
   it("reads 'auto' for an untiered step", () => {
-    expect(sessionAgentTag("p", null, null)).toBe(`[vc ${personaHash("p")} auto auto]`);
+    expect(sessionAgentTag("p", null, null)).toBe(`[vc ${personaHash(`p\n#own-agent-hook:${OWN_AGENT_HOOK_VERSION}`)} auto auto]`);
   });
 });
 
@@ -490,7 +491,7 @@ describe("buildSessionAgents with optional agents", () => {
   it("skips an optional agent that does not fit but still takes a smaller one after it", () => {
     const small = input({ bot: { ...PLANNER, id: "11111111-0000-0000-0000-000000000000", name: "Tiny" } });
     const base = size(buildSessionAgents([waiting()])!);
-    const agents = buildSessionAgents([waiting()], base + 1650, { optional: [optional(), small] })!;
+    const agents = buildSessionAgents([waiting()], base + 1900, { optional: [optional(), small] })!;
     expect(Object.keys(agents)).toEqual(["vc-atlas-37e8ffb2-frontier", "vc-tiny-11111111-frontier"]);
   });
 
@@ -539,5 +540,30 @@ describe("buildSessionAgents with optional agents", () => {
       });
       expect(agents[hint.name].description.endsWith(hint.tag)).toBe(true);
     }
+  });
+});
+
+describe("own-agent hook (card 24936814)", () => {
+  it("every Claude definition carries exactly the one http hook", () => {
+    const agents = buildSessionAgents([input()])!;
+    for (const def of Object.values(agents)) expect(def.hooks).toEqual(buildOwnAgentHooks());
+    expect(JSON.stringify(Object.values(agents)[0].hooks)).not.toContain("command");
+  });
+
+  it("Codex definitions carry none", () => {
+    const agents = buildSessionAgents([input()], undefined, { agent: "codex" })!;
+    for (const def of Object.values(agents)) expect(def.hooks).toBeUndefined();
+  });
+
+  it("the hook reaches a synced agent file as one frontmatter line", () => {
+    const [name, def] = Object.entries(buildSessionAgents([input()])!)[0];
+    const file = renderAgentFile(name, def, { synced: true });
+    expect(file).toContain(`hooks: ${JSON.stringify(buildOwnAgentHooks())}`);
+    expect(file.split("\n").filter((l) => l.startsWith("hooks:"))).toHaveLength(1);
+  });
+
+  it("bumping the hook version changes every tag", () => {
+    expect(OWN_AGENT_HOOK_VERSION).toBeGreaterThanOrEqual(1);
+    expect(sessionAgentTag("p", "opus", "high")).not.toBe(`[vc ${personaHash("p")} opus high]`);
   });
 });

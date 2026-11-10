@@ -149,8 +149,13 @@
  *  still works (it keeps the redundant line and, with no folder, ends that
  *  resume with its usual message), so this is a soft nudge: it is the minimum
  *  only because the download link and the "Update now" prompt follow this
- *  constant, and without it nobody is offered the release. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.28";
+ *  constant, and without it nobody is offered the release.
+ *  0.3.29 (card 24936814, 10 Nov 2026): the helper keeps the one http hook each
+ *  board agent carries (it reports which agent made a board call, so a step
+ *  shows whether it ran in its own agent) and drops any other hook. An older
+ *  helper drops that hook too, so its review and testing steps show "not
+ *  confirmed" and raise an alert: a firm nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.29";
 
 export type HelperVersionParts = readonly [number, number, number];
 

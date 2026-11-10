@@ -54,6 +54,35 @@ function makeCtx(opts: {
 }
 
 describe("notifyComplianceViolation", () => {
+  describe("own-agent result (card 24936814)", () => {
+    const base = { ideaId: IDEA_ID, taskId: TASK_ID, tierHonored: true, personaHonored: true };
+    const idea = { author_id: OWNER_ID, author: { notification_preferences: {} } };
+
+    it.each(["Code Reviewer", "QA Engineer", "Tester", "Security Auditor"])(
+      "alerts once for not_confirmed on a %s step",
+      async (agentRole) => {
+        const { ctx, inserted } = makeCtx({ ideaRow: idea });
+        await notifyComplianceViolation(ctx, { ...base, ranInOwnAgent: "not_confirmed", agentRole });
+        expect(inserted).toHaveLength(1);
+      }
+    );
+
+    it("does not alert for not_confirmed on a Planner step", async () => {
+      const { ctx, inserted } = makeCtx({ ideaRow: idea });
+      await notifyComplianceViolation(ctx, { ...base, ranInOwnAgent: "not_confirmed", agentRole: "Planner" });
+      expect(inserted).toHaveLength(0);
+    });
+
+    it.each(["confirmed", "other_agent", "cant_confirm", null] as const)(
+      "never alerts for %s, even on a review step",
+      async (ranInOwnAgent) => {
+        const { ctx, inserted } = makeCtx({ ideaRow: idea });
+        await notifyComplianceViolation(ctx, { ...base, ranInOwnAgent, agentRole: "Code Reviewer" });
+        expect(inserted).toHaveLength(0);
+      }
+    );
+  });
+
   const compliantIdea = {
     author_id: OWNER_ID,
     author: { notification_preferences: {} },

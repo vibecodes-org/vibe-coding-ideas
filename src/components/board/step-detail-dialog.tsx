@@ -257,6 +257,103 @@ function StepPersonaLine({ step }: { step: TaskWorkflowStep }) {
   );
 }
 
+/**
+ * Card 24936814 — the third sibling: did this step really run in its own agent?
+ * Unlike the Persona line (the agent's own claim), this comes from Claude Code,
+ * which reports which agent made a board call (/api/workflow/attest). Shown
+ * only once complete_step / fail_step has set `ran_in_own_agent`, so steps
+ * finished before the feature show nothing. Four results, matching the
+ * approved mock (docs/step-own-agent-mock.html): green confirmed, amber for a
+ * different agent, amber not confirmed, grey dashed can't confirm (never a failure).
+ */
+export function StepOwnAgentLine({
+  step,
+  agentName,
+}: {
+  step: TaskWorkflowStep;
+  agentName: string | null;
+}) {
+  const result = step.ran_in_own_agent;
+  if (result == null) return null;
+
+  const name = agentName ?? "its own agent";
+  const sub = "block text-[11px] text-muted-foreground";
+
+  if (result === "confirmed") {
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs"
+        aria-label={`Own agent: confirmed, ran as ${name}`}
+      >
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        <span className="min-w-0">
+          <span className="font-medium">Own agent: confirmed</span>{" "}
+          <span className="text-muted-foreground">· ran as {name}</span>
+          <span className={sub}>Reported by Claude Code, not by the agent.</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "other_agent") {
+    const general = !step.attested_agent_type || !step.attested_agent_type.startsWith("vc-");
+    const detail = general
+      ? `ran in a general helper, not ${name}`
+      : `ran in another board agent, not ${name}`;
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+        aria-label={`Own agent: a different one, ${detail}`}
+      >
+        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+        <span className="min-w-0">
+          <span className="font-medium">Own agent: a different one</span>{" "}
+          <span className="text-muted-foreground">· {detail}</span>
+          <span className={sub}>Reported by Claude Code. The work was still done by a separate agent.</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (result === "not_confirmed") {
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+        aria-label="Own agent: not confirmed, may have been done in the main session"
+      >
+        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+        <span className="min-w-0">
+          <span className="font-medium">Own agent: not confirmed</span>{" "}
+          <span className="text-muted-foreground">· may have been done in the main session</span>
+          <span className={sub}>
+            Claude Code didn&apos;t report a separate agent. An older helper, or a session without the board&apos;s agents, also shows this.
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  // cant_confirm: Codex, or a claim that named no board agent. Never a failure.
+  const codex = inferExecutedAgent(step.executed_model) === "codex";
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs"
+      aria-label="Own agent: can't confirm"
+    >
+      <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0">
+        <span className="font-medium text-muted-foreground">Own agent: can&apos;t confirm</span>
+        {codex && <AgentChip agent="codex" />}
+        <span className={sub}>
+          {codex
+            ? "Not a failure — Codex doesn't tell VibeCodes which agent did the work."
+            : "Not a failure — this step wasn't sent to its own board agent, so there was nothing to check."}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 const STATUS_CONFIG = {
   pending: {
     bg: "bg-zinc-500/10",
@@ -822,6 +919,8 @@ export function StepDetailDialog({
               <StepExecutionLine step={step} />
               {/* Persona — self-reported persona fidelity (design-persona-attestation §C) */}
               <StepPersonaLine step={step} />
+              {/* Own agent — reported by Claude Code (card 24936814) */}
+              <StepOwnAgentLine step={step} agentName={assignedAgent?.name ?? null} />
 
               {/* Output */}
               {step.output && (

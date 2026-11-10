@@ -35,6 +35,7 @@ import {
 } from "../lib/step-comments";
 import { notifyMentions } from "../lib/mention-notify";
 import { notifyComplianceViolation } from "../lib/compliance-notify";
+import { isNamedAgentFor as isNamedAgentForShared, resolveRanInOwnAgent, type RanInOwnAgent } from "../../../src/lib/workflow/own-agent";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
 import {
@@ -388,10 +389,27 @@ export async function personaReportNativeNamed(
 }
 
 /** True for a board-agent subagent name of this bot: `vc-<slug>-<first 8 of bot id>[-<tier>][-<effort>]`. */
-export function isNamedAgentFor(subagentType: string, botId: string): boolean {
-  const id8 = botId.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
-  if (!id8) return false;
-  return new RegExp(`^vc-[a-z0-9-]*-${id8}(-[a-z]+)*$`).test(subagentType.trim().toLowerCase());
+export const isNamedAgentFor = isNamedAgentForShared;
+
+/**
+ * Card 24936814: did this step run in its own agent? Combines Claude Code's
+ * report (attested_agent_type, saved by /api/workflow/attest while the step ran)
+ * with whether the claim named a board agent at all. `nativeNamed` is reused
+ * when the persona check already found the claim named one.
+ */
+async function ranInOwnAgentFor(
+  ctx: McpContext,
+  step: { bot_id: string | null; idea_id: string; model_tier: string | null; effort_override: string | null; attested_agent_type?: string | null },
+  agent: AgentKind,
+  nativeNamed: boolean
+): Promise<RanInOwnAgent> {
+  const named = nativeNamed || (await claimNamedNativeSubagent(ctx, step, agent));
+  return resolveRanInOwnAgent({
+    agent,
+    botId: step.bot_id,
+    nativeNamed: named,
+    attestedType: step.attested_agent_type ?? null,
+  });
 }
 
 /** File-format words a deliverable's trailing parenthetical can name, mapped to how the claim text spells them. */
@@ -986,6 +1004,11 @@ export async function claimNextStep(
       claimed_by: claimedFor,
       claim_token_hash: claimTokenHash,
       work_token_hash: workTokenPair?.hash ?? null,
+      // A new claim means new tokens: the previous claim's agent report no longer applies.
+      attested_agent_type: null,
+      attested_agent_id: null,
+      attested_at: null,
+      ran_in_own_agent: null,
       // VibeCodes' own record of what this claim sends; a re-claim refreshes it
       // and complete_step/fail_step leave it alone.
       skills_used: skillsSection.sent,
@@ -1502,7 +1525,7 @@ export async function completeStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier, effort_override, output")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier, effort_override, output, attested_agent_type")
     .eq("id", params.step_id)
     .single();
 
@@ -1617,6 +1640,7 @@ export async function completeStep(
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
+  const ranInOwnAgentValue = await ranInOwnAgentFor(ctx, step, completingAgent, nativeNamed);
 
   // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
   // obeyed the directive's advisory line and substituted the backup has
@@ -1650,6 +1674,7 @@ export async function completeStep(
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
+    ran_in_own_agent: ranInOwnAgentValue,
   };
   if (outputSource === "passed") updateFields.output = passedOutput;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
@@ -1664,7 +1689,7 @@ export async function completeStep(
   // Storing a passed write-up: only if nothing was saved meanwhile.
   else completeQuery = completeQuery.is("output", null);
   const { data: updated, error: updateError } = await completeQuery
-    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
+    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, ran_in_own_agent, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
@@ -1757,6 +1782,8 @@ export async function completeStep(
     taskId: updated.task_id,
     tierHonored,
     personaHonored,
+    ranInOwnAgent: ranInOwnAgentValue,
+    agentRole: step.agent_role,
   });
 
   // Check if all steps in the run are done
@@ -1921,7 +1948,7 @@ export async function failStep(
   // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, effort_override, output")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier, effort_override, output, attested_agent_type")
     .eq("id", params.step_id)
     .single();
 
@@ -2008,6 +2035,10 @@ export async function failStep(
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
+  // Only a step that was running has an agent report to turn into a result; a
+  // rejection of a finished (awaiting_approval) step leaves the earlier result as it was.
+  const ranInOwnAgentValue: RanInOwnAgent | null =
+    step.status === "in_progress" ? await ranInOwnAgentFor(ctx, step, failingAgent, nativeNamed) : null;
 
   // Auto-switch, rescue half (card 5d0665a2, AC-1). Never for awaiting_approval
   // rejections (human gate — UX Design §2b) or Auto steps (no tier to resolve
@@ -2126,6 +2157,7 @@ export async function failStep(
     tier_honored: tierHonored,
     persona_used: personaUsed,
     persona_honored: personaHonored,
+    ...(ranInOwnAgentValue ? { ran_in_own_agent: ranInOwnAgentValue } : {}),
   };
   if (actuallyRescue) {
     // Mirror the cascade reset's shape so a rescued step is indistinguishable
@@ -2135,6 +2167,11 @@ export async function failStep(
     updateFields.started_at = null;
     updateFields.claimed_by = null;
     updateFields.output = null;
+    // The attempt is void: so is its agent report and result.
+    updateFields.ran_in_own_agent = null;
+    updateFields.attested_agent_type = null;
+    updateFields.attested_agent_id = null;
+    updateFields.attested_at = null;
   } else if (params.output !== undefined) {
     updateFields.output = params.output;
   }
@@ -2144,7 +2181,7 @@ export async function failStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .in("status", ["in_progress", "awaiting_approval"])
-    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, skills_used")
+    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, reasoning_effort_used, tier_honored, persona_used, persona_honored, ran_in_own_agent, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
@@ -2276,6 +2313,9 @@ export async function failStep(
     taskId: updated.task_id,
     tierHonored,
     personaHonored,
+    // A rescued step goes back to waiting: its attempt is void, so no "not confirmed" alert.
+    ranInOwnAgent: actuallyRescue ? null : ranInOwnAgentValue,
+    agentRole: step.agent_role,
   });
 
   // Cascade rejection: reset all steps from the target step onward
@@ -2320,6 +2360,10 @@ export async function failStep(
           claimed_by: null,
           claim_token_hash: null, // FR3: resets invalidate outstanding tokens
           work_token_hash: null, // design §1.2: cleared everywhere claim_token_hash is
+          attested_agent_type: null,
+          attested_agent_id: null,
+          attested_at: null,
+          ran_in_own_agent: null,
         })
         .eq("run_id", step.run_id)
         .gte("step_order", targetStep.step_order ?? 0)
@@ -2818,6 +2862,10 @@ export async function resetWorkflow(
       // this site was missing from the original claim-token lifecycle and
       // would have left a stale work_token_hash usable after a full reset.
       work_token_hash: null,
+      attested_agent_type: null,
+      attested_agent_id: null,
+      attested_at: null,
+      ran_in_own_agent: null,
     })
     .eq("run_id", run.id);
 

@@ -54,6 +54,8 @@ export function renderAgentFile(
   if (def.effort) lines.push(`effort: ${def.effort}`);
   if (def.disallowedTools?.length) lines.push(`disallowedTools: ${def.disallowedTools.join(DISALLOWED_SEPARATOR)}`);
   if (def.autoCompactWindow) lines.push(`autoCompactWindow: ${def.autoCompactWindow}`);
+  // One line of JSON, which is also valid YAML, so a nested hook can't break the frontmatter.
+  if (def.hooks) lines.push(`hooks: ${JSON.stringify(def.hooks)}`);
   lines.push("---", "");
   return lines.join("\n") + def.prompt.replace(/\n+$/, "") + "\n";
 }
@@ -76,6 +78,7 @@ export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAge
   const effort = fields.get("effort");
   const disallowed = fields.get("disallowedTools");
   const window = Number(fields.get("autoCompactWindow"));
+  const hooksText = fields.get("hooks");
   const parsed = JSON.parse(description) as string;
   const synced = parsed.startsWith(`${SYNC_MARKER} `);
   const def: ClaudeCodeAgentDefinition = {
@@ -85,6 +88,7 @@ export function parseAgentFile(file: string): { name: string; def: ClaudeCodeAge
     ...(effort ? { effort } : {}),
     ...(disallowed ? { disallowedTools: disallowed.split(DISALLOWED_SEPARATOR) } : {}),
     ...(Number.isInteger(window) && window > 0 ? { autoCompactWindow: window } : {}),
+    ...(hooksText ? { hooks: JSON.parse(hooksText) as ClaudeCodeAgentDefinition["hooks"] } : {}),
   };
   return { name, def, synced };
 }

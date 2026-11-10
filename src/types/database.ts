@@ -970,6 +970,10 @@ export type Database = {
           tier_honored: boolean | null;
           persona_used: string | null;
           persona_honored: boolean | null;
+          attested_agent_type: string | null;
+          attested_agent_id: string | null;
+          attested_at: string | null;
+          ran_in_own_agent: "confirmed" | "other_agent" | "not_confirmed" | "cant_confirm" | null;
           skills_used: string[] | null;
           /** Migration 00195 (card 5d0665a2). Set once, by the code that observed
            *  the model failure (fail_step's model_unavailable rescue, or
@@ -1007,6 +1011,10 @@ export type Database = {
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
+          attested_agent_type?: string | null;
+          attested_agent_id?: string | null;
+          attested_at?: string | null;
+          ran_in_own_agent?: "confirmed" | "other_agent" | "not_confirmed" | "cant_confirm" | null;
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;
@@ -1042,6 +1050,10 @@ export type Database = {
           tier_honored?: boolean | null;
           persona_used?: string | null;
           persona_honored?: boolean | null;
+          attested_agent_type?: string | null;
+          attested_agent_id?: string | null;
+          attested_at?: string | null;
+          ran_in_own_agent?: "confirmed" | "other_agent" | "not_confirmed" | "cant_confirm" | null;
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;

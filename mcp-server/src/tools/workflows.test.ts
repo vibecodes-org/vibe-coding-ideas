@@ -2412,7 +2412,7 @@ describe("completeStep — persona attestation", () => {
       skills_used: ["x"],
     });
 
-    expect(getSelectedFields()).toContain("persona_used, persona_honored, skills_used");
+    expect(getSelectedFields()).toContain("persona_used, persona_honored, ran_in_own_agent, skills_used");
     expect(result.step).toMatchObject({ persona_used: "verbatim", persona_honored: true, skills_used: ["x"] });
   });
 
@@ -3595,6 +3595,10 @@ describe("failStep", () => {
       claimed_by: null,
       claim_token_hash: null, // FR3: resets invalidate outstanding tokens
       work_token_hash: null, // design §1.2: cleared everywhere claim_token_hash is
+      attested_agent_type: null,
+      attested_agent_id: null,
+      attested_at: null,
+      ran_in_own_agent: null,
     });
   });
 
@@ -3842,6 +3846,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     const commentsInserted: Record<string, unknown>[] = [];
     const runUpdates: Record<string, unknown>[] = [];
     const stepUpdates: Record<string, unknown>[] = [];
+    const notificationsInserted: unknown[] = [];
     let tableCalls = 0;
 
     const ctx = makeContext(((table: string) => {
@@ -3891,6 +3896,18 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
         };
         return local;
       }
+      if (table === "bot_profiles") return createChain({ system_prompt: "persona" }).chain;
+      if (table === "ideas") {
+        return createChain({ author_id: "00000000-0000-4000-a000-000000000099", author: { notification_preferences: {} } }).chain;
+      }
+      if (table === "notifications") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((row: unknown) => {
+          notificationsInserted.push(row);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
       if (table === "users") return createChain({ model_tier_map: null }).chain;
       if (table === "platform_settings") return createChain(null).chain;
       if (table === "workflow_runs") {
@@ -3919,6 +3936,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
       getUpdate: () => stepUpdates.find((u) => "status" in u) as Record<string, unknown>,
       getMarkerWrite: () => stepUpdates.find((u) => "model_unavailable_at" in u) as Record<string, unknown> | undefined,
       getComments: () => commentsInserted,
+      getNotifications: () => notificationsInserted,
       getRunUpdates: () => runUpdates,
     };
   }
@@ -3963,6 +3981,27 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     expect(markerWrite).toBeDefined();
     expect(markerWrite!.model_unavailable_model).toBe("opus");
     expect(markerWrite!.model_unavailable_at).not.toBeNull();
+  });
+
+  it("a rescued review step (sent back to waiting) fires no 'not confirmed' alert, but an ordinary failure of it does (card 24936814)", async () => {
+    const reviewStep = { ...baseStep, bot_id: "37e8ffb2-3f88-49e5-9ab4-a516c1088f77", agent_role: "Code Reviewer", attested_agent_type: null };
+    const rescued = ctxFor({
+      stepData: reviewStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+    await failStep(rescued.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "credit balance too low", model_unavailable: true });
+    expect(rescued.getUpdate().status).toBe("pending");
+    expect(rescued.getNotifications()).toHaveLength(0);
+
+    const failed = ctxFor({
+      stepData: reviewStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: "x" },
+    });
+    await failStep(failed.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "real failure" });
+    expect(failed.getUpdate().status).toBe("failed");
+    expect(failed.getNotifications()).toHaveLength(1);
   });
 
   it("on the rescue path the saved write-up is archived as an output comment, never used as failure text", async () => {
@@ -4719,7 +4758,7 @@ describe("failStep — persona attestation", () => {
       skills_used: [],
     });
 
-    expect(getSelectedFields()).toContain("persona_used, persona_honored, skills_used");
+    expect(getSelectedFields()).toContain("persona_used, persona_honored, ran_in_own_agent, skills_used");
     expect(result.step).toMatchObject({ persona_used: "adapted", persona_honored: false, skills_used: [] });
   });
 });
@@ -5343,6 +5382,21 @@ describe("claim-token protocol", () => {
     expect(captured!.claim_token_hash).not.toBe(oldHash); // old token displaced
   });
 
+  it("a re-claim wipes the previous claim's agent report (card 24936814)", async () => {
+    const step = makeStepRow({ step_order: 1, status: "in_progress", claim_token_hash: mintClaimToken().hash });
+    let captured: Record<string, unknown> | null = null;
+    const ctx = makeClaimCtx(step, (d) => (captured = d as Record<string, unknown>));
+
+    await claimNextStep(ctx, { task_id: TASK_ID });
+
+    expect(captured).toMatchObject({
+      attested_agent_type: null,
+      attested_agent_id: null,
+      attested_at: null,
+      ran_in_own_agent: null,
+    });
+  });
+
   it("completeStep succeeds with the valid claim token and clears the hash", async () => {
     const { token, hash } = mintClaimToken();
     let updateData: Record<string, unknown> | null = null;
@@ -5527,6 +5581,10 @@ describe("resetWorkflow", () => {
       claimed_by: null,
       claim_token_hash: null,
       work_token_hash: null,
+      attested_agent_type: null,
+      attested_agent_id: null,
+      attested_at: null,
+      ran_in_own_agent: null,
     });
   });
 
@@ -7530,5 +7588,129 @@ describe("personaReportNativeNamed", () => {
     for (const persona_used of ["adapted", "none", undefined]) {
       await expect(personaReportNativeNamed(ctxWith("persona"), step, { persona_used })).resolves.toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// completeStep / failStep — "ran in its own agent" (card 24936814)
+// ---------------------------------------------------------------------------
+
+describe("completeStep / failStep — ran_in_own_agent", () => {
+  const OWN_BOT = "37e8ffb2-3f88-49e5-9ab4-a516c1088f77";
+  const OWNER = "00000000-0000-4000-a000-000000000099";
+
+  function ctxFor(stepOver: Record<string, unknown>, opts: { botPrompt?: string | null } = {}) {
+    const updates: Record<string, unknown>[] = [];
+    const notifications: unknown[] = [];
+    const step = {
+      id: STEP_ID,
+      run_id: null,
+      idea_id: IDEA_ID,
+      human_check_required: false,
+      status: "in_progress",
+      bot_id: OWN_BOT,
+      agent_role: "Full Stack Engineer",
+      claim_token_hash: TCT.hash,
+      model_tier: null,
+      effort_override: null,
+      output: "saved write-up",
+      attested_agent_type: null,
+      ...stepOver,
+    };
+    const ctx = makeContext(((table: string) => {
+      const c = createChain(null);
+      if (table === "task_workflow_steps") {
+        c.chain.single = vi.fn(() => Promise.resolve({ data: step, error: null }));
+        c.chain.update = vi.fn((v: Record<string, unknown>) => {
+          updates.push(v);
+          return c.chain;
+        });
+        c.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { id: STEP_ID, task_id: TASK_ID, run_id: null, status: "completed" }, error: null })
+        );
+      } else if (table === "bot_profiles") {
+        c.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { system_prompt: opts.botPrompt === undefined ? "persona" : opts.botPrompt }, error: null })
+        );
+      } else if (table === "ideas") {
+        c.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { author_id: OWNER, author: { notification_preferences: {} } }, error: null })
+        );
+      } else if (table === "notifications") {
+        c.chain.insert = vi.fn((row: unknown) => {
+          notifications.push(row);
+          return c.chain;
+        });
+      }
+      return c.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+    return { ctx, updates, notifications };
+  }
+
+  const complete = (ctx: McpContext, extra: Record<string, unknown> = {}) =>
+    completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, ...extra } as Parameters<typeof completeStep>[1]);
+
+  it("confirmed when the step's own board agent reported in", async () => {
+    const { ctx, updates, notifications } = ctxFor({ attested_agent_type: "vc-atlas-37e8ffb2-standard" });
+    await complete(ctx);
+    expect(updates[0].ran_in_own_agent).toBe("confirmed");
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("other_agent when a different agent reported in; no alert even on a review step", async () => {
+    const { ctx, updates, notifications } = ctxFor({ attested_agent_type: "general-purpose", agent_role: "Code Reviewer" });
+    await complete(ctx);
+    expect(updates[0].ran_in_own_agent).toBe("other_agent");
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("not_confirmed with no report; a Planner step raises no alert", async () => {
+    const { ctx, updates, notifications } = ctxFor({ agent_role: "Planner" });
+    await complete(ctx);
+    expect(updates[0].ran_in_own_agent).toBe("not_confirmed");
+    expect(notifications).toHaveLength(0);
+  });
+
+  it.each(["Code Reviewer", "QA Engineer", "Security Auditor"])(
+    "not_confirmed on a %s step sends exactly one step_compliance alert",
+    async (role) => {
+      const { ctx, updates, notifications } = ctxFor({ agent_role: role });
+      await complete(ctx);
+      expect(updates[0].ran_in_own_agent).toBe("not_confirmed");
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toMatchObject({ type: "step_compliance", user_id: OWNER });
+    }
+  );
+
+  it("cant_confirm for Codex, with no alert", async () => {
+    const { ctx, updates, notifications } = ctxFor({ agent_role: "Code Reviewer" });
+    await complete(ctx, { agent: "codex" });
+    expect(updates[0].ran_in_own_agent).toBe("cant_confirm");
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("cant_confirm when the claim named no board agent (no persona text)", async () => {
+    const { ctx, updates, notifications } = ctxFor({ agent_role: "Code Reviewer" }, { botPrompt: "" });
+    await complete(ctx);
+    expect(updates[0].ran_in_own_agent).toBe("cant_confirm");
+    expect(notifications).toHaveLength(0);
+  });
+
+  it("cant_confirm when the step has no bot", async () => {
+    const { ctx, updates } = ctxFor({ bot_id: null });
+    await complete(ctx);
+    expect(updates[0].ran_in_own_agent).toBe("cant_confirm");
+  });
+
+  it("failStep records the result for an in-progress step", async () => {
+    const { ctx, updates } = ctxFor({ attested_agent_type: "vc-atlas-37e8ffb2" });
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "broke" } as Parameters<typeof failStep>[1]);
+    expect(updates[0].ran_in_own_agent).toBe("confirmed");
+  });
+
+  it("failStep on an awaiting_approval step leaves the earlier result alone", async () => {
+    const { ctx, updates } = ctxFor({ status: "awaiting_approval", claim_token_hash: null });
+    await failStep(ctx, { step_id: STEP_ID, output: "no" } as Parameters<typeof failStep>[1]);
+    expect(updates[0]).not.toHaveProperty("ran_in_own_agent");
   });
 });
