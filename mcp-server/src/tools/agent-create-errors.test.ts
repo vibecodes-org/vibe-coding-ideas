@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpContext } from "../context";
-import { createBot, createBotSchema } from "./bots";
+import { createBot, createBotSchema, cloneAgent, cloneAgentSchema } from "./bots";
 import { importAgentSkill, importAgentSkillSchema } from "./agent-skill";
 
 // Card 5d8274fe, fixes 1 and 2 (MCP side).
@@ -59,5 +59,26 @@ describe("import_agent_skill", () => {
     const file = md(["metadata:", "  source: vibecodes", `  source_id: ${BOT_ID}`, "  tool_access: readonly"]);
     await importAgentSkill(ctx, importAgentSkillSchema.parse({ skill_md_content: file }));
     expect(updates[0]).not.toHaveProperty("tool_access");
+  });
+});
+
+describe("clone_agent", () => {
+  it("throws when the settings update on the copy fails", async () => {
+    const table = chain({});
+    // Only the update fails; reads (source bot, skills) succeed.
+    const update = table.update as ReturnType<typeof vi.fn>;
+    update.mockImplementation(() => ({
+      eq: () => ({ eq: () => Promise.resolve({ data: null, error: { message: "update failed" } }) }),
+    }));
+    const ctx = ctxWith(table);
+    await expect(cloneAgent(ctx, cloneAgentSchema.parse({ bot_id: BOT_ID }))).rejects.toThrow("update failed");
+  });
+
+  it("throws when the times-cloned counter fails", async () => {
+    const ctx = ctxWith(chain({}));
+    (ctx.supabase.rpc as ReturnType<typeof vi.fn>).mockImplementation((name: string) =>
+      Promise.resolve(name === "create_bot_user" ? { data: BOT_ID, error: null } : { data: null, error: { message: "counter failed" } }),
+    );
+    await expect(cloneAgent(ctx, cloneAgentSchema.parse({ bot_id: BOT_ID }))).rejects.toThrow("counter failed");
   });
 });

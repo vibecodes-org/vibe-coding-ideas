@@ -90,3 +90,23 @@ describe("applyKit (app) — starting-template fallback", () => {
     expect(fake.writesTo("bot_profiles", "update")).toEqual([]);
   });
 });
+
+// Card 5d8274fe rework: the follow-up settings update on a kit-made agent must not fail silently.
+describe("applyKit (app), agent made from a role template", () => {
+  it("reports the agent as failed when the Read-only settings update fails", async () => {
+    const fake = fakeSupabase({
+      tables: {
+        project_kits: () => ({ data: { id: "kit", agent_roles: [{ role: "Code Reviewer", name_suggestion: "Lens" }], label_presets: [] } }),
+        bot_profiles: (c) => (c.op === "update" ? { error: { message: "update failed" } } : { data: [] }),
+        kit_workflow_mappings: () => ({ data: [] }),
+      },
+      rpc: (name) => (name === "create_bot_user" ? { data: COPY } : { error: null }),
+    });
+    Object.assign(fake.client, { auth: { getUser: async () => ({ data: { user: { id: USER } } }) } });
+    vi.mocked(createClient).mockResolvedValue(fake.client as never);
+
+    const result = await applyKit("idea", "kit");
+    expect(result.agentsCreated).toBe(0);
+    expect(result.agentsFailed).toEqual([{ role: "Code Reviewer", reason: "update failed" }]);
+  });
+});

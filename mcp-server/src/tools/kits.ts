@@ -202,7 +202,7 @@ export async function applyKitToIdea(
             // Filed skills come with the copy; a failure discards the copy and
             // lands in the catch below, so the agent isn't counted as created.
             await copyAgentSkills(ctx.supabase, libraryAgent.id, clonedId, ownerId);
-            await ctx.supabase
+            const { error: copyError } = await ctx.supabase
               .from("bot_profiles")
               .update({
                 bio: libraryAgent.bio,
@@ -210,7 +210,9 @@ export async function applyKitToIdea(
                 helper_agents: libraryAgent.helper_agents,
                 cloned_from: libraryAgent.id,
               })
-              .eq("id", clonedId);
+              .eq("id", clonedId)
+              .eq("owner_id", ownerId);
+            if (copyError) throw new Error(copyError.message);
             newBotId = clonedId;
           }
         } else {

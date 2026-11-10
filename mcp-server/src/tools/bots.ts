@@ -308,7 +308,7 @@ export async function cloneAgent(
   await copyAgentSkills(ctx.supabase, source.id, newId as string, ownerId);
 
   // Set extended fields + provenance, and atomically increment source counter
-  await Promise.all([
+  const [updateResult, rpcResult] = await Promise.all([
     ctx.supabase
       .from("bot_profiles")
       .update({
@@ -321,6 +321,9 @@ export async function cloneAgent(
       .eq("owner_id", ownerId),
     ctx.supabase.rpc("increment_times_cloned", { p_bot_id: args.bot_id }),
   ]);
+
+  if (updateResult.error) throw new Error(updateResult.error.message);
+  if (rpcResult.error) throw new Error(rpcResult.error.message);
 
   return { cloned_bot_id: newId, source_name: source.name };
 }
