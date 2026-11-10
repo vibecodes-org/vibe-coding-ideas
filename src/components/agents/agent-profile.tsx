@@ -20,7 +20,7 @@ import { CloneAgentButton } from "./clone-agent-button";
 import { EditAgentDialog } from "./edit-agent-dialog";
 import { AddSkillDialog } from "./add-skill-dialog";
 import { SkillRow } from "./skill-row";
-import { AgentInstructionsView, ReadOnlyBadge } from "@/components/agents/agent-instructions-view";
+import { AgentInstructionsView, ReadOnlyBadge, WorksAloneBadge } from "@/components/agents/agent-instructions-view";
 import { cn, getInitials } from "@/lib/utils";
 import { getRoleColor } from "@/lib/agent-colors";
 import { removeSkillFromAgent } from "@/actions/bots";
@@ -153,6 +153,7 @@ export function AgentProfile({
               </Badge>
             )}
             <ReadOnlyBadge toolAccess={bot.tool_access} />
+            <WorksAloneBadge helperAgents={bot.helper_agents} />
           </div>
 
           {bot.bio && (

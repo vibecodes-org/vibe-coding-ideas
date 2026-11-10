@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Helper Agents Setting</title>
+<!--
+  Design mock for card 9a308e9b, stage A (builders, reviewers and testers can't
+  start their own helper agents). One new per-agent control, built as a copy of
+  the existing "What it can do" picker (src/components/agents/tool-access-picker.tsx):
+  label text-xs, two-option RadioGroup grid sm:grid-cols-2, option card
+  rounded-lg border px-3 py-2.5, selected border-violet-500 bg-violet-500/[0.08],
+  title text-[13px] font-semibold, description text-[11.5px] muted,
+  help line text-[10.5px] muted. Badge copies ReadOnlyBadge
+  (rounded-md border px-2 py-0.5 text-[11px], 12px icon).
+  Appears in the same three places the picker does: Edit Agent, Create Agent
+  and Admin's agent dialog. Dialog: sm:max-w-2xl (672px); phone = 343px.
+-->
+<style>
+  :root {
+    --background: oklch(0.141 0.005 285.823); --foreground: oklch(0.985 0 0);
+    --muted: oklch(0.274 0.006 286.033); --muted-foreground: oklch(0.705 0.015 286.067);
+    --border: oklch(1 0 0 / 10%);
+    --violet: #8b5cf6; --violet-bg: rgba(139,92,246,.08); --violet-hover: rgba(139,92,246,.3);
+    --blue-fg: #93c5fd; --blue-bg: rgba(59,130,246,.1); --blue-bd: rgba(59,130,246,.25);
+    --amber-fg: #fcd34d; --amber-bg: rgba(245,158,11,.1); --amber-bd: rgba(245,158,11,.25);
+    --new: #38bdf8;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --background: #ffffff; --foreground: #09090b; --muted: #f4f4f5; --muted-foreground: #71717a;
+      --border: #e4e4e7; --new: #0284c7; --blue-fg: #1d4ed8; --amber-fg: #b45309;
+    }
+  }
+  :root[data-theme="light"] {
+    --background: #ffffff; --foreground: #09090b; --muted: #f4f4f5; --muted-foreground: #71717a;
+    --border: #e4e4e7; --new: #0284c7; --blue-fg: #1d4ed8; --amber-fg: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 18px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--new); font-weight: 600; }
+  h1 { font-size: 26px; margin: 6px 0 8px; }
+  h2 { font-size: 19px; margin: 40px 0 6px; }
+  .lede, .note { color: var(--muted-foreground); max-width: 760px; }
+  .note { font-size: 13.5px; margin: 4px 0 16px; }
+  button.theme { background: var(--muted); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .cap { font-size: 12px; color: var(--muted-foreground); margin: 8px 2px 0; }
+
+  .dialog { width: 100%; max-width: 672px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 16px 48px -20px rgba(0,0,0,.6); padding: 20px; }
+  .dialog.phone { max-width: 343px; padding: 16px; }
+  .dtitle { font-weight: 600; font-size: 17px; margin: 0 0 14px; }
+  .stack > * + * { margin-top: 16px; }
+  .label { font-size: 12px; font-weight: 500; margin-bottom: 6px; display: block; }
+  .faded { opacity: .45; }
+  .fake-input { border: 1px solid var(--border); border-radius: 6px; height: 34px; padding: 6px 10px; font-size: 13px; color: var(--muted-foreground); }
+  .fake-area { border: 1px solid var(--border); border-radius: 6px; height: 70px; padding: 8px 10px; font-size: 12px; color: var(--muted-foreground); }
+
+  .grid { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+  .phone .grid { grid-template-columns: 1fr; }
+  @media (max-width: 639px) { .grid { grid-template-columns: 1fr; } }
+  .opt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+  .opt:hover { border-color: var(--violet-hover); }
+  .opt.on { border-color: var(--violet); background: var(--violet-bg); }
+  .radio { width: 16px; height: 16px; border-radius: 99px; border: 1px solid var(--muted-foreground); margin-top: 2px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .opt.on .radio { border-color: var(--violet); }
+  .opt.on .radio::after { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--violet); }
+  .otitle { display: block; font-size: 13px; font-weight: 600; }
+  .odesc { display: block; font-size: 11.5px; color: var(--muted-foreground); margin-top: 2px; }
+  .help { font-size: 10.5px; color: var(--muted-foreground); margin: 6px 0 0; }
+  .newmark { outline: 2px dashed var(--new); outline-offset: 6px; border-radius: 6px; }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; border: 1px solid; padding: 2px 8px; font-size: 11px; font-weight: 500; }
+  .badge.ro { color: var(--blue-fg); background: var(--blue-bg); border-color: var(--blue-bd); }
+  .badge.alone { color: var(--amber-fg); background: var(--amber-bg); border-color: var(--amber-bd); }
+  .badge svg { width: 12px; height: 12px; }
+  .profile { border: 1px solid var(--border); border-radius: 10px; padding: 16px; max-width: 520px; width: 100%; }
+  .prow { display: flex; gap: 12px; align-items: center; }
+  .avatar { width: 48px; height: 48px; border-radius: 99px; background: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .pname { font-weight: 600; font-size: 17px; }
+  .prole { font-size: 13px; color: var(--muted-foreground); }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+  table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 13.5px; }
+  th, td { text-align: left; border-bottom: 1px solid var(--border); padding: 8px 10px; vertical-align: top; }
+  th { color: var(--muted-foreground); font-weight: 500; }
+  ul.dec { max-width: 760px; font-size: 14px; }
+  ul.dec li { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="kicker">Mock, stage A</div>
+      <h1>Stop builders, reviewers and testers starting helper agents</h1>
+      <p class="lede">One new setting on each agent, sitting directly under the existing "What it can do" choice and built the same way. Everything else on these screens is unchanged (shown faded).</p>
+    </div>
+    <button class="theme" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'">Light / dark</button>
+  </header>
+
+  <h2>1. Edit Agent dialog (desktop)</h2>
+  <p class="note">The new block is outlined in blue. The same block appears in Create Agent and in Admin's agent dialog, in the same position, because the "What it can do" choice appears in all three.</p>
+  <div class="dialog">
+    <div class="dtitle">Edit Agent</div>
+    <div class="stack">
+      <div class="faded"><span class="label">Name</span><div class="fake-input">Atlas</div></div>
+      <div class="faded"><span class="label">Instructions</span><div class="fake-area">Role, how it works, what it hands back...</div></div>
+      <div class="faded">
+        <span class="label">What it can do</span>
+        <div class="grid">
+          <div class="opt on"><span class="radio"></span><span><span class="otitle">Full access</span><span class="odesc">Can read and change code and files.</span></span></div>
+          <div class="opt"><span class="radio"></span><span><span class="otitle">Read-only</span><span class="odesc">Can read code and run checks, but can't create or edit files. For reviewers and checkers.</span></span></div>
+        </div>
+        <p class="help">In the browser terminal this is enforced: the agent's file-editing tools are switched off. In other Claude Code sessions the agent is told.</p>
+      </div>
+      <div class="newmark" id="picker-desktop">
+        <span class="label">Helper agents</span>
+        <div class="grid">
+          <label class="opt"><span class="radio"></span><span><span class="otitle">Can start helpers</span><span class="odesc">Can hand parts of the job to helper agents of its own. For planning and research.</span></span></label>
+          <label class="opt on"><span class="radio"></span><span><span class="otitle">Works alone</span><span class="odesc">Does the whole job itself and can't start helper agents. For building, reviewing and testing.</span></span></label>
+        </div>
+        <p class="help">In Claude Code this is enforced: the agent's helper-starting tool is switched off. Codex isn't affected.</p>
+      </div>
+      <div class="faded"><span class="label">Skills</span><div class="fake-input">checking-pages-in-a-browser</div></div>
+    </div>
+  </div>
+  <p class="cap">Atlas shown with "Works alone" selected, as it will be after release. New agents start on "Can start helpers", so nothing changes for anyone until it's picked.</p>
+
+  <h2>2. Phone width (343px dialog)</h2>
+  <p class="note">The two options stack, exactly as "What it can do" already does on a phone.</p>
+  <div class="dialog phone">
+    <div class="dtitle">Edit Agent</div>
+    <div class="newmark">
+      <span class="label">Helper agents</span>
+      <div class="grid">
+        <label class="opt"><span class="radio"></span><span><span class="otitle">Can start helpers</span><span class="odesc">Can hand parts of the job to helper agents of its own. For planning and research.</span></span></label>
+        <label class="opt on"><span class="radio"></span><span><span class="otitle">Works alone</span><span class="odesc">Does the whole job itself and can't start helper agents. For building, reviewing and testing.</span></span></label>
+      </div>
+      <p class="help">In Claude Code this is enforced: the agent's helper-starting tool is switched off. Codex isn't affected.</p>
+    </div>
+  </div>
+
+  <h2>3. Agent page and agent card</h2>
+  <p class="note">A small badge beside the existing "Read-only" badge, so you can see the setting without opening the dialog. Lens shows both.</p>
+  <div class="row">
+    <div class="profile">
+      <div class="prow"><div class="avatar">L</div><div>
+        <div class="pname">Lens</div><div class="prole">Code Reviewer</div>
+        <div class="badges">
+          <span class="badge ro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Read-only</span>
+          <span class="badge alone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Works alone</span>
+        </div>
+      </div></div>
+    </div>
+    <div class="profile">
+      <div class="prow"><div class="avatar">P</div><div>
+        <div class="pname">Planner</div><div class="prole">Planner</div>
+        <div class="badges"><span class="cap" style="margin:0">No badge: can start helpers (the default)</span></div>
+      </div></div>
+    </div>
+  </div>
+
+  <h2>4. What each of your main agents will be set to</h2>
+  <table>
+    <tr><th>Agent</th><th>Job</th><th>What it can do</th><th>Helper agents</th></tr>
+    <tr><td>Planner</td><td>Plans and research</td><td>Full access</td><td>Can start helpers (unchanged)</td></tr>
+    <tr><td>Atlas</td><td>Builds</td><td>Full access</td><td><b>Works alone</b> (changed)</td></tr>
+    <tr><td>Lens</td><td>Code review</td><td>Read-only</td><td><b>Works alone</b> (changed)</td></tr>
+    <tr><td>Sentinel</td><td>Testing</td><td>Full access</td><td><b>Works alone</b> (changed)</td></tr>
+    <tr><td>Every other agent</td><td></td><td>unchanged</td><td>Can start helpers (unchanged)</td></tr>
+  </table>
+
+  <h2>Differences from the neighbouring control, kept on purpose</h2>
+  <ul class="dec">
+    <li>The default is the first option ("Can start helpers"), as "Full access" is for its picker, so existing agents behave exactly as today.</li>
+    <li>The help line says "Codex isn't affected" rather than "the agent is told": Codex is out of scope for this change.</li>
+    <li>The badge is amber, not blue, so it can't be mistaken for "Read-only" when both show.</li>
+  </ul>
+</div>
+<script>
+  document.querySelectorAll('.grid').forEach(g => g.querySelectorAll('.opt').forEach(o => o.addEventListener('click', () => {
+    g.querySelectorAll('.opt').forEach(x => x.classList.remove('on')); o.classList.add('on');
+  })));
+</script>
+</body>
+</html>

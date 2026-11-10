@@ -18,8 +18,9 @@ import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { updateBot, deleteBot } from "@/actions/bots";
 import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { HelperAgentsPicker } from "@/components/agents/helper-agents-picker";
 import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
-import { normalizeToolAccess, type ToolAccess } from "@/lib/agent-tool-access";
+import { normalizeHelperAgents, normalizeToolAccess, type HelperAgents, type ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
 import type { BotProfile } from "@/types";
@@ -38,6 +39,7 @@ export function EditAgentDialog({ bot, open, onOpenChange, skillNames }: EditAge
   const [systemPrompt, setSystemPrompt] = useState(bot.system_prompt ?? "");
   const [bio, setBio] = useState(bot.bio ?? "");
   const [toolAccess, setToolAccess] = useState<ToolAccess>(normalizeToolAccess(bot.tool_access));
+  const [helperAgents, setHelperAgents] = useState<HelperAgents>(normalizeHelperAgents(bot.helper_agents));
   const [isPublished, setIsPublished] = useState(bot.is_published);
   const [submitting, setSubmitting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -96,6 +98,7 @@ export function EditAgentDialog({ bot, open, onOpenChange, skillNames }: EditAge
         system_prompt: systemPrompt.trim() || null,
         bio: bio.trim() || null,
         tool_access: toolAccess,
+        helper_agents: helperAgents,
         is_published: isPublished,
         ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
       });
@@ -209,6 +212,8 @@ export function EditAgentDialog({ bot, open, onOpenChange, skillNames }: EditAge
           <AgentInstructionsEditor role={role} value={systemPrompt} onChange={setSystemPrompt} />
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} idPrefix="edit-tool-access" />
+
+          <HelperAgentsPicker value={helperAgents} onChange={setHelperAgents} idPrefix="edit-helper-agents" />
 
           {/* Skills: read-only here; they're added and removed on the agent's page */}
           <div className="space-y-1">

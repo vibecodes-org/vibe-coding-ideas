@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { logger } from "../logger";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
 import { SYNC_MARKER } from "./session-agent-files";
-import { agentPersonaBody, disallowedToolsFor, type ToolAccess } from "../agent-tool-access";
+import { agentPersonaBody, disallowedToolsFor, type HelperAgents, type ToolAccess } from "../agent-tool-access";
 import { OWN_AGENT_HOOK_VERSION, buildOwnAgentHooks, type OwnAgentHooks } from "../workflow/own-agent";
 
 export type SessionAgentTier = "frontier" | "standard" | "cheap";
@@ -102,7 +102,7 @@ function namesOnlyTag(model: string | null, effort: string | null): string {
 }
 
 export type SessionAgentInput = {
-  bot: { id: string; name: string; role: string | null; system_prompt: string; tool_access?: ToolAccess | null };
+  bot: { id: string; name: string; role: string | null; system_prompt: string; tool_access?: ToolAccess | null; helper_agents?: HelperAgents | null };
   tier: SessionAgentTier | null;
   /** Resolved model for this tier, Claude's or Codex's (null on Auto steps — the subagent inherits). */
   model: string | null;
@@ -157,7 +157,7 @@ function definitionFor(
   // The persona as delivered, exactly as claim_next_step sends it: the stored
   // prompt, the Tools note for a Read-only agent, and (Claude only) the Waiting
   // note. The claim side builds the tag from the same function.
-  const persona = agentPersonaBody(bot.system_prompt, bot.tool_access, agent);
+  const persona = agentPersonaBody(bot.system_prompt, bot.tool_access, agent, bot.helper_agents);
 
   // Personas describe the job but rarely the agent's own name, so in a live
   // test Atlas and Sentinel couldn't introduce themselves. The tag below
@@ -185,7 +185,7 @@ function definitionFor(
     `VibeCodes agent ${bot.name}${role} for ${scope} workflow steps. ` +
     `Use only when a VibeCodes claim_next_step response names this subagent. ${tag}`;
 
-  const disallowedTools = disallowedToolsFor(bot.tool_access);
+  const disallowedTools = disallowedToolsFor(bot.tool_access, bot.helper_agents, agent);
   return {
     description,
     prompt,
@@ -266,7 +266,7 @@ export function buildSessionAgents(
  * model and effort are the claiming agent's own resolution of the tier.
  */
 export function sessionAgentClaimHint(input: {
-  bot: { id: string; name: string; system_prompt: string; tool_access?: ToolAccess | null };
+  bot: { id: string; name: string; system_prompt: string; tool_access?: ToolAccess | null; helper_agents?: HelperAgents | null };
   tier: SessionAgentTier | null;
   model: string | null;
   effort: string | null;
@@ -285,7 +285,7 @@ export function sessionAgentClaimHint(input: {
 }): { name: string; tag: string; instruction: string } {
   const name = sessionAgentName(input.bot, input.tier, input.stepEffort);
   const tag = sessionAgentTag(
-    agentPersonaBody(input.bot.system_prompt, input.bot.tool_access, input.agent),
+    agentPersonaBody(input.bot.system_prompt, input.bot.tool_access, input.agent, input.bot.helper_agents),
     input.model,
     input.effort,
     input.skillsText ?? "",

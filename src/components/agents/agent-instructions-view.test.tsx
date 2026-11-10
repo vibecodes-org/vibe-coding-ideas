@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { AgentInstructionsView, ReadOnlyBadge } from "./agent-instructions-view";
+import { AgentInstructionsView, ReadOnlyBadge, WorksAloneBadge } from "./agent-instructions-view";
 
 describe("AgentInstructionsView", () => {
   it("shows the four parts for a new-layout agent", () => {
@@ -50,5 +50,19 @@ describe("ReadOnlyBadge", () => {
     expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
     rerender(<ReadOnlyBadge toolAccess={undefined} />);
     expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
+  });
+});
+
+describe("WorksAloneBadge", () => {
+  it("shows for a Works-alone agent", () => {
+    render(<WorksAloneBadge helperAgents="blocked" />);
+    expect(screen.getByText("Works alone")).toBeInTheDocument();
+  });
+
+  it("shows nothing otherwise", () => {
+    const { container } = render(<WorksAloneBadge helperAgents="allowed" />);
+    expect(container).toBeEmptyDOMElement();
+    const { container: c2 } = render(<WorksAloneBadge helperAgents={null} />);
+    expect(c2).toBeEmptyDOMElement();
   });
 });

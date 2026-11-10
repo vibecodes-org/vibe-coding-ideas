@@ -2053,6 +2053,7 @@ export type Database = {
           times_cloned: number;
           cloned_from: string | null;
           tool_access: "full" | "read_only";
+          helper_agents: "allowed" | "blocked";
           created_at: string;
           updated_at: string;
         };
@@ -2070,6 +2071,7 @@ export type Database = {
           times_cloned?: number;
           cloned_from?: string | null;
           tool_access?: "full" | "read_only";
+          helper_agents?: "allowed" | "blocked";
           created_at?: string;
           updated_at?: string;
         };
@@ -2087,6 +2089,7 @@ export type Database = {
           times_cloned?: number;
           cloned_from?: string | null;
           tool_access?: "full" | "read_only";
+          helper_agents?: "allowed" | "blocked";
           created_at?: string;
           updated_at?: string;
         };

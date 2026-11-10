@@ -269,7 +269,14 @@ describe("importAgentSkill — tool access", () => {
 
   it("reads a tools list with no file-writing tool as read_only", async () => {
     const writes = await createFrom(["tools: Read, Grep, Bash"]);
-    expect(writes).toEqual([{ tool_access: "read_only" }]);
+    // A tools list that leaves out Agent also means Works alone.
+    expect(writes).toEqual([{ tool_access: "read_only", helper_agents: "blocked" }]);
+  });
+
+  it("reads a deny list naming Agent as Works alone, and metadata.helper_agents wins", async () => {
+    expect(await createFrom(["disallowedTools: Agent"])).toEqual([{ helper_agents: "blocked" }]);
+    expect(await createFrom(["metadata:", "  helper_agents: blocked"])).toEqual([{ helper_agents: "blocked" }]);
+    expect(await createFrom(["disallowedTools: Agent", "metadata:", "  helper_agents: allowed"])).toEqual([]);
   });
 
   it("lets metadata.tool_access win over the tools lists", async () => {

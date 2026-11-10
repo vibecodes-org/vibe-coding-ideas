@@ -207,6 +207,7 @@ export async function applyKitToIdea(
               .update({
                 bio: libraryAgent.bio,
                 tool_access: libraryAgent.tool_access,
+                helper_agents: libraryAgent.helper_agents,
                 cloned_from: libraryAgent.id,
               })
               .eq("id", clonedId);

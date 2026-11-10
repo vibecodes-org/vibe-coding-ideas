@@ -19,9 +19,10 @@ import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
 import { RoleTemplateChips } from "@/components/agents/role-template-chips";
 import { createBot } from "@/actions/bots";
 import { AgentInstructionsEditor } from "@/components/agents/agent-instructions-editor";
+import { HelperAgentsPicker } from "@/components/agents/helper-agents-picker";
 import { ToolAccessPicker } from "@/components/agents/tool-access-picker";
 import { generateInstructions } from "@/lib/agent-instructions";
-import type { ToolAccess } from "@/lib/agent-tool-access";
+import type { HelperAgents, ToolAccess } from "@/lib/agent-tool-access";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
 
@@ -47,6 +48,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
   const [allocatedIdeaId, setAllocatedIdeaId] = useState<string | null>(null);
   const [allocatingToIdea, setAllocatingToIdea] = useState(false);
   const [toolAccess, setToolAccess] = useState<ToolAccess>("full");
+  const [helperAgents, setHelperAgents] = useState<HelperAgents>("allowed");
   const [promptKey, setPromptKey] = useState(0);
 
   // Avatar upload
@@ -64,6 +66,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
       setRole(template.role);
       setSystemPrompt(generateInstructions(template.fields));
       setToolAccess(template.toolAccess);
+      setHelperAgents(template.helperAgents);
       setPromptKey((k) => k + 1);
     }
   }
@@ -75,6 +78,7 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
     setBio("");
     setSelectedTemplate(null);
     setToolAccess("full");
+    setHelperAgents("allowed");
     setPromptKey((k) => k + 1);
     setCreated(false);
     setCreatedName("");
@@ -119,7 +123,8 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
         systemPrompt.trim() || null,
         null,
         bio.trim() || null,
-        toolAccess
+        toolAccess,
+        helperAgents
       );
 
       // Upload avatar if selected
@@ -350,6 +355,8 @@ export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: Create
           )}
 
           <ToolAccessPicker value={toolAccess} onChange={setToolAccess} />
+
+          <HelperAgentsPicker value={helperAgents} onChange={setHelperAgents} />
 
           {/* Skills are added from the agent's own page once it exists */}
           <div className="space-y-1">

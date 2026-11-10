@@ -72,7 +72,7 @@ async function loadInputBuilder(
 ): Promise<InputBuilder | null> {
   const { botIds, userId, agent, logContext } = opts;
   const [{ data: bots }, skillsByBot, { data: owner }, platformDefaults] = await Promise.all([
-    supabase.from("bot_profiles").select("id, name, role, system_prompt, tool_access").in("id", botIds),
+    supabase.from("bot_profiles").select("id, name, role, system_prompt, tool_access, helper_agents").in("id", botIds),
     // Same read claim_next_step uses, so both build the same Skills text. A
     // failed read gives nothing rather than agents that would never match.
     fetchAgentSkills(supabase, botIds).catch((err: unknown) => {
@@ -104,6 +104,7 @@ async function loadInputBuilder(
           role: bot.role,
           system_prompt: bot.system_prompt,
           tool_access: bot.tool_access,
+          helper_agents: bot.helper_agents,
         },
         tier,
         model: resolution?.resolved ?? null,

@@ -21,16 +21,50 @@ const READ_ONLY_NOTE =
   "## Tools\nYou're read-only: don't create, edit or delete files, including through shell commands. Say what should change instead.";
 
 /** The persona note for an access level. "" for full access. */
-export function toolAccessSection(access: ToolAccess | null | undefined): string {
-  return normalizeToolAccess(access) === "read_only" ? READ_ONLY_NOTE : "";
+export function toolAccessSection(
+  access: ToolAccess | null | undefined,
+  helpers?: HelperAgents | string | null,
+  agent: "claude" | "codex" = "claude",
+): string {
+  const readOnly = normalizeToolAccess(access) === "read_only";
+  const blocked = agent === "claude" && normalizeHelperAgents(helpers) === "blocked";
+  if (readOnly) return blocked ? `${READ_ONLY_NOTE} ${HELPER_NOTE_LINE}` : READ_ONLY_NOTE;
+  return blocked ? `## Tools\n${HELPER_NOTE_LINE}` : "";
 }
 
 const FILE_WRITING_TOOLS = ["Edit", "Write", "NotebookEdit"] as const;
 
-/** Claude Code tool names to switch off, or null for full access. */
-export function disallowedToolsFor(access: ToolAccess | null | undefined): string[] | null {
-  return normalizeToolAccess(access) === "read_only" ? [...FILE_WRITING_TOOLS] : null;
+// Card 9a308e9b: a second, independent setting, bot_profiles.helper_agents.
+// "blocked" (shown as "Works alone") switches off Claude Code's helper-starting
+// tool (`Agent`) for the agent. Claude only: Codex is untouched.
+export type HelperAgents = "allowed" | "blocked";
+
+export const HELPER_AGENTS_VALUES: readonly HelperAgents[] = ["allowed", "blocked"];
+
+/** Anything that isn't exactly "blocked" means helpers are allowed. */
+export function normalizeHelperAgents(value: unknown): HelperAgents {
+  return value === "blocked" ? "blocked" : "allowed";
 }
+
+const HELPER_TOOL = "Agent";
+
+/**
+ * Claude Code tool names to switch off, or null when nothing is. `Agent` is
+ * added for a Works-alone agent on Claude only.
+ */
+export function disallowedToolsFor(
+  access: ToolAccess | null | undefined,
+  helpers?: HelperAgents | string | null,
+  agent: "claude" | "codex" = "claude",
+): string[] | null {
+  const list: string[] = [];
+  if (normalizeToolAccess(access) === "read_only") list.push(...FILE_WRITING_TOOLS);
+  if (agent === "claude" && normalizeHelperAgents(helpers) === "blocked") list.push(HELPER_TOOL);
+  return list.length > 0 ? list : null;
+}
+
+const HELPER_NOTE_LINE =
+  "You can't start helper agents: do the work yourself in this conversation.";
 
 // Card 11dc1212: a helper's cached context expires after 5 minutes without a
 // call, and the next call then pays to read it all in again. This note is added
@@ -57,8 +91,9 @@ export function agentPersonaBody(
   systemPrompt: string,
   access: ToolAccess | null | undefined,
   agent: "claude" | "codex" = "claude",
+  helpers?: HelperAgents | string | null,
 ): string {
-  const parts = [systemPrompt, toolAccessSection(access), agent === "claude" ? WAITING_NOTE : ""].filter(
+  const parts = [systemPrompt, toolAccessSection(access, helpers, agent), agent === "claude" ? WAITING_NOTE : ""].filter(
     (p, i) => i === 0 || p,
   );
   return parts.join("\n\n");
@@ -97,4 +132,25 @@ export function toolAccessFromFrontmatter(input: {
     return "read_only";
   }
   return "full";
+}
+
+/**
+ * Read an agent file's helper setting. An explicit `metadata.helper_agents`
+ * wins; a deny list naming Agent (or the older Task) means blocked; a `tools`
+ * list that omits Agent means blocked. Otherwise allowed.
+ */
+export function helperAgentsFromFrontmatter(input: {
+  tools?: unknown;
+  disallowedTools?: unknown;
+  metadataHelperAgents?: unknown;
+}): HelperAgents {
+  if (input.metadataHelperAgents === "blocked" || input.metadataHelperAgents === "allowed") {
+    return input.metadataHelperAgents;
+  }
+  const isHelperTool = (t: string) => t === "agent" || t === "task" || t.startsWith("agent(") || t.startsWith("task(");
+  const denied = toList(input.disallowedTools).map((t) => t.toLowerCase());
+  if (denied.some((t) => t === "agent" || t === "task")) return "blocked";
+  const allowed = toList(input.tools).map((t) => t.toLowerCase());
+  if (allowed.length > 0 && !allowed.some(isHelperTool)) return "blocked";
+  return "allowed";
 }

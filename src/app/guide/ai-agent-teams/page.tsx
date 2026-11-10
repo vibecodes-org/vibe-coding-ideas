@@ -175,6 +175,18 @@ export default function AiAgentTeamsPage() {
             edit or delete files, and in the in-app browser terminal its
             file-editing tools are switched off.
           </p>
+          <p className="mt-3 text-muted-foreground">
+            A second setting,{" "}
+            <strong className="text-foreground">Helper agents</strong>, says
+            whether the agent can start helper agents of its own:{" "}
+            <strong className="text-foreground">Can start helpers</strong>{" "}
+            (the default) or{" "}
+            <strong className="text-foreground">Works alone</strong>. A
+            Works-alone agent is told to do the whole job itself, and in
+            Claude Code its helper-starting tool is switched off. The built-in
+            builder, reviewer and tester start on Works alone. Codex is not
+            affected.
+          </p>
         </section>
 
         <section>

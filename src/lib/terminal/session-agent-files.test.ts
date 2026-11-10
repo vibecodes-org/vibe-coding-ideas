@@ -70,6 +70,11 @@ describe("renderAgentFile / parseAgentFile", () => {
     expect(renderAgentFile(...atlas)).not.toContain("disallowedTools");
   });
 
+  it("carries Agent in disallowedTools for a Works-alone agent", () => {
+    const [name, def] = Object.entries(AGENTS).find(([n]) => n.startsWith("vc-atlas"))!;
+    expect(renderAgentFile(name, { ...def, disallowedTools: ["Agent"] })).toContain("disallowedTools: Agent");
+  });
+
   it("writes autoCompactWindow when the definition has it, and round-trips it (task 5e654dd1 stage 9)", () => {
     const [name, def] = Object.entries(AGENTS).find(([n]) => n.startsWith("vc-atlas"))!;
     const withWindow = { ...def, autoCompactWindow: 400_000 };

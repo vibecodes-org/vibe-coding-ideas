@@ -22,7 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SkillLine } from "./skill-line";
 import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
-import { AgentInstructionsView, ReadOnlyBadge } from "@/components/agents/agent-instructions-view";
+import { AgentInstructionsView, ReadOnlyBadge, WorksAloneBadge } from "@/components/agents/agent-instructions-view";
 import { cn, formatRelativeTime, getInitials } from "@/lib/utils";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getAgentProfile, type AgentProfileData } from "@/actions/bots";
@@ -131,6 +131,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                     </Badge>
                   )}
                   <ReadOnlyBadge toolAccess={bot.tool_access} />
+                  <WorksAloneBadge helperAgents={bot.helper_agents} />
                 </div>
 
                 {bot.bio && (
