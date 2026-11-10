@@ -15,6 +15,8 @@ import {
   GENERATE_TASKS_DEADLINE_MS,
   GENERATE_TASKS_FINISH_WAIT_MS,
   GENERATE_TASKS_MAX_OUTPUT_TOKENS,
+  GeneratedBoardSchema,
+  GeneratedTaskSchema,
   buildContinuationTasksInstruction,
   completeTasksOnly,
   parseContinueAfter,
@@ -24,18 +26,6 @@ import {
 // Literal on purpose: Next.js reads it statically. GENERATE_TASKS_DEADLINE_MS
 // (src/lib/generate-tasks-stream.ts) stops the model 30 s before this limit.
 export const maxDuration = 300;
-
-const GeneratedTaskSchema = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  columnName: z.string().optional(),
-  labels: z.array(z.string()).optional(),
-  dueDate: z.string().optional(),
-});
-
-const GeneratedBoardSchema = z.object({
-  tasks: z.array(GeneratedTaskSchema),
-});
 
 export async function POST(req: Request) {
   const startedAt = Date.now();

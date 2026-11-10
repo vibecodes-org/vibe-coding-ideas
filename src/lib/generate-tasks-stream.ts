@@ -5,6 +5,22 @@
  * Kept free of server-only imports so they are easy to unit test.
  */
 
+import { z } from "zod";
+
+// Shared by the Generate Tasks route and the daily model-watch check
+// (src/lib/model-watch-checks.ts), so both test the same shape.
+export const GeneratedTaskSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  columnName: z.string().optional(),
+  labels: z.array(z.string()).optional(),
+  dueDate: z.string().optional(),
+});
+
+export const GeneratedBoardSchema = z.object({
+  tasks: z.array(GeneratedTaskSchema),
+});
+
 /** Max tokens one Generate (or Generate the rest) call may write. */
 export const GENERATE_TASKS_MAX_OUTPUT_TOKENS = 32000;
 

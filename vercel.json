@@ -1,3 +1,4 @@
 {
-  "ignoreCommand": "scripts/vercel-ignore.sh"
+  "ignoreCommand": "scripts/vercel-ignore.sh",
+  "crons": [{ "path": "/api/cron/model-watch", "schedule": "0 7 * * *" }]
 }

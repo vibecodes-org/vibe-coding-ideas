@@ -274,7 +274,7 @@ export function detectMismatch(
 // AI adjudication
 // ============================================================
 
-const adjudicationSchema = z.object({
+export const adjudicationSchema = z.object({
   recommended_template_id: z.string().nullable(),
   confidence: z.number().min(0).max(1),
   rationale: z.string(),
