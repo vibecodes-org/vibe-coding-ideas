@@ -37,3 +37,11 @@ because the card says not to widen scope.
 ## Ruled out
 Fake-timer/timeout theory (no timers involved), leakage between tests (state
 is per render; cleanup runs), Node version (reproduces on Node 26 locally).
+
+## Rework (reviewer)
+One more exposed test used a bare wait before a launch ("mints immediately with
+no race when the registry is already loaded"). It now uses `waitForSeededTab`.
+Re-scanned every other bare session-view wait: the rest are followed by a
+visibility event, a chooser click or no launch, so they are not exposed. Added
+a note to the regression test: delete its first half if the ref sync moves to
+`useLayoutEffect`.

@@ -765,7 +765,7 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
     // Registry already resolved to "empty-launch" — the dock seeds its usual
     // pristine tab with no launch-bus event involved at all.
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    await waitForSeededTab();
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
     // The empty-registry common case never shows the overlay, chooser, or
     // any other UI (rework 11 no-regression check).
@@ -1447,6 +1447,8 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
   // what a bare `waitFor(...session-view)` does under load) can't see the
   // pristine tab and appends a 2nd one. This pins the interleaving, and
   // proves `waitForSeededTab` closes it, so the other tests can rely on it.
+  // If the ref sync moves to useLayoutEffect, delete the first half (the
+  // 2-tab assertion): it pins today's flaw, not a wanted behaviour.
   it("a launch fired the instant the seeded tab appears does not see it yet; waitForSeededTab waits that out", async () => {
     stubFetch(Promise.resolve([]));
     let launchedInTheGap = false;
