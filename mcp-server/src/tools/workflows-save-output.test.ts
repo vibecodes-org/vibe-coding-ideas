@@ -313,7 +313,7 @@ describe("failStep — saved write-up", () => {
 // ---------------------------------------------------------------- rework
 describe("buildReworkInstructions", () => {
   const titles = new Map([["build", "Build"], ["review", "Code review"], ["test", "Test"]]);
-  const c = (content: string, created_at: string, step_id: string) => ({ content, created_at, step_id });
+  const c = (content: string, created_at: string, step_id: string, type: "failure" | "changes_requested" = "changes_requested") => ({ content, created_at, step_id, type });
 
   it("returns null with no feedback", () => {
     expect(buildReworkInstructions([], [], titles)).toBeNull();
@@ -321,7 +321,7 @@ describe("buildReworkInstructions", () => {
 
   it("review fails with a reset to build: Build gets one item for itself, Test gets one item as background", () => {
     // failure on Review, same text as changes_requested on Build
-    const failure = c("Fix the null check", "2026-01-01T00:00:00Z", "review");
+    const failure = c("Fix the null check", "2026-01-01T00:00:00Z", "review", "failure");
     const twin = c("Fix the null check", "2026-01-01T00:00:01Z", "build");
     const buildGets = buildReworkInstructions([twin], [], titles)!;
     expect(buildGets).toMatchObject({ scope: "this_step", earlier_rounds: 0, feedback: { from_step: "Build", content: "Fix the null check" } });
@@ -343,14 +343,53 @@ describe("buildReworkInstructions", () => {
       [c("round two", "2026-01-02T00:00:00Z", "build"), c("round two", "2026-01-02T00:00:01Z", "build"), c("round one", "2026-01-01T00:00:00Z", "build")],
       [], titles
     )!;
-    expect(r.feedback.content).toBe("round two");
+    expect(r.feedback!.content).toBe("round two");
     expect(r.earlier_rounds).toBe(1);
     expect(JSON.stringify(r)).not.toContain("round one");
   });
 
   it("the newest wins whatever order the rows arrive in", () => {
     const r = buildReworkInstructions([c("old", "2026-01-01T00:00:00Z", "build"), c("new", "2026-01-03T00:00:00Z", "build")], [], titles)!;
-    expect(r.feedback.content).toBe("new");
+    expect(r.feedback!.content).toBe("new");
+  });
+
+  // Card 5b35e0f5: a re-claimed reviewer must not see its own old complaint as rework.
+  it("a re-claimed review step with only its own failure: no rework, just the last list", () => {
+    const own = [c("Fix the null check", "2026-01-01T00:00:00Z", "review", "failure")];
+    const run = [...own, c("Fix the null check", "2026-01-01T00:00:01Z", "build")];
+    const r = buildReworkInstructions(own, run, titles)!;
+    expect(r.scope).toBe("earlier_step"); // the twin on Build is background, never "sent back"
+    expect(r.feedback!.from_step).toBe("Build");
+    expect(r.own_last_list?.content).toBe("Fix the null check");
+    const alone = buildReworkInstructions(own, own, titles)!;
+    expect(alone.scope).toBeNull();
+    expect(alone.feedback).toBeNull();
+    expect(alone.own_last_list?.content).toBe("Fix the null check");
+  });
+
+  it("newer tester feedback beats the reviewer's older own complaint", () => {
+    const own = [c("old review complaint", "2026-01-01T00:00:00Z", "review", "failure")];
+    const run = [
+      ...own,
+      c("old review complaint", "2026-01-01T00:00:01Z", "build"),
+      c("tester says broken", "2026-01-02T00:00:00Z", "test", "failure"),
+      c("tester says broken", "2026-01-02T00:00:01Z", "build"),
+    ];
+    const r = buildReworkInstructions(own, run, titles)!;
+    expect(r.feedback!.content).toBe("tester says broken");
+    expect(r.scope).toBe("earlier_step");
+    expect(r.own_last_list?.content).toBe("old review complaint");
+  });
+
+  it("a step sent back to itself shows the newest changes_requested as rework, plus its own last list", () => {
+    const own = [
+      c("review complaint", "2026-01-01T00:00:00Z", "review", "failure"),
+      c("tester says broken", "2026-01-02T00:00:01Z", "review"),
+    ];
+    const r = buildReworkInstructions(own, own, titles)!;
+    expect(r.scope).toBe("this_step");
+    expect(r.feedback!.content).toBe("tester says broken");
+    expect(r.own_last_list?.content).toBe("review complaint");
   });
 });
 

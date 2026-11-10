@@ -1108,7 +1108,7 @@ export async function claimNextStep(
   // Rework feedback, sent once (stage 3): the newest round in full plus a count
   // of older rounds. Sources are failure / changes_requested COMMENTS only; the
   // step's own output is never one (it can now hold a helper's saved write-up).
-  type ReworkRow = { content: string; created_at: string; step_id: string };
+  type ReworkRow = { content: string; created_at: string; step_id: string; type: "failure" | "changes_requested" };
   let ownRework: ReworkRow[] = [];
   const reworkTitles = new Map<string, string>([[step.id, step.title]]);
 
@@ -1123,10 +1123,10 @@ export async function claimNextStep(
     ownRework = (reworkComments ?? []) as ReworkRow[];
   }
 
-  // Run-wide fallback for steps with none of their own (for example the steps
-  // after a cascade reset): their feedback sits on sibling steps.
+  // Run-wide feedback too, always: newer feedback raised elsewhere (for example
+  // by testing) must beat this step's own older comments (card 5b35e0f5).
   let runRework: ReworkRow[] = [];
-  if (ownRework.length === 0 && step.run_id) {
+  if (step.run_id) {
     const { data: runSteps } = await ctx.supabase
       .from("task_workflow_steps")
       .select("id, title")
@@ -1140,11 +1140,11 @@ export async function claimNextStep(
         .in("step_id", runSteps.map((s: { id: string }) => s.id))
         .in("type", ["failure", "changes_requested"])
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20);
       runRework = (runComments ?? []) as ReworkRow[];
     }
   }
-  const rework_instructions = buildReworkInstructions(ownRework, runRework, reworkTitles);
+  const rework_instructions = buildReworkInstructions(ownRework, runRework, reworkTitles, step.id);
 
   const available_agents = (ideaAgents ?? []).map((row) => {
     const bot = (row as Record<string, unknown>).bot as Record<string, unknown> | null;
@@ -1394,6 +1394,7 @@ export async function claimNextStep(
     priorSteps: prior_steps,
     stepId: updated.id,
     reworkScope: rework_instructions?.scope ?? null,
+    hasOwnLastList: !!rework_instructions?.own_last_list,
     savedOutputChars: step.status === "in_progress" && step.output ? step.output.length : 0,
     approvalNotesCount: approval_notes.length,
     personaCarriesProtectRule,

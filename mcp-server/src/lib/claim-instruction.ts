@@ -73,6 +73,8 @@ export interface ClaimInstructionInput {
   stepId: string;
   /** null = no rework feedback. this_step = sent back; earlier_step = background. */
   reworkScope: "this_step" | "earlier_step" | null;
+  /** rework_instructions.own_last_list is present: the complaint this step raised last time. */
+  hasOwnLastList?: boolean;
   /** A re-claim of an in-progress step that already has a saved write-up (0 = none). */
   savedOutputChars: number;
   /** How many approval notes ride in `approval_notes`. */
@@ -137,7 +139,7 @@ function claudeIdentity(i: ClaimInstructionInput): string {
   }
   const brief =
     `Brief: this step's description, the work_token` +
-    (i.reworkScope ? `, rework_instructions` : "") +
+    (i.reworkScope || i.hasOwnLastList ? `, rework_instructions` : "") +
     (i.approvalNotesCount > 0 ? `, approval_notes` : "") +
     `, and this line word for word: ${saveLine(i.stepId)}`;
   const personaUsed = i.personaEmbeddable ? ` persona_used (verbatim/adapted/none),` : ``;
@@ -237,6 +239,12 @@ export function buildClaimInstruction(i: ClaimInstructionInput): string {
   } else if (i.reworkScope === "earlier_step") {
     blocks.push(
       `Earlier in this run, work was sent back; rework_instructions.feedback is background: check it was dealt with.`
+    );
+  }
+
+  if (i.hasOwnLastList) {
+    blocks.push(
+      `Your last list: rework_instructions.own_last_list is the complaint this step raised last time. It is not rework. Check those points were fixed.`
     );
   }
 

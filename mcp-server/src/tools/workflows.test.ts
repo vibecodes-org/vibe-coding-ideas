@@ -2729,12 +2729,14 @@ describe("claimNextStep — rework instructions", () => {
     expect(full.rework_instructions.scope).toBe("this_step");
     expect(full.rework_instructions.feedback.content).toBe("Also handle edge case for empty input");
     expect(full.rework_instructions.feedback.from_step).toBe("Test Step");
-    expect(full.rework_instructions.earlier_rounds).toBe(1);
+    // The step's own failure is its last list (card 5b35e0f5), not an earlier round of rework.
+    expect(full.rework_instructions.earlier_rounds).toBe(0);
+    expect((full.rework_instructions as { own_last_list?: { content: string } }).own_last_list?.content).toBe("Please fix the validation logic");
     expect(full.rework_instructions).not.toHaveProperty("previous_failure_output");
     expect(full.rework_instructions).not.toHaveProperty("changes_requested");
     expect(full.step).not.toHaveProperty("output");
     expect(JSON.stringify(result)).not.toContain("Previous attempt failed");
-    expect(JSON.stringify(result)).not.toContain("Please fix the validation logic");
+    expect(JSON.stringify(full.rework_instructions.feedback)).not.toContain("Please fix the validation logic");
   });
 
   it("does not include rework section when no rework_instructions", async () => {
