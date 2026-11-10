@@ -302,3 +302,45 @@ test("a forged open-terminal helper token with the owner's own account id is nev
 
   assert.deepEqual(readCreds(), before, "a token the relay refused is never saved");
 });
+
+// ── stage 2 review follow-up: no kept connection to fall back to ──────────────
+// During a reconnect wait (the live connection just dropped) there is no kept
+// connection. A forged link arriving then must not leave the Mac offline: once
+// the relay refuses it, the helper reconnects with the saved, genuine pass.
+
+test("a forged helper token arriving during a reconnect wait falls back to the saved pass once refused", async () => {
+  const live = await launchAndGetSocket(await launchLink("owner-A"));
+  await relayAccepts(live);
+  const saved = readCreds();
+  live.readyState = FakeWebSocket.CLOSED;
+  live.emit("close", 1006, Buffer.from("")); // a network drop: a reconnect is now pending
+
+  const probe = await launchAndGetSocket(await launchLink("owner-A", { secret: "not-the-relay-secret" }));
+  const n = FakeWebSocket.instances.length;
+  await relayRejects(probe);
+  for (let i = 0; i < 100 && FakeWebSocket.instances.length === n; i++) await settle();
+
+  assert.ok(FakeWebSocket.instances.length > n, "the helper reconnects after the forged pass is refused");
+  const retry = lastSocket();
+  assert.equal(retry.__vcToken, saved.token, "it reconnects with the saved, genuine pass");
+  assert.deepEqual(readCreds(), saved, "the saved pass is unchanged");
+});
+
+test("a new pass the relay never answers is dropped after the wait and nothing is saved", async () => {
+  const live = await launchAndGetSocket(await launchLink("owner-A"));
+  await relayAccepts(live);
+  const saved = readCreds();
+  main.__test.setControlAcceptTimeoutMs(100);
+  try {
+    const probe = await launchAndGetSocket(await launchLink("owner-A", { now: Math.floor(Date.now() / 1000) + 7 }));
+    probe.readyState = FakeWebSocket.OPEN;
+    probe.emit("open"); // open, but no heartbeat reply ever comes
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(probe.closeCalls >= 1, "the unanswered connection is closed");
+    assert.equal(main.__test.getControlWs(), live, "the kept connection is back in use");
+    assert.equal(live.closeCalls, 0);
+    assert.deepEqual(readCreds(), saved, "nothing was saved");
+  } finally {
+    main.__test.setControlAcceptTimeoutMs(null);
+  }
+});

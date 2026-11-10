@@ -935,6 +935,9 @@ let controlReconnectTimer = null;
 let controlReconnectAttempt = 0;
 const CONTROL_RECONNECT_BASE_MS = 2000;
 const CONTROL_RECONNECT_MAX_MS = 30_000;
+/** How long a new control connection may wait for the relay's heartbeat reply. */
+const CONTROL_ACCEPT_TIMEOUT_MS = 10_000;
+let controlAcceptTimeoutMs = CONTROL_ACCEPT_TIMEOUT_MS; // tests shorten it
 /** The relay's BAD_TOKEN close (terminal/shared/session-token.mjs RELAY_CLOSE) — auth, never transient. */
 const CONTROL_AUTH_REJECTED_CLOSE_CODE = 4006;
 
@@ -969,6 +972,28 @@ function restoreStandbyControl() {
     controlWs = standbyControlWs;
     standbyControlWs = null;
   }
+}
+
+/**
+ * A new pass was refused (or never answered) and is no longer in use. Go back
+ * to the kept connection; with none (a reconnect wait, or a connection that
+ * hadn't been accepted yet), reconnect with the saved pass when it differs
+ * from the refused one, so a forged link can't leave the Mac offline.
+ * Returns true when it carried on with something.
+ */
+function fallBackAfterRefusedToken(refusedToken) {
+  restoreStandbyControl();
+  if (controlWs) {
+    log("warn", "new control token was not accepted — keeping the existing connection");
+    return true;
+  }
+  const saved = loadControlCredentials();
+  if (saved && saved.token !== refusedToken) {
+    log("warn", "new control token was not accepted — reconnecting with the saved one");
+    void connectControl(saved.relay, saved.token);
+    return true;
+  }
+  return false;
 }
 
 function closeStandbyControl() {
@@ -1077,6 +1102,15 @@ async function connectControl(relayBase, token) {
   // auto-response, or the webSocketMessage fallback, both of which a rejected
   // leg never reaches), so the first `hb-ack` is the proof. Only then is the
   // token saved and the previous connection let go.
+  // No reply in time: drop this candidate, save nothing, carry on as before.
+  const acceptTimer = setTimeout(() => {
+    if (ws.__vcAccepted || controlWs !== ws) return;
+    log("warn", "relay did not confirm the control connection in time — dropping it", { ms: controlAcceptTimeoutMs });
+    controlWs = null;
+    try { ws.close(); } catch { /* already closing */ }
+    if (!quitting && !fallBackAfterRefusedToken(token)) scheduleControlReconnect(relayBase, token);
+  }, controlAcceptTimeoutMs);
+  acceptTimer.unref?.();
   ws.on("open", () => {
     log("info", "control connection open — checking the relay accepted it");
     try { ws.send(frames.encodeHeartbeatFrame()); } catch { /* closing; the close handler decides */ }
@@ -1087,6 +1121,7 @@ async function connectControl(relayBase, token) {
     if (frames.isHeartbeatAckFrame(text)) {
       if (controlWs === ws && !ws.__vcAccepted) {
         ws.__vcAccepted = true;
+        clearTimeout(acceptTimer);
         controlReconnectAttempt = 0;
         saveControlCredentials({ token, relay: relayBase });
         closeStandbyControl();
@@ -1112,18 +1147,13 @@ async function connectControl(relayBase, token) {
       standbyControlWs = null;
       return;
     }
+    clearTimeout(acceptTimer);
     if (controlWs !== ws) return; // superseded by a newer connect
     controlWs = null;
     if (quitting) return; // an intentional close during quit — never reconnect
-    // The relay never accepted this token, and the previous connection is
-    // still up: go back to it. Nothing was saved, so nothing changes.
-    if (!ws.__vcAccepted) {
-      restoreStandbyControl();
-      if (controlWs) {
-        log("warn", "new control token was not accepted — keeping the existing connection", { code });
-        return;
-      }
-    }
+    // The relay never accepted this token: go back to the kept connection, or
+    // reconnect with the saved pass. Nothing was saved, so nothing changes.
+    if (!ws.__vcAccepted && fallBackAfterRefusedToken(token)) return;
     // The relay REJECTED this credential (4006 BAD_TOKEN — expired/forged):
     // retrying with the same token can only be rejected again. Seen live on
     // 2 Sep 2026: once the 5-minute helperToken lapsed, this loop hammered
@@ -1488,5 +1518,6 @@ module.exports = {
     closeControlConnection,
     getControlWs: () => controlWs,
     resetOpenTerminalCooldown: () => { openTerminalCooldownUntil = 0; },
+    setControlAcceptTimeoutMs: (ms) => { controlAcceptTimeoutMs = ms ?? CONTROL_ACCEPT_TIMEOUT_MS; },
   },
 };
