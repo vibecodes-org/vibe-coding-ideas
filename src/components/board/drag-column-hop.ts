@@ -34,3 +34,28 @@ export function isLayoutEchoHop(
     pointerY === lastHop.pointerY
   );
 }
+
+/**
+ * Decide what a drag-over event does. `landingColumnId` is the column the card
+ * will sit in and drop into, and is what the board must highlight. When an
+ * echo hop is ignored that is the column the card is already in, not the
+ * column the layout reported under the pointer.
+ */
+export function resolveDragOver(
+  lastHop: ColumnHop | null,
+  currentColumnId: string,
+  overColumnId: string,
+  pointerX: number,
+  pointerY: number
+): { landingColumnId: string; hop: ColumnHop | null } {
+  if (currentColumnId === overColumnId) {
+    return { landingColumnId: currentColumnId, hop: null };
+  }
+  if (isLayoutEchoHop(lastHop, overColumnId, pointerX, pointerY)) {
+    return { landingColumnId: currentColumnId, hop: null };
+  }
+  return {
+    landingColumnId: overColumnId,
+    hop: { fromColumnId: currentColumnId, toColumnId: overColumnId, pointerX, pointerY },
+  };
+}
