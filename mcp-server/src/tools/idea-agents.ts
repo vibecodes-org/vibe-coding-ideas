@@ -6,6 +6,12 @@ import { decideStepRematch } from "../../../src/lib/role-matching";
 
 const PAGE = 1000;
 
+/**
+ * The add/remove reply waits for the re-pick, so the AI role lookup gets a short
+ * leash; on timeout the plain (non-AI) match is used and the reply stays quick.
+ */
+const REMATCH_AI_TIMEOUT_MS = 10_000;
+
 /** Read every row of a query, 1,000 at a time (reads silently stop at 1,000). */
 async function fetchAll<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
@@ -82,7 +88,8 @@ async function rematchActiveWorkflows(ctx: McpContext, ideaId: string) {
       ctx.supabase,
       ctx.ownerUserId ?? ctx.userId,
       uniqueRoles,
-      candidates
+      candidates,
+      { aiTimeoutMs: REMATCH_AI_TIMEOUT_MS }
     );
 
     const roleByBot = new Map(candidates.map((c) => [c.botId, c.role]));

@@ -23,6 +23,16 @@ function createServiceRoleClient() {
   );
 }
 
+const REMATCH_PAGE = 1000;
+type StepRow = {
+  id: string;
+  task_id: string;
+  agent_role: string | null;
+  bot_id: string | null;
+  match_tier: string | null;
+  status: string;
+};
+
 /**
  * Find all tasks in an idea with active workflow runs and rematch their steps.
  * Fire-and-forget — accepts pre-authenticated client to avoid session loss.
@@ -33,15 +43,28 @@ async function rematchActiveWorkflows(
   ideaId: string
 ) {
   try {
-    // 1. Fetch ALL pending steps with agent_role across the entire idea in one query
-    const { data: allSteps, error: stepsError } = await supabase
-      .from("task_workflow_steps")
-      .select("id, task_id, agent_role, bot_id, match_tier, status")
-      .eq("idea_id", ideaId)
-      .eq("status", "pending")
-      .not("agent_role", "is", null);
+    // 1. Fetch ALL pending steps with agent_role across the entire idea, paged
+    // (Supabase silently stops at 1,000 rows per read).
+    // Offset paging is fine here: rows are only rewritten after every page is read.
+    const allSteps: StepRow[] = [];
+    for (let from = 0; ; from += REMATCH_PAGE) {
+      const { data, error: stepsError } = await supabase
+        .from("task_workflow_steps")
+        .select("id, task_id, agent_role, bot_id, match_tier, status")
+        .eq("idea_id", ideaId)
+        .eq("status", "pending")
+        .not("agent_role", "is", null)
+        .order("id")
+        .range(from, from + REMATCH_PAGE - 1);
+      if (stepsError) {
+        logger.warn("Rematch: could not read waiting steps", { ideaId, from, error: stepsError.message });
+        return;
+      }
+      allSteps.push(...(data ?? []));
+      if (!data || data.length < REMATCH_PAGE) break;
+    }
 
-    if (stepsError || !allSteps || allSteps.length === 0) return;
+    if (allSteps.length === 0) return;
 
     // 2. Fetch the idea's agent pool once
     const { data: poolAgents } = await supabase

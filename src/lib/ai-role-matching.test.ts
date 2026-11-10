@@ -298,6 +298,37 @@ describe("matchRolesWithAiOrFuzzy", () => {
   });
 });
 
+describe("matchRolesWithAiOrFuzzy with a short AI timeout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("gives up on a slow AI lookup and falls back to the plain match", async () => {
+    mockResolveAiProvider.mockResolvedValue({
+      ok: true,
+      anthropic: mockAnthropicFn as never,
+      keyType: "byok",
+    });
+    // Behaves like a hung model call: only ends when the abort signal fires.
+    mockGenerateObject.mockImplementation(((opts: { abortSignal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        opts.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as never);
+
+    const started = Date.now();
+    const result = await matchRolesWithAiOrFuzzy(
+      fakeSupabase,
+      "user-1",
+      ["Frontend Developer Lead"],
+      testAgents,
+      { aiTimeoutMs: 50 }
+    );
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(result["Frontend Developer Lead"].botId).toBe("bot-1");
+    expect(result["Frontend Developer Lead"].tier).not.toBe("ai");
+  }, 5000);
+});
+
 describe("roleMatchSignature", () => {
   const agents = [
     { botId: "b1", name: "Atlas", role: "Full Stack Engineer" },
