@@ -2313,7 +2313,8 @@ export async function failStep(
     taskId: updated.task_id,
     tierHonored,
     personaHonored,
-    ranInOwnAgent: ranInOwnAgentValue,
+    // A rescued step goes back to waiting: its attempt is void, so no "not confirmed" alert.
+    ranInOwnAgent: actuallyRescue ? null : ranInOwnAgentValue,
     agentRole: step.agent_role,
   });
 

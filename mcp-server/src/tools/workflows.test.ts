@@ -3846,6 +3846,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     const commentsInserted: Record<string, unknown>[] = [];
     const runUpdates: Record<string, unknown>[] = [];
     const stepUpdates: Record<string, unknown>[] = [];
+    const notificationsInserted: unknown[] = [];
     let tableCalls = 0;
 
     const ctx = makeContext(((table: string) => {
@@ -3895,6 +3896,18 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
         };
         return local;
       }
+      if (table === "bot_profiles") return createChain({ system_prompt: "persona" }).chain;
+      if (table === "ideas") {
+        return createChain({ author_id: "00000000-0000-4000-a000-000000000099", author: { notification_preferences: {} } }).chain;
+      }
+      if (table === "notifications") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((row: unknown) => {
+          notificationsInserted.push(row);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
       if (table === "users") return createChain({ model_tier_map: null }).chain;
       if (table === "platform_settings") return createChain(null).chain;
       if (table === "workflow_runs") {
@@ -3923,6 +3936,7 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
       getUpdate: () => stepUpdates.find((u) => "status" in u) as Record<string, unknown>,
       getMarkerWrite: () => stepUpdates.find((u) => "model_unavailable_at" in u) as Record<string, unknown> | undefined,
       getComments: () => commentsInserted,
+      getNotifications: () => notificationsInserted,
       getRunUpdates: () => runUpdates,
     };
   }
@@ -3967,6 +3981,27 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
     expect(markerWrite).toBeDefined();
     expect(markerWrite!.model_unavailable_model).toBe("opus");
     expect(markerWrite!.model_unavailable_at).not.toBeNull();
+  });
+
+  it("a rescued review step (sent back to waiting) fires no 'not confirmed' alert, but an ordinary failure of it does (card 24936814)", async () => {
+    const reviewStep = { ...baseStep, bot_id: "37e8ffb2-3f88-49e5-9ab4-a516c1088f77", agent_role: "Code Reviewer", attested_agent_type: null };
+    const rescued = ctxFor({
+      stepData: reviewStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "pending", output: null },
+      liveMarkerModel: null,
+      stepUnavailableAt: null,
+    });
+    await failStep(rescued.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "credit balance too low", model_unavailable: true });
+    expect(rescued.getUpdate().status).toBe("pending");
+    expect(rescued.getNotifications()).toHaveLength(0);
+
+    const failed = ctxFor({
+      stepData: reviewStep,
+      updatedStep: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Test Step", status: "failed", output: "x" },
+    });
+    await failStep(failed.ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "real failure" });
+    expect(failed.getUpdate().status).toBe("failed");
+    expect(failed.getNotifications()).toHaveLength(1);
   });
 
   it("on the rescue path the saved write-up is archived as an output comment, never used as failure text", async () => {

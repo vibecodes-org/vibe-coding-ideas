@@ -101,6 +101,12 @@ describe("POST /api/workflow/attest", () => {
     expect(updates).toHaveLength(0);
   });
 
+  it("refuses a wrong work token on a running step: no write, empty 204", async () => {
+    rows = [step({ status: "in_progress" })];
+    await expectEmpty204(await POST(req(event({}, { work_token: "wt_not_the_right_one" }))));
+    expect(updates).toHaveLength(0);
+  });
+
   it("writes nothing when the step is not in progress", async () => {
     rows = [step({ status: "completed" })];
     await expectEmpty204(await POST(req(event())));
