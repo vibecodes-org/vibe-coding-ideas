@@ -154,8 +154,13 @@
  *  board agent carries (it reports which agent made a board call, so a step
  *  shows whether it ran in its own agent) and drops any other hook. An older
  *  helper drops that hook too, so its review and testing steps show "not
- *  confirmed" and raise an alert: a firm nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.29";
+ *  confirmed" and raise an alert: a firm nudge.
+ *  0.3.30 (card 9efc01c3, 10 Nov 2026): security fix. The helper only accepts
+ *  launch and open-terminal links for the account it belongs to, and another
+ *  account's link can no longer change its saved connection. Adds "Sign out
+ *  this Mac". An older helper still works, so this is a soft nudge (Nick's
+ *  choice, 10 Nov 2026): prompted to update, not forced. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.30";
 
 export type HelperVersionParts = readonly [number, number, number];
 
