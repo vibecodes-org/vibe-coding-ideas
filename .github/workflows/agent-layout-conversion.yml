@@ -47,7 +47,7 @@ concurrency:
 jobs:
   # dry-run, verify and --show only read production.
   read:
-    if: github.event.inputs.mode == 'dry-run' || github.event.inputs.mode == 'verify'
+    if: github.ref == 'refs/heads/master' && (github.event.inputs.mode == 'dry-run' || github.event.inputs.mode == 'verify')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -77,7 +77,7 @@ jobs:
   # apply and restore change production: behind the same approval gate as the
   # production migrations, and they need the confirm word.
   write:
-    if: github.event.inputs.mode == 'apply' || github.event.inputs.mode == 'restore'
+    if: github.ref == 'refs/heads/master' && (github.event.inputs.mode == 'apply' || github.event.inputs.mode == 'restore')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production

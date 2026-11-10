@@ -11,7 +11,7 @@ interface AgentInstructionsViewProps {
 export function ReadOnlyBadge({ toolAccess }: { toolAccess: ToolAccess | string | null | undefined }) {
   if (normalizeToolAccess(toolAccess) !== "read_only") return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-300">
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-300">
       <Eye className="h-3 w-3" aria-hidden="true" />
       Read-only
     </span>
@@ -22,7 +22,7 @@ export function ReadOnlyBadge({ toolAccess }: { toolAccess: ToolAccess | string 
 export function WorksAloneBadge({ helperAgents }: { helperAgents: HelperAgents | string | null | undefined }) {
   if (normalizeHelperAgents(helperAgents) !== "blocked") return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
       <User className="h-3 w-3" aria-hidden="true" />
       Works alone
     </span>

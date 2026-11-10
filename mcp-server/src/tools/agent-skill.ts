@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { parseSkillMd, inferRole } from "../lib/skill-md";
-import { helperAgentsFromFrontmatter, toolAccessFromFrontmatter } from "../../../src/lib/agent-tool-access";
+import { helperAgentsFromFrontmatter, statesToolAccess, toolAccessFromFrontmatter } from "../../../src/lib/agent-tool-access";
 
 // --- Schemas ---
 
@@ -38,8 +38,11 @@ export async function importAgentSkill(
     disallowedTools: parsed.disallowedTools,
     metadataToolAccess: parsed.metadata.tool_access,
   });
-  const statesToolAccess =
-    parsed.metadata.tool_access !== undefined || parsed.tools !== undefined || parsed.disallowedTools !== undefined;
+  const statesTools = statesToolAccess({
+    tools: parsed.tools,
+    disallowedTools: parsed.disallowedTools,
+    metadataToolAccess: parsed.metadata.tool_access,
+  });
   // Same for the helper-agents setting (card 9a308e9b): `metadata.helper_agents`,
   // a deny list naming Agent, or a tools list without Agent.
   const helperAgents = helperAgentsFromFrontmatter({
@@ -81,7 +84,7 @@ export async function importAgentSkill(
       };
       if (role) updates.role = role;
       if (parsed.metadata.bio) updates.bio = parsed.metadata.bio.slice(0, 500);
-      if (statesToolAccess) updates.tool_access = toolAccess;
+      if (statesTools) updates.tool_access = toolAccess;
       if (statesHelperAgents) updates.helper_agents = helperAgents;
 
       const { error: updateErr } = await ctx.supabase
@@ -118,11 +121,12 @@ export async function importAgentSkill(
   if (toolAccess !== "full") extras.tool_access = toolAccess;
   if (helperAgents !== "allowed") extras.helper_agents = helperAgents;
   if (Object.keys(extras).length > 0) {
-    await ctx.supabase
+    const { error: extrasErr } = await ctx.supabase
       .from("bot_profiles")
       .update(extras)
       .eq("id", botId)
       .eq("owner_id", ownerId);
+    if (extrasErr) throw new Error(extrasErr.message);
   }
 
   // Optionally allocate to idea

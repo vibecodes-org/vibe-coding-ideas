@@ -66,3 +66,19 @@ describe("WorksAloneBadge", () => {
     expect(c2).toBeEmptyDOMElement();
   });
 });
+
+describe("badges stay on one line next to a long agent name", () => {
+  it("Read-only and Works alone don't shrink or wrap", () => {
+    render(
+      <>
+        <ReadOnlyBadge toolAccess="read_only" />
+        <WorksAloneBadge helperAgents="blocked" />
+      </>,
+    );
+    for (const name of ["Read-only", "Works alone"]) {
+      const badge = screen.getByText(name);
+      expect(badge).toHaveClass("shrink-0");
+      expect(badge).toHaveClass("whitespace-nowrap");
+    }
+  });
+});

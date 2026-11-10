@@ -7,6 +7,7 @@ import {
   helperAgentsFromFrontmatter,
   normalizeHelperAgents,
   normalizeToolAccess,
+  statesToolAccess,
   toolAccessFromFrontmatter,
   type HelperAgents,
   type ToolAccess,
@@ -61,11 +62,12 @@ export async function createBot(
     if (validatedToolAccess !== "full") extras.tool_access = validatedToolAccess;
     if (validatedHelperAgents !== "allowed") extras.helper_agents = validatedHelperAgents;
 
-    await supabase
+    const { error: extrasErr } = await supabase
       .from("bot_profiles")
       .update(extras)
       .eq("id", botId)
       .eq("owner_id", user.id);
+    if (extrasErr) throw new Error(extrasErr.message);
   }
 
   revalidatePath(`/profile/${user.id}`);
@@ -540,9 +542,11 @@ export async function importAgentFromSkill(
     if (parsed.metadata.bio) updates.bio = validateBio(parsed.metadata.bio);
     // A file that says nothing about tools leaves the agent's setting alone.
     if (
-      parsed.metadata.tool_access !== undefined ||
-      parsed.tools !== undefined ||
-      parsed.disallowedTools !== undefined
+      statesToolAccess({
+        tools: parsed.tools,
+        disallowedTools: parsed.disallowedTools,
+        metadataToolAccess: parsed.metadata.tool_access,
+      })
     ) {
       updates.tool_access = toolAccess;
     }

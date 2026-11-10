@@ -135,6 +135,25 @@ export function toolAccessFromFrontmatter(input: {
 }
 
 /**
+ * Whether an agent file really states a tool setting. `metadata.tool_access`
+ * counts only when it is exactly `full` or `read_only`: a mistyped value (say
+ * `readonly`) is not a statement, so it must not reset an existing agent to
+ * full access.
+ */
+export function statesToolAccess(input: {
+  tools?: unknown;
+  disallowedTools?: unknown;
+  metadataToolAccess?: unknown;
+}): boolean {
+  return (
+    input.metadataToolAccess === "full" ||
+    input.metadataToolAccess === "read_only" ||
+    input.tools !== undefined ||
+    input.disallowedTools !== undefined
+  );
+}
+
+/**
  * Read an agent file's helper setting. An explicit `metadata.helper_agents`
  * wins; a deny list naming Agent (or the older Task) means blocked; a `tools`
  * list that omits Agent means blocked. Otherwise allowed.
