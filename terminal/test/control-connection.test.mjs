@@ -141,7 +141,8 @@ const main = helperRequire(path.join(HELPER_DIR, "main.js"));
 await new Promise((r) => setTimeout(r, 20));
 
 const SECRET = "control-connection-test-secret";
-async function freshHelperToken(sub = `owner-${Math.random().toString(36).slice(2, 8)}`) {
+// One fixed account: the helper now refuses links for any other account (card 9efc01c3).
+async function freshHelperToken(sub = "owner-fixed") {
   return mintHelperToken({ sub, secret: SECRET });
 }
 
@@ -186,7 +187,7 @@ test("connectOpenTerminalControl never touches the primary controlWs (direct fun
 
 test("a full open-terminal deep-link flow leaves an existing live primary session's socket untouched", async (t) => {
   const relay = "ws://127.0.0.1:9"; // loopback — allowed in dev (app.isPackaged === false)
-  const owner = `owner-${Math.random().toString(36).slice(2, 8)}`;
+  const owner = "owner-fixed";
   const primaryToken = await freshHelperToken(owner);
   const primary = await main.__test.connectControl(relay, primaryToken);
   primary.readyState = FakeWebSocket.OPEN;
