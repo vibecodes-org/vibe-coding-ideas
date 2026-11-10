@@ -5,6 +5,8 @@ import {
   shouldTestDrive,
   isRetryableAiError,
   buildModelWatchCard,
+  modelWatchTitlePrefix,
+  escapeLike,
   type AnthropicModel,
   type CheckResult,
 } from "./model-watch";
@@ -103,5 +105,35 @@ describe("buildModelWatchCard", () => {
     expect(c.title.length).toBeLessThan(150);
     expect(c.description).toContain(long);
     expect(c.description).toContain("Fix this before anyone switches");
+  });
+});
+
+describe("modelWatchTitlePrefix / escapeLike", () => {
+  const m = (display_name: string) => ({ id: "x", display_name, created_at: "2026-01-01T00:00:00Z" });
+  const sonnet56 = m("Claude Sonnet 5.6");
+
+  it("builds 'Sonnet <version> is out'", () => {
+    expect(modelWatchTitlePrefix(sonnet56)).toBe("Sonnet 5.6 is out");
+    expect(modelWatchTitlePrefix(m("Claude Sonnet 6"))).toBe("Sonnet 6 is out");
+  });
+  it("both card titles start with the prefix", () => {
+    const fail = buildModelWatchCard({
+      model: sonnet56,
+      results: [{ name: "short rewrite", ok: false, inputTokens: 0, outputTokens: 0, ms: 1, error: "boom" }],
+      currentModel: "a",
+    });
+    const pass = buildModelWatchCard({ model: sonnet56, results: [], currentModel: "a" });
+    expect(fail.title.startsWith("Sonnet 5.6 is out")).toBe(true);
+    expect(pass.title.startsWith("Sonnet 5.6 is out")).toBe(true);
+  });
+  it("5.6 and 6 give prefixes that cannot match each other's titles", () => {
+    const six = modelWatchTitlePrefix(m("Claude Sonnet 6"));
+    expect("Sonnet 5.6 is out and passed".startsWith(six)).toBe(false);
+  });
+  it("5.6 does not match a 5.60 title", () => {
+    expect("Sonnet 5.60 is out and passed".startsWith(modelWatchTitlePrefix(sonnet56))).toBe(false);
+  });
+  it("escapes LIKE wildcards and backslashes", () => {
+    expect(escapeLike("a%b_c\\d")).toBe("a\\%b\\_c\\\\d");
   });
 });

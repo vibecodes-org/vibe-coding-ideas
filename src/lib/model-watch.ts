@@ -81,6 +81,16 @@ export function isRetryableAiError(err: unknown): boolean {
 
 const TITLE_ERROR_MAX = 80;
 
+/** Start of every card title the job writes: `Sonnet <version> is out`. */
+export function modelWatchTitlePrefix(model: AnthropicModel): string {
+  return `Sonnet ${model.display_name.replace(/^Claude Sonnet\s*/i, "").trim()} is out`;
+}
+
+/** Escape `%`, `_` and `\` so the text matches literally inside an ILIKE pattern. */
+export function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 function shorten(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
@@ -107,14 +117,14 @@ export function buildModelWatchCard(input: {
 
   if (failed) {
     return {
-      title: `Sonnet ${model.display_name.replace(/^Claude Sonnet\s*/i, "")} is out but fails ${failed.name}: ${shorten(failed.error ?? failed.finishReason ?? "unknown", TITLE_ERROR_MAX)}`,
+      title: `${modelWatchTitlePrefix(model)} but fails ${failed.name}: ${shorten(failed.error ?? failed.finishReason ?? "unknown", TITLE_ERROR_MAX)}`,
       description:
         head +
         "Fix this before anyone switches. The daily check won't test this model again.",
     };
   }
   return {
-    title: `Sonnet ${model.display_name.replace(/^Claude Sonnet\s*/i, "")} is out and passed the app's checks: switch?`,
+    title: `${modelWatchTitlePrefix(model)} and passed the app's checks: switch?`,
     description:
       head +
       "To switch:\n" +

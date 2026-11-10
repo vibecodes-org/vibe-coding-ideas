@@ -4,6 +4,8 @@ import { logger } from "@/lib/logger";
 import { AI_MODEL, getPlatformAnthropicProvider } from "@/lib/ai-helpers";
 import {
   buildModelWatchCard,
+  escapeLike,
+  modelWatchTitlePrefix,
   pickNewestSonnet,
   shouldTestDrive,
   type AnthropicModel,
@@ -105,15 +107,19 @@ export async function GET(request: Request) {
     }
 
     // Guard against a double fire: a card for this model may already exist.
-    const { data: existing, error: dupError } = await supabase
-      .from("board_tasks")
-      .select("id")
-      .eq("idea_id", MODEL_WATCH_IDEA_ID)
-      .ilike("title", `%${candidate.display_name.replace(/^Claude Sonnet\s*/i, "")}%`)
-      .ilike("title", "Sonnet %")
-      .limit(1);
-    if (dupError) throw new Error(`Duplicate check failed: ${dupError.message}`);
-    if (existing && existing.length > 0) {
+    // Match the exact start of the title the job writes ("Sonnet <version> is out").
+    const titlePattern = `${escapeLike(modelWatchTitlePrefix(candidate))}%`;
+    const cardExists = async (): Promise<boolean> => {
+      const { data, error } = await supabase
+        .from("board_tasks")
+        .select("id")
+        .eq("idea_id", MODEL_WATCH_IDEA_ID)
+        .ilike("title", titlePattern)
+        .limit(1);
+      if (error) throw new Error(`Duplicate check failed: ${error.message}`);
+      return !!data && data.length > 0;
+    };
+    if (await cardExists()) {
       await saveState([...seen, candidate.id]);
       return json({ action: "none", reason: "card already exists" });
     }
@@ -143,6 +149,13 @@ export async function GET(request: Request) {
       .order("position", { ascending: true })
       .limit(1)
       .maybeSingle();
+
+    // Check again right before inserting: the test run takes a while, and a
+    // second run may have created the card meanwhile.
+    if (await cardExists()) {
+      await saveState([...seen, candidate.id]);
+      return json({ action: "none", reason: "card already exists" });
+    }
 
     const { error: insertError } = await supabase.from("board_tasks").insert({
       idea_id: MODEL_WATCH_IDEA_ID,

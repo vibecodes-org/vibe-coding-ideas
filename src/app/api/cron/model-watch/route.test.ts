@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   dup: [] as unknown[],
   inserted: [] as Record<string, unknown>[],
   upserts: [] as Record<string, unknown>[],
+  ilikes: [] as unknown[][],
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -22,7 +23,11 @@ vi.mock("@/lib/model-watch-checks", () => ({
 function from(table: string) {
   const q: Record<string, unknown> = {};
   const chain = () => q;
-  for (const m of ["select", "eq", "ilike", "order", "limit"]) q[m] = chain;
+  for (const m of ["select", "eq", "order", "limit"]) q[m] = chain;
+  q.ilike = (...args: unknown[]) => {
+    state.ilikes.push(args);
+    return q;
+  };
   q.maybeSingle = async () =>
     table === "platform_settings"
       ? { data: state.row, error: null }
@@ -70,6 +75,7 @@ beforeEach(() => {
   state.dup = [];
   state.inserted = [];
   state.upserts = [];
+  state.ilikes = [];
   runModelChecks.mockReset().mockResolvedValue([okResult]);
   process.env.CRON_SECRET = "s3cret";
   process.env.ANTHROPIC_API_KEY = "k";
@@ -117,6 +123,29 @@ describe("model-watch route", () => {
     state.dup = [{ id: "t1" }];
     await GET(req("Bearer s3cret"));
     expect(runModelChecks).not.toHaveBeenCalled();
+    expect(state.inserted).toHaveLength(0);
+    expect(state.upserts).toHaveLength(1);
+  });
+  it("duplicate check matches the exact title start, not a loose substring", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(models([newer]))));
+    state.row = { value: { seen: ["claude-sonnet-5-5"] } };
+    await GET(req("Bearer s3cret"));
+    expect(state.ilikes.length).toBeGreaterThan(0);
+    for (const args of state.ilikes) {
+      expect(args).toEqual(["title", "Sonnet 5.6 is out%"]);
+    }
+  });
+  it("duplicate appearing during the test run: no second card", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(models([newer]))));
+    state.row = { value: { seen: [] } };
+    let calls = 0;
+    runModelChecks.mockImplementation(async () => {
+      calls++;
+      state.dup = [{ id: "t-late" }];
+      return [okResult];
+    });
+    await GET(req("Bearer s3cret"));
+    expect(calls).toBe(1);
     expect(state.inserted).toHaveLength(0);
     expect(state.upserts).toHaveLength(1);
   });
