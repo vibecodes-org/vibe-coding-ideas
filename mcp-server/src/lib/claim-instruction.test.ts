@@ -59,6 +59,13 @@ describe("buildClaimInstruction", () => {
     expect(gated).toContain("fetch the full write-up with get_task step_ids only if they ask");
   });
 
+  it("a step's own earlier complaint is a check list, never labelled as sent back", () => {
+    const t = build({ reworkScope: null, hasOwnLastList: true });
+    expect(t).toContain("own_last_list");
+    expect(t).not.toContain("REWORK REQUIRED");
+    expect(t).not.toContain("sent back");
+  });
+
   it("words rework by scope and never says a background step failed", () => {
     const own = build({ reworkScope: "this_step" });
     expect(own).toContain("this step was sent back. Address rework_instructions.feedback first.");
