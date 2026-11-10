@@ -24,6 +24,7 @@ import { logger } from "../logger";
 import { buildSkillsSection, personaWithSkills } from "../skills-section";
 import { SYNC_MARKER } from "./session-agent-files";
 import { agentPersonaBody, disallowedToolsFor, type ToolAccess } from "../agent-tool-access";
+import { OWN_AGENT_HOOK_VERSION, buildOwnAgentHooks, type OwnAgentHooks } from "../workflow/own-agent";
 
 export type SessionAgentTier = "frontier" | "standard" | "cheap";
 
@@ -79,7 +80,10 @@ export function sessionAgentTag(
   effort: string | null,
   skillsText: string = "",
 ): string {
-  return `[vc ${personaHash(personaWithSkills(systemPrompt, skillsText))} ${model ?? "auto"} ${effort ?? "auto"}]`;
+  // The hook version is part of what the hash covers, so bumping it makes every
+  // saved agent copy read as stale once and re-sync with the new hook (card 24936814).
+  const hashed = `${personaWithSkills(systemPrompt, skillsText)}\n#own-agent-hook:${OWN_AGENT_HOOK_VERSION}`;
+  return `[vc ${personaHash(hashed)} ${model ?? "auto"} ${effort ?? "auto"}]`;
 }
 
 /**
@@ -123,6 +127,12 @@ export type ClaudeCodeAgentDefinition = {
    * the `[vc …]` tag, so it never triggers a re-sync.
    */
   autoCompactWindow?: number;
+  /**
+   * Claude only (card 24936814): one http hook that reports this agent's board
+   * calls to the app, so the step can show it ran in its own agent. The bridge
+   * keeps it only when it is exactly this shape for the app's own origin.
+   */
+  hooks?: OwnAgentHooks;
 };
 
 /** "You are Atlas, the Full Stack Engineer on this VibeCodes board." */
@@ -183,6 +193,7 @@ function definitionFor(
     ...(effort ? { effort } : {}),
     ...(disallowedTools ? { disallowedTools } : {}),
     ...(autoCompactWindow ? { autoCompactWindow } : {}),
+    ...(agent === "claude" ? { hooks: buildOwnAgentHooks() } : {}),
   };
 }
 

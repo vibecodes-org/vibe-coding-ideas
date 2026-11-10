@@ -44,7 +44,15 @@ vi.mock("./workflow-templates", () => ({
   rematchWorkflowAgentsWithClient: (...args: unknown[]) => mockRematch(...args),
 }));
 
-import { completeWorkflowStep, failWorkflowStep, removeWorkflow, updateWorkflowStep } from "./workflow";
+import {
+  approveWorkflowStep,
+  completeWorkflowStep,
+  failWorkflowStep,
+  removeWorkflow,
+  resetWorkflow,
+  retryWorkflowStep,
+  updateWorkflowStep,
+} from "./workflow";
 
 describe("completeWorkflowStep — manual UI submission", () => {
   beforeEach(() => {
@@ -237,5 +245,64 @@ describe("updateWorkflowStep - role change (card a5ecfbd6)", () => {
     await updateWorkflowStep("s1", { agent_role: "Code Reviewer", bot_id: "bot-9" });
     expect(mockUpdate.mock.calls[0][0]).toEqual({ agent_role: "Code Reviewer", bot_id: "bot-9" });
     expect(mockRematch).not.toHaveBeenCalled();
+  });
+});
+
+// Card 24936814: the work token is the key for "ran in its own agent" reports,
+// so every web path that ends or restarts a step must clear it, as the MCP
+// paths do.
+describe("web paths clear the work token (card 24936814)", () => {
+  const BOTH_CLEARED = { claim_token_hash: null, work_token_hash: null };
+  const REPORT_CLEARED = {
+    attested_agent_type: null,
+    attested_agent_id: null,
+    attested_at: null,
+    ran_in_own_agent: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSingle.mockReset(); // drop queued answers left by earlier tests
+    mockMaybeSingle.mockReset();
+  });
+
+  it("retryWorkflowStep clears both hashes and the agent report", async () => {
+    mockSingle.mockResolvedValueOnce({ data: { id: "s1", run_id: null }, error: null });
+    await retryWorkflowStep("s1");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "pending", ...BOTH_CLEARED, ...REPORT_CLEARED }));
+  });
+
+  it("resetWorkflow clears both hashes and the agent report on every step", async () => {
+    await resetWorkflow("run-1").catch(() => undefined);
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "pending", ...BOTH_CLEARED, ...REPORT_CLEARED }));
+  });
+
+  it("the send-back cascade clears both hashes and the agent report", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s2", run_id: "run-1", idea_id: "idea-1" }, error: null });
+    mockSingle.mockResolvedValueOnce({ data: { step_order: 1, position: 1 }, error: null });
+    // The cascade also filters with neq / gte / not and awaits the snapshot read.
+    const thenable: Record<string, unknown> = { then: (r: (v: unknown) => void) => r({ data: [], error: null }) };
+    for (const k of ["neq", "gte", "not"]) {
+      thenable[k] = () => thenable;
+      (chain as Record<string, unknown>)[k] = () => thenable;
+    }
+    await failWorkflowStep("s2", "redo", "s1").catch(() => undefined);
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "pending", ...BOTH_CLEARED, ...REPORT_CLEARED }));
+  });
+
+  it("fail, complete and approve clear both hashes but keep the agent report", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s1", run_id: null }, error: null });
+    await failWorkflowStep("s1", "no");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", ...BOTH_CLEARED }));
+    expect(mockUpdate.mock.calls[0][0]).not.toHaveProperty("attested_agent_type");
+
+    mockSingle.mockResolvedValueOnce({ data: { human_check_required: false, idea_id: "i" }, error: null });
+    mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s1", run_id: null }, error: null });
+    await completeWorkflowStep("s1");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "completed", ...BOTH_CLEARED }));
+
+    mockMaybeSingle.mockResolvedValueOnce({ data: { id: "s1", run_id: null }, error: null });
+    await approveWorkflowStep("s1");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "completed", ...BOTH_CLEARED }));
   });
 });

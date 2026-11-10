@@ -26,9 +26,11 @@ export const config = {
      *   `res instanceof Response` check rejected Response.json()/NextResponse.json()
      *   responses from OTHER routes sharing the function instance. Fixed by
      *   bumping mcp-handler to 1.1.0 (web-standard transport, no global mutation).)
+     * - api/workflow/attest (Claude Code's "ran in its own agent" hook posts here with
+     *   no cookies; the step's work token is the auth - card 24936814)
      * - oauth (OAuth consent pages - handle their own auth)
      * - callback (auth callback - exchanges code for session, no getUser needed)
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|api/terminal|oauth|callback|monitoring|ingest).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|api/terminal|api/workflow/attest|oauth|callback|monitoring|ingest).*)",
   ],
 };

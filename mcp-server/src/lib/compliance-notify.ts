@@ -9,12 +9,16 @@
 
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
+import { isReviewStep, type RanInOwnAgent } from "../../../src/lib/workflow/own-agent";
 
 export interface NotifyComplianceViolationArgs {
   ideaId: string;
   taskId: string;
   tierHonored: boolean | null;
   personaHonored: boolean | null;
+  /** Card 24936814: only "not_confirmed" on a review/QA/test/audit step counts. */
+  ranInOwnAgent?: RanInOwnAgent | null;
+  agentRole?: string | null;
 }
 
 interface IdeaOwnerRow {
@@ -44,7 +48,11 @@ export async function notifyComplianceViolation(
   ctx: McpContext,
   args: NotifyComplianceViolationArgs
 ): Promise<void> {
-  const violated = args.tierHonored === false || args.personaHonored === false;
+  // A review or testing step that no separate agent reported on may have been
+  // done by the main session itself, where independence is the point.
+  // "other_agent" and "cant_confirm" (Codex, no board agent named) never alert.
+  const unconfirmedReview = args.ranInOwnAgent === "not_confirmed" && isReviewStep(args.agentRole);
+  const violated = args.tierHonored === false || args.personaHonored === false || unconfirmedReview;
   if (!violated) return;
 
   try {

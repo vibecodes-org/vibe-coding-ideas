@@ -14,6 +14,18 @@ import {
 import { MODEL_TIER_VALUES } from "@/lib/constants";
 import { isStepEffort, STEP_EFFORT_LEVELS } from "@/lib/platform-model-defaults";
 
+// Both token hashes are cleared wherever a step stops being in progress, as the
+// MCP tools do. The work token is also the key for "ran in its own agent"
+// reports, so an old one must never come back to life after a web reset + start.
+const SPENT_TOKENS = { claim_token_hash: null, work_token_hash: null };
+// A reset or retry also wipes the previous attempt's agent report and result.
+const CLEARED_OWN_AGENT_REPORT = {
+  attested_agent_type: null,
+  attested_agent_id: null,
+  attested_at: null,
+  ran_in_own_agent: null,
+};
+
 // ─── Workflow Steps ───
 
 export async function createWorkflowStep(
@@ -260,6 +272,7 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   const updateFields: Record<string, unknown> = {
     status: newStatus,
     completed_at: newStatus === "completed" ? new Date().toISOString() : null,
+    ...SPENT_TOKENS,
   };
   if (output !== undefined) updateFields.output = output;
 
@@ -339,6 +352,7 @@ export async function failWorkflowStep(
       status: "failed",
       completed_at: new Date().toISOString(),
       output: output ?? null,
+      ...SPENT_TOKENS,
     })
     .eq("id", stepId)
     .in("status", ["in_progress", "awaiting_approval"])
@@ -401,6 +415,8 @@ export async function failWorkflowStep(
           completed_at: null,
           claimed_by: null,
           claim_token_hash: null, // resets invalidate outstanding claim tokens
+          work_token_hash: null, // ...and the work token, which is also the attestation key
+          ...CLEARED_OWN_AGENT_REPORT,
         })
         .eq("run_id", data.run_id)
         .gte("step_order", targetStep.step_order ?? 0);
@@ -438,6 +454,7 @@ export async function approveWorkflowStep(stepId: string, output?: string) {
   const updateFields: Record<string, unknown> = {
     status: "completed",
     completed_at: new Date().toISOString(),
+    ...SPENT_TOKENS,
   };
   // Only overwrite output if the approver explicitly provides one;
   // otherwise preserve the agent's original deliverable.
@@ -479,6 +496,8 @@ export async function retryWorkflowStep(stepId: string) {
       completed_at: null,
       claimed_by: null,
       claim_token_hash: null, // resets invalidate outstanding claim tokens
+      work_token_hash: null, // ...and the work token, which is also the attestation key
+      ...CLEARED_OWN_AGENT_REPORT,
     })
     .eq("id", stepId)
     .eq("status", "failed")
@@ -519,6 +538,8 @@ export async function resetWorkflow(runId: string) {
       completed_at: null,
       claimed_by: null,
       claim_token_hash: null, // resets invalidate outstanding claim tokens
+      work_token_hash: null, // ...and the work token, which is also the attestation key
+      ...CLEARED_OWN_AGENT_REPORT,
     })
     .eq("run_id", runId);
 

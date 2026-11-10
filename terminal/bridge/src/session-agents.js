@@ -26,6 +26,7 @@ export const SESSION_AGENTS_MAX_BYTES = 200_000;
 
 const AGENT_NAME = /^vc-[a-z0-9-]{1,80}$/;
 import { parseClaudeVersion, supportsAutocompact } from "./auto-compact.js";
+import { hooksMatchOwnAgentShape } from "../../shared/own-agent-hook.mjs";
 
 const SAFE_SETTING = /^[a-z0-9._\-]{1,40}$/i;
 // A Claude Code tool name (Edit, Write, NotebookEdit …). The only extra field a
@@ -41,16 +42,22 @@ const AGENT_WINDOW_MAX = 1_000_000;
  * Validate the endpoint's `{ agents }` body. Anything unexpected — wrong
  * shape, a name outside the `vc-` namespace, an oversized payload — returns
  * null, and the session launches exactly as it did before.
+ *
+ * `hooks` (card 24936814) is kept only when it is EXACTLY the one http hook to
+ * `<appOrigin>/api/workflow/attest`; any other shape (a command hook, another
+ * URL, extra keys) drops just the hooks and keeps the agent. With no
+ * `appOrigin` every hook is dropped.
  * @param {unknown} body
- * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string, disallowedTools?: string[], autoCompactWindow?: number }> | null}
+ * @param {string} [appOrigin] the app origin the agents were fetched from
+ * @returns {Record<string, { description: string, prompt: string, model?: string, effort?: string, disallowedTools?: string[], autoCompactWindow?: number, hooks?: object }> | null}
  */
-export function validateSessionAgents(body) {
+export function validateSessionAgents(body, appOrigin) {
   const agents = body && typeof body === "object" ? /** @type {any} */ (body).agents : null;
   if (!agents || typeof agents !== "object" || Array.isArray(agents)) return null;
   const clean = {};
   for (const [name, def] of Object.entries(agents)) {
     if (!AGENT_NAME.test(name) || !def || typeof def !== "object") return null;
-    const { description, prompt, model, effort, disallowedTools, autoCompactWindow } = /** @type {any} */ (def);
+    const { description, prompt, model, effort, disallowedTools, autoCompactWindow, hooks } = /** @type {any} */ (def);
     if (typeof description !== "string" || typeof prompt !== "string" || !prompt.trim()) return null;
     if (model !== undefined && (typeof model !== "string" || !SAFE_SETTING.test(model))) return null;
     if (effort !== undefined && (typeof effort !== "string" || !SAFE_SETTING.test(effort))) return null;
@@ -79,6 +86,7 @@ export function validateSessionAgents(body) {
       ...(effort ? { effort } : {}),
       ...(disallowedTools ? { disallowedTools } : {}),
       ...(autoCompactWindow ? { autoCompactWindow } : {}),
+      ...(hooks !== undefined && appOrigin && hooksMatchOwnAgentShape(hooks, appOrigin) ? { hooks } : {}),
     };
   }
   if (Object.keys(clean).length === 0) return null;
@@ -118,11 +126,12 @@ export function agentsForClaudeVersion(body, claudeVersionText) {
 
 /**
  * Claude Code: the validated payload as one `--agents` argv value.
+ * `appOrigin` is the app the agents came from (see validateSessionAgents).
  * @param {unknown} body
  * @returns {string | null}
  */
-export function serializeSessionAgents(body) {
-  const clean = validateSessionAgents(body);
+export function serializeSessionAgents(body, appOrigin) {
+  const clean = validateSessionAgents(body, appOrigin);
   return clean ? JSON.stringify(clean) : null;
 }
 

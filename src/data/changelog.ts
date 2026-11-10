@@ -16,6 +16,23 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    isoDate: "2026-11-10",
+    date: "10 November 2026",
+    title: "Check that each step really ran in its own agent",
+    items: [
+      {
+        type: "feature",
+        description:
+          "A finished step's window now has an Own agent line under the Persona line. Claude Code reports which agent made the step's board calls, so it reads confirmed, a different one, not confirmed, or can't confirm (Codex). A review, QA, test or audit step that comes back not confirmed sends the same alert as a step that ignored its model or persona.",
+      },
+      {
+        type: "fix",
+        description:
+          "Resetting, retrying or sending a step back on the website now cancels the old agent's pass for it, as it already did when an agent reset a step, so an old pass can no longer start working again.",
+      },
+    ],
+  },
+  {
     isoDate: "2026-10-28",
     date: "28 October 2026",
     title: "Token usage: see whether costs are going up or down",

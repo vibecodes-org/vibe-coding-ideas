@@ -582,7 +582,7 @@ function sessionAgentArgs(body) {
       return [];
     }
   }
-  const json = serializeSessionAgents(body);
+  const json = serializeSessionAgents(body, APP_URL.replace(/\/+$/, ""));
   return json ? ["--agents", json] : [];
 }
 
