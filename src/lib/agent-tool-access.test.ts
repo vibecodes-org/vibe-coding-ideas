@@ -145,3 +145,19 @@ describe("helper agents (card 9a308e9b)", () => {
     expect(helperAgentsFromFrontmatter({ metadataHelperAgents: "blocked" })).toBe("blocked");
   });
 });
+
+describe("statesToolAccess", () => {
+  it("counts only an exact full or read_only value", async () => {
+    const { statesToolAccess } = await import("./agent-tool-access");
+    expect(statesToolAccess({ metadataToolAccess: "read_only" })).toBe(true);
+    expect(statesToolAccess({ metadataToolAccess: "full" })).toBe(true);
+    expect(statesToolAccess({ metadataToolAccess: "readonly" })).toBe(false);
+    expect(statesToolAccess({ metadataToolAccess: "" })).toBe(false);
+    expect(statesToolAccess({})).toBe(false);
+  });
+  it("counts a tools list or a deny list", async () => {
+    const { statesToolAccess } = await import("./agent-tool-access");
+    expect(statesToolAccess({ tools: "Read" })).toBe(true);
+    expect(statesToolAccess({ disallowedTools: "Edit" })).toBe(true);
+  });
+});

@@ -224,7 +224,12 @@ export async function applyKit(
             if (template?.toolAccess === "read_only") extras.tool_access = "read_only";
             if (template?.helperAgents === "blocked") extras.helper_agents = "blocked";
             if (Object.keys(extras).length > 0) {
-              await supabase.from("bot_profiles").update(extras).eq("id", botUser);
+              const { error: extrasError } = await supabase
+                .from("bot_profiles")
+                .update(extras)
+                .eq("id", botUser)
+                .eq("owner_id", user.id);
+              if (extrasError) throw new Error(extrasError.message);
             }
           }
         }

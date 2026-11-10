@@ -10,8 +10,10 @@ import {
   EMPTY_INSTRUCTIONS,
   INSTRUCTION_LIMITS,
   generateInstructions,
+  convertLegacyText,
   parseInstructions,
   toGuidedFallback,
+  verifyConversion,
   type AgentInstructions,
 } from "@/lib/agent-instructions";
 
@@ -24,8 +26,21 @@ interface AgentInstructionsEditorProps {
 
 type Mode = "guided" | "raw";
 
+/**
+ * Like parseInstructions, but an old-layout text only counts when it passes the
+ * same "nothing lost" checks the bulk conversion uses. A text that fails them
+ * returns null (left exactly as it is) instead of being converted.
+ */
+function parseSafely(text: string, role?: string | null) {
+  const parsed = parseInstructions(text, role);
+  if (parsed?.source !== "legacy") return parsed;
+  const converted = convertLegacyText(text, role);
+  if (!converted || !verifyConversion(text, converted, role).ok) return null;
+  return parsed;
+}
+
 export function AgentInstructionsEditor({ value, onChange, role }: AgentInstructionsEditorProps) {
-  const initial = useRef(parseInstructions(value, role)).current;
+  const initial = useRef(parseSafely(value, role)).current;
 
   const [mode, setMode] = useState<Mode>(() => (!value.trim() || initial ? "guided" : "raw"));
   const [fields, setFields] = useState<AgentInstructions>(() => initial?.fields ?? { ...EMPTY_INSTRUCTIONS });
@@ -50,7 +65,7 @@ export function AgentInstructionsEditor({ value, onChange, role }: AgentInstruct
       setMode("raw");
       return;
     }
-    const parsed = parseInstructions(value, role);
+    const parsed = parseSafely(value, role);
     if (parsed) {
       setFields(parsed.fields);
       if (parsed.source === "legacy") {
@@ -178,7 +193,7 @@ export function AgentInstructionsEditor({ value, onChange, role }: AgentInstruct
                   Clear
                 </Button>
               </div>
-              <p className="my-1.5 text-[11px] text-amber-200/70">
+              <p className="my-1.5 text-[11px] text-amber-800 dark:text-amber-200/70">
                 The new layout leaves out general know-how a strong model already has. Move anything specific to
                 your project into &quot;Its job&quot;, then clear this box. Whatever is left here stays in the
                 agent&apos;s instructions.

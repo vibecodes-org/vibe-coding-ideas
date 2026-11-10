@@ -63,11 +63,12 @@ export async function createAdminAgent(
   if (normalizeToolAccess(toolAccess) !== "full") extras.tool_access = "read_only";
   if (normalizeHelperAgents(helperAgents) !== "allowed") extras.helper_agents = "blocked";
 
-  await supabase
+  const { error: extrasErr } = await supabase
     .from("bot_profiles")
     .update(extras)
     .eq("id", botId)
     .eq("owner_id", VIBECODES_USER_ID);
+  if (extrasErr) throw new Error(extrasErr.message);
 
   revalidatePath("/admin");
   revalidatePath("/agents");

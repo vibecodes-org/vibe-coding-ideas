@@ -227,11 +227,12 @@ export async function createBot(
   if (args.tool_access && args.tool_access !== "full") extras.tool_access = args.tool_access;
   if (args.helper_agents === "blocked") extras.helper_agents = "blocked";
   if (Object.keys(extras).length > 0) {
-    await ctx.supabase
+    const { error: extrasErr } = await ctx.supabase
       .from("bot_profiles")
       .update(extras)
       .eq("id", data)
       .eq("owner_id", ownerId);
+    if (extrasErr) throw new Error(extrasErr.message);
   }
 
   // Fetch the created profile
@@ -307,7 +308,7 @@ export async function cloneAgent(
   await copyAgentSkills(ctx.supabase, source.id, newId as string, ownerId);
 
   // Set extended fields + provenance, and atomically increment source counter
-  await Promise.all([
+  const [updateResult, rpcResult] = await Promise.all([
     ctx.supabase
       .from("bot_profiles")
       .update({
@@ -320,6 +321,9 @@ export async function cloneAgent(
       .eq("owner_id", ownerId),
     ctx.supabase.rpc("increment_times_cloned", { p_bot_id: args.bot_id }),
   ]);
+
+  if (updateResult.error) throw new Error(updateResult.error.message);
+  if (rpcResult.error) throw new Error(rpcResult.error.message);
 
   return { cloned_bot_id: newId, source_name: source.name };
 }

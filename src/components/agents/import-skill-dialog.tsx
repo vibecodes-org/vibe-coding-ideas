@@ -369,11 +369,11 @@ export function ImportSkillDialog({ open, onOpenChange }: ImportSkillDialogProps
                 </div>
               </div>
 
-              {/* Skills */}
+              {/* Tags */}
               {parsed.metadata.tags && parsed.metadata.tags.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">
-                    Skills
+                    Tags
                   </label>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {parsed.metadata.tags.map((tag) => (
