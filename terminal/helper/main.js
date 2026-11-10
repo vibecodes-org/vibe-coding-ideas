@@ -560,10 +560,14 @@ async function handleLaunchUrl(rawUrl) {
   log("info", "launching bridge for deep link", { url: redactDeepLinkToken(rawUrl) });
 
   // Every launch that carries a helperToken (re)establishes/refreshes the
-  // control connection — persisting the credential so a later LaunchAgent
-  // restart (no deep link at all) can reconnect with the SAME token.
+  // control connection. connectControl saves the credential (so a later
+  // LaunchAgent restart, with no deep link at all, can reconnect with the SAME
+  // token) only once the relay has ACCEPTED it, and keeps the working
+  // connection until then. The owner check above can't spot a hand-made token
+  // that carries the owner's own account id (the helper can't check
+  // signatures), so saving it up front let such a link replace good
+  // credentials and drop the live connection (card 9efc01c3, stage 2).
   if (parsed.helperToken) {
-    saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
     void connectControl(parsed.relay, parsed.helperToken);
   }
 
@@ -792,11 +796,9 @@ async function handleOpenTerminalUrl(rawUrl) {
   // spawning `open -a Terminal`. A bare WebSocket "open" event does NOT prove
   // acceptance — the relay accept()s a bad token too, then closes it — so
   // this function must never treat connectOpenTerminalControl's return alone
-  // as success; see open-terminal-gate.mjs for the wait itself. This is also
-  // what lets a desktop-only user (who never fired a browser `launch` link)
-  // get a control connection at all — the requirements' explicit note that
-  // this link must carry helperToken.
-  saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
+  // as success; see open-terminal-gate.mjs for the wait itself. The token is
+  // saved only AFTER that ack (below), never before, so a token the relay
+  // refuses can't replace good saved credentials (card 9efc01c3, stage 2).
 
   // RACE FIX: pre-import the gate + frame-parser modules BEFORE opening the
   // socket, so `waitForOpenTerminalAuthorization` can attach its "message"
@@ -834,7 +836,13 @@ async function handleOpenTerminalUrl(rawUrl) {
     try { controlSocket.close(); } catch { /* already closing */ }
   }
   log("info", "open-terminal request authorized by relay");
-  pinOwner(claims.sub); // the relay verified this token, so it is safe to pin on first pairing
+  // The relay verified this token, so it is now safe to save it and to pin its
+  // account on first pairing. Saving it is also what lets a desktop-only user
+  // (who never fired a browser `launch` link) get a control connection at all
+  // on the next helper start — the requirements' explicit note that this link
+  // must carry helperToken.
+  saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
+  pinOwner(claims.sub);
 
   // Pre-flight "is codex installed?" (FR-13) — checked FRESH against the
   // real PATH, never trusted from an earlier control-connection announcement
@@ -918,10 +926,18 @@ function urlFromArgv(argv) {
 // explicit "no client-side keepalive" note) — we only reconnect on an
 // unexpected drop, with simple capped backoff, never a ping loop.
 let controlWs = null;
+// The previous, relay-accepted connection, kept open while a NEW token is
+// being checked (card 9efc01c3, stage 2). If the relay refuses the new token,
+// the helper goes back to this one; once the relay accepts the new token, this
+// one is closed (the relay also retires it as a same-Mac duplicate).
+let standbyControlWs = null;
 let controlReconnectTimer = null;
 let controlReconnectAttempt = 0;
 const CONTROL_RECONNECT_BASE_MS = 2000;
 const CONTROL_RECONNECT_MAX_MS = 30_000;
+/** How long a new control connection may wait for the relay's heartbeat reply. */
+const CONTROL_ACCEPT_TIMEOUT_MS = 10_000;
+let controlAcceptTimeoutMs = CONTROL_ACCEPT_TIMEOUT_MS; // tests shorten it
 /** The relay's BAD_TOKEN close (terminal/shared/session-token.mjs RELAY_CLOSE) — auth, never transient. */
 const CONTROL_AUTH_REJECTED_CLOSE_CODE = 4006;
 
@@ -941,10 +957,49 @@ function closeControlConnection() {
     clearTimeout(controlReconnectTimer);
     controlReconnectTimer = null;
   }
+  closeStandbyControl();
   const ws = controlWs;
   controlWs = null;
   if (ws) {
     ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch { /* already closing */ }
+  }
+}
+
+/** No new connection after all: carry on with the kept one, if it is still up. */
+function restoreStandbyControl() {
+  if (!controlWs && standbyControlWs && standbyControlWs.readyState === WebSocket.OPEN) {
+    controlWs = standbyControlWs;
+    standbyControlWs = null;
+  }
+}
+
+/**
+ * A new pass was refused (or never answered) and is no longer in use. Go back
+ * to the kept connection; with none (a reconnect wait, or a connection that
+ * hadn't been accepted yet), reconnect with the saved pass when it differs
+ * from the refused one, so a forged link can't leave the Mac offline.
+ * Returns true when it carried on with something.
+ */
+function fallBackAfterRefusedToken(refusedToken) {
+  restoreStandbyControl();
+  if (controlWs) {
+    log("warn", "new control token was not accepted — keeping the existing connection");
+    return true;
+  }
+  const saved = loadControlCredentials();
+  if (saved && saved.token !== refusedToken) {
+    log("warn", "new control token was not accepted — reconnecting with the saved one");
+    void connectControl(saved.relay, saved.token);
+    return true;
+  }
+  return false;
+}
+
+function closeStandbyControl() {
+  const ws = standbyControlWs;
+  standbyControlWs = null;
+  if (ws) {
     try { ws.close(); } catch { /* already closing */ }
   }
 }
@@ -1000,16 +1055,31 @@ async function connectControl(relayBase, token) {
   if (controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
     return controlWs; // already connected with this exact credential — no-op
   }
-  closeControlConnection();
+  if (controlReconnectTimer) {
+    clearTimeout(controlReconnectTimer);
+    controlReconnectTimer = null;
+  }
+  // Keep a connection the relay has already accepted until it accepts the new
+  // token too; anything else (not yet accepted, or already dropped) is closed.
+  const previous = controlWs;
+  controlWs = null;
+  if (previous && previous.__vcAccepted && previous.readyState === WebSocket.OPEN) {
+    closeStandbyControl();
+    standbyControlWs = previous;
+  } else if (previous) {
+    try { previous.close(); } catch { /* already closing */ }
+  }
 
   const { claims, availability } = await resolveControlConnectInputs(token);
   if (!claims?.sid) {
     log("error", "control token unparseable — cannot open control connection");
+    restoreStandbyControl();
     return null;
   }
 
-  const { buildControlConnectUrl } = await controlUrlMod();
+  const [{ buildControlConnectUrl }, frames] = await Promise.all([controlUrlMod(), controlFramesMod()]);
   const machine = await machineNames();
+  if (quitting) return null;
   const url = buildControlConnectUrl({
     relayBase,
     sid: claims.sid,
@@ -1026,14 +1096,40 @@ async function connectControl(relayBase, token) {
   ws.__vcToken = token;
   controlWs = ws;
 
+  // ACCEPTANCE CHECK (card 9efc01c3, stage 2). The relay accept()s a bad
+  // token too and only then closes it (4006), so `open` proves nothing. A
+  // heartbeat is answered only on a leg the relay has accepted (its
+  // auto-response, or the webSocketMessage fallback, both of which a rejected
+  // leg never reaches), so the first `hb-ack` is the proof. Only then is the
+  // token saved and the previous connection let go.
+  // No reply in time: drop this candidate, save nothing, carry on as before.
+  const acceptTimer = setTimeout(() => {
+    if (ws.__vcAccepted || controlWs !== ws) return;
+    log("warn", "relay did not confirm the control connection in time — dropping it", { ms: controlAcceptTimeoutMs });
+    controlWs = null;
+    try { ws.close(); } catch { /* already closing */ }
+    if (!quitting && !fallBackAfterRefusedToken(token)) scheduleControlReconnect(relayBase, token);
+  }, controlAcceptTimeoutMs);
+  acceptTimer.unref?.();
   ws.on("open", () => {
-    controlReconnectAttempt = 0;
-    log("info", "control connection open");
+    log("info", "control connection open — checking the relay accepted it");
+    try { ws.send(frames.encodeHeartbeatFrame()); } catch { /* closing; the close handler decides */ }
   });
   ws.on("message", async (data, isBinary) => {
     if (isBinary) return; // the control leg never receives binary
     const text = data.toString();
-    const { parseHelperCommandFrame } = await controlFramesMod();
+    if (frames.isHeartbeatAckFrame(text)) {
+      if (controlWs === ws && !ws.__vcAccepted) {
+        ws.__vcAccepted = true;
+        clearTimeout(acceptTimer);
+        controlReconnectAttempt = 0;
+        saveControlCredentials({ token, relay: relayBase });
+        closeStandbyControl();
+        log("info", "control connection accepted by relay");
+      }
+      return;
+    }
+    const { parseHelperCommandFrame } = frames;
     const cmd = parseHelperCommandFrame(text);
     if (!cmd) return;
     log("info", "received helper command", { cmd: cmd.cmd });
@@ -1045,9 +1141,19 @@ async function connectControl(relayBase, token) {
     log("warn", "control connection error", { err: String(err?.message || err) });
   });
   ws.on("close", (code, reasonBuf) => {
+    // The old connection, kept while a new token was checked, has gone (the
+    // relay retires it once the new one is accepted). The new one carries on.
+    if (standbyControlWs === ws) {
+      standbyControlWs = null;
+      return;
+    }
+    clearTimeout(acceptTimer);
     if (controlWs !== ws) return; // superseded by a newer connect
     controlWs = null;
     if (quitting) return; // an intentional close during quit — never reconnect
+    // The relay never accepted this token: go back to the kept connection, or
+    // reconnect with the saved pass. Nothing was saved, so nothing changes.
+    if (!ws.__vcAccepted && fallBackAfterRefusedToken(token)) return;
     // The relay REJECTED this credential (4006 BAD_TOKEN — expired/forged):
     // retrying with the same token can only be rejected again. Seen live on
     // 2 Sep 2026: once the 5-minute helperToken lapsed, this loop hammered
@@ -1412,5 +1518,6 @@ module.exports = {
     closeControlConnection,
     getControlWs: () => controlWs,
     resetOpenTerminalCooldown: () => { openTerminalCooldownUntil = 0; },
+    setControlAcceptTimeoutMs: (ms) => { controlAcceptTimeoutMs = ms ?? CONTROL_ACCEPT_TIMEOUT_MS; },
   },
 };

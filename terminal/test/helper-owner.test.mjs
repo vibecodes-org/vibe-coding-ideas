@@ -50,9 +50,10 @@ class FakeWebSocket extends EventEmitter {
     this.url = url;
     this.readyState = 0;
     this.closeCalls = 0;
+    this.sent = [];
     FakeWebSocket.instances.push(this);
   }
-  send() {}
+  send(frame) { this.sent.push(String(frame)); }
   close() { this.closeCalls += 1; this.readyState = 3; }
 }
 FakeWebSocket.CONNECTING = 0;
@@ -106,16 +107,43 @@ const RELAY = "ws://127.0.0.1:9"; // loopback, allowed in dev
 const CREDS = path.join(USER_DATA, "helper-control-credentials.json");
 const OWNER = path.join(USER_DATA, "helper-owner.json");
 
-async function launchLink(sub, { withHelperToken = true } = {}) {
-  const { bridge } = await mintSessionTokens({ sub, idea: "idea-1", secret: SECRET });
+async function launchLink(sub, { withHelperToken = true, secret = SECRET, now } = {}) {
+  const { bridge } = await mintSessionTokens({ sub, idea: "idea-1", secret, now });
   const claims = JSON.parse(Buffer.from(bridge.split(".")[0], "base64url").toString());
   return buildLaunchDeepLink({
     relay: RELAY,
     session: claims.sid,
     token: bridge,
-    helperToken: withHelperToken ? await mintHelperToken({ sub, secret: SECRET }) : undefined,
+    helperToken: withHelperToken ? await mintHelperToken({ sub, secret, now }) : undefined,
     cwd: os.tmpdir(),
   });
+}
+// The relay's two answers to a new control connection. It accepts a good
+// token, and the helper's heartbeat then gets its ack. It accept()s a bad one
+// too, then closes it with 4006 at once (BAD_TOKEN).
+const settle = () => new Promise((r) => setTimeout(r, 50));
+async function relayAccepts(ws) {
+  ws.readyState = FakeWebSocket.OPEN;
+  ws.emit("open");
+  await settle();
+  ws.emit("message", Buffer.from(JSON.stringify({ t: "hb-ack" })), false);
+  await settle();
+}
+async function relayRejects(ws) {
+  ws.readyState = FakeWebSocket.OPEN;
+  ws.emit("open");
+  ws.readyState = FakeWebSocket.CLOSED;
+  ws.emit("close", 4006, Buffer.from("bad token"));
+  await settle();
+}
+const lastSocket = () => FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+/** Hand the helper a link, then return the control socket it opens for it (made asynchronously). */
+async function launchAndGetSocket(rawUrl) {
+  const n = FakeWebSocket.instances.length;
+  await main.__test.handleLaunchUrl(rawUrl);
+  for (let i = 0; i < 100 && FakeWebSocket.instances.length === n; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(FakeWebSocket.instances.length > n, "a control connection was opened for the link");
+  return lastSocket();
 }
 const readCreds = () => { try { return JSON.parse(fs.readFileSync(CREDS, "utf8")); } catch { return null; } };
 const subOf = (tok) => JSON.parse(Buffer.from(tok.split(".")[0], "base64url").toString()).sub;
@@ -136,7 +164,7 @@ test.after(() => {
 });
 
 test("a link for the helper's own account still launches and saves its credentials", async () => {
-  await main.__test.handleLaunchUrl(await launchLink("owner-A")); // first pairing pins owner-A
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-A"))); // first pairing pins owner-A
   assert.equal(forkCalls.length, 1);
   assert.equal(subOf(readCreds().token), "owner-A");
 
@@ -145,8 +173,7 @@ test("a link for the helper's own account still launches and saves its credentia
 });
 
 test("a launch link minted for a different account starts no bridge and keeps the saved credentials", async () => {
-  await main.__test.handleLaunchUrl(await launchLink("owner-A"));
-  await new Promise((r) => setTimeout(r, 50)); // let the owner's own control connect settle
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-A")));
   const before = readCreds();
   const sockets = FakeWebSocket.instances.length;
   forkCalls.length = 0;
@@ -172,7 +199,7 @@ test("an existing helper with only saved credentials (no owner file yet) treats 
 });
 
 test("a link whose session token and helper token name different accounts is refused", async () => {
-  await main.__test.handleLaunchUrl(await launchLink("owner-A"));
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-A")));
   forkCalls.length = 0;
   const { bridge } = await mintSessionTokens({ sub: "owner-A", idea: "i", secret: SECRET });
   const rawUrl = buildLaunchDeepLink({
@@ -188,8 +215,7 @@ test("a link whose session token and helper token name different accounts is ref
 });
 
 test("an open-terminal link for a different account is refused before anything is saved or opened", async () => {
-  await main.__test.handleLaunchUrl(await launchLink("owner-A"));
-  await new Promise((r) => setTimeout(r, 50)); // let the owner's own control connect settle
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-A")));
   const before = readCreds();
   const sockets = FakeWebSocket.instances.length;
 
@@ -210,7 +236,111 @@ test("forgetOwner clears the pinned account so a different account can pair", as
   await main.__test.handleLaunchUrl(await launchLink("owner-A"));
   main.__test.forgetOwner();
   forkCalls.length = 0;
-  await main.__test.handleLaunchUrl(await launchLink("owner-C"));
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-C")));
   assert.equal(forkCalls.length, 1);
   assert.equal(subOf(readCreds().token), "owner-C");
+});
+
+// ── stage 2, point A: a helper token is saved only once the relay accepts it ──
+// The helper cannot check signatures, so a hand-made link can carry the
+// owner's own account id and pass the owner check. Its helperToken must not
+// replace the saved credentials or drop the live control connection unless
+// the relay accepts it.
+
+test("a forged helper token with the owner's own account id is never saved and leaves the live connection up", async () => {
+  const live = await launchAndGetSocket(await launchLink("owner-A"));
+  await relayAccepts(live);
+  const before = readCreds();
+  assert.equal(subOf(before.token), "owner-A");
+
+  const probe = await launchAndGetSocket(await launchLink("owner-A", { secret: "not-the-relay-secret" }));
+  assert.notEqual(probe, live, "the new token is tried on its own connection");
+  assert.deepEqual(readCreds(), before, "nothing is saved before the relay has answered");
+  assert.equal(live.closeCalls, 0, "the live connection stays up while the new token is checked");
+
+  await relayRejects(probe);
+  assert.deepEqual(readCreds(), before, "a rejected token is never saved");
+  assert.equal(main.__test.getControlWs(), live, "the live connection is still the one in use");
+  assert.equal(live.closeCalls, 0, "the live connection was never closed");
+});
+
+test("the owner's genuine new helper token replaces the old one once the relay accepts it", async () => {
+  const t0 = Math.floor(Date.now() / 1000);
+  const first = await launchAndGetSocket(await launchLink("owner-A", { now: t0 }));
+  await relayAccepts(first);
+  const before = readCreds();
+
+  const second = await launchAndGetSocket(await launchLink("owner-A", { now: t0 + 5 }));
+  assert.notEqual(second, first);
+  assert.deepEqual(readCreds(), before, "not saved until the relay accepts it");
+
+  await relayAccepts(second);
+  assert.notDeepEqual(readCreds(), before, "saved once accepted");
+  assert.equal(readCreds().token, second.__vcToken);
+  assert.equal(main.__test.getControlWs(), second);
+  assert.ok(first.closeCalls >= 1, "the old connection is closed once the new one is in");
+});
+
+test("a forged open-terminal helper token with the owner's own account id is never saved", async () => {
+  await relayAccepts(await launchAndGetSocket(await launchLink("owner-A")));
+  const before = readCreds();
+  const baseline = FakeWebSocket.instances.length;
+
+  const flow = main.__test.handleOpenTerminalUrl(
+    buildOpenTerminalDeepLink({
+      relay: RELAY,
+      helperToken: await mintHelperToken({ sub: "owner-A", secret: "not-the-relay-secret" }),
+      cwd: os.tmpdir(),
+      agent: "codex",
+    }),
+  );
+  for (let i = 0; i < 100 && FakeWebSocket.instances.length === baseline; i++) await settle();
+  const handshake = lastSocket();
+  assert.ok(FakeWebSocket.instances.length > baseline, "a handshake socket was opened");
+  handshake.emit("close", 4006, Buffer.from("bad token"));
+  await flow;
+
+  assert.deepEqual(readCreds(), before, "a token the relay refused is never saved");
+});
+
+// ── stage 2 review follow-up: no kept connection to fall back to ──────────────
+// During a reconnect wait (the live connection just dropped) there is no kept
+// connection. A forged link arriving then must not leave the Mac offline: once
+// the relay refuses it, the helper reconnects with the saved, genuine pass.
+
+test("a forged helper token arriving during a reconnect wait falls back to the saved pass once refused", async () => {
+  const live = await launchAndGetSocket(await launchLink("owner-A"));
+  await relayAccepts(live);
+  const saved = readCreds();
+  live.readyState = FakeWebSocket.CLOSED;
+  live.emit("close", 1006, Buffer.from("")); // a network drop: a reconnect is now pending
+
+  const probe = await launchAndGetSocket(await launchLink("owner-A", { secret: "not-the-relay-secret" }));
+  const n = FakeWebSocket.instances.length;
+  await relayRejects(probe);
+  for (let i = 0; i < 100 && FakeWebSocket.instances.length === n; i++) await settle();
+
+  assert.ok(FakeWebSocket.instances.length > n, "the helper reconnects after the forged pass is refused");
+  const retry = lastSocket();
+  assert.equal(retry.__vcToken, saved.token, "it reconnects with the saved, genuine pass");
+  assert.deepEqual(readCreds(), saved, "the saved pass is unchanged");
+});
+
+test("a new pass the relay never answers is dropped after the wait and nothing is saved", async () => {
+  const live = await launchAndGetSocket(await launchLink("owner-A"));
+  await relayAccepts(live);
+  const saved = readCreds();
+  main.__test.setControlAcceptTimeoutMs(100);
+  try {
+    const probe = await launchAndGetSocket(await launchLink("owner-A", { now: Math.floor(Date.now() / 1000) + 7 }));
+    probe.readyState = FakeWebSocket.OPEN;
+    probe.emit("open"); // open, but no heartbeat reply ever comes
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(probe.closeCalls >= 1, "the unanswered connection is closed");
+    assert.equal(main.__test.getControlWs(), live, "the kept connection is back in use");
+    assert.equal(live.closeCalls, 0);
+    assert.deepEqual(readCreds(), saved, "nothing was saved");
+  } finally {
+    main.__test.setControlAcceptTimeoutMs(null);
+  }
 });
