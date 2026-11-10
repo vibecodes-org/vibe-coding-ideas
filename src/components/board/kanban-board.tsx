@@ -1,5 +1,6 @@
 "use client";
 
+import { useHiddenLinkedTaskNotice } from "./use-hidden-linked-task-notice";
 import { useState, useCallback, useMemo, useRef, useEffect, createContext, type RefObject } from "react";
 import {
   DndContext,
@@ -1159,31 +1160,27 @@ export function KanbanBoard({
     dragStartColumnsRef.current = null;
   }, []);
 
-  // Detect when the target task exists but is filtered out
-  useEffect(() => {
-    if (!autoOpenTaskId) return;
-    const existsInFull = columns.some((col) =>
-      col.tasks.some((t) => t.id === autoOpenTaskId)
-    );
-    if (!existsInFull) return; // Task doesn't exist on this board at all
-    const visibleInFiltered = filteredColumns.some((col) =>
-      col.tasks.some((t) => t.id === autoOpenTaskId)
-    );
-    if (!visibleInFiltered) {
-      toast.info("The linked task is hidden by current filters", {
-        action: {
-          label: "Clear filters",
-          onClick: () => {
-            setSearchQuery("");
-            setAssigneeFilter("all");
-            setLabelFilter([]);
-            setDueDateFilter("all");
-            setShowArchived(true);
-          },
-        },
-      });
-    }
-  }, [autoOpenTaskId, columns, filteredColumns]);
+  // Tell the user once when the linked task is hidden by filters, then stop
+  // trying to open it (otherwise every board change re-showed the message).
+  const handleHiddenNoticeShown = useCallback(() => {
+    setAutoOpenTaskId(undefined);
+  }, []);
+  const handleClearFiltersForLink = useCallback((taskId: string) => {
+    setSearchQuery("");
+    setAssigneeFilter("all");
+    setLabelFilter([]);
+    setDueDateFilter("all");
+    setShowArchived(true);
+    // The link was dropped when the message showed; restore it so the card opens now it is visible.
+    setAutoOpenTaskId(taskId);
+  }, []);
+  useHiddenLinkedTaskNotice({
+    autoOpenTaskId,
+    columns,
+    filteredColumns,
+    onShown: handleHiddenNoticeShown,
+    onClearFilters: handleClearFiltersForLink,
+  });
 
   const columnIds = useMemo(() => columns.map((c) => c.id), [columns]);
 
