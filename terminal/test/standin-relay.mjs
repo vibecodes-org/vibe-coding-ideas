@@ -407,6 +407,12 @@ export function startStandinRelay(opts = {}) {
     ws.on("message", (data, isBinary) => {
       if (isBinary) return; // a helper leg never sends binary
       const text = data.toString();
+      // Heartbeat echo, as the Cloudflare DO's auto-response does for every
+      // accepted leg: the helper treats this ack as proof its token was accepted.
+      if (isHeartbeatFrame(text)) {
+        try { ws.send(encodeHeartbeatAckFrame()); } catch { /* closing */ }
+        return;
+      }
       if (isGoodbyeFrame(text)) {
         const reason = parseGoodbyeReason(text);
         if (!reason) return;

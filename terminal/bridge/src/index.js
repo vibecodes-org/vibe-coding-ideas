@@ -795,7 +795,7 @@ async function main() {
   // PTY spawn still reaps.
   shutdownRef = shutdown;
 
-  let term = null; // spawned lazily: after the relay's `attached` frame (prompt launches) or the agents fetch (resumes) — R1 gate below
+  let term = null; // spawned lazily: after the relay's `attached` frame (fresh launches and resumes) — R1 gate below
   let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
@@ -1133,15 +1133,17 @@ async function main() {
     });
   }
 
-  // R1 SEQUENCING. A promptless launch spawns first only when it wants no board
-  // agents (an explicit command). A resume wants them on its command line, so it
-  // waits for the fetch below. A URL-carried prompt is different again: it must
-  // NEVER reach a child process unless the relay has accepted the owner-bound
-  // token, and the relay REJECTS bad legs by accept()ing then immediately
-  // closing (4005/4006/…) — so `open` alone proves nothing. The spawn is
-  // therefore gated on the relay's explicit `attached` control frame, sent only
-  // after authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
-  if (MODE !== "fresh" && !WANTS_AGENTS) spawnPty();
+  // R1 SEQUENCING. Only a "direct" launch (an explicit --cmd, dev/test only —
+  // a launch link can't carry one) spawns before the relay link. Everything a
+  // link can start — a fresh launch AND a resume — must NEVER reach a child
+  // process unless the relay has accepted the owner-bound token, and the relay
+  // REJECTS bad legs by accept()ing then immediately closing (4005/4006/…) —
+  // so `open` alone proves nothing. The spawn is therefore gated on the relay's
+  // explicit `attached` control frame, sent only after authorizeAttach +
+  // decideAttach pass. No frame → exit, zero spawn. (A resume used to spawn
+  // as soon as the agents fetch below finished, before the relay had checked
+  // anything — card 9efc01c3 stage 2.)
+  if (MODE === "direct" && !WANTS_AGENTS) spawnPty();
   // E2EE key collection (FR-1/FR-5): a bounded, best-effort fetch BEFORE the
   // relay connect URL is built, so a successful fetch can announce `e2ee=1`
   // on THIS attach (and every reconnect reuses the SAME key — see
@@ -1213,7 +1215,7 @@ async function main() {
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }
-  if (MODE !== "fresh" && WANTS_AGENTS && !term) spawnPty();
+  if (MODE === "direct" && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
 
   /**
@@ -1487,6 +1489,9 @@ async function main() {
         if (resumeFolderForPage) {
           try { outputBatcher.sendControl(encodeBridgeCwdFrame(resumeFolderForPage)); } catch { /* best effort */ }
         }
+        // A resume starts here, once the relay has accepted the token (no-op
+        // when it's already running, e.g. on a reconnect).
+        if (MODE === "resume") spawnPty();
         if (MODE === "fresh") {
           startFreshLaunch().catch((e) => {
             log("error", "fresh launch failed", { err: String(e?.stack || e) });
@@ -1570,11 +1575,11 @@ async function main() {
         try { ws.ping(); } catch { /* ignore */ }
       }, PING_INTERVAL_MS);
       pingTimer.unref?.();
-      // Prompt launches: arm the attach-confirmation window. An OLD relay never
-      // sends the frame → clean exit with NOTHING spawned (graceful skew; the
-      // dock's existing ~8s fallback covers the UX). Reconnects always have a live
-      // PTY (term set), so this never arms on a reconnect.
-      if (MODE === "fresh" && !term && !freshStarted && !attachTimer) {
+      // Fresh launches and resumes: arm the attach-confirmation window. An OLD
+      // relay never sends the frame → clean exit with NOTHING spawned (graceful
+      // skew; the dock's existing ~8s fallback covers the UX). Reconnects always
+      // have a live PTY (term set), so this never arms on a reconnect.
+      if ((MODE === "fresh" || MODE === "resume") && !term && !freshStarted && !attachTimer) {
         attachTimer = setTimeout(() => {
           log("error", "no attach confirmation from relay — exiting without spawning", {
             ms: ATTACH_CONFIRM_TIMEOUT_MS,

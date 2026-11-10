@@ -25,7 +25,7 @@ import { once } from "node:events";
 import WebSocket from "ws";
 import { startStandinRelay } from "./standin-relay.mjs";
 import { mintHelperToken, helperSessionId, signToken } from "../shared/session-token.mjs";
-import { isOpenTerminalAuthorizedFrame } from "../shared/control-frames.mjs";
+import { isOpenTerminalAuthorizedFrame, encodeHeartbeatFrame, isHeartbeatAckFrame } from "../shared/control-frames.mjs";
 
 const SECRET = "open-terminal-relay-auth-test-secret";
 
@@ -129,4 +129,24 @@ test("(4) an ordinary helper attach WITHOUT purpose=open-terminal never receives
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(leg.closed, null);
   assert.ok(!leg.texts.some(isOpenTerminalAuthorizedFrame), "an ordinary helper leg must not get the open-terminal ack");
+});
+
+// Card 9efc01c3, stage 2: the helper saves a control token only once its
+// heartbeat is answered, so only an ACCEPTED helper leg may get that answer.
+test("(5) a heartbeat is answered on an accepted helper leg and never on a rejected one", { timeout: 15000 }, async (t) => {
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const session = helperSessionId(owner);
+  const relay = await startStandinRelay({ port: 0, secret: SECRET });
+  t.after(() => relay.close());
+
+  const good = await openHelperLeg(relay.url, session, await mintHelperToken({ sub: owner, secret: SECRET }));
+  t.after(() => { try { good.ws.terminate(); } catch { /* */ } });
+  good.ws.send(encodeHeartbeatFrame());
+  await waitFor(() => good.texts.some(isHeartbeatAckFrame), 3000, "hb-ack on the accepted leg");
+
+  const forged = await openHelperLeg(relay.url, session, await mintHelperToken({ sub: owner, secret: "not-the-relay-secret" }));
+  try { forged.ws.send(encodeHeartbeatFrame()); } catch { /* already closing */ }
+  await waitFor(() => forged.closed, 3000, "the rejected leg to close");
+  assert.equal(forged.closed[0], 4006);
+  assert.ok(!forged.texts.some(isHeartbeatAckFrame), "a rejected leg never gets a heartbeat answer");
 });
