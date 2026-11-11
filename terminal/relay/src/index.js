@@ -94,6 +94,7 @@ import {
   parseAlwaysOnValue,
   encodeOpenTerminalAuthorizedFrame,
   sanitizeBridgeEndReason,
+  bridgeEndDetail,
   sanitizeMachineList,
 } from "../../shared/control-frames.mjs";
 
@@ -1304,7 +1305,9 @@ export class TerminalRelay {
     try {
       ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), retired: true });
     } catch { /* attachment already gone */ }
-    await this.notifyAppSessionClosed(sid, "bridge_ended");
+    // Card 4cd8270f: how the agent ended ("signal 9", "code 1"), when the
+    // bridge said — bridgeEndDetail only ever returns that short shape.
+    await this.notifyAppSessionClosed(sid, "bridge_ended", bridgeEndDetail(reason));
     await this.clearSessionState();
     const now = Date.now();
     await this.state.storage.put("tombstoneReason", reason);
@@ -1553,9 +1556,13 @@ export class TerminalRelay {
    * elsewhere as a best-effort mirror (design doc §9, R2), so a failed
    * callback here just leaves it exactly as stale as it always could be
    * before this fix, self-correcting on the next lazy reap.
+   * `detail` (card 4cd8270f, bridge_ended only): how the agent ended, e.g.
+   * "signal 9" or "code 1" (from bridgeEndDetail); omitted from the body
+   * when null so the call is byte-identical to before for every other end.
    * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|"peer_gone"|"bridge_ended"|undefined} reasonCode
+   * @param {string|null} [detail]
    */
-  async notifyAppSessionClosed(sid, reasonCode) {
+  async notifyAppSessionClosed(sid, reasonCode, detail = null) {
     const appUrl = this.env.VIBECODES_APP_URL;
     const secret = this.env.TERMINAL_SESSION_SECRET;
     if (!sid || !appUrl || !secret) {
@@ -1572,13 +1579,13 @@ export class TerminalRelay {
       const res = await fetch(`${appUrl.replace(/\/+$/, "")}/api/terminal/session/closed`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sid, reason: reasonCode }),
+        body: JSON.stringify(detail ? { sid, reason: reasonCode, detail } : { sid, reason: reasonCode }),
       });
       if (!res.ok) {
-        this.log("session-closed callback rejected by app", { sid, reasonCode, status: res.status });
+        this.log("session-closed callback rejected by app", { sid, reasonCode, detail, status: res.status });
         return;
       }
-      this.log("session-closed callback delivered", { sid, reasonCode });
+      this.log("session-closed callback delivered", { sid, reasonCode, detail });
     } catch (e) {
       this.log("session-closed callback failed", { sid, reasonCode, err: String(e) });
     }

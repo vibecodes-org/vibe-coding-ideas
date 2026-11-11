@@ -58,7 +58,7 @@ import { agentNotInstalledBanner } from "./agent-copy.js";
 import { setupCommand, setupIntroLines, setupOutroLines, checkSignedIn, setupEndReason } from "./agent-setup.js";
 import { resolveResumeFolder, resolveWorkspaceFolder, sanitizeWorkspace } from "./folder-resolve.js";
 import { cloneRepo } from "./git-clone.js";
-import { progressLine, failureLines, earlyExitLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
+import { progressLine, failureLines, earlyExitLine, agentEndLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
 import { findConversationFolder } from "./transcript-folder.js";
 import { withoutFolderRecordStep } from "../../shared/launch-prompt.mjs";
 import { resolveMachineNames } from "../../shared/machine-name.mjs";
@@ -74,6 +74,7 @@ import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
   sanitizeConversationId,
+  ptyExitReason,
 } from "../../shared/control-frames.mjs";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
@@ -636,7 +637,12 @@ function sessionAgentArgs(body) {
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
 // An agent that exits this soon after spawning "stopped straight away" (card 6b2cb8ac).
-const EARLY_EXIT_MS = 10000;
+// BRIDGE_EARLY_EXIT_MS overrides it for tests only (0 = never "early").
+const EARLY_EXIT_MS = (() => {
+  const raw = (process.env.BRIDGE_EARLY_EXIT_MS ?? "").trim();
+  const n = raw === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 10000;
+})();
 // How long a fresh launch waits for the browser leg to be paired before it
 // writes its folder progress lines (the relay drops frames with no peer).
 const PEER_WAIT_MS = 3000;
@@ -1230,7 +1236,19 @@ async function main() {
         shutdown(0, `agent-stopped-early:${code}`);
         return;
       }
-      shutdown(0, "pty-exit");
+      // Card 4cd8270f: say how the agent ended — in the close reason (the
+      // relay passes it on and the app records it) and, when it was killed or
+      // quit with an error, in one plain line on screen. A clean quit stays a
+      // bare "pty-exit".
+      if (!shuttingDown) {
+        const endLine = agentEndLine(AGENT, { exitCode, signal });
+        if (endLine) {
+          const line = Buffer.from(endLine, "utf8");
+          bytesOut += line.length;
+          outputBatcher.queueBinary(line);
+        }
+      }
+      shutdown(0, ptyExitReason({ exitCode, signal }));
     });
 
     // Apply the browser's size if it resized while the spawn was deferred.

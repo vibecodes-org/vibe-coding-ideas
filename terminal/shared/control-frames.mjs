@@ -530,7 +530,8 @@ export function isOpenTerminalAuthorizedFrame(text) {
 // Existing: pty-exit, agent-not-installed, spawn-failed, SIGTERM, SIGINT,
 // helper-gone, reconnect-exhausted, max-duration, connect-timeout,
 // attach-confirm-timeout, e2ee-verify-failed, ws-close, ws-close-terminal,
-// fatal. New: agent-stopped-early:<exitCode>, folder-missing,
+// fatal. New: agent-stopped-early:<exitCode>, pty-exit:signal-<n> and
+// pty-exit:code-<n> (card 4cd8270f, see ptyExitReason), folder-missing,
 // folder-unavailable, folder-not-allowed, folder-lookup-failed, clone-failed,
 // clone-no-access, git-missing. A close reason is plaintext metadata on the
 // relay, so it never carries a path or an error message — those go into the
@@ -549,6 +550,44 @@ export function sanitizeBridgeEndReason(raw) {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 120 || !END_REASON_RE.test(trimmed)) return "ended";
   return trimmed;
+}
+
+// HOW THE AGENT ENDED (card 4cd8270f). A normal end used to be a bare
+// `pty-exit`, so the app only ever recorded "bridge_ended" and a Mac that
+// force-killed the agent looked like a clean quit. The bridge now adds how
+// the agent stopped: `pty-exit:signal-<n>` (killed by signal n, e.g. 9 =
+// SIGKILL) or `pty-exit:code-<n>` (quit with a non-zero exit code). A clean
+// exit (code 0, no signal) stays a bare `pty-exit`. Only `[a-z0-9:-]`, so an
+// already-deployed relay's sanitizer passes it through unchanged, and
+// everything that keys on the `pty-exit` part (before the ":") still does.
+
+const PTY_EXIT_DETAIL_RE = /^pty-exit:(signal|code)-(\d{1,3})$/;
+
+/** @param {unknown} n @returns {n is number} */
+const smallPositiveInt = (n) => Number.isInteger(n) && /** @type {number} */ (n) > 0 && /** @type {number} */ (n) < 1000;
+
+/**
+ * The bridge's close reason for an agent whose PTY exited.
+ * @param {{ exitCode?: unknown, signal?: unknown }} [exit] node-pty's onExit payload
+ * @returns {string}
+ */
+export function ptyExitReason({ exitCode, signal } = {}) {
+  if (smallPositiveInt(signal)) return `pty-exit:signal-${signal}`;
+  if (smallPositiveInt(exitCode)) return `pty-exit:code-${exitCode}`;
+  return "pty-exit";
+}
+
+/**
+ * The short detail the relay sends the app alongside "bridge_ended":
+ * "signal 9" / "code 1", or null when the reason carries none. Bounded by the
+ * regex (at most "signal 999"), so it never carries anything else.
+ * @param {unknown} reason
+ * @returns {string | null}
+ */
+export function bridgeEndDetail(reason) {
+  if (typeof reason !== "string") return null;
+  const m = PTY_EXIT_DETAIL_RE.exec(reason);
+  return m ? `${m[1]} ${Number(m[2])}` : null;
 }
 
 // BRIDGE-CWD FRAME `{"t":"bridge-cwd","cwd":"/abs/path"}`, bridge → browser

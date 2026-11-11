@@ -252,6 +252,11 @@ Ending: a bridge that stops on purpose closes 1000 with a reason token
 `bridge_ended`), forwards the reason to the browser, and keeps a 10-minute
 tombstone (`TERMINAL_TOMBSTONE_MS`) so a late browser attach gets the same
 reason. Only an abnormal close (1006, errors) gets a reconnect hold (90s for old bridges, no limit for hold=1 bridges).
+An agent that ran and then was killed or quit with an error ends with
+`pty-exit:signal-<n>` / `pty-exit:code-<n>` (card 4cd8270f): the bridge writes
+one plain line into the terminal, the relay adds `detail` ("signal 9",
+"code 1") to the `bridge_ended` callback, and the app saves it in
+`terminal_sessions.end_detail`.
 
 Helper control legs are per Mac: the helper connects with `machineLabel`
 (fixed name) and `machineAliases`; `/helper/status?machines=` and

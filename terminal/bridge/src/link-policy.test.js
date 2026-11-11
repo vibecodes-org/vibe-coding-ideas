@@ -18,6 +18,8 @@ test("reconnect delay doubles and caps at 30s", () => {
 
 test("end courtesy windows", () => {
   assert.equal(endCourtesyMs("pty-exit"), 10_000);
+  assert.equal(endCourtesyMs("pty-exit:signal-9"), 10_000);
+  assert.equal(endCourtesyMs("pty-exit:code-1"), 10_000);
   assert.equal(endCourtesyMs("agent-stopped-early:1"), 10_000);
   assert.equal(endCourtesyMs("SIGTERM"), 3_000);
   assert.equal(endCourtesyMs("helper-gone"), 0);

@@ -221,6 +221,31 @@ export function endedCopy(input: EndedCopyInput): EndedCopy {
         { primary: "resume" }
       );
 
+    case "agent-force-stopped":
+      // Card 4cd8270f: something outside VibeCodes killed the agent (a
+      // signal). It did run, so Resume stays. The signal number is in the
+      // terminal line above, not here.
+      return plain(
+        "Session ended",
+        [t(`${name} was force-stopped by something else on your Mac. Your conversation is saved.`)],
+        { primary: "resume" }
+      );
+
+    case "agent-stopped-with-error":
+      // Card 4cd8270f: the agent quit with a non-zero exit code after running
+      // for a while. Same shape as the force-stopped screen.
+      return plain(
+        "Session ended",
+        [
+          t(
+            detail && /^\d+$/.test(detail)
+              ? `${name} stopped unexpectedly on your Mac (exit code ${detail}). Your conversation is saved.`
+              : `${name} stopped unexpectedly on your Mac. Your conversation is saved.`
+          ),
+        ],
+        { primary: "resume" }
+      );
+
     // ── Reasons that predate card 6b2cb8ac: today's wording, unchanged ──
     case "user":
       return plain("You ended the session", [t("Claude Code on your machine stopped. The scrollback above is kept.")]);
@@ -269,6 +294,8 @@ const ALL_REASONS: ReadonlyArray<EndedReason | null> = [
   "clone-no-access",
   "git-missing",
   "helper-closed",
+  "agent-force-stopped",
+  "agent-stopped-with-error",
 ];
 
 /** Every string the ended panel can show, across reasons, agents and known/unknown inputs (forbidden-words test). */
@@ -277,7 +304,11 @@ export function collectEndedCopy(): string[] {
   for (const reason of ALL_REASONS) {
     for (const agent of ["claude", "codex"] as const) {
       for (const known of [true, false]) {
-        for (const detail of reason === "agent-stopped-early" ? ["1", "old-helper", null] : [null]) {
+        for (const detail of reason === "agent-stopped-early"
+          ? ["1", "old-helper", null]
+          : reason === "agent-stopped-with-error" || reason === "agent-force-stopped"
+            ? ["1", "9", null]
+            : [null]) {
           const copy = endedCopy({
             reason,
             detail,

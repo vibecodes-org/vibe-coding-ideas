@@ -114,7 +114,9 @@ export function shouldShowRemoteControlEarlyExitHint(a: {
   endedAt: number;
 }): boolean {
   if (!a.launchedWithRemoteControl) return false;
-  if (a.endedReason !== "remote") return false;
+  // Card 4cd8270f: a newer helper reports a non-zero exit as its own reason
+  // (`agent-stopped-with-error`) instead of a plain "remote" end; same case.
+  if (a.endedReason !== "remote" && a.endedReason !== "agent-stopped-with-error") return false;
   if (a.firstOutputAt === null) return true;
   return a.endedAt - a.firstOutputAt <= REMOTE_CONTROL_EARLY_EXIT_MS;
 }

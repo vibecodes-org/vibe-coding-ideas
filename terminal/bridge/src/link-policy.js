@@ -21,7 +21,8 @@ export function reconnectDelay(attempt, rand = Math.random) {
  */
 export function endCourtesyMs(why) {
   if (typeof why !== "string") return 0;
-  if (why === "pty-exit" || why.startsWith("agent-stopped-early")) return 10_000;
+  // "pty-exit" alone or with how it ended ("pty-exit:signal-9", card 4cd8270f).
+  if (why === "pty-exit" || why.startsWith("pty-exit:") || why.startsWith("agent-stopped-early")) return 10_000;
   if (why === "SIGTERM" || why === "SIGINT") return 3_000;
   return 0;
 }

@@ -3222,6 +3222,9 @@ export type Database = {
         // row reads as Claude. Stamped by the mint route from the launch
         // request; never changes after the row is created.
         agent: "claude" | "codex";
+        // How the agent ended (migration 00209, card 4cd8270f): "signal 9" /
+        // "code 1" from the relay's bridge_ended callback; null otherwise.
+        end_detail: string | null;
       };
       Insert: {
         id?: string;
@@ -3240,6 +3243,7 @@ export type Database = {
         expires_at: string;
         e2ee_session_key?: string | null;
         agent?: "claude" | "codex";
+        end_detail?: string | null;
       };
       Update: {
         id?: string;
@@ -3258,6 +3262,7 @@ export type Database = {
         expires_at?: string;
         e2ee_session_key?: string | null;
         agent?: "claude" | "codex";
+        end_detail?: string | null;
       };
       Relationships: [
         {

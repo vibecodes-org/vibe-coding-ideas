@@ -266,6 +266,44 @@ test("7: the agent exits within 10s → agent-stopped-early:<code> with a plain 
   assert.match(run.getBuf(), /Claude Code stopped straight away \(exit code 1\)\./);
 });
 
+// ── 7b: card 4cd8270f — how the agent ended is recorded ──────────────────────
+// BRIDGE_EARLY_EXIT_MS=0 so these quick exits count as "ran for a while"
+// (the real window is 10s) and take the ordinary pty-exit path.
+test("7b: the agent is SIGKILLed after running → pty-exit:signal-9 with a plain line", { timeout: 60000 }, async (t) => {
+  const home = tmpDir(t, "vc-fm-home-");
+  const dir = path.join(home, "projects", "x");
+  fs.mkdirSync(dir, { recursive: true });
+  const app = await startFakeApp(null);
+  t.after(app.close);
+  const run = await launch(t, {
+    home,
+    appUrl: app.url,
+    cmd: "sh -c 'echo started; sleep 0.3; kill -9 $$'",
+    env: { BRIDGE_EARLY_EXIT_MS: "0" },
+    link: { cwd: dir, prompt: PROMPT },
+  });
+  await once(run.bridge, "exit");
+  assert.equal(run.shutdownWhy(), "pty-exit:signal-9", run.getStderr());
+  assert.match(run.getBuf(), /Claude Code was force-stopped by something else on this Mac \(signal 9\)\./);
+});
+
+test("7c: the agent quits with code 3 after running → pty-exit:code-3 with a plain line; a clean quit stays pty-exit", { timeout: 60000 }, async (t) => {
+  const home = tmpDir(t, "vc-fm-home-");
+  const dir = path.join(home, "projects", "x");
+  fs.mkdirSync(dir, { recursive: true });
+  const app = await startFakeApp(null);
+  t.after(app.close);
+  const run = await launch(t, { home, appUrl: app.url, cmd: "sh -c 'exit 3'", env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
+  await once(run.bridge, "exit");
+  assert.equal(run.shutdownWhy(), "pty-exit:code-3", run.getStderr());
+  assert.match(run.getBuf(), /Claude Code stopped with an error \(exit code 3\)\./);
+
+  const clean = await launch(t, { home, appUrl: app.url, cmd: "sh -c 'exit 0'", env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
+  await once(clean.bridge, "exit");
+  assert.equal(clean.shutdownWhy(), "pty-exit", clean.getStderr());
+  assert.doesNotMatch(clean.getBuf(), /force-stopped|stopped with an error/);
+});
+
 // ── 8: code review rework ────────────────────────────────────────────────────
 test("8a: moved project — the page's folder points at the new owner → the agent runs there, nothing is downloaded", { timeout: 90000 }, async (t) => {
   const home = tmpDir(t, "vc-fm-home-");

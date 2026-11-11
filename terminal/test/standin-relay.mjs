@@ -51,6 +51,7 @@ import {
   parseAlwaysOnValue,
   encodeOpenTerminalAuthorizedFrame,
   sanitizeBridgeEndReason,
+  bridgeEndDetail,
   sanitizeMachineList,
 } from "../shared/control-frames.mjs";
 
@@ -67,8 +68,9 @@ const NORMAL_CLOSURE = 1000;
  *   the bridge leg); tests pass false to simulate an OLD relay for skew coverage.
  *   `tombstoneMs` — how long a session the bridge ended on purpose remembers
  *   why (default 10 min; card 6b2cb8ac).
- *   `onSessionClosed(sid, reason)` — stands in for the real DO's app
- *   callback (POST /api/terminal/session/closed); called for "bridge_ended".
+ *   `onSessionClosed(sid, reason, detail)` — stands in for the real DO's app
+ *   callback (POST /api/terminal/session/closed); called for "bridge_ended",
+ *   with `detail` ("signal 9" / "code 1" / null, card 4cd8270f).
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
  */
 export function startStandinRelay(opts = {}) {
@@ -676,7 +678,8 @@ export function startStandinRelay(opts = {}) {
       sessions.delete(session);
       tombstones.set(session, { reason, at: Date.now(), owner: legs.owner });
       log("session ended", { why: "bridge-ended", reason, sid: session });
-      try { onSessionClosed(session, "bridge_ended"); } catch { /* test hook */ }
+      // Card 4cd8270f: plus how the agent ended ("signal 9"), as the DO sends `detail`.
+      try { onSessionClosed(session, "bridge_ended", bridgeEndDetail(reason)); } catch { /* test hook */ }
     };
 
     ws.on("close", (code, reasonBuf) => {

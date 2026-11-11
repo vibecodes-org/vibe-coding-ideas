@@ -975,6 +975,26 @@ describe("bridge end reasons (card 6b2cb8ac)", () => {
     const unknown = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit" });
     expect(unknown.endedReason).toBe("remote");
   });
+
+  it("card 4cd8270f: pty-exit:signal-<n> → agent-force-stopped, pty-exit:code-<n> → agent-stopped-with-error, number as detail", () => {
+    expect(parseEndedReason("pty-exit:signal-9")).toEqual({ endedReason: "agent-force-stopped", endedDetail: "9" });
+    expect(parseEndedReason("pty-exit:code-1")).toEqual({ endedReason: "agent-stopped-with-error", endedDetail: "1" });
+    expect(parseEndedReason("pty-exit:code-137")).toEqual({ endedReason: "agent-stopped-with-error", endedDetail: "137" });
+  });
+
+  it("card 4cd8270f: a bare pty-exit and malformed details stay a plain remote end", () => {
+    for (const r of ["pty-exit", "pty-exit:signal-", "pty-exit:signal-SIGKILL", "pty-exit:code-1234", "pty-exit:nope"]) {
+      expect(parseEndedReason(r), r).toEqual({ endedReason: "remote", endedDetail: null });
+    }
+  });
+
+  it("card 4cd8270f: the reducer ends the session with the new reason (no old-helper rewrite)", () => {
+    const base = run([{ type: "connect" }, { type: "session-created", sessionId: "s" }, { type: "relay-open" }]);
+    const s = terminalReducer(base, { type: "closed", code: 1000, reason: "pty-exit:signal-9", ptyBytesSeen: false, helperVersion: null });
+    expect(s.status).toBe("session-ended");
+    expect(s.endedReason).toBe("agent-force-stopped");
+    expect(s.endedDetail).toBe("9");
+  });
 });
 
 describe("bridge-cwd frame (card 6b2cb8ac) — mirrors terminal/shared/control-frames.mjs", () => {
