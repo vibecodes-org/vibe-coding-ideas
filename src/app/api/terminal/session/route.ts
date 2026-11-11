@@ -55,6 +55,7 @@ import {
 import { AUTO_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 import { isE2eeRequired } from "@/lib/terminal/e2ee-policy";
 import { normalizeAgent } from "@/lib/terminal/agent-launch";
+import { setupSessionDisplayName } from "@/lib/terminal/agent-install";
 import { validateCodexModelValue, validateReasoningEffort } from "@/lib/codex-models";
 import { getPlatformTerminalEffortDefault } from "@/lib/terminal/platform-terminal-effort";
 import { resolveTerminalClaudeEffort } from "@/lib/terminal/claude-effort";
@@ -100,6 +101,10 @@ const BodySchema = z.object({
   // literal "codex") stamps the new row's `agent` column as 'claude', same
   // as every row that predates this field — see normalizeAgent below.
   agent: z.enum(["claude", "codex"]).optional(),
+  // Card 63a60792 (in-app setup): a short session that only installs or signs
+  // in to `agent` on the user's Mac. It carries no task, no resume and no
+  // folder, gets a readable name, and is never offered to resume.
+  setup: z.enum(["install", "signin", "signin-code"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -160,8 +165,16 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId, taskId, taskTitle, displayName, resumeId, agent } = parsed.data;
+    const { ideaId, agent, setup } = parsed.data;
+    // A setup session never carries a task, a rename or a conversation to resume.
+    const taskId = setup ? undefined : parsed.data.taskId;
+    const taskTitle = setup ? undefined : parsed.data.taskTitle;
+    const resumeId = setup ? undefined : parsed.data.resumeId;
     const effectiveAgent = normalizeAgent(agent);
+    if (setup === "signin-code" && effectiveAgent !== "codex") {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const displayName = setup ? setupSessionDisplayName(effectiveAgent) : parsed.data.displayName;
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -477,7 +490,8 @@ export async function POST(req: Request) {
     // error the SAFE default is to isolate (two sessions silently sharing a
     // folder clobber each other's files — a needless worktree merely confuses).
     let isolate = false;
-    {
+    // A setup session starts no agent in a project folder, so there is nothing to isolate.
+    if (!setup) {
       const { count: siblingCount, error: siblingErr } = await supabase
         .from("terminal_sessions")
         .select("id", { count: "exact", head: true })
@@ -590,25 +604,25 @@ export async function POST(req: Request) {
       // Omitted (undefined, dropped by JSON.stringify) when nothing should be
       // passed at all — the fresh-launch call site treats absence the same
       // as an explicit undefined.
-      model: effectiveModel,
+      model: setup ? undefined : effectiveModel,
       // The resolved reasoning effort. Codex (FR-4): the effort paired with
       // `model` for a fresh launch (minimal...xhigh). Claude (task 18a37612):
       // the user's level, else the site default (low...max), for fresh AND
       // resumed launches. Undefined (dropped by JSON.stringify) when nothing
       // resolves — byte-identical response shape.
-      effort: effectiveEffort,
+      effort: setup ? undefined : effectiveEffort,
       // Task d3de150c ("Terminal mode") — set ONLY when this user's own
       // terminal_auto_accept preference is on, for a FRESH launch only; the
       // client must never thread this into a resume/resumeId deep link
       // (mirrors AC-8 for `model` above). Omitted (undefined, dropped by
       // JSON.stringify) when off — byte-identical to today's response shape.
-      permissionMode: effectivePermissionMode,
+      permissionMode: setup ? undefined : effectivePermissionMode,
       // Task 5c8969cc ("Start with Remote Control on") — set ONLY when this
       // user's terminal_remote_control preference is on and the agent isn't
       // Codex. Unlike permissionMode it applies to fresh AND resume mints:
       // the client decides per link via remoteControlForLaunch
       // (src/lib/terminal/remote-control-mode.ts). Omitted when off.
-      remoteControl: effectiveRemoteControl,
+      remoteControl: setup ? undefined : effectiveRemoteControl,
       // Concurrent-session isolation (see (c.7) above): true when another of
       // this user's sessions is already live on this board, so the client
       // fires this FRESH launch with `claude --worktree`. Always present (a

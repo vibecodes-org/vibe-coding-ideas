@@ -254,6 +254,21 @@ function isEffortSafe(v, agent) {
   return agent === "codex" ? codex : claude;
 }
 
+/** Card 63a60792 (in-app setup): the ONLY values the `setup` param may carry.
+ *  The link never carries a command, URL or folder for setup: the bridge keeps
+ *  its own fixed command table (terminal/bridge/src/agent-setup.js) and picks
+ *  from it with this word plus `agent`. `signin-code` (Codex's one-time-code
+ *  sign-in) only makes sense for Codex, so it is valid only with agent=codex.
+ *  Mirrors src/lib/terminal/deep-link.ts (drift-tested). */
+export const SETUP_ACTIONS = ["install", "signin", "signin-code"];
+
+/** @param {unknown} v @param {unknown} [agent] */
+function isSetupSafe(v, agent) {
+  if (typeof v !== "string" || !SETUP_ACTIONS.includes(v)) return false;
+  if (v === "signin-code") return agent === "codex";
+  return true;
+}
+
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&worktree=1][&remoteControl=1][&agent=codex][&prompt=…]`
  * deep link.
@@ -264,10 +279,10 @@ function isEffortSafe(v, agent) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string, setup?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, effort, permissionMode, worktree, remoteControl, agent } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, effort, permissionMode, worktree, remoteControl, agent, setup } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -313,6 +328,9 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
   // launch is byte-identical to before this field existed (AC-1).
   if (agent && isAgentSafe(agent)) parts.push(`agent=codex`);
+  // Card 63a60792: a setup session (install / sign in) — only a whitelisted word
+  // ever rides the wire, and `signin-code` only with agent=codex.
+  if (setup && isSetupSafe(setup, agent && isAgentSafe(agent) ? "codex" : "claude")) parts.push(`setup=${setup}`);
   if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -350,7 +368,7 @@ export function encodePromptParam(prompt) {
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string, worktree?: boolean, remoteControl?: boolean, agent?: string, setup?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -429,6 +447,9 @@ export function parseLaunchDeepLink(url) {
   // version-skew risk.
   const rawEffort = parsed.searchParams.get("effort");
   const effort = rawEffort && isEffortSafe(rawEffort) ? rawEffort : undefined;
+  // Card 63a60792: re-validated like agent above; an old bridge never reads it.
+  const rawSetup = parsed.searchParams.get("setup");
+  const setup = rawSetup && isSetupSafe(rawSetup, agent === "codex" ? "codex" : "claude") ? rawSetup : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -446,6 +467,7 @@ export function parseLaunchDeepLink(url) {
   if (worktree) out.worktree = worktree;
   if (remoteControl) out.remoteControl = true;
   if (agent) out.agent = agent;
+  if (setup) out.setup = setup;
   if (prompt) out.prompt = prompt;
   return out;
 }

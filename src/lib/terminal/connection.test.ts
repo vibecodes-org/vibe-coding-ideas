@@ -10,6 +10,7 @@ import {
   LINK_SILENT_AFTER_MS,
   initialConnectionState,
   terminalReducer,
+  parseEndedReason,
   mapCloseCode,
   isInputEnabled,
   isPeerDegradedFrame,
@@ -1006,5 +1007,14 @@ describe("peer-message-notice frame (card f0a13bde)", () => {
     expect(isPeerNoticeFrame("not json")).toBe(false);
     expect(isPeerNoticeFrame("")).toBe(false);
     expect(parsePeerNoticeName(JSON.stringify({ t: "peer-message-notice" }))).toBe("another session");
+  });
+});
+
+describe("parseEndedReason: setup reasons (card 63a60792)", () => {
+  it("maps the four setup reasons, with the exit code as detail for the two failures", () => {
+    expect(parseEndedReason("setup-installed")).toEqual({ endedReason: "setup-installed", endedDetail: null });
+    expect(parseEndedReason("setup-signed-in")).toEqual({ endedReason: "setup-signed-in", endedDetail: null });
+    expect(parseEndedReason("setup-install-failed:6")).toEqual({ endedReason: "setup-install-failed", endedDetail: "6" });
+    expect(parseEndedReason("setup-signin-failed:1")).toEqual({ endedReason: "setup-signin-failed", endedDetail: "1" });
   });
 });

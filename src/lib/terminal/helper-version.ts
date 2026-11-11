@@ -170,6 +170,17 @@
  *  nudge. */
 export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.32";
 
+/**
+ * The first helper whose bridge can run a setup session (card 63a60792): the
+ * maker's own installer or the agent's own sign-in, started by the launch
+ * link's `setup` word. An older helper ignores that word, so the app offers it
+ * the "install it yourself" screen (with Update now) instead of a one-click
+ * button the helper would silently drop. Set to the next helper release after
+ * 0.3.32 (cards f2a563ca and f0a13bde ship first); the release that carries
+ * this change must have this exact number, or be changed here to match.
+ */
+export const SETUP_MIN_HELPER_VERSION = "0.3.33";
+
 export type HelperVersionParts = readonly [number, number, number];
 
 /**

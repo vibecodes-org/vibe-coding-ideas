@@ -3,24 +3,17 @@
 // Pure — the banner text is unit-tested without a PTY/relay, mirroring
 // worktree-eligibility.js's `worktreeFallbackBanner`.
 //
-// Also the ONE place that names each agent's install-guide URL for THIS
-// banner, so the bridge's terminal copy can't drift from itself; the app's
-// own copy (e.g. launch-claude-code-button.tsx's CODEX_INSTALL_GUIDE_URL) is
-// a separate constant by necessity (different build graph, same posture as
-// deep-link.ts/.mjs duplicating logic across that boundary) — keep both in
-// step by hand if the URL ever changes.
+// The install-guide URLs come from agent-setup.js. The app's typed copy is
+// src/lib/terminal/agent-install.ts; a drift test pins the two.
 
 const YELLOW = "\x1b[33m";
 const RESET = "\x1b[0m";
 
-/** @type {Record<"claude"|"codex", string>} */
-export const AGENT_INSTALL_GUIDE_URLS = Object.freeze({
-  claude: "https://docs.claude.com/en/docs/claude-code",
-  codex: "https://developers.openai.com/codex/cli/",
-});
+import { AGENT_DISPLAY_NAMES, AGENT_INSTALL_GUIDE_URLS } from "./agent-setup.js";
 
-/** @type {Record<"claude"|"codex", string>} */
-const AGENT_DISPLAY_NAMES = Object.freeze({ claude: "Claude Code", codex: "Codex" });
+// The install addresses now live in agent-setup.js (card 63a60792), the one
+// table shared with the setup session; re-exported so existing importers work.
+export { AGENT_INSTALL_GUIDE_URLS };
 
 /**
  * The one visible line written into the terminal (in place of the agent's own

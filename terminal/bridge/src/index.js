@@ -52,6 +52,7 @@ import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgen
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
+import { setupCommand, setupIntroLines, setupOutroLines, checkSignedIn, setupEndReason } from "./agent-setup.js";
 import { resolveResumeFolder, resolveWorkspaceFolder, sanitizeWorkspace } from "./folder-resolve.js";
 import { cloneRepo } from "./git-clone.js";
 import { progressLine, failureLines, earlyExitLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
@@ -65,7 +66,7 @@ import {
   locateConversationFile,
   readMainWindowUsage,
 } from "./main-window-usage.js";
-import { isBinaryInstalled } from "../../shared/binary-check.mjs";
+import { isBinaryInstalled, resolveBinaryOnPath } from "../../shared/binary-check.mjs";
 import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
@@ -174,14 +175,19 @@ const AGENT = (launched?.agent || process.env.BRIDGE_AGENT) === "codex" ? "codex
 // not necessarily the row the user clicked. See RESUME_ID below for the
 // EXACT-CONVERSATION path (rework 5) every row minted after this feature
 // carries instead.
-const RESUME = !!launched?.resume;
+// Card 63a60792 (in-app setup): a setup link runs ONLY a fixed installer or the
+// agent's own sign-in (agent-setup.js's command table). It ignores the prompt,
+// resume, folder, model, effort, worktree, Remote Control and board agents, and
+// the link never carries a command: just this one whitelisted word.
+const SETUP = ["install", "signin", "signin-code"].includes(launched?.setup) ? launched.setup : null;
+const RESUME = !SETUP && !!launched?.resume;
 // Exact-conversation Resume (rework 5, card cbe60db5 — Nick's field test: a
 // Resume click landed on the wrong conversation because `--continue` doesn't
 // know which row was clicked). A validated UUID from a `resume_id=` deep
 // link (already UUID-checked by parseLaunchDeepLink; re-checked here as
 // defense in depth — same posture as HOST/sanitizeMachineLabel above) names
 // the SPECIFIC claude conversation to resume.
-const RESUME_ID_ASKED = sanitizeConversationId(launched?.resumeId);
+const RESUME_ID_ASKED = SETUP ? null : sanitizeConversationId(launched?.resumeId);
 // An explicit `--cmd`/`BRIDGE_CMD` override always wins (dev/test
 // convenience) — see resolveClaudeLaunch's doc for the full launch-shape
 // priority order and the empirical finding behind CONV.
@@ -250,8 +256,8 @@ const TRANSCRIPT_FOLDER =
 const FRESH_INSTEAD_OF_RESUME = !explicitCmd && !HINT && !!RESUME_ID_ASKED && !launched?.resume && !TRANSCRIPT_FOLDER;
 const RESUME_ID = FRESH_INSTEAD_OF_RESUME ? null : RESUME_ID_ASKED;
 const IS_RESUME = !explicitCmd && !!(RESUME || RESUME_ID);
-const LAUNCH_PROMPT = RESUME || RESUME_ID_ASKED ? "" : launched?.prompt || "";
-const MODE = IS_RESUME ? "resume" : explicitCmd && !LAUNCH_PROMPT ? "direct" : "fresh";
+const LAUNCH_PROMPT = SETUP || RESUME || RESUME_ID_ASKED ? "" : launched?.prompt || "";
+const MODE = SETUP ? "setup" : IS_RESUME ? "resume" : explicitCmd && !LAUNCH_PROMPT ? "direct" : "fresh";
 // The folder the PTY spawns in: known now for direct/resume, set after the
 // resolution for a fresh launch (spawnPty is never called before that).
 let CWD = MODE === "direct" ? HINT : null;
@@ -445,7 +451,7 @@ async function fetchE2eeSessionKey() {
 // in it. Never throws: any failure launches the session exactly as before.
 const SESSION_AGENTS_FETCH_TIMEOUT_MS = 5000;
 // Fresh AND resumed launches (a resumed conversation loses its agents).
-const WANTS_AGENTS = wantsSessionAgents({ agent: AGENT, explicitCmd });
+const WANTS_AGENTS = !SETUP && wantsSessionAgents({ agent: AGENT, explicitCmd });
 
 /** @returns {Promise<unknown>} the endpoint's body, or null */
 async function fetchSessionAgents() {
@@ -1212,7 +1218,7 @@ async function main() {
     fetchE2eeSessionKey(),
     fetchSessionAgents(),
     MODE === "fresh" ? fetchWorkspace() : Promise.resolve(null),
-    AGENT === "claude" && !explicitCmd
+    AGENT === "claude" && !explicitCmd && MODE !== "setup"
       ? probeClaudeVersion((cachedSpawnEnv = cachedSpawnEnv || resolveSpawnEnv()))
       : Promise.resolve(null),
   ]);
@@ -1384,6 +1390,104 @@ async function main() {
     prepareLaunch(res.path, { isolateHere: WORKSPACE ? WORKSPACE.otherLiveSessionsOnThisMac > 0 : true });
     spawnPty(res.path);
   }
+  /**
+   * SETUP SESSION (card 63a60792), run once on the relay's `attached` frame
+   * (the same owner-bound gate as a prompt launch): run ONLY the fixed
+   * installer or the agent's own sign-in in the PTY, show its output live, then
+   * check the result and end with a `setup-*` reason the page turns into the
+   * next screen. No folder is resolved or recorded, no transcript is tracked,
+   * and the command output is never logged (only action, agent, exit code and
+   * duration).
+   */
+  let setupStarted = false;
+  /** Runs a status command for checkSignedIn: never throws, bounded by timeoutMs. */
+  function runStatusCheck(file, checkArgs, opts) {
+    const r = require("node:child_process").spawnSync(file, checkArgs, {
+      env: opts.env,
+      timeout: opts.timeoutMs,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return { status: r.status, stdout: r.stdout, error: r.error, timedOut: r.error?.code === "ETIMEDOUT" };
+  }
+  async function startSetup() {
+    if (setupStarted || term || shuttingDown) return;
+    setupStarted = true;
+    const action = SETUP === "install" ? "install" : "signin";
+    let env = (cachedSpawnEnv = cachedSpawnEnv || resolveSpawnEnv());
+    const found = resolveBinaryOnPath(AGENT, env.PATH);
+    log("info", "setup session starting", { action: SETUP, agent: AGENT, found: !!found });
+    const finish = (code, why) => {
+      writeLines(setupOutroLines(AGENT, why));
+      shutdown(code, why);
+    };
+    if (action === "install" && found) {
+      // Already installed (e.g. from another window): skip the installer.
+      const signedIn = checkSignedIn(AGENT, { binary: found, env, run: runStatusCheck });
+      finish(0, setupEndReason({ action, found: true, signedIn, exitCode: 0 }));
+      return;
+    }
+    if (action === "signin" && !found) {
+      writeLines(agentNotInstalledBanner(AGENT));
+      shutdown(1, "agent-not-installed");
+      return;
+    }
+    const cmd = setupCommand(AGENT, SETUP, found);
+    if (!cmd) {
+      log("error", "setup command refused", { action: SETUP, agent: AGENT });
+      shutdown(1, "setup-refused");
+      return;
+    }
+    await waitForPeer(PEER_WAIT_MS);
+    if (shuttingDown) return;
+    writeLines(setupIntroLines(AGENT, SETUP));
+    log("info", "spawning setup PTY", { action: SETUP, agent: AGENT, cols: SPAWN_COLS, rows: SPAWN_ROWS });
+    let spawned;
+    try {
+      spawned = pty.spawn(cmd.file, cmd.args, {
+        name: "xterm-color",
+        cols: SPAWN_COLS,
+        rows: SPAWN_ROWS,
+        cwd: os.homedir(),
+        env,
+      });
+    } catch (e) {
+      log("error", "setup PTY spawn failed", { err: String(e?.message || e) });
+      shutdown(1, "spawn-failed");
+      return;
+    }
+    term = spawned;
+    const spawnedAt = Date.now();
+    if (process.send && process.channel) {
+      try { process.send({ type: "pty-pid", pid: spawned.pid }); } catch { /* channel already closing */ }
+    }
+    term.onData((data) => {
+      const buf = Buffer.from(data, "utf8");
+      bytesOut += buf.length;
+      outputBatcher.queueBinary(buf);
+    });
+    term.onExit(({ exitCode }) => {
+      ptyExited = true;
+      if (shuttingDown) return;
+      // A fresh install changes where the agent is: look again with a fresh PATH.
+      if (action === "install") env = cachedSpawnEnv = resolveSpawnEnv();
+      const foundNow = resolveBinaryOnPath(AGENT, env.PATH);
+      const signedIn = foundNow ? checkSignedIn(AGENT, { binary: foundNow, env, run: runStatusCheck }) : null;
+      const why = setupEndReason({ action, found: !!foundNow, signedIn, exitCode });
+      log("info", "setup session finished", {
+        action: SETUP,
+        agent: AGENT,
+        exitCode,
+        ms: Date.now() - spawnedAt,
+        reason: why,
+      });
+      finish(why.includes("failed") ? 1 : 0, why);
+    });
+    if (pendingResize) {
+      try { term.resize(pendingResize.cols, pendingResize.rows); } catch { /* best effort */ }
+      pendingResize = null;
+    }
+  }
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
@@ -1442,12 +1546,12 @@ async function main() {
         return;
       }
       // 1000 (clean end) or PEER_GONE 4004 (grace elapsed) — a deliberate session end.
-      shutdown(openedAtLeastOnce && !(MODE === "fresh" && !term) ? 0 : 1, "ws-close");
+      shutdown(openedAtLeastOnce && !((MODE === "fresh" || MODE === "setup") && !term) ? 0 : 1, "ws-close");
       return;
     }
     // Transient drop. Only worth reconnecting if there's a live child to preserve.
     if (!claudeAlive()) {
-      shutdown(openedAtLeastOnce && !(MODE === "fresh" && !term) ? 0 : 1, "ws-close");
+      shutdown(openedAtLeastOnce && !((MODE === "fresh" || MODE === "setup") && !term) ? 0 : 1, "ws-close");
       return;
     }
     const now = Date.now();
@@ -1576,6 +1680,12 @@ async function main() {
         // A resume starts here, once the relay has accepted the token (no-op
         // when it's already running, e.g. on a reconnect).
         if (MODE === "resume") spawnPty();
+        if (MODE === "setup") {
+          startSetup().catch((e) => {
+            log("error", "setup session failed", { err: String(e?.stack || e) });
+            shutdown(1, "fatal");
+          });
+        }
         if (MODE === "fresh") {
           startFreshLaunch().catch((e) => {
             log("error", "fresh launch failed", { err: String(e?.stack || e) });
@@ -1677,7 +1787,7 @@ async function main() {
       // relay never sends the frame → clean exit with NOTHING spawned (graceful
       // skew; the dock's existing ~8s fallback covers the UX). Reconnects always
       // have a live PTY (term set), so this never arms on a reconnect.
-      if ((MODE === "fresh" || MODE === "resume") && !term && !freshStarted && !attachTimer) {
+      if ((MODE === "fresh" || MODE === "resume" || MODE === "setup") && !term && !freshStarted && !setupStarted && !attachTimer) {
         attachTimer = setTimeout(() => {
           log("error", "no attach confirmation from relay — exiting without spawning", {
             ms: ATTACH_CONFIRM_TIMEOUT_MS,

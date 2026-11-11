@@ -119,6 +119,12 @@ export type EndedReason =
   | "clone-failed"
   | "clone-no-access"
   | "git-missing"
+  // Card 63a60792 (in-app setup): how a short install / sign-in session ended.
+  // `setup-install-failed` and `setup-signin-failed` carry the exit code as detail.
+  | "setup-installed"
+  | "setup-install-failed"
+  | "setup-signed-in"
+  | "setup-signin-failed"
   | "helper-closed";
 
 export interface TerminalConnectionState {
@@ -290,6 +296,10 @@ const BRIDGE_END_REASONS: ReadonlySet<string> = new Set([
   "clone-failed",
   "clone-no-access",
   "git-missing",
+  "setup-installed",
+  "setup-install-failed",
+  "setup-signed-in",
+  "setup-signin-failed",
 ]);
 
 /** Bridge end tokens that mean the helper itself went away under a running agent. */
@@ -311,7 +321,10 @@ export function parseEndedReason(reason: string | undefined): {
   if (BRIDGE_END_REASONS.has(token)) {
     return {
       endedReason: token as EndedReason,
-      endedDetail: token === "agent-stopped-early" ? detail : null,
+      endedDetail:
+        token === "agent-stopped-early" || token === "setup-install-failed" || token === "setup-signin-failed"
+          ? detail
+          : null,
     };
   }
   if (HELPER_CLOSED_REASONS.has(token)) return { endedReason: "helper-closed", endedDetail: null };

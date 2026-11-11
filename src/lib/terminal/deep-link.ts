@@ -69,6 +69,17 @@ export const MAX_LAUNCH_URL_LENGTH = 2700;
  */
 export const MAX_OPEN_TERMINAL_URL_LENGTH = 2048;
 
+/** Card 63a60792 (in-app setup): the only values the `setup` param may carry.
+ *  The link never carries a command, URL or folder: the bridge owns a fixed
+ *  command table. Mirrors terminal/shared/deep-link.mjs (drift-tested). */
+export const SETUP_ACTIONS = ["install", "signin", "signin-code"] as const;
+export type SetupAction = (typeof SETUP_ACTIONS)[number];
+
+function isSetupSafe(v: string, agent: "claude" | "codex"): v is SetupAction {
+  if (!(SETUP_ACTIONS as readonly string[]).includes(v)) return false;
+  return v === "signin-code" ? agent === "codex" : true;
+}
+
 export interface LaunchDeepLinkParams {
   /** Relay base ws URL the helper should dial out to. */
   relay: string;
@@ -210,6 +221,12 @@ export interface LaunchDeepLinkParams {
    * against an old helper, FR-7 — not this builder's concern).
    */
   agent?: "claude" | "codex";
+  /**
+   * Card 63a60792 — a setup session: the helper runs only its own fixed
+   * installer or sign-in for `agent`, with no folder, prompt or resume.
+   * `signin-code` is valid only with agent=codex. Not secret.
+   */
+  setup?: SetupAction;
 }
 
 /**
@@ -239,6 +256,7 @@ export function buildLaunchDeepLink({
   worktree,
   remoteControl,
   agent,
+  setup,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -289,6 +307,7 @@ export function buildLaunchDeepLink({
   // "claude" (the default) is OMITTED, not encoded, so an absent/"claude"
   // launch is byte-identical to before this field existed (AC-1).
   if (agent === "codex") parts.push(`agent=codex`);
+  if (setup && isSetupSafe(setup, agent === "codex" ? "codex" : "claude")) parts.push(`setup=${setup}`);
   if (prompt) parts.push(`prompt=${encodePromptParam(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
