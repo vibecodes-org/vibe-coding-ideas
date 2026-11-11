@@ -163,8 +163,12 @@
  *  0.3.31 (card 9efc01c3 stage 2, 11 Nov 2026): a link's new connection pass is
  *  saved only after the relay accepts it, so a forged link can't knock the
  *  always-on connection offline; reopened conversations wait for the relay.
- *  Same soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.31";
+ *  Same soft nudge.
+ *  0.3.32 (card f2a563ca, 11 Nov 2026): reports main-window model usage, so the
+ *  usage report covers whole sessions, not only workflow steps. An older
+ *  helper still works but its main-window usage goes unreported. Same soft
+ *  nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.32";
 
 export type HelperVersionParts = readonly [number, number, number];
 
