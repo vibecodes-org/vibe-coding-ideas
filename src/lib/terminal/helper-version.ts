@@ -173,7 +173,7 @@
  *  or Codex. An older helper still works; messaging tells the sender the
  *  helper is too old, and setup falls back to copy-the-command. Same soft
  *  nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.33";
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.34";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
