@@ -6,6 +6,7 @@ import {
   Lightbulb,
   Sparkles,
   Cog,
+  Bot,
   Check,
   Replace as ReplaceIcon,
   X,
@@ -278,6 +279,7 @@ export function WorkflowSuggestionPanel({
   }
 
   const isAi = suggestion.source === "ai";
+  const isAgent = suggestion.source === "agent";
   const recommendedTemplate = recommendedId
     ? templates?.find((t) => t.id === recommendedId)
     : undefined;
@@ -309,9 +311,20 @@ export function WorkflowSuggestionPanel({
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <h4 className="text-[13px] font-semibold text-amber-200">
-                  Suggested workflow looks mismatched
+                  {isAgent
+                    ? "An agent suggested a workflow"
+                    : "Suggested workflow looks mismatched"}
                 </h4>
-                {isAi ? (
+                {isAgent ? (
+                  <Badge
+                    variant="outline"
+                    className="gap-1 border-border bg-muted text-[10px] font-bold text-muted-foreground"
+                    title="Suggested by an agent from this board's workflows"
+                  >
+                    <Bot className="h-2.5 w-2.5" aria-hidden="true" />
+                    Agent
+                  </Badge>
+                ) : isAi ? (
                   <Badge
                     variant="outline"
                     className="gap-1 border-violet-500/40 bg-violet-500/15 text-[10px] font-bold text-violet-300"
@@ -333,11 +346,13 @@ export function WorkflowSuggestionPanel({
               </div>
               {suggestedName && (
                 <p className="mb-1.5 text-[12px] text-muted-foreground">
-                  Your label suggests the{" "}
+                  {isAgent
+                    ? "This card has no workflow. The agent picked "
+                    : "Your label suggests the "}
                   <span className="font-semibold text-foreground">
                     {suggestedName}
                   </span>{" "}
-                  workflow.
+                  {isAgent ? "from this board's workflows." : "workflow."}
                 </p>
               )}
               {suggestion.reason && (
@@ -468,8 +483,9 @@ export function WorkflowSuggestionPanel({
                 </div>
               </div>
               <p className="mt-2.5 text-[11.5px] text-muted-foreground">
-                Nothing is attached until you Keep or Replace. Remove keeps the
-                label and dismisses this suggestion.
+                {isAgent
+                  ? "Nothing is attached until you Keep or Replace. Remove leaves the card without a workflow, and the next agent works on it without one."
+                  : "Nothing is attached until you Keep or Replace. Remove keeps the label and dismisses this suggestion."}
               </p>
             </>
           )}

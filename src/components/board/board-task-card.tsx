@@ -19,6 +19,7 @@ import {
   Bell,
   Lightbulb,
   Sparkles,
+  CircleDashed,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -34,6 +35,7 @@ import { DueDateBadge } from "./due-date-badge";
 import { createClient } from "@/lib/supabase/client";
 import { TaskAutoOpenContext } from "./kanban-board";
 import { TaskCardMenu } from "./task-card-menu";
+import { shouldShowNoWorkflowBadge } from "@/lib/no-workflow-mark";
 import type { BoardTaskWithAssignee, BoardLabel, User, BoardSuggestionIndicator } from "@/types";
 
 const TaskDetailDialog = dynamic(() => import("./task-detail-dialog").then((m) => m.TaskDetailDialog), { ssr: false });
@@ -63,6 +65,8 @@ interface BoardTaskCardProps {
    * must never fake live activity (board cards 74699f20 / 61a127fb).
    */
   columnIsInProgress?: boolean;
+  /** True when this card's column is a Done column — the "No workflow" pill stays hidden there. */
+  columnIsDone?: boolean;
   /** Open workflow suggestion for this task, if any — drives the card indicator. */
   suggestion?: BoardSuggestionIndicator;
 }
@@ -181,6 +185,23 @@ function WiringWorkflowBadge() {
       <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-400" />
       Wiring workflow&hellip;
     </span>
+  );
+}
+
+/** Grey dashed pill for a card with no workflow, no suggestion. Same shape as its neighbours. */
+function NoWorkflowBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <CircleDashed className="h-2.5 w-2.5 shrink-0" />
+          <span className="truncate">No workflow</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        No workflow attached. Open the card to apply one, or an agent will suggest one when it picks it up.
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -318,6 +339,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   starterCredits = 0,
   isWiring = false,
   columnIsInProgress = false,
+  columnIsDone = false,
   suggestion,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
@@ -593,6 +615,13 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 {task.workflow_step_total > 0 && (
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}
+                {shouldShowNoWorkflowBadge({
+                  workflowStepTotal: task.workflow_step_total,
+                  hasSuggestion: !!suggestion,
+                  isArchived: !!isArchived,
+                  columnIsDone,
+                  isWiring,
+                }) && <NoWorkflowBadge />}
                 {isManuallyWorking && (() => {
                   const elapsed = now - new Date(task.working_started_at!).getTime();
                   const isStale = elapsed >= STALE_THRESHOLD_MS;

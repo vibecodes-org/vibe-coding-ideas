@@ -269,6 +269,21 @@ export default function WorkflowsPage() {
               suggestion and keep the label, without attaching anything
             </li>
           </ul>
+          <p className="mb-4 text-muted-foreground">
+            A card with no workflow at all shows a grey dashed{" "}
+            <strong className="text-foreground">&quot;No workflow&quot;</strong>{" "}
+            pill on the board (not in the Done column, and not on archived
+            cards). When an agent picks up such a card, it looks at the
+            workflows this board already has, records the best fit as a
+            suggestion (headed{" "}
+            <strong className="text-foreground">
+              &quot;An agent suggested a workflow&quot;
+            </strong>
+            ) and stops. Keep or Replace attaches the workflow; Remove means the
+            card doesn&apos;t need one, and later agents work on it without
+            asking again. On a board with no workflows, the agent says so and
+            carries on.
+          </p>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Humans only:</strong>{" "}

@@ -284,6 +284,7 @@ export const BoardColumn = memo(function BoardColumn({
                 starterCredits={starterCredits}
                 isWiring={isWiring}
                 columnIsInProgress={columnIsInProgress}
+                columnIsDone={column.is_done_column}
               />
             ))}
           </SortableContext>

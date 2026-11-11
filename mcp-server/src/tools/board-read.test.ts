@@ -106,6 +106,10 @@ function buildContext(opts: {
   stepComments?: unknown[];
   /** When true, the step-level comments query resolves with an error (soft-fail path). */
   stepCommentsError?: boolean;
+  /** Number of workflow templates on the idea (for the no-workflow instruction). Default 0. */
+  templateCount?: number;
+  /** When true, a dismissed suggestion exists for the task. */
+  dismissed?: boolean;
 }): McpContext {
   const taskChain = createChain(opts.task ?? makeTask());
   const stepsChain = createChain(opts.steps ?? []);
@@ -131,8 +135,29 @@ function buildContext(opts: {
         return activityChain;
       case "board_task_attachments":
         return attachmentsChain;
-      case "workflow_suggestions":
-        return suggestionsChain;
+      case "workflow_suggestions": {
+        // Open lookup (eq status 'suggested') vs dismissed lookup (eq status 'dismissed').
+        let status: unknown = null;
+        const proxy: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "order", "limit"]) {
+          proxy[m] = vi.fn((col?: string, val?: unknown) => {
+            if (col === "status") status = val;
+            return proxy;
+          });
+        }
+        proxy.then = (resolve: (val: unknown) => void) =>
+          status === "dismissed"
+            ? Promise.resolve({ data: opts.dismissed ? [{ id: "d1" }] : [], error: null }).then(resolve)
+            : (suggestionsChain as { then: (r: (v: unknown) => void) => unknown }).then(resolve);
+        return proxy;
+      }
+      case "workflow_templates": {
+        const tc: Record<string, unknown> = {};
+        for (const m of ["select", "eq"]) tc[m] = vi.fn(() => tc);
+        tc.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ count: opts.templateCount ?? 0, data: null, error: null }).then(resolve);
+        return tc;
+      }
       case "workflow_step_comments":
         return stepCommentsChain;
       default:
@@ -370,6 +395,34 @@ describe("getTask — workflow_instruction", () => {
 
     expect(result.workflow_instruction).not.toBeNull();
     expect(result.workflow_instruction).not.toContain("human approval");
+  });
+
+  it("asks the agent to suggest a workflow when there are none and the board has templates", async () => {
+    const ctx = buildContext({ steps: [], templateCount: 2 });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).toContain("suggest_workflow");
+    expect(result.workflow_instruction).toContain("Do NOT begin work");
+    expect(result.workflow_instruction).not.toContain("assignee_id");
+  });
+
+  it("does not ask again after a suggestion was dismissed", async () => {
+    const ctx = buildContext({ steps: [], templateCount: 2, dismissed: true });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).not.toContain("suggest_workflow");
+    expect(result.workflow_instruction).toContain("assignee_id");
+  });
+
+  it("says the board has no workflows to suggest, then keeps the self-assign instruction", async () => {
+    const ctx = buildContext({ steps: [], templateCount: 0 });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).toContain("This board has no workflows to suggest.");
+    expect(result.workflow_instruction).toContain("assignee_id");
   });
 
   it("includes self-assign instruction when no workflow steps exist", async () => {

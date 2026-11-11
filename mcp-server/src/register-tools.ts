@@ -164,6 +164,8 @@ import {
   resyncWorkflowTemplateSchema,
   applyWorkflowTemplate,
   applyWorkflowTemplateSchema,
+  suggestWorkflow,
+  suggestWorkflowSchema,
   claimNextStep,
   claimNextStepSchema,
   completeStep,
@@ -1244,6 +1246,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await resyncWorkflowTemplate(ctx, resyncWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "suggest_workflow",
+    "Suggest one of this board's existing workflow templates for a task that has no workflow. Records an open suggestion for a human to Keep / Replace / Remove; it does NOT attach anything. Use only when get_task or claim_next_step tells you the task has no workflow.",
+    suggestWorkflowSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await suggestWorkflow(ctx, suggestWorkflowSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
