@@ -4,9 +4,11 @@ import {
   composeSuggestionsByTask,
   composeCoverImageUrls,
   fetchTaskLabelsByLabelIds,
+  fetchBoardRefreshData,
 } from "./board-refetch";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import { IN_FILTER_CHUNK_SIZE } from "@/lib/db-helpers";
+import { cappedSupabase } from "@/test/capped-supabase";
 import type { BoardColumn, BoardTask } from "@/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
@@ -201,7 +203,8 @@ describe("fetchTaskLabelsByLabelIds", () => {
       select: vi.fn((_cols: string) => ({
         in: vi.fn((_col: string, ids: string[]) => {
           inCalls.push(ids);
-          return Promise.resolve(handler(ids));
+          // Paged read: .in().order().range() resolves to the handler's answer.
+          return { order: () => ({ range: () => Promise.resolve(handler(ids)) }) };
         }),
       })),
     }));
@@ -261,5 +264,36 @@ describe("fetchTaskLabelsByLabelIds", () => {
     });
     const result = await fetchTaskLabelsByLabelIds(client, overLimit);
     expect(result).toEqual({ data: null, error: { message: "boom" } });
+  });
+});
+
+describe("board with more than 1,000 cards (database returns 1,000 rows per request)", () => {
+  const COLUMN = { id: "col-1", idea_id: "idea-1", title: "Backlog", position: 0, is_done_column: false, created_at: "2026-01-01T00:00:00Z" };
+  const tasks = Array.from({ length: 1045 }, (_, i) => ({
+    id: `task-${String(i).padStart(5, "0")}`,
+    idea_id: "idea-1",
+    column_id: "col-1",
+    position: i,
+    archived: i % 2 === 0,
+    cover_image_path: null,
+    assignee: null,
+  }));
+
+  it("fetchBoardRefreshData returns every card, not the first 1,000", async () => {
+    const { client } = cappedSupabase({
+      board_columns: [COLUMN],
+      board_tasks: tasks,
+      board_labels: [],
+      workflow_suggestions: [],
+    });
+    const data = await fetchBoardRefreshData(client, "idea-1");
+    expect(data?.columns[0].tasks).toHaveLength(1045);
+  });
+
+  it("fetchTaskLabelsByLabelIds returns every label row, not the first 1,000 per chunk", async () => {
+    const labelRows = Array.from({ length: 1045 }, (_, i) => ({ id: `row-${String(i).padStart(5, "0")}`, task_id: `task-${i}`, label_id: "label-1" }));
+    const { client } = cappedSupabase({ board_task_labels: labelRows });
+    const result = await fetchTaskLabelsByLabelIds(client, ["label-1"]);
+    expect(result.data).toHaveLength(1045);
   });
 });

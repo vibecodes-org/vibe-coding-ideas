@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
 import { pickCurrentRunKey, pickNextOpenStep } from "../../../src/lib/workflow-current-run";
+import { fetchAllRows } from "../../../src/lib/db-helpers";
 import type { McpContext } from "../context";
 import {
   groupStepComments,
@@ -133,25 +134,28 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
     columns = newCols;
   }
 
-  // Fetch tasks
-  let taskQuery = ctx.supabase
-    .from("board_tasks")
-    .select(
-      "*, users!board_tasks_assignee_id_fkey(id, full_name), board_task_labels(label_id, board_labels(id, name, color))"
-    )
-    .eq("idea_id", params.idea_id)
-    // Secondary tiebreaker: two tasks can share a position (e.g. both moved
-    // to the same column's top in quick succession before move_task's
-    // gap-based placement existed), and a bare .order("position") then
-    // resolves ties to an undefined order. .order("id") makes it deterministic.
-    .order("position")
-    .order("id");
+  // Fetch tasks. Paged: the database returns at most 1,000 rows per request with
+  // no error, so a board past 1,000 cards (archived included) silently lost the rest.
+  const { data: tasks, error: taskError } = await fetchAllRows((from, to) => {
+    let taskQuery = ctx.supabase
+      .from("board_tasks")
+      .select(
+        "*, users!board_tasks_assignee_id_fkey(id, full_name), board_task_labels(label_id, board_labels(id, name, color))"
+      )
+      .eq("idea_id", params.idea_id)
+      // Secondary tiebreaker: two tasks can share a position (e.g. both moved
+      // to the same column's top in quick succession before move_task's
+      // gap-based placement existed), and a bare .order("position") then
+      // resolves ties to an undefined order. .order("id") makes it deterministic
+      // (and keeps pages from repeating or skipping rows).
+      .order("position")
+      .order("id");
 
-  if (!params.include_archived) {
-    taskQuery = taskQuery.eq("archived", false);
-  }
-
-  const { data: tasks, error: taskError } = await taskQuery;
+    if (!params.include_archived) {
+      taskQuery = taskQuery.eq("archived", false);
+    }
+    return taskQuery.range(from, to);
+  });
   if (taskError) throw new Error(`Failed to get tasks: ${taskError.message}`);
 
   // Fetch labels

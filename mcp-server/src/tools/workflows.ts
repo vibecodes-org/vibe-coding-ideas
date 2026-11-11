@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchAllRows } from "../../../src/lib/db-helpers";
 import { logger } from "../../../src/lib/logger";
 import { tierMismatchSentence } from "../../../src/lib/constants";
 import {
@@ -3074,11 +3075,16 @@ export async function applyAutoRuleRetroactively(
 
   // Find all non-archived tasks with the matching label. Scope by idea via the
   // inner-join filter so the lookup can't grow unbounded with global label use.
-  const { data: labelledTasks, error: tasksError } = await ctx.supabase
-    .from("board_task_labels")
-    .select("task_id, board_tasks!inner(id, is_archived)")
-    .eq("label_id", rule.label_id)
-    .eq("board_tasks.idea_id", rule.idea_id);
+  // Paged: one label can sit on more than 1,000 cards, and a bare select stops there silently.
+  const { data: labelledTasks, error: tasksError } = await fetchAllRows((from, to) =>
+    ctx.supabase
+      .from("board_task_labels")
+      .select("task_id, board_tasks!inner(id, is_archived)")
+      .eq("label_id", rule.label_id)
+      .eq("board_tasks.idea_id", rule.idea_id)
+      .order("task_id")
+      .range(from, to)
+  );
 
   if (tasksError) throw new Error(`Failed to find labelled tasks: ${tasksError.message}`);
 

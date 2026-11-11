@@ -11,7 +11,7 @@ import {
 import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits, resolveSuggestionOnApply } from "@/lib/workflow-helpers";
 import { decideStepRematch } from "@/lib/role-matching";
-import { chunkIds } from "@/lib/db-helpers";
+import { chunkIds, fetchAllRows } from "@/lib/db-helpers";
 
 // ─── Templates ───
 
@@ -701,11 +701,16 @@ export async function deleteWorkflowAutoRule(
   if (options?.removeRelatedWorkflows && rule) {
     // Find all tasks that have this label — scope by idea via an inner-join
     // filter so the lookup can't grow unbounded with global label usage.
-    const { data: labeledTasks } = await supabase
-      .from("board_task_labels")
-      .select("task_id, board_tasks!inner(idea_id)")
-      .eq("label_id", rule.label_id)
-      .eq("board_tasks.idea_id", rule.idea_id);
+    // Paged: one label can sit on more than 1,000 cards, and a bare select stops there silently.
+    const { data: labeledTasks } = await fetchAllRows((from, to) =>
+      supabase
+        .from("board_task_labels")
+        .select("task_id, board_tasks!inner(idea_id)")
+        .eq("label_id", rule.label_id)
+        .eq("board_tasks.idea_id", rule.idea_id)
+        .order("task_id")
+        .range(from, to)
+    );
 
     if (labeledTasks && labeledTasks.length > 0) {
       const taskIds = labeledTasks.map((t) => t.task_id);
@@ -758,12 +763,17 @@ export async function applyAutoRuleRetroactively(ruleId: string) {
   if (ruleError || !rule) throw new Error("Auto-rule not found");
 
   // Find all tasks with this label in this idea
-  const { data: labelledTasks, error: ltError } = await supabase
-    .from("board_task_labels")
-    .select("task_id, board_tasks!inner(id, idea_id, archived)")
-    .eq("label_id", rule.label_id)
-    .eq("board_tasks.idea_id", rule.idea_id)
-    .eq("board_tasks.archived", false);
+  // Paged: one label can sit on more than 1,000 cards, and a bare select stops there silently.
+  const { data: labelledTasks, error: ltError } = await fetchAllRows((from, to) =>
+    supabase
+      .from("board_task_labels")
+      .select("task_id, board_tasks!inner(id, idea_id, archived)")
+      .eq("label_id", rule.label_id)
+      .eq("board_tasks.idea_id", rule.idea_id)
+      .eq("board_tasks.archived", false)
+      .order("task_id")
+      .range(from, to)
+  );
 
   if (ltError) throw new Error(ltError.message);
   if (!labelledTasks || labelledTasks.length === 0) {
