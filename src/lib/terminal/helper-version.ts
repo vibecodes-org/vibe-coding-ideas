@@ -167,8 +167,13 @@
  *  0.3.32 (card f2a563ca, 11 Nov 2026): reports main-window model usage, so the
  *  usage report covers whole sessions, not only workflow steps. An older
  *  helper still works but its main-window usage goes unreported. Same soft
+ *  nudge.
+ *  0.3.33 (cards f0a13bde and 63a60792, 11 Nov 2026): sessions can message
+ *  each other, and the in-app setup screen can install and sign in Claude Code
+ *  or Codex. An older helper still works; messaging tells the sender the
+ *  helper is too old, and setup falls back to copy-the-command. Same soft
  *  nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.32";
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.33";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
