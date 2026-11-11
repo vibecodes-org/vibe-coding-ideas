@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  isPeerNoticeFrame,
+  parsePeerNoticeName,
   RELAY_CLOSE,
   E2EE_CLOSE,
   RECONNECT_GRACE_MS,
@@ -990,5 +992,19 @@ describe("bridge-cwd frame (card 6b2cb8ac) — mirrors terminal/shared/control-f
     ];
     for (const c of cases) expect(parseBridgeCwdFrame(c)).toBe(shared.parseBridgeCwdFrame(c));
     expect(parseBridgeCwdFrame(cases[0])).toBe("/Users/x/projects/p");
+  });
+});
+
+describe("peer-message-notice frame (card f0a13bde)", () => {
+  it("recognises the notice and reads the sender's name", () => {
+    const frame = JSON.stringify({ t: "peer-message-notice", fromName: "Plan the export" });
+    expect(isPeerNoticeFrame(frame)).toBe(true);
+    expect(parsePeerNoticeName(frame)).toBe("Plan the export");
+  });
+  it("ignores other frames and malformed ones, and falls back to a plain label", () => {
+    expect(isPeerNoticeFrame(JSON.stringify({ t: "bridge-cwd", cwd: "/x" }))).toBe(false);
+    expect(isPeerNoticeFrame("not json")).toBe(false);
+    expect(isPeerNoticeFrame("")).toBe(false);
+    expect(parsePeerNoticeName(JSON.stringify({ t: "peer-message-notice" }))).toBe("another session");
   });
 });

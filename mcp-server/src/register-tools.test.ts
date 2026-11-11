@@ -91,6 +91,8 @@ const EXPECTED_TOOL_NAMES = [
   "import_agent_skill",
   "record_project_path",
   "sync_board_agents",
+  "list_my_sessions",
+  "send_session_message",
   "get_agent_skill_content",
 ];
 
@@ -99,13 +101,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 88 tools", () => {
+  it("registers exactly 90 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(88);
+    expect(server.tool).toHaveBeenCalledTimes(90);
   });
 
   it("declares a result size limit on sync_board_agents so its file isn't saved to disk", () => {

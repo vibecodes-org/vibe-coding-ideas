@@ -954,3 +954,31 @@ export function parseBridgeCwdFrame(text: string): string | null {
     return null;
   }
 }
+
+// ── peer-message-notice frame (card f0a13bde) ───────────────────────────────
+//
+// `{"t":"peer-message-notice","fromName":"..."}` — sent by the relay to the
+// browser leg when another of the user's sessions has delivered (or queued) a
+// message to this one. The sender's name only, never the text. Mirrors
+// terminal/shared/peer-frames.mjs → encodePeerNoticeFrame.
+
+export function isPeerNoticeFrame(text: string): boolean {
+  if (text.length === 0 || text.length > 400) return false;
+  try {
+    const msg = JSON.parse(text) as unknown;
+    return !!msg && typeof msg === "object" && (msg as { t?: unknown }).t === "peer-message-notice";
+  } catch {
+    return false;
+  }
+}
+
+/** The sender's name from a notice frame (never throws; falls back to a plain label). */
+export function parsePeerNoticeName(text: string): string {
+  try {
+    const name = (JSON.parse(text) as { fromName?: unknown }).fromName;
+    if (typeof name === "string" && name.trim()) return name.trim().slice(0, 80);
+  } catch {
+    /* fall through */
+  }
+  return "another session";
+}

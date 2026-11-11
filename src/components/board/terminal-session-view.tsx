@@ -151,6 +151,8 @@ interface TerminalSessionViewProps {
   onReportSummary: (key: string, summary: SessionSummary) => void;
   onRegisterActions: (key: string, actions: TerminalSessionActions | null) => void;
   onAnnounce: (text: string) => void;
+  /** Card f0a13bde: another session sent this one a message (called once per message). */
+  onPeerMessage?: (key: string, fromName: string) => void;
   /** Opens the dock's "My sessions" panel on a cap refusal (E1, design §7b). */
   onCapExceeded?: () => void;
   /** Card 0301fe8e: reconnects to the live session already running a conversation this tab tried to Resume (the mint route's `conversation_live` refusal). */
@@ -339,6 +341,7 @@ export function TerminalSessionView({
   onReportSummary,
   onRegisterActions,
   onAnnounce,
+  onPeerMessage,
   onCapExceeded,
   onConversationLive,
   poppedOut = false,
@@ -385,6 +388,7 @@ export function TerminalSessionView({
     launchPhase,
     peerDegraded,
     helperVersion,
+    peerNotice,
     notEncryptedYet,
     e2eeActive,
     pair,
@@ -474,6 +478,17 @@ export function TerminalSessionView({
     readOnly,
     autoAccept,
   ]);
+
+  // Card f0a13bde: another of the user's sessions messaged this one. Only a tab
+  // the user isn't looking at gets flagged; the open tab shows the message itself.
+  const lastPeerCountRef = useRef(0);
+  useEffect(() => {
+    const count = peerNotice?.count ?? 0;
+    if (count === lastPeerCountRef.current) return;
+    lastPeerCountRef.current = count;
+    if (!isActive && peerNotice) onPeerMessage?.(entry.key, peerNotice.from);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerNotice?.count]);
 
   // Keep the dock's action registry current so a tab strip close (×) — which
   // lives in the PARENT, not here — can call this session's own `end()`
