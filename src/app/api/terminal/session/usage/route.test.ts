@@ -50,7 +50,7 @@ async function body(over: object = {}) {
   return { sid: SID, token: await bridgeToken(), conversationId: CONV, hours: [hourRow()], stepIds: [], firstCallAt: hourAgo(), lastCallAt: hourAgo(), ...over };
 }
 
-function setTables(opts: { row?: unknown; session?: unknown; upsertError?: boolean; foreign?: boolean } = {}) {
+function setTables(opts: { row?: unknown; session?: unknown; upsertError?: boolean } = {}) {
   let sessionReads = 0;
   state.tables = {
     terminal_sessions: () => {
@@ -62,7 +62,7 @@ function setTables(opts: { row?: unknown; session?: unknown; upsertError?: boole
       return { data: opts.session === undefined ? { claude_session_id: CONV, machine_label: "Mac" } : opts.session, error: null };
     },
     session_main_usage_hours: (call) => ({
-      data: call.op === "select" ? (opts.foreign ? [{ user_id: "someone-else" }] : []) : null,
+      data: call.op === "select" ? [] : null,
       error: opts.upsertError ? { message: "boom" } : null,
     }),
     session_main_usage: (call) => ({ data: call.op === "select" ? [] : null, error: null }),
@@ -123,26 +123,18 @@ describe("POST /api/terminal/session/usage", () => {
     expect((await POST(req(await body()))).status).toBe(500);
   });
 
-  it("writes with upsert only (conflict key conversation, hour, model), never insert", async () => {
+  it("writes with upsert only (conflict key user, conversation, hour, model), never insert", async () => {
     await POST(req(await body()));
     expect(lastFake.writesTo("session_main_usage_hours", "insert")).toHaveLength(0);
     expect(lastFake.writesTo("session_main_usage_hours", "upsert")).toHaveLength(1);
   });
 
-  it("403s a conversation that already belongs to another user and writes or deletes nothing", async () => {
-    setTables({ foreign: true });
-    const res = await POST(req(await body()));
-    expect(res.status).toBe(403);
-    for (const op of ["upsert", "delete"] as const) {
-      expect(lastFake.writesTo("session_main_usage_hours", op)).toHaveLength(0);
-      expect(lastFake.writesTo("session_main_usage", op)).toHaveLength(0);
-    }
-  });
-
-  it("scopes the owner check, the writes and the stale-row delete by owner", async () => {
+  it("keys the upserts by user as well, and scopes the stale-row delete by owner", async () => {
     await POST(req(await body()));
-    const check = lastFake.calls.find((c: FakeCall) => c.table === "session_main_usage_hours" && c.op === "select");
-    expect(check.filters).toContainEqual(["neq", ["user_id", OWNER]]);
+    const [hoursUp] = lastFake.writesTo("session_main_usage_hours", "upsert");
+    expect(hoursUp.options).toMatchObject({ onConflict: "user_id,conversation_id,hour,model" });
+    const [convUp] = lastFake.writesTo("session_main_usage", "upsert");
+    expect(convUp.options).toMatchObject({ onConflict: "user_id,conversation_id" });
     const [del] = lastFake.writesTo("session_main_usage_hours", "delete");
     expect(del.filters).toContainEqual(["eq", ["conversation_id", CONV]]);
     expect(del.filters).toContainEqual(["eq", ["user_id", OWNER]]);
@@ -165,12 +157,12 @@ describe("a send mid-step, then a send after the step closes", () => {
     });
 
   // setTables counts session reads per send, so each send installs afresh.
-  const install = () => {
-    setTables();
+  const install = (opts: Parameters<typeof setTables>[0] = {}) => {
+    setTables(opts);
     state.tables.session_main_usage_hours = (call) => {
       if (call.op === "upsert") {
         for (const p of call.payload as Row[]) {
-          rows = rows.filter((r) => !(r.conversation_id === p.conversation_id && r.hour === p.hour && r.model === p.model));
+          rows = rows.filter((r) => !(r.user_id === p.user_id && r.conversation_id === p.conversation_id && r.hour === p.hour && r.model === p.model));
           rows.push({ ...p });
         }
         return { data: null, error: null };
@@ -223,5 +215,51 @@ describe("a send mid-step, then a send after the step closes", () => {
     // After the step's usage run closes the claim, those calls are the step's: nothing is ours.
     expect((await send(closed)).status).toBe(200);
     expect(rows).toHaveLength(0);
+  });
+
+  const seed = (o: Partial<Row>): Row => {
+    const r: Row = { conversation_id: CONV, user_id: OWNER, hour: hourAgo(), model: "claude-opus-5-5", calls: 1, updated_at: "2020-01-01T00:00:00.000Z", ...o };
+    rows.push(r);
+    return r;
+  };
+  const hoursAgo = (n: number) => new Date(Math.floor((Date.now() - n * 3_600_000) / 3_600_000) * 3_600_000).toISOString();
+
+  it("a second user's send for the same conversation id succeeds and leaves the first user's rows alone", async () => {
+    const OTHER = "user-2";
+    const first = await POST(req(await body({ hours: [hourRow({ calls: 7 })] })));
+    expect(first.status).toBe(200);
+
+    install({ row: { user_id: OTHER, idea_id: IDEA, status: "active", expires_at: future() } });
+    const second = await POST(req({ ...(await body({ hours: [hourRow({ calls: 2 })] })), token: await bridgeToken(OTHER) }));
+    expect(second.status).toBe(200);
+    expect(rows.filter((r) => r.user_id === OWNER).map((r) => r.calls)).toEqual([7]);
+    expect(rows.filter((r) => r.user_id === OTHER).map((r) => r.calls)).toEqual([2]);
+
+    install();
+    const again = await POST(req(await body({ hours: [hourRow({ calls: 8 })] })));
+    expect(again.status).toBe(200);
+    expect(rows.filter((r) => r.user_id === OWNER).map((r) => r.calls)).toEqual([8]);
+    expect(rows.filter((r) => r.user_id === OTHER).map((r) => r.calls)).toEqual([2]);
+  });
+
+  it("the delete leaves a row older than the window and another conversation's row alone", async () => {
+    const old = seed({ hour: hoursAgo(40 * 24) });
+    const other = seed({ conversation_id: "99999999-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
+    const stale = seed({ hour: hoursAgo(5), model: "stale" });
+    expect((await POST(req(await body()))).status).toBe(200);
+    expect(rows).toContain(old);
+    expect(rows).toContain(other);
+    expect(rows).not.toContain(stale);
+  });
+
+  it("a send at the 2000-row cap leaves an older, unsent hour alone but drops a stale hour inside its range", async () => {
+    const models = Array.from({ length: 50 }, (_, m) => `claude-model-${m}`);
+    const sent = Array.from({ length: 40 }, (_, h) => models.map((model) => hourRow({ hour: hoursAgo(h + 1), model }))).flat();
+    expect(sent).toHaveLength(2000);
+    const older = seed({ hour: hoursAgo(200), model: "older" }); // older than every sent hour, inside the window
+    const stale = seed({ hour: hoursAgo(10), model: "stale" }); // inside the sent range
+    expect((await POST(req(await body({ hours: sent })))).status).toBe(200);
+    expect(rows).toContain(older);
+    expect(rows).not.toContain(stale);
   });
 });

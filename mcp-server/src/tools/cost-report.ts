@@ -70,7 +70,7 @@ async function readMainWindow(db: Db, ideaId: string, since: string) {
   const mainHours = await readAll<WeeklyMainHourRow>((from, to) =>
     db
       .from("session_main_usage_hours")
-      .select("conversation_id, idea_id, hour, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens")
+      .select("conversation_id, user_id, idea_id, hour, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens")
       .eq("idea_id", ideaId)
       .gt("hour", since)
       .order("id")
@@ -80,8 +80,9 @@ async function readMainWindow(db: Db, ideaId: string, since: string) {
   const convRows = await readAll<WeeklyConversationRow>((from, to) =>
     db
       .from("session_main_usage")
-      .select("conversation_id, idea_id, first_call_at, last_call_at, step_ids")
+      .select("conversation_id, user_id, idea_id, first_call_at, last_call_at, step_ids")
       .eq("idea_id", ideaId)
+      .order("user_id")
       .order("conversation_id")
       .range(from, to)
   );

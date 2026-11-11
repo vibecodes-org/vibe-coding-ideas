@@ -6,6 +6,9 @@
 -- next to the step figures. Numbers, model names, times and ids only: never
 -- prompts, outputs, folder names or card text.
 --
+-- Figures are kept per user: every key starts with user_id, so nobody can claim
+-- another user's conversation id by sending first.
+--
 -- Tables/columns/functions used (checked against the live schema):
 --   users.id, ideas.id, is_idea_team_member(uuid, uuid), auth.uid().
 
@@ -23,20 +26,21 @@ CREATE TABLE session_main_usage_hours (
   cache_write_5m_tokens bigint NOT NULL DEFAULT 0 CHECK (cache_write_5m_tokens >= 0),
   cache_write_1h_tokens bigint NOT NULL DEFAULT 0 CHECK (cache_write_1h_tokens >= 0),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (conversation_id, hour, model)
+  UNIQUE (user_id, conversation_id, hour, model)
 );
 
 CREATE INDEX session_main_usage_hours_idea_hour_idx ON session_main_usage_hours (idea_id, hour);
 
 CREATE TABLE session_main_usage (
-  conversation_id uuid PRIMARY KEY,
+  conversation_id uuid NOT NULL,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   idea_id uuid NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
   machine_label text,
   first_call_at timestamptz,
   last_call_at timestamptz,
   step_ids uuid[] NOT NULL DEFAULT '{}',
-  reported_at timestamptz NOT NULL DEFAULT now()
+  reported_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, conversation_id)
 );
 
 CREATE INDEX session_main_usage_idea_idx ON session_main_usage (idea_id);

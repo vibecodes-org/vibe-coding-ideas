@@ -65,7 +65,8 @@ export async function readMainWindowUsage(file, { signal } = {}) {
 
 /** The request body: the last 35 days only, capped, nothing but numbers and ids. */
 export function usageBody(conversationId, usage, now = Date.now()) {
-  const since = new Date(now - USAGE_WINDOW_DAYS * 86_400_000).toISOString();
+  // One hour inside the route's 35-day edge, so a Mac clock running slow can't get the whole send rejected.
+  const since = new Date(now - USAGE_WINDOW_DAYS * 86_400_000 + 3_600_000).toISOString();
   const hours = usage.hours.filter((h) => h.hour >= since).slice(-MAX_HOUR_ROWS);
   return {
     conversationId,

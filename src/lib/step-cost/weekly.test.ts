@@ -292,6 +292,17 @@ describe("main-window usage (card f2a563ca)", () => {
     expect(r.vibecodes_total_usd).toEqual([0, 0, 0]);
   });
 
+  it("keeps two users' figures for the same conversation id apart", () => {
+    const r = buildWeeklyReport(input({
+      mainHours: [hour(1, { user_id: "u1" }), hour(1, { user_id: "u2", cache_read_tokens: 2 * ONE_DOLLAR })],
+      conversations: [
+        { conversation_id: CONV, user_id: "u1", idea_id: "i1", first_call_at: null, last_call_at: null, step_ids: [] },
+        { conversation_id: CONV, user_id: "u2", idea_id: "i1", first_call_at: null, last_call_at: null, step_ids: [] },
+      ],
+    }));
+    expect(r.sessions_this_week.map((x) => x.main_window_usd).sort()).toEqual([1, 2]);
+  });
+
   it("shows no main-window usage and no sessions when nothing is reported", () => {
     const r = buildWeeklyReport(input());
     expect(r.main_window_total_usd).toEqual([0, 0, 0]);

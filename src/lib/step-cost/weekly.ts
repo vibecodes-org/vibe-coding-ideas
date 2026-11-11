@@ -44,6 +44,8 @@ export interface WeeklyPathRow { idea_id: string; absolute_path: string; updated
 /** The main window's own usage for one hour and model, net of what steps counted (card f2a563ca). */
 export interface WeeklyMainHourRow {
   conversation_id: string;
+  /** Figures are kept per user, so two users' rows for one conversation id never merge. */
+  user_id?: string;
   idea_id: string;
   hour: string;
   model: string;
@@ -56,6 +58,7 @@ export interface WeeklyMainHourRow {
 /** One reported conversation: its first and last call, the steps it ran, and its newest session name. */
 export interface WeeklyConversationRow {
   conversation_id: string;
+  user_id?: string;
   idea_id: string;
   first_call_at: string | null;
   last_call_at: string | null;
@@ -205,7 +208,8 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
   const mainHours = input.mainHours ?? [];
   const mainUsd = zeros(weeks);
   const mainByBoard = new Map<string, number[]>();
-  const mainByConv = new Map<string, number>(); // conversation -> latest week's usd
+  const convKey = (r: { user_id?: string; conversation_id: string }) => `${r.user_id ?? ""}|${r.conversation_id}`;
+  const mainByConv = new Map<string, number>(); // user + conversation -> latest week's usd
   const unpricedMain = new Set<string>();
   for (const h of mainHours) {
     const week = idx(h.hour);
@@ -221,7 +225,7 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     const b = mainByBoard.get(h.idea_id) ?? zeros(weeks);
     b[week] += cost;
     mainByBoard.set(h.idea_id, b);
-    if (week === weeks - 1) mainByConv.set(h.conversation_id, (mainByConv.get(h.conversation_id) ?? 0) + cost);
+    if (week === weeks - 1) mainByConv.set(convKey(h), (mainByConv.get(convKey(h)) ?? 0) + cost);
   }
   for (const m of unpricedMain) unpricedModels.add(m);
   const prices: WeeklyReportData["prices"] = {};
@@ -366,10 +370,11 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
 
   // This week's sessions: main window next to the steps (counted this week) the conversation ran.
   const sessionsThisWeek: WeeklySession[] = [];
-  const convs = new Map((input.conversations ?? []).map((c) => [c.conversation_id, c]));
-  for (const [id, mainUsdWeek] of mainByConv) {
-    const c = convs.get(id);
-    const ideaId = c?.idea_id ?? mainHours.find((h) => h.conversation_id === id)?.idea_id ?? "";
+  const convs = new Map((input.conversations ?? []).map((c) => [convKey(c), c]));
+  for (const [key, mainUsdWeek] of mainByConv) {
+    const c = convs.get(key);
+    const id = key.slice(key.indexOf("|") + 1);
+    const ideaId = c?.idea_id ?? mainHours.find((h) => convKey(h) === key)?.idea_id ?? "";
     let stepsUsd = 0;
     let stepCount = 0;
     for (const sid of c?.step_ids ?? []) {
