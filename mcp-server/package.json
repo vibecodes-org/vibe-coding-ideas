@@ -10,10 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@ai-sdk/anthropic": "^3.0.125",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@supabase/supabase-js": "^2.95.3",
+    "ai": "^6.0.86",
     "dotenv": "^16.4.7",
-    "zod": "^3.25.3"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20",
