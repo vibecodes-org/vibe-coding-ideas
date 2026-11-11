@@ -85,10 +85,10 @@ test("isPeerBridgeFrameType flags message, ack and notice frames only", () => {
 
 import { helperVersionAtLeast } from "./peer-frames.mjs";
 test("helperVersionAtLeast compares numerically and refuses unknown versions", () => {
-  assert.equal(helperVersionAtLeast("0.3.32", "0.3.32"), true);
-  assert.equal(helperVersionAtLeast("0.3.100", "0.3.32"), true);
-  assert.equal(helperVersionAtLeast("0.3.31", "0.3.32"), false);
-  assert.equal(helperVersionAtLeast("1.0.0", "0.3.32"), true);
-  assert.equal(helperVersionAtLeast(undefined, "0.3.32"), false);
-  assert.equal(helperVersionAtLeast("junk", "0.3.32"), false);
+  assert.equal(helperVersionAtLeast("0.3.33", "0.3.33"), true);
+  assert.equal(helperVersionAtLeast("0.3.100", "0.3.33"), true);
+  assert.equal(helperVersionAtLeast("0.3.31", "0.3.33"), false);
+  assert.equal(helperVersionAtLeast("1.0.0", "0.3.33"), true);
+  assert.equal(helperVersionAtLeast(undefined, "0.3.33"), false);
+  assert.equal(helperVersionAtLeast("junk", "0.3.33"), false);
 });

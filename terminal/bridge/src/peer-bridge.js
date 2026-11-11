@@ -11,7 +11,7 @@ import {
   formatPeerMessage,
   verifyPeerFrame,
 } from "../../shared/peer-message.mjs";
-import { createPeerState, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
+import { createPeerState, endTyping, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
 
 export const SEND_TOOL_MATCHER = "^mcp__.+__(send_session_message|list_my_sessions)$";
 const HOOK_TIMEOUT_SECONDS = 5;
@@ -149,6 +149,7 @@ export function createPeerBridge(deps) {
     await delay(PASTE_SETTLE_MS);
     if (!safeToSubmit(state)) {
       log("warn", "peer message pasted but not submitted (state changed)", { id: env.id, phase: state.phase });
+      state = endTyping(state, { pasted: true, submitted: false });
       return "unconfirmed";
     }
     const submitted = new Promise((resolve) => {
@@ -156,6 +157,7 @@ export function createPeerBridge(deps) {
     });
     writePty("\r");
     const ok = await Promise.race([submitted, delay(SUBMIT_WAIT_MS).then(() => false)]);
+    state = endTyping(state, { pasted: true, submitted: ok });
     return ok ? "delivered" : "unconfirmed";
   }
 

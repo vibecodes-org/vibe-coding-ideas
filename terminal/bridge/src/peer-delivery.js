@@ -18,11 +18,15 @@
 //            but we can't tell). Treated as busy.
 //   busy     a turn is running (UserPromptSubmit, a tool call, a tool result).
 //   asking   a permission prompt is open. Never typed into.
-//   idle     the turn ended (Stop) or Claude said it is waiting (idle_prompt).
+//   idle     the turn ended (Stop). The "waiting for you" notice (idle_prompt)
+//            only turns unknown into idle; it never overrides busy or asking,
+//            because it can arrive late, while a prompt or turn is live.
+//   typing   a message is being pasted and submitted right now. Every other
+//            message waits until that one is finished.
 
 import { PEER_HOLD_MAX_COUNT, PEER_HOLD_MAX_MS } from "../../shared/peer-message.mjs";
 
-/** @typedef {{ phase: "unknown"|"busy"|"asking"|"idle", draft: boolean, inbox: Array<{ id: string, text: string, at: number }> }} PeerState */
+/** @typedef {{ phase: "unknown"|"busy"|"asking"|"idle"|"typing", draft: boolean, inbox: Array<{ id: string, text: string, at: number }> }} PeerState */
 
 /** @returns {PeerState} */
 export function createPeerState() {
@@ -90,7 +94,9 @@ export function onHook(state, ev, now) {
       return { state: { ...s, phase: "asking" }, block: null, dropped };
     case "Notification":
       if (ev.notification === "permission_prompt") return { state: { ...s, phase: "asking" }, block: null, dropped };
-      if (ev.notification === "idle_prompt") return { state: { ...s, phase: "idle" }, block: null, dropped };
+      if (ev.notification === "idle_prompt") {
+        return { state: s.phase === "unknown" ? { ...s, phase: "idle" } : s, block: null, dropped };
+      }
       return { state: s, block: null, dropped };
     case "Stop": {
       if (s.inbox.length > 0) {
@@ -111,7 +117,7 @@ export function onHook(state, ev, now) {
  */
 export function onMessage(state, msg, now) {
   const { state: s, dropped } = prune(state, now);
-  if (s.phase === "idle" && !s.draft) return { state: s, decision: "type-now", dropped };
+  if (s.phase === "idle" && !s.draft) return { state: { ...s, phase: "typing" }, decision: "type-now", dropped };
   if (s.inbox.length >= PEER_HOLD_MAX_COUNT) return { state: s, decision: "full", dropped };
   return { state: { ...s, inbox: [...s.inbox, { id: msg.id, text: msg.text, at: now }] }, decision: "hold", dropped };
 }
@@ -122,12 +128,27 @@ export function onTick(state, now) {
 }
 
 /**
- * Right after pasting: is it still safe to press Enter? Not when a permission
- * prompt opened, or the person started typing in the meantime.
+ * Right after pasting: is it still safe to press Enter? Only while this
+ * message still owns the "typing" phase: any hook event since (a turn
+ * starting, a tool call, a prompt opening, a turn ending) moves the phase on,
+ * and the person's own typing sets the draft flag.
  * @param {PeerState} state
  */
 export function safeToSubmit(state) {
-  return state.phase !== "asking" && !state.draft;
+  return state.phase === "typing" && !state.draft;
+}
+
+/**
+ * Typing is over. If Enter was pressed and Claude took the message, a hook
+ * event has already moved the phase on and nothing changes. Otherwise the
+ * phase is still "typing": go back to unknown (held until Claude's next Stop),
+ * and if the text was pasted but not submitted it is sitting in the input box,
+ * so count it as a draft and type nothing on top of it.
+ * @param {PeerState} state @param {{ pasted: boolean, submitted: boolean }} r
+ */
+export function endTyping(state, r) {
+  if (state.phase !== "typing") return r.pasted && !r.submitted ? { ...state, draft: true } : state;
+  return { ...state, phase: "unknown", draft: state.draft || (r.pasted && !r.submitted) };
 }
 
 /** The reason text a Stop hook hands to Claude for the held messages. */

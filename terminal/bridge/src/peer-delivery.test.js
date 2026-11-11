@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyInput, createPeerState, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
+import { classifyInput, createPeerState, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit, endTyping } from "./peer-delivery.js";
 import { PEER_HOLD_MAX_COUNT, PEER_HOLD_MAX_MS } from "../../shared/peer-message.mjs";
 
 const T = 1000;
@@ -49,6 +49,46 @@ test("idle_prompt notification makes an unknown session idle", () => {
   assert.equal(onHook(createPeerState(), { name: "Notification", notification: "idle_prompt" }, T).state.phase, "idle");
 });
 
+test("idle_prompt never overrides busy or asking", () => {
+  const idlePrompt = { name: "Notification", notification: "idle_prompt" };
+  const busy = onHook(idle(), { name: "UserPromptSubmit" }, T).state;
+  const asking = onHook(idle(), { name: "PermissionRequest" }, T).state;
+  const typing = onMessage(idle(), { id: "a", text: "x" }, T).state;
+  assert.equal(onHook(busy, idlePrompt, T).state.phase, "busy");
+  assert.equal(onHook(asking, idlePrompt, T).state.phase, "asking");
+  assert.equal(onHook(typing, idlePrompt, T).state.phase, "typing");
+  assert.equal(onMessage(onHook(asking, idlePrompt, T).state, { id: "b", text: "y" }, T).decision, "hold");
+  assert.equal(onMessage(onHook(busy, idlePrompt, T).state, { id: "b", text: "y" }, T).decision, "hold");
+});
+
+test("while one message is being typed, the next one waits", () => {
+  const first = onMessage(idle(), { id: "a", text: "x" }, T);
+  assert.equal(first.decision, "type-now");
+  assert.equal(first.state.phase, "typing");
+  const second = onMessage(first.state, { id: "b", text: "y" }, T);
+  assert.equal(second.decision, "hold");
+  assert.equal(second.state.inbox.length, 1);
+});
+
+test("safeToSubmit only while still typing; any hook event since ends it", () => {
+  const typing = onMessage(idle(), { id: "a", text: "x" }, T).state;
+  assert.equal(safeToSubmit(typing), true);
+  for (const name of ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop"]) {
+    assert.equal(safeToSubmit(onHook(typing, { name }, T).state), false, name);
+  }
+  assert.equal(safeToSubmit(idle()), false);
+  assert.equal(safeToSubmit(createPeerState()), false);
+});
+
+test("endTyping: back to unknown when unsubmitted; pasted-but-not-sent counts as a draft", () => {
+  const typing = onMessage(idle(), { id: "a", text: "x" }, T).state;
+  const timedOut = endTyping(typing, { pasted: true, submitted: false });
+  assert.equal(timedOut.phase, "unknown");
+  assert.equal(timedOut.draft, true);
+  const done = onHook(typing, { name: "UserPromptSubmit" }, T).state;
+  assert.equal(endTyping(done, { pasted: true, submitted: true }).phase, "busy");
+});
+
 test("UserPromptSubmit clears the draft", () => {
   const s = onHook(onInput(idle(), "abc"), { name: "UserPromptSubmit" }, T).state;
   assert.equal(s.draft, false);
@@ -84,7 +124,8 @@ test("classifyInput: printable text is a draft, arrows and focus reports are not
 });
 
 test("safeToSubmit refuses while asking or when a draft appeared", () => {
-  assert.equal(safeToSubmit(idle()), true);
-  assert.equal(safeToSubmit(onInput(idle(), "x")), false);
+  const typing = onMessage(idle(), { id: "a", text: "x" }, T).state;
+  assert.equal(safeToSubmit(typing), true);
+  assert.equal(safeToSubmit(onInput(typing, "x")), false);
   assert.equal(safeToSubmit(onHook(idle(), { name: "PermissionRequest" }, T).state), false);
 });

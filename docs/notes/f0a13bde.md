@@ -61,8 +61,14 @@ Branch `feat/f0a13bde-session-messaging`. Nick approved the plan with the recomm
 - A session with no hook event yet is "unknown" and treated as busy (held). It becomes idle at the first Stop or an idle_prompt notification. A freshly resumed, never-prompted session therefore holds messages until its first turn ends.
 - Hook flags ride the existing per-launch flags (`launchFlags()` in the bridge) rather than `resolveClaudeLaunch`, so they apply to fresh, `--resume` and `--continue` launches alike and never to `--cmd`, with no change to the launch-command tests.
 - The relay-safe pieces (constants, ack frame, notice frame, "browser may not send these" test, helper-version compare) are in `terminal/shared/peer-frames.mjs` (no node:crypto, because a Worker has none); signing and checking are in `terminal/shared/peer-message.mjs`.
-- Helper version NOT bumped in this change: the recipe bumps it at release (the last two helper PRs did it that way, and another card also touches the helper). The relay minimum for peer messages is `PEER_MESSAGE_MIN_HELPER = "0.3.32"` in `peer-frames.mjs`: the release must ship exactly that version or higher.
+- Helper version NOT bumped in this change (Nick/review: helper 0.3.32 ships without this code; messaging and the setup screen release together as 0.3.33). The relay minimum for peer messages is `PEER_MESSAGE_MIN_HELPER = "0.3.33"` in `peer-frames.mjs`: the release must ship exactly that version or higher: 0.3.33.
 - `VIBECODES_SESSION=<sid>.<proof>` is put in the environment of every Claude and Codex launch that has a session key (not custom commands).
 
 ### Not built (by plan)
 Codex receiving (stage 2).
+
+### Rework round 1 (code review)
+- Type check: the board server's standalone type check could not find types for the two shared `.mjs` files. Turned on `allowJs` (no `checkJs`) in `mcp-server/tsconfig.json`, matching the root tsconfig, so the two files get types inferred from the JS.
+- Minimum helper version is 0.3.33 (was 0.3.32).
+- The "waiting for you" notice (idle_prompt) now only turns unknown into idle; it never overrides busy, asking or typing.
+- New "typing" phase: set the moment a message is chosen for typing; later messages wait. Enter is pressed only while the phase is still "typing" and there is no draft (was: anything but asking). Any hook event during the paste moves the phase on and cancels the Enter. If a message is pasted but not submitted, the phase goes back to unknown and the box counts as holding a draft, so nothing else is typed on top.

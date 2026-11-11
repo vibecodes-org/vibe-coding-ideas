@@ -53,6 +53,40 @@ test("idle, but Enter never leads to a submit: unconfirmed, not delivered", asyn
   assert.deepEqual(acks, [{ id: "id-000001", outcome: "unconfirmed" }]);
 });
 
+test("two messages back to back: the second waits, and no Enter is pressed mid-turn", async () => {
+  const { bridge, writes, acks } = make();
+  hook(bridge, "Stop");
+  const p1 = bridge.handleFrame(frame({ id: "id-000001", text: "one" }));
+  const p2 = bridge.handleFrame(frame({ id: "id-000002", text: "two" }));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(writes.filter((w) => w === "\r").length, 1);
+  assert.equal(writes.filter((w) => w.startsWith("\x1b[200~")).length, 1);
+  hook(bridge, "UserPromptSubmit");
+  await Promise.all([p1, p2]);
+  assert.deepEqual(acks.map((a) => [a.id, a.outcome]).sort(), [["id-000001", "delivered"], ["id-000002", "waiting"]]);
+  assert.equal(hook(bridge, "Stop").reason.includes("two"), true);
+});
+
+test("a turn starts during the paste: Enter is not pressed", async () => {
+  const { bridge, writes, acks } = make({ delay: (ms) => new Promise((r) => setTimeout(r, ms > 200 ? 30 : 20)) });
+  hook(bridge, "Stop");
+  const p = bridge.handleFrame(frame());
+  await new Promise((r) => setTimeout(r, 5));
+  hook(bridge, "UserPromptSubmit");
+  await p;
+  assert.equal(writes.includes("\r"), false);
+  assert.deepEqual(acks, [{ id: "id-000001", outcome: "unconfirmed" }]);
+});
+
+test("a late idle_prompt notice during a permission prompt does not allow typing", async () => {
+  const { bridge, writes, acks } = make();
+  hook(bridge, "PermissionRequest");
+  hook(bridge, "Notification", { notification_type: "idle_prompt" });
+  await bridge.handleFrame(frame());
+  assert.equal(writes.length, 0);
+  assert.deepEqual(acks, [{ id: "id-000001", outcome: "waiting" }]);
+});
+
 test("busy: nothing is typed, the sender hears waiting, and the Stop hook hands the message over", async () => {
   const { bridge, writes, acks } = make();
   hook(bridge, "UserPromptSubmit");

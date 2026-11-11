@@ -13,7 +13,7 @@ export const PEER_HOLD_MAX_COUNT = 20;
 export const PEER_RATE_PER_MINUTE = 10;
 export const PEER_RATE_PER_HOUR = 60;
 /** The first helper that understands peer messages. Below this the relay says "helper too old". */
-export const PEER_MESSAGE_MIN_HELPER = "0.3.32";
+export const PEER_MESSAGE_MIN_HELPER = "0.3.33";
 
 export const PEER_AGENTS = Object.freeze(["claude", "codex"]);
 export const PEER_AGENT_LABEL = Object.freeze({ claude: "Claude Code", codex: "Codex" });
@@ -74,7 +74,7 @@ export function isPeerBridgeFrameType(text) {
 }
 
 /**
- * True when `version` ("0.3.32") is at least `min`. Missing or unreadable is
+ * True when `version` ("0.3.33") is at least `min`. Missing or unreadable is
  * "no": a helper that never reported a version is an old one.
  * @param {unknown} version @param {string} min
  */

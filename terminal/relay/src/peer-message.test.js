@@ -11,7 +11,7 @@ const SECRET = "peer-test-secret";
 const ENV = { VIBECODES_APP_URL: "https://app.example.test", TERMINAL_SESSION_SECRET: SECRET };
 const SID = "sess-peer-1";
 
-function setup({ helperVersion = "0.3.32", withBridge = true, withBrowser = true, rate } = {}) {
+function setup({ helperVersion = "0.3.33", withBridge = true, withBrowser = true, rate } = {}) {
   const now = Date.now();
   const storage = makeFakeStorage({
     owner: "user-A", sid: SID, sessionStartedAt: now, lastActivityAt: now,
