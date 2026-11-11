@@ -2,6 +2,9 @@
   "name": "vibecodes",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "mcp-server"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
