@@ -132,7 +132,13 @@ describe("shouldShowRemoteControlEarlyExitHint (task 5c8969cc, live check V3)", 
     ).toBe(false);
   });
 
-  it.each(["user", "idle", "max-duration", "reconnect-failed", null])("is not shown for ended reason %s", (endedReason) => {
+  it("card 4cd8270f: is shown when a newer helper reports the quit as agent-stopped-with-error", () => {
+    expect(
+      shouldShowRemoteControlEarlyExitHint({ ...base, endedReason: "agent-stopped-with-error", endedAt: T + 2_000 }),
+    ).toBe(true);
+  });
+
+  it.each(["user", "idle", "max-duration", "reconnect-failed", "agent-force-stopped", null])("is not shown for ended reason %s", (endedReason) => {
     expect(shouldShowRemoteControlEarlyExitHint({ ...base, endedReason, endedAt: T + 1 })).toBe(false);
   });
 

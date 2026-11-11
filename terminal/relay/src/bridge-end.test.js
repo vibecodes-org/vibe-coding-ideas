@@ -73,6 +73,33 @@ test("the bridge's own reason is passed through (agent-stopped-early:1); empty â
   }
 });
 
+test("card 4cd8270f: 'pty-exit:signal-9' / 'pty-exit:code-1' end like pty-exit (1000, no peer-degraded, tombstone) and send the app a short detail", async () => {
+  for (const [reason, detail] of [
+    ["pty-exit:signal-9", "signal 9"],
+    ["pty-exit:code-1", "code 1"],
+    ["pty-exit:code-137", "code 137"],
+  ]) {
+    const { storage, bridge, browser, relay } = liveSession();
+    const before = Date.now();
+    const calls = await captureFetch(() => relay.webSocketClose(bridge, 1000, reason, true));
+    assert.deepEqual(browser.closes, [[1000, reason]], reason);
+    assert.equal(browser.sent.some((f) => typeof f === "string" && isPeerDegradedFrame(f)), false);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].body, { sid: SID, reason: "bridge_ended", detail });
+    assert.equal(await storage.get("graceDeadline"), undefined);
+    assert.equal(await storage.get("tombstoneReason"), reason);
+    assert.ok(storage.alarm >= before + 10 * 60 * 1000 - 50);
+  }
+});
+
+test("card 4cd8270f: no detail for any other reason, or a malformed pty-exit detail", async () => {
+  for (const reason of ["pty-exit", "agent-stopped-early:1", "folder-missing", "pty-exit:signal-SIGKILL", "pty-exit:code-12345", "pty-exit:signal=9"]) {
+    const { relay } = liveSession();
+    const calls = await captureFetch(() => relay.webSocketClose(relay.state.getWebSockets("role:bridge")[0], 1000, reason, true));
+    assert.deepEqual(calls[0].body, { sid: SID, reason: "bridge_ended" }, reason);
+  }
+});
+
 test("a REAL drop (1006) still holds the session: peer-degraded + grace deadline, browser not closed, no callback", async () => {
   const { storage, bridge, browser, relay } = liveSession();
   const calls = await captureFetch(() => relay.webSocketClose(bridge, 1006, "", false));

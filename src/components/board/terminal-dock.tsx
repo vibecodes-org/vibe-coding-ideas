@@ -2839,7 +2839,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         activeSummary.errorKind,
       )
     : "setup";
-  const singleMeta = dockStatusMeta(singleView, activeSummary?.errorKind ?? null);
+  const singleMeta = dockStatusMeta(singleView, activeSummary?.errorKind ?? null, activeSummary?.peerDegraded ?? false);
 
   return (
     <div

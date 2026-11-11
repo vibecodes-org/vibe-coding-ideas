@@ -14,7 +14,7 @@
 // xterm DOM rendering lives in the component; everything here is testable without
 // a DOM, a socket, or React.
 
-import { shouldShowHelperUpdateNudge } from "./helper-version";
+import { compareHelperVersions, parseHelperVersion, shouldShowHelperUpdateNudge } from "./helper-version";
 
 /** How long we wait for the relay handshake before declaring an error (≈30s). */
 export const CONNECT_TIMEOUT_MS = 30_000;
@@ -30,6 +30,45 @@ export const CONNECT_TIMEOUT_MS = 30_000;
  * honestly and the UX falls back to a clean fresh launch.
  */
 export const RECONNECT_GRACE_MS = 90_000;
+
+/**
+ * Card f4be2981 (sessions survive sleep). A helper at or above this version keeps
+ * its agent alive for as long as the Mac is away and tells the relay to hold the
+ * session with no 90s limit (`hold=1`). With such a helper the browser never gives
+ * up on its own either; older helpers keep the 90s window above.
+ */
+export const LONG_HOLD_MIN_HELPER = "0.3.34";
+
+export function supportsLongHold(helperVersion: string | null | undefined): boolean {
+  const have = parseHelperVersion(helperVersion);
+  const need = parseHelperVersion(LONG_HOLD_MIN_HELPER);
+  if (!have || !need) return false;
+  return compareHelperVersions(have, need) >= 0;
+}
+
+/** Reconnect backoff: 1s doubling, capped at 8s (old helpers) or 30s (long-hold). */
+export function reconnectBackoffMs(attempt: number, longHold: boolean, rand: () => number = Math.random): number {
+  const cap = longHold ? 30_000 : 8_000;
+  return Math.min(1000 * 2 ** attempt, cap) + Math.floor(rand() * 250);
+}
+
+/** How long the Mac may be missing (browser link up) before the bar says "Still waiting for your Mac". */
+export const LONG_WAIT_NOTICE_MS = 180_000;
+
+export function shouldShowLongWait(args: {
+  waitingSince: number | null;
+  now: number;
+  visible: boolean;
+  online: boolean;
+  browserLinkUp: boolean;
+}): boolean {
+  const { waitingSince, now, visible, online, browserLinkUp } = args;
+  if (waitingSince === null || !visible || !online || !browserLinkUp) return false;
+  return now - waitingSince > LONG_WAIT_NOTICE_MS;
+}
+
+/** A timer tick this much later than expected means the computer slept. */
+export const CLOCK_JUMP_MS = 20_000;
 
 /**
  * Bug (regression backfill, board card TBD): the minimum real time that must
@@ -125,7 +164,15 @@ export type EndedReason =
   | "setup-install-failed"
   | "setup-signed-in"
   | "setup-signin-failed"
-  | "helper-closed";
+  | "helper-closed"
+  // Card 4cd8270f: the agent ran, then something on the Mac killed it
+  // (`pty-exit:signal-<n>`) or it quit with a non-zero code
+  // (`pty-exit:code-<n>`). The conversation did run, so Resume stays.
+  // `agent-force-stopped` is signals 9 (SIGKILL) and 15 (SIGTERM) only; any
+  // other signal (a hang-up, a crash) is `agent-stopped-suddenly`.
+  | "agent-force-stopped"
+  | "agent-stopped-suddenly"
+  | "agent-stopped-with-error";
 
 export interface TerminalConnectionState {
   status: TerminalStatus;
@@ -155,7 +202,9 @@ export interface TerminalConnectionState {
    * Card 6b2cb8ac: extra detail for `endedReason` — the agent's exit code for
    * `agent-stopped-early` (from the bridge's `agent-stopped-early:<code>`
    * token), or `"old-helper"` when an old helper's bare `pty-exit` arrived
-   * before any output (see the reducer's old-helper rule). Null otherwise.
+   * before any output (see the reducer's old-helper rule). Card 4cd8270f: the
+   * signal number for `agent-force-stopped` / `agent-stopped-suddenly`, the exit code for
+   * `agent-stopped-with-error`. Null otherwise.
    */
   endedDetail: string | null;
 }
@@ -328,6 +377,18 @@ export function parseEndedReason(reason: string | undefined): {
     };
   }
   if (HELPER_CLOSED_REASONS.has(token)) return { endedReason: "helper-closed", endedDetail: null };
+  // Card 4cd8270f: `pty-exit:signal-9` / `pty-exit:code-1` — how the agent
+  // ended (terminal/shared/control-frames.mjs → ptyExitReason). Detail is
+  // the number. A bare `pty-exit` (clean quit) still falls through to "remote".
+  if (token === "pty-exit" && detail) {
+    const m = /^(signal|code)-(\d{1,3})$/.exec(detail);
+    if (m) {
+      const n = Number(m[2]);
+      const endedReason: EndedReason =
+        m[1] === "code" ? "agent-stopped-with-error" : n === 9 || n === 15 ? "agent-force-stopped" : "agent-stopped-suddenly";
+      return { endedReason, endedDetail: String(n) };
+    }
+  }
   const r = raw.toLowerCase();
   if (r.includes("idle")) return { endedReason: "idle", endedDetail: null };
   if (r.includes("max")) return { endedReason: "max-duration", endedDetail: null };

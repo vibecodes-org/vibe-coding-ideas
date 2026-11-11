@@ -73,6 +73,28 @@ test("the bridge's own reason passes through (agent-stopped-early:1)", { timeout
   assert.deepEqual(browser.closed, [1000, "agent-stopped-early:1"]);
 });
 
+test("card 4cd8270f: 'pty-exit:signal-9' passes through, ends at once, and the app callback gets detail 'signal 9'", { timeout: 15000 }, async (t) => {
+  const closedCalls = [];
+  const relay = await startStandinRelay({ port: 0, secret: SECRET, onSessionClosed: (sid, reason, detail) => closedCalls.push({ sid, reason, detail }) });
+  t.after(() => relay.close());
+  const { tokens, bridge, browser } = await pair(relay);
+  bridge.ws.close(1000, "pty-exit:signal-9");
+  await waitFor(() => browser.closed, 1000, "browser closed");
+  assert.deepEqual(browser.closed, [1000, "pty-exit:signal-9"]);
+  assert.equal(browser.texts.some(isPeerDegradedFrame), false);
+  assert.deepEqual(closedCalls, [{ sid: tokens.sid, reason: "bridge_ended", detail: "signal 9" }]);
+});
+
+test("card 4cd8270f: a plain pty-exit sends no detail", { timeout: 15000 }, async (t) => {
+  const closedCalls = [];
+  const relay = await startStandinRelay({ port: 0, secret: SECRET, onSessionClosed: (sid, reason, detail) => closedCalls.push(detail) });
+  t.after(() => relay.close());
+  const { bridge, browser } = await pair(relay);
+  bridge.ws.close(1000, "pty-exit");
+  await waitFor(() => browser.closed, 1000, "browser closed");
+  assert.deepEqual(closedCalls, [null]);
+});
+
 test("a real drop (1006) still gets peer-degraded and the grace hold; the browser stays open", { timeout: 15000 }, async (t) => {
   const closedCalls = [];
   const relay = await startStandinRelay({ port: 0, secret: SECRET, onSessionClosed: (sid, reason) => closedCalls.push(reason) });

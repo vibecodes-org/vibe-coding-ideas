@@ -51,6 +51,8 @@ import {
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
   RECONNECT_GRACE_MS,
+  LONG_HOLD_DEADLINE,
+  holdPolicy,
   TOMBSTONE_MS,
   idleCloseReason,
   maxCloseReason,
@@ -92,6 +94,7 @@ import {
   parseAlwaysOnValue,
   encodeOpenTerminalAuthorizedFrame,
   sanitizeBridgeEndReason,
+  bridgeEndDetail,
   sanitizeMachineList,
 } from "../../shared/control-frames.mjs";
 
@@ -994,6 +997,15 @@ export class TerminalRelay {
     await this.state.storage.put("lastActivityAt", now);
     this._lastPersistedActivityAt = now;
 
+    // Long-hold opt-in (card f4be2981): a bridge that says hold=1 will keep
+    // reconnecting for as long as its agent runs, so this session is held with
+    // no 90 s grace and no idle cap; only the max-age backstop, an explicit end
+    // or the bridge reporting its agent exited ends it. Old bridges never send
+    // this and keep today's behaviour.
+    if (role === "bridge" && url.searchParams.get("hold") === "1") {
+      await this.state.storage.put("bridgeLongHold", true);
+    }
+
     // 4b) GRACE-WINDOW REATTACH reconciliation. If the session was being HELD open
     //     for a dropped leg (graceDeadline set), this attach may complete the pair
     //     again. When BOTH legs are present once more, clear the grace hold and
@@ -1293,7 +1305,9 @@ export class TerminalRelay {
     try {
       ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), retired: true });
     } catch { /* attachment already gone */ }
-    await this.notifyAppSessionClosed(sid, "bridge_ended");
+    // Card 4cd8270f: how the agent ended ("signal 9", "code 1"), when the
+    // bridge said — bridgeEndDetail only ever returns that short shape.
+    await this.notifyAppSessionClosed(sid, "bridge_ended", bridgeEndDetail(reason));
     await this.clearSessionState();
     const now = Date.now();
     await this.state.storage.put("tombstoneReason", reason);
@@ -1387,7 +1401,8 @@ export class TerminalRelay {
     const now = Date.now();
     // Open (or keep) the grace hold; the grace alarm governs teardown from here.
     if ((await this.state.storage.get("graceDeadline")) == null) {
-      await this.state.storage.put("graceDeadline", now + this.graceMs());
+      const longHold = holdPolicy({ bridgeLongHold: (await this.state.storage.get("bridgeLongHold")) === true }) === "long";
+      await this.state.storage.put("graceDeadline", longHold ? LONG_HOLD_DEADLINE : now + this.graceMs());
     }
     await this.armAlarm(now);
 
@@ -1425,8 +1440,10 @@ export class TerminalRelay {
     const started = this._sessionStartedAtCache;
     const last = (await this.state.storage.get("lastActivityAt")) ?? now;
     const grace = await this.state.storage.get("graceDeadline");
-    const candidates = [last + this.idleMs(), started + this.maxMs()];
-    if (grace != null) candidates.push(grace);
+    const longHold = (await this.state.storage.get("bridgeLongHold")) === true;
+    const candidates = [started + this.maxMs()];
+    if (!longHold) candidates.push(last + this.idleMs());
+    if (grace != null && !(longHold && grace === LONG_HOLD_DEADLINE)) candidates.push(grace);
     await this.state.storage.setAlarm(Math.min(...candidates));
   }
 
@@ -1493,7 +1510,8 @@ export class TerminalRelay {
 
     // Idle only governs a WHOLE session; a held (degraded) session has stale activity
     // by definition and is governed by the grace deadline above instead.
-    if (grace == null && last != null && now - last >= this.idleMs()) {
+    const longHoldSession = (await this.state.storage.get("bridgeLongHold")) === true;
+    if (!longHoldSession && grace == null && last != null && now - last >= this.idleMs()) {
       const sid = await this.state.storage.get("sid");
       const idleMs = now - last;
       this.log("session ended", { why: "idle-timeout", sid, idleMs });
@@ -1538,9 +1556,13 @@ export class TerminalRelay {
    * elsewhere as a best-effort mirror (design doc §9, R2), so a failed
    * callback here just leaves it exactly as stale as it always could be
    * before this fix, self-correcting on the next lazy reap.
+   * `detail` (card 4cd8270f, bridge_ended only): how the agent ended, e.g.
+   * "signal 9" or "code 1" (from bridgeEndDetail); omitted from the body
+   * when null so the call is byte-identical to before for every other end.
    * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|"peer_gone"|"bridge_ended"|undefined} reasonCode
+   * @param {string|null} [detail]
    */
-  async notifyAppSessionClosed(sid, reasonCode) {
+  async notifyAppSessionClosed(sid, reasonCode, detail = null) {
     const appUrl = this.env.VIBECODES_APP_URL;
     const secret = this.env.TERMINAL_SESSION_SECRET;
     if (!sid || !appUrl || !secret) {
@@ -1557,13 +1579,13 @@ export class TerminalRelay {
       const res = await fetch(`${appUrl.replace(/\/+$/, "")}/api/terminal/session/closed`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ sid, reason: reasonCode }),
+        body: JSON.stringify(detail ? { sid, reason: reasonCode, detail } : { sid, reason: reasonCode }),
       });
       if (!res.ok) {
-        this.log("session-closed callback rejected by app", { sid, reasonCode, status: res.status });
+        this.log("session-closed callback rejected by app", { sid, reasonCode, detail, status: res.status });
         return;
       }
-      this.log("session-closed callback delivered", { sid, reasonCode });
+      this.log("session-closed callback delivered", { sid, reasonCode, detail });
     } catch (e) {
       this.log("session-closed callback failed", { sid, reasonCode, err: String(e) });
     }
@@ -1598,6 +1620,7 @@ export class TerminalRelay {
       "sessionStartedAt",
       "lastActivityAt",
       "graceDeadline",
+      "bridgeLongHold",
       "bridgeHelperVersion",
       "bridgeHost",
       "bridgeConv",

@@ -3,7 +3,7 @@
 // Run: cd terminal/bridge && node --test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { displayPath, progressLine, failureLines, earlyExitLine, promptFolderNote } from "./bridge-copy.js";
+import { displayPath, progressLine, failureLines, earlyExitLine, agentEndLine, promptFolderNote } from "./bridge-copy.js";
 
 const HOME = "/Users/you";
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -86,6 +86,19 @@ test("no line ever says token, relay or port", () => {
 test("the early-exit line names the agent and the exit code", () => {
   assert.equal(strip(earlyExitLine("claude", 1)), "Claude Code stopped straight away (exit code 1).\r\n");
   assert.equal(strip(earlyExitLine("codex", 127)), "Codex stopped straight away (exit code 127).\r\n");
+});
+
+test("card 4cd8270f: the end line says when the agent was force-stopped or quit with an error, and nothing on a clean quit", () => {
+  assert.equal(strip(agentEndLine("claude", { exitCode: 0, signal: 9 })), "Claude Code was force-stopped by something else on this Mac (signal 9).\r\n");
+  assert.equal(strip(agentEndLine("claude", { exitCode: 0, signal: 15 })), "Claude Code was force-stopped by something else on this Mac (signal 15).\r\n");
+  for (const signal of [1, 6, 11]) {
+    assert.equal(strip(agentEndLine("claude", { exitCode: 0, signal })), `Claude Code stopped suddenly (signal ${signal}).\r\n`);
+  }
+  assert.equal(strip(agentEndLine("codex", { exitCode: 0, signal: 6 })), "Codex stopped suddenly (signal 6).\r\n");
+  assert.equal(strip(agentEndLine("codex", { exitCode: 1, signal: 0 })), "Codex stopped with an error (exit code 1).\r\n");
+  assert.equal(agentEndLine("claude", { exitCode: 0, signal: 0 }), null);
+  assert.equal(agentEndLine("claude", { exitCode: 0 }), null);
+  assert.equal(agentEndLine("claude", {}), null);
 });
 
 test("the prompt note tells the agent it is already in the folder", () => {

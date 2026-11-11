@@ -304,6 +304,8 @@ test("the three new helper frames stay mutually disjoint and disjoint from every
 // ── Card 6b2cb8ac: bridge end reasons, the bridge-cwd frame, machine lists ──
 import {
   sanitizeBridgeEndReason,
+  ptyExitReason,
+  bridgeEndDetail,
   encodeBridgeCwdFrame,
   isBridgeCwdFrame,
   parseBridgeCwdFrame,
@@ -319,6 +321,26 @@ test("sanitizeBridgeEndReason keeps a safe token, else 'ended'", () => {
   assert.equal(sanitizeBridgeEndReason(""), "ended");
   assert.equal(sanitizeBridgeEndReason(undefined), "ended");
   assert.equal(sanitizeBridgeEndReason("/Users/x"), "ended");
+});
+
+test("card 4cd8270f: ptyExitReason / bridgeEndDetail", () => {
+  assert.equal(ptyExitReason({ exitCode: 0, signal: 9 }), "pty-exit:signal-9");
+  assert.equal(ptyExitReason({ exitCode: 1, signal: 0 }), "pty-exit:code-1");
+  assert.equal(ptyExitReason({ exitCode: 0, signal: 0 }), "pty-exit");
+  assert.equal(ptyExitReason({ exitCode: 0 }), "pty-exit");
+  assert.equal(ptyExitReason({ exitCode: -1 }), "pty-exit");
+  assert.equal(ptyExitReason({ signal: "SIGKILL" }), "pty-exit");
+  assert.equal(ptyExitReason(), "pty-exit");
+  // Every reason it builds survives an already-deployed relay's sanitizer.
+  for (const r of ["pty-exit:signal-9", "pty-exit:code-1", "pty-exit:code-255"]) {
+    assert.equal(sanitizeBridgeEndReason(r), r);
+  }
+  assert.equal(bridgeEndDetail("pty-exit:signal-9"), "signal 9");
+  assert.equal(bridgeEndDetail("pty-exit:code-1"), "code 1");
+  assert.equal(bridgeEndDetail("pty-exit:code-007"), "code 7");
+  for (const r of ["pty-exit", "pty-exit:code-1234", "pty-exit:signal-SIGKILL", "agent-stopped-early:1", "ended", undefined, 9]) {
+    assert.equal(bridgeEndDetail(r), null, String(r));
+  }
 });
 
 test("bridge-cwd frame round-trips an absolute folder and rejects anything else", () => {

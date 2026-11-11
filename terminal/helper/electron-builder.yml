@@ -23,6 +23,7 @@ files:
   - main.js
   - proto-reg.js
   - lifecycle.js
+  - stay-awake.js
   - tray-icon.js
   # Every helper-local ESM module (agent-availability, open-terminal,
   # open-terminal-gate, control-url, …) via a GLOB — never an explicit list.

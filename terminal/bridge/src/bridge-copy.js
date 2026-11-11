@@ -141,6 +141,28 @@ export function earlyExitLine(agent, exitCode) {
   return yellow(`${agentName(agent)} stopped straight away (exit code ${exitCode}).`);
 }
 
+/**
+ * Card 4cd8270f: the agent ran for a while, then ended in a way worth saying
+ * out loud. Killed by a signal (something outside VibeCodes stopped it) or a
+ * non-zero exit code → one plain line; a clean quit (code 0) → null.
+ * @param {string} agent @param {{ exitCode?: unknown, signal?: unknown }} exit
+ * @returns {string | null}
+ */
+export function agentEndLine(agent, { exitCode, signal } = {}) {
+  if (Number.isInteger(signal) && /** @type {number} */ (signal) > 0) {
+    // Only SIGKILL (9) and SIGTERM (15) are a deliberate stop from outside;
+    // any other signal (a hang-up, a crash) gets neutral wording.
+    if (signal === 9 || signal === 15) {
+      return yellow(`${agentName(agent)} was force-stopped by something else on this Mac (signal ${signal}).`);
+    }
+    return yellow(`${agentName(agent)} stopped suddenly (signal ${signal}).`);
+  }
+  if (Number.isInteger(exitCode) && exitCode !== 0) {
+    return yellow(`${agentName(agent)} stopped with an error (exit code ${exitCode}).`);
+  }
+  return null;
+}
+
 /** @type {Record<string, string>} */
 const HOW_WORDS = {
   found: "found an existing copy",

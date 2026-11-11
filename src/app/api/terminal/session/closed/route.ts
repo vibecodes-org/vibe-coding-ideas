@@ -51,6 +51,17 @@ const BodySchema = z.object({
   // reconnect hold — see terminal/relay/src/index.js's endFromBridge(). Same
   // deploy-order rule as peer_gone: this must be live before the relay sends it.
   reason: z.enum(["idle_timeout", "time_limit", "peer_gone", "bridge_ended"]).optional(),
+  // Card 4cd8270f: how the agent ended, sent with "bridge_ended" — "signal 9"
+  // (killed by something on the Mac) or "code 1" (quit with an error). Built
+  // by terminal/shared/control-frames.mjs → bridgeEndDetail; the shape is
+  // pinned here too so nothing else can be stored. Anything outside that short
+  // shape is dropped (never a 400): a bad detail must not stop the row ending.
+  detail: z
+    .string()
+    .max(16)
+    .regex(/^(signal|code) \d{1,3}$/)
+    .optional()
+    .catch(undefined),
 });
 
 export async function POST(req: Request) {
@@ -65,7 +76,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { sid, reason } = parsed.data;
+    const { sid, reason, detail } = parsed.data;
 
     const authHeader = req.headers.get("authorization") || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
@@ -101,13 +112,33 @@ export async function POST(req: Request) {
       logger.info("Terminal session closed callback: no active row to update", {
         sid,
         reason: reason ?? null,
+        detail: detail ?? null,
       });
       return NextResponse.json({ updated: false });
+    }
+
+    // Card 4cd8270f: save how the agent ended as its own write, AFTER the row
+    // is safely ended — so the end itself never depends on the end_detail
+    // column (migration 00209) being live yet. Best-effort: a failure here is
+    // logged and the callback still succeeds.
+    if (detail) {
+      const { error: detailError } = await supabase
+        .from("terminal_sessions")
+        .update({ end_detail: detail })
+        .eq("id", data.id);
+      if (detailError) {
+        logger.warn("Terminal session closed callback: couldn't save how the agent ended", {
+          sid,
+          detail,
+          error: detailError.message,
+        });
+      }
     }
 
     logger.info("Terminal session closed callback: registry updated in real time", {
       sid,
       reason: reason ?? null,
+      detail: detail ?? null,
       endedAt: nowIso,
     });
     return NextResponse.json({ updated: true });

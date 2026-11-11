@@ -45,6 +45,9 @@ import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
+import { createCatchupBuffer } from "./catchup-buffer.js";
+import { createBusyTracker } from "./busy-tracker.js";
+import { isWake, reconnectDelay, endCourtesyMs, WAKE_TICK_MS } from "./link-policy.js";
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
 import { parseStepUsageScript, saveStepUsageScript, stepUsageScriptDir } from "./step-usage-script.js";
@@ -55,7 +58,7 @@ import { agentNotInstalledBanner } from "./agent-copy.js";
 import { setupCommand, setupIntroLines, setupOutroLines, checkSignedIn, setupEndReason } from "./agent-setup.js";
 import { resolveResumeFolder, resolveWorkspaceFolder, sanitizeWorkspace } from "./folder-resolve.js";
 import { cloneRepo } from "./git-clone.js";
-import { progressLine, failureLines, earlyExitLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
+import { progressLine, failureLines, earlyExitLine, agentEndLine, promptFolderNote, freshInsteadOfResumeLine } from "./bridge-copy.js";
 import { findConversationFolder } from "./transcript-folder.js";
 import { withoutFolderRecordStep } from "../../shared/launch-prompt.mjs";
 import { resolveMachineNames } from "../../shared/machine-name.mjs";
@@ -71,6 +74,7 @@ import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
   sanitizeConversationId,
+  ptyExitReason,
 } from "../../shared/control-frames.mjs";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
@@ -633,7 +637,12 @@ function sessionAgentArgs(body) {
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
 // An agent that exits this soon after spawning "stopped straight away" (card 6b2cb8ac).
-const EARLY_EXIT_MS = 10000;
+// BRIDGE_EARLY_EXIT_MS overrides it for tests only (0 = never "early").
+const EARLY_EXIT_MS = (() => {
+  const raw = (process.env.BRIDGE_EARLY_EXIT_MS ?? "").trim();
+  const n = raw === "" ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 10000;
+})();
 // How long a fresh launch waits for the browser leg to be paired before it
 // writes its folder progress lines (the relay drops frames with no peer).
 const PEER_WAIT_MS = 3000;
@@ -669,7 +678,15 @@ const PING_MAX_MISSED = 2;
 // TTL so the ORIGINAL bridge token is still valid the whole window (no re-mint).
 // Reaping still happens on: budget exhausted, claude exits, a real shutdown (parent
 // disconnect / SIGTERM / before-quit), or a TERMINAL relay close code (below).
-const BRIDGE_RECONNECT_MS = Number(process.env.BRIDGE_RECONNECT_MS || 90000);
+//
+// CARD f4be2981 (sessions survive sleep): the default is now NO budget (0). A dropped
+// link never kills a live agent; the bridge keeps reconnecting (backoff capped at 30s,
+// and at once on wake) until the user ends the session, the agent exits, the helper
+// quits or the max-duration cap fires. The attach URL carries hold=1 so the relay
+// holds the session the same way. BRIDGE_RECONNECT_MS > 0 is kept only so tests can
+// still exercise a bounded budget.
+const BRIDGE_RECONNECT_MS = Number(process.env.BRIDGE_RECONNECT_MS || 0);
+const NO_DEADLINE = Number.MAX_SAFE_INTEGER;
 // Per-attempt open timeout while reconnecting: a hung connect cycles to the next
 // attempt instead of stalling the whole budget.
 const RECONNECT_ATTEMPT_TIMEOUT_MS = Number(process.env.BRIDGE_RECONNECT_ATTEMPT_TIMEOUT_MS || 10000);
@@ -888,8 +905,21 @@ async function main() {
 
   // PTY output produced before the relay socket is open (e.g. the program's
   // startup banner), flushed on open so the first bytes never lose the race.
-  /** @type {Buffer[]} */
-  const preOpenBuffer = [];
+  // Bounded (1 MB, oldest dropped first): a long sleep with a busy agent must not
+  // grow it without limit. The browser redraws on reattach, so dropping is safe.
+  const preOpenBuffer = createCatchupBuffer();
+
+  // Stay-awake signal for the helper (card f4be2981): tells the parent "this agent
+  // printed something in the last 2 minutes" and only when that changes.
+  const busyTracker = createBusyTracker((busy) => {
+    if (process.send && process.channel) {
+      try { process.send({ type: "busy", busy }); } catch { /* channel already closing */ }
+    }
+  });
+  const busyTimer = setInterval(() => busyTracker.tick(Date.now()), 15_000);
+  busyTimer.unref?.();
+  let wakeTimer = null;
+  let wakePongPending = false;
 
   // MITIGATION 2 (Cloudflare free-tier op budget): Nagle-style coalescing for
   // the PTY -> relay leg. `send` closes over the live `ws`/`shuttingDown`
@@ -951,10 +981,70 @@ async function main() {
     });
   }
 
+  /**
+   * One short, best-effort reconnect whose only job is to tell the relay the
+   * session ended on purpose (a 1000 close with the reason), so the browser
+   * shows the real reason instead of waiting for a Mac that is never coming back.
+   */
+  function courtesyClose(why, ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      let cws = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(cap);
+        try { cws?.terminate(); } catch { /* ignore */ }
+        resolve();
+      };
+      const cap = setTimeout(finish, ms);
+      const attempt = () => {
+        if (done) return;
+        let opened = false;
+        let retryQueued = false;
+        const retrySoon = () => {
+          if (retryQueued || done) return;
+          retryQueued = true;
+          const t = setTimeout(attempt, 1000);
+          t.unref?.();
+        };
+        try { cws = new WebSocket(url); } catch { retrySoon(); return; }
+        cws.on("open", () => {
+          opened = true;
+          try { cws.close(1000, why); } catch { /* ignore */ }
+          setTimeout(finish, 300);
+        });
+        // ws emits "error" and then "close" for a FAILED connect, so "close" alone
+        // must not end the attempt window: only a close after a real open does.
+        cws.on("close", () => { if (opened) finish(); else retrySoon(); });
+        cws.on("error", () => { /* the close that follows decides */ });
+      };
+      attempt();
+    });
+  }
+
   function shutdown(code, why) {
     if (shuttingDown) return;
     shuttingDown = true;
+    clearTimeout(reconnectTimer);
+    clearTimeout(connectTimer);
+    stopKeepalive();
+    const courtesy = !open && openedAtLeastOnce
+      ? (Number(process.env.BRIDGE_END_COURTESY_MS) || endCourtesyMs(why))
+      : 0;
+    if (courtesy > 0) {
+      log("info", "relay link is down — one short attempt to report the end", { why, ms: courtesy });
+      courtesyClose(why, courtesy).finally(() => finishShutdown(code, why));
+      return;
+    }
+    finishShutdown(code, why);
+  }
+
+  function finishShutdown(code, why) {
     removeAgentFiles();
+    clearInterval(busyTimer);
+    clearInterval(wakeTimer);
+    busyTracker.stop();
     clearTimeout(connectTimer);
     clearTimeout(maxTimer);
     clearTimeout(attachTimer);
@@ -1125,6 +1215,7 @@ async function main() {
     term.onData((data) => {
       const buf = Buffer.from(data, "utf8");
       bytesOut += buf.length;
+      busyTracker.output(Date.now());
       outputBatcher.queueBinary(buf);
     });
 
@@ -1145,7 +1236,19 @@ async function main() {
         shutdown(0, `agent-stopped-early:${code}`);
         return;
       }
-      shutdown(0, "pty-exit");
+      // Card 4cd8270f: say how the agent ended — in the close reason (the
+      // relay passes it on and the app records it) and, when it was killed or
+      // quit with an error, in one plain line on screen. A clean quit stays a
+      // bare "pty-exit".
+      if (!shuttingDown) {
+        const endLine = agentEndLine(AGENT, { exitCode, signal });
+        if (endLine) {
+          const line = Buffer.from(endLine, "utf8");
+          bytesOut += line.length;
+          outputBatcher.queueBinary(line);
+        }
+      }
+      shutdown(0, ptyExitReason({ exitCode, signal }));
     });
 
     // Apply the browser's size if it resized while the spawn was deferred.
@@ -1502,7 +1605,10 @@ async function main() {
     (CONV ? `&conv=${encodeURIComponent(CONV)}` : "") +
     // Terminal P2 (E2EE, FR-3/FR-5): announce capability alongside the other
     // metadata, reusing this exact mechanism — see control-frames.mjs.
-    (E2EE_KEY ? `&e2ee=1` : "");
+    (E2EE_KEY ? `&e2ee=1` : "") +
+    // Card f4be2981: this bridge keeps reconnecting for as long as its agent runs,
+    // so the relay may hold the session with no 90s limit. Old relays ignore it.
+    `&hold=1`;
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop
@@ -1511,6 +1617,42 @@ async function main() {
   // one to end a long-running session first — the relay's alarm fires, tells the
   // bridge honestly via a real close, and this timer only matters if that somehow
   // doesn't happen.
+  // Wake detection (card f4be2981): a 5s timer that finds a big gap between ticks
+  // means the Mac slept. Reconnect at once instead of waiting out a stale socket or
+  // a long backoff.
+  function onWake() {
+    if (shuttingDown || !claudeAlive()) return;
+    log("info", "wake detected — checking the relay link");
+    if (!open) {
+      const dead = !ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING;
+      if (reconnectDeadline !== 0 && dead) {
+        clearTimeout(reconnectTimer);
+        reconnectAttempt = 0;
+        openRelay();
+      }
+      return;
+    }
+    // Looks open but may be dead after the sleep: ping now, and drop it if no pong.
+    wakePongPending = true;
+    try { ws.ping(); } catch { /* ignore */ }
+    const t = setTimeout(() => {
+      if (wakePongPending && open && !shuttingDown) {
+        log("warn", "no pong after wake — terminating stale relay link");
+        reconnectAttempt = 0;
+        try { ws.terminate(); } catch { /* ignore */ }
+      }
+    }, 6000);
+    t.unref?.();
+  }
+  let lastWakeTick = Date.now();
+  wakeTimer = setInterval(() => {
+    const now = Date.now();
+    const woke = isWake(lastWakeTick, now);
+    lastWakeTick = now;
+    if (woke) onWake();
+  }, WAKE_TICK_MS);
+  wakeTimer.unref?.();
+
   maxTimer = setTimeout(() => {
     log("warn", "max-duration cap reached — ending session", { seconds: MAX_SECONDS });
     shutdown(0, "max-duration");
@@ -1555,7 +1697,7 @@ async function main() {
       return;
     }
     const now = Date.now();
-    if (reconnectDeadline === 0) reconnectDeadline = now + BRIDGE_RECONNECT_MS;
+    if (reconnectDeadline === 0) reconnectDeadline = BRIDGE_RECONNECT_MS > 0 ? now + BRIDGE_RECONNECT_MS : NO_DEADLINE;
     if (now >= reconnectDeadline) {
       log("warn", "reconnect budget exhausted — ending session", { budgetMs: BRIDGE_RECONNECT_MS });
       shutdown(0, "reconnect-exhausted");
@@ -1568,8 +1710,7 @@ async function main() {
    *  by the reconnect budget. */
   function scheduleReconnect(code) {
     const attempt = reconnectAttempt++;
-    const base = Math.min(1000 * 2 ** attempt, 8000); // 1s → 2s → 4s → 8s cap
-    const delay = base + Math.floor(Math.random() * 250); // jitter to de-sync retries
+    const delay = reconnectDelay(attempt); // 1s → 2s → 4s … capped at 30s, plus jitter
     log("warn", "relay link dropped — will reconnect", {
       code, attempt, delayMs: delay, budgetMsLeft: Math.max(0, reconnectDeadline - Date.now()),
     });
@@ -1764,6 +1905,7 @@ async function main() {
     // it now RECONNECTS rather than immediately reaping the child).
     ws.on("pong", () => {
       missedPongs = 0;
+      wakePongPending = false;
     });
 
     ws.on("open", () => {

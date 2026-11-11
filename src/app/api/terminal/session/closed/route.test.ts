@@ -102,6 +102,61 @@ describe("POST /api/terminal/session/closed", () => {
     expect(await res.json()).toEqual({ updated: true });
   });
 
+  // Card 4cd8270f: the relay adds how the agent ended ("signal 9" / "code 1").
+  it("saves detail on the ended row as a second write, after the end itself", async () => {
+    const endChain = makeChain({ data: { id: "row-1" }, error: null });
+    const detailChain = makeChain({ data: null, error: null });
+    mockFrom.mockReturnValueOnce(endChain).mockReturnValueOnce(detailChain);
+    const { logger } = await import("@/lib/logger");
+
+    const res = await POST(req({ sid: "sid-1", reason: "bridge_ended", detail: "signal 9" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updated: true });
+
+    // The end write is unchanged (never depends on the new column).
+    const endUpdate = endChain.__calls.find((c: { method: string }) => c.method === "update");
+    expect(endUpdate.args[0]).not.toHaveProperty("end_detail");
+    const detailUpdate = detailChain.__calls.find((c: { method: string }) => c.method === "update");
+    expect(detailUpdate.args[0]).toEqual({ end_detail: "signal 9" });
+    expect(detailChain.__calls).toContainEqual({ method: "eq", args: ["id", "row-1"] });
+    expect(logger.info).toHaveBeenCalledWith(
+      "Terminal session closed callback: registry updated in real time",
+      expect.objectContaining({ sid: "sid-1", reason: "bridge_ended", detail: "signal 9" }),
+    );
+  });
+
+  it("no detail → no second write", async () => {
+    const chain = makeChain({ data: { id: "row-1" }, error: null });
+    mockFrom.mockReturnValue(chain);
+    const res = await POST(req({ sid: "sid-1", reason: "bridge_ended" }));
+    expect(res.status).toBe(200);
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it("still succeeds when saving detail fails (e.g. the column isn't live yet) — logs a warning", async () => {
+    const endChain = makeChain({ data: { id: "row-1" }, error: null });
+    const detailChain = makeChain({ data: null, error: { message: 'column "end_detail" does not exist' } });
+    mockFrom.mockReturnValueOnce(endChain).mockReturnValueOnce(detailChain);
+    const { logger } = await import("@/lib/logger");
+
+    const res = await POST(req({ sid: "sid-1", reason: "bridge_ended", detail: "code 1" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updated: true });
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it.each(["signal SIGKILL", "code 1234", "/Users/x", "a".repeat(40), "", 9])(
+    "a detail outside the short shape (%j) is dropped, and the row still ends",
+    async (detail) => {
+      const chain = makeChain({ data: { id: "row-1" }, error: null });
+      mockFrom.mockReturnValue(chain);
+      const res = await POST(req({ sid: "sid-1", reason: "bridge_ended", detail }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ updated: true });
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("401s when the notify token is rejected", async () => {
     mockAuthorizeNotify.mockResolvedValue({ ok: false, reason: "expired" });
     const res = await POST(req({ sid: "sid-1" }));

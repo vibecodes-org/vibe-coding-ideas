@@ -58,6 +58,10 @@ import {
   LINK_SILENT_CHECK_MS,
   LINK_SILENT_PROBE_MS,
   RECONNECT_GRACE_MS,
+  supportsLongHold,
+  reconnectBackoffMs,
+  shouldShowLongWait,
+  CLOCK_JUMP_MS,
   RELAUNCH_IF_BRIDGE_SILENT_MS,
   E2EE_CLOSE,
   buildRelayUrl,
@@ -585,6 +589,8 @@ export interface UseTerminalSessionResult {
   launchPhase: LaunchPhase;
   /** Grace-window "peer dropped, we're holding" hint. */
   peerDegraded: boolean;
+  /** Card f4be2981: the Mac has been missing more than 3 minutes while our own link is up. */
+  longWait?: boolean;
   /**
    * The bridge's announced helper version (release-gate rework 2a), or null
    * before one arrives — includes every pre-2a helper, which never announces
@@ -785,6 +791,7 @@ export function useTerminalSession(
   // it's HOLDING the session. The terminal stays visible; we show a subtle
   // "reconnecting" hint until peer-reattached (or the window expires).
   const [peerDegraded, setPeerDegraded] = useState(false);
+  const [longWait, setLongWait] = useState(false);
   // Release-gate rework 2a: the bridge's own announced version, forwarded by the
   // relay as a `bridge-version` control frame (attach-ordering independent — see
   // connection.ts's doc comment). null until one arrives — includes every
@@ -2264,7 +2271,9 @@ export function useTerminalSession(
             // Our peer (the bridge) dropped; the relay is HOLDING the session. Keep
             // the terminal, show a subtle hint, and bound the wait to the grace window.
             setPeerDegraded(true);
-            if (!degradeTimerRef.current) {
+            // Helper 0.3.34+ keeps the agent alive and the relay holds the session with
+            // no time limit, so there is no 90s countdown to wait out (card f4be2981).
+            if (!supportsLongHold(helperVersionRef.current) && !degradeTimerRef.current) {
               degradeTimerRef.current = setTimeout(() => {
                 degradeTimerRef.current = null;
                 setPeerDegraded(false);
@@ -2430,7 +2439,11 @@ export function useTerminalSession(
     const p = pairRef.current;
     const now = Date.now();
     if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
-    if (!p || now >= reconnectDeadlineRef.current) {
+    // Card f4be2981: with a long-hold helper the session is kept until the user ends
+    // it (or the 24h backstop), so the browser never gives up on a clock. Timers
+    // freeze while the Mac sleeps, which is exactly why a deadline cannot be used.
+    const longHold = supportsLongHold(helperVersionRef.current);
+    if (!p || (!longHold && now >= reconnectDeadlineRef.current)) {
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       dispatch({ type: "reconnect-exhausted" });
@@ -2438,11 +2451,11 @@ export function useTerminalSession(
       return;
     }
     const attempt = reconnectAttemptRef.current++;
-    const delay = Math.min(1000 * 2 ** attempt, 8000) + Math.floor(Math.random() * 250);
+    const delay = reconnectBackoffMs(attempt, longHold);
     clearReconnectTimer();
     reconnectTimerRef.current = setTimeout(() => {
       const pp = pairRef.current;
-      if (!pp || Date.now() >= reconnectDeadlineRef.current) {
+      if (!pp || (!supportsLongHold(helperVersionRef.current) && Date.now() >= reconnectDeadlineRef.current)) {
         reconnectDeadlineRef.current = 0;
         reconnectAttemptRef.current = 0;
         dispatch({ type: "reconnect-exhausted" });
@@ -2453,6 +2466,62 @@ export function useTerminalSession(
     }, delay);
   }, [openBrowserLeg, clearReconnectTimer, clearDegradeTimer]);
   scheduleReconnectRef.current = scheduleReconnect;
+
+  // ── wake / unlock / network-back: reattach at once (card f4be2981) ─────────
+  // While disconnected, the backoff timer may be 30s long, or frozen by a sleep.
+  // On the tab becoming visible, the network coming back, or a clock jump (the
+  // computer slept), drop the wait and reattach to the SAME session right now.
+  useEffect(() => {
+    if (!enabled || state.status !== "disconnected") return;
+    const reattachNow = () => {
+      if (statusRef.current !== "disconnected") return;
+      const p = pairRef.current;
+      if (!p) return;
+      clearReconnectTimer();
+      reconnectAttemptRef.current = 0;
+      openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") reattachNow();
+    };
+    let lastTick = Date.now();
+    const tick = setInterval(() => {
+      const now = Date.now();
+      const jumped = now - lastTick > CLOCK_JUMP_MS;
+      lastTick = now;
+      if (jumped) reattachNow();
+    }, 5_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", reattachNow);
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", reattachNow);
+    };
+  }, [enabled, state.status, openBrowserLeg, clearReconnectTimer]);
+
+  // ── "Still waiting for your Mac" (card f4be2981, decision 2) ──────────────
+  // Only when our own link is up and the Mac is the missing piece. Never ends
+  // the session; it only changes the wording and offers End session.
+  useEffect(() => {
+    if (!peerDegraded || state.status !== "connected") {
+      setLongWait(false);
+      return;
+    }
+    const since = Date.now();
+    const check = () =>
+      setLongWait(
+        shouldShowLongWait({
+          waitingSince: since,
+          now: Date.now(),
+          visible: typeof document === "undefined" || document.visibilityState === "visible",
+          online: typeof navigator === "undefined" || navigator.onLine !== false,
+          browserLinkUp: true,
+        }),
+      );
+    const id = setInterval(check, 5_000);
+    return () => clearInterval(id);
+  }, [peerDegraded, state.status]);
 
   // ── silent-link watchdog (fix/terminal-dock-heartbeat) ─────────────────────
   // The watchdog verdict landed: the socket still LOOKS open but nothing inbound
@@ -3405,6 +3474,7 @@ export function useTerminalSession(
     state,
     launchPhase,
     peerDegraded,
+    longWait,
     helperVersion,
     peerNotice,
     // Terminal P2 (E2EE) — Phase A "not encrypted yet" signal (design doc,
