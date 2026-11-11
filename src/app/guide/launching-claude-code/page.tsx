@@ -140,12 +140,12 @@ export default function LaunchingClaudeCodePage() {
               <strong className="text-foreground">&quot;Install guide&quot;</strong>{" "}
               — links to{" "}
               <a
-                href="https://docs.claude.com/en/docs/claude-code"
+                href="https://code.claude.com/docs/en/setup"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                docs.claude.com/en/docs/claude-code
+                code.claude.com/docs/en/setup
               </a>{" "}
               for Claude Code, or{" "}
               <a
@@ -157,6 +157,15 @@ export default function LaunchingClaudeCodePage() {
                 learn.chatgpt.com/docs/codex/cli
               </a>{" "}
               for Codex — whichever is your remembered agent
+            </li>
+            <li>
+              <strong className="text-foreground">&quot;Set up&quot; screen</strong>{" "}
+              — when Claude Code or Codex isn&apos;t on your Mac and your
+              helper is up to date, the tab offers to install it for you. It
+              runs the maker&apos;s own installer in the tab so you can watch,
+              then helps you sign in, then starts it. Nothing runs until you
+              click. If you&apos;d rather do it yourself, it shows the one
+              command to paste into Terminal.
             </li>
           </ul>
         </section>

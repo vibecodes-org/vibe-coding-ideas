@@ -48,6 +48,7 @@ function mockActions(): TerminalSessionActions {
   return {
     connect: vi.fn(),
     beginBrowserLaunch: vi.fn(),
+    beginSetup: vi.fn(),
     launchFromBus: vi.fn(),
     reconnectNow: vi.fn(),
     end: vi.fn(),
@@ -1420,25 +1421,60 @@ describe("TerminalSessionView — Setup Connect uses the tab's own agent (card 6
 });
 
 describe("TerminalSessionView — ended screens from the approved mock (card 6b2cb8ac)", () => {
-  it("2b: agent not installed → install link, Start again, never Resume", () => {
+  it("2b: agent not installed, helper old → old-helper setup screen with Update now and the new install page", () => {
     const actions = installMockSessionWith({ cwd: "/Users/you/p", state: { endedReason: "agent-not-installed" } });
     renderCardView({ entry: { agent: "claude" } });
-    expect(screen.getByText("Claude Code stopped on your Mac straight away")).toBeInTheDocument();
-    expect(screen.getByText("Claude Code isn't installed on this Mac. Install it, then start again.")).toBeInTheDocument();
+    expect(screen.getByText("Set up Claude Code on this Mac")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "How to install Claude Code" })).toHaveAttribute(
       "href",
-      "https://docs.claude.com/en/docs/claude-code",
+      "https://code.claude.com/docs/en/setup",
     );
+    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+    expect(screen.getByText("curl -fsSL https://claude.ai/install.sh | bash")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start again" }));
     expect(actions.beginBrowserLaunch).toHaveBeenCalledTimes(1);
   });
 
-  it("2c: Codex install link", () => {
+  it("2c: Codex, old helper → Codex install page", () => {
     installMockSessionWith({ state: { endedReason: "agent-not-installed" } });
     renderCardView({ entry: { agent: "codex" } });
-    expect(screen.getByText("Codex stopped on your Mac straight away")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "How to install Codex" })).toBeInTheDocument();
+    expect(screen.getByText("Set up Codex on this Mac")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "How to install Codex" })).toHaveAttribute(
+      "href",
+      "https://learn.chatgpt.com/docs/codex/cli",
+    );
+  });
+
+  it("setup start screen: helper 0.3.32 is too old, 0.3.33 gets the one-click install", () => {
+    installMockSessionWith({ helperVersion: "0.3.32", state: { endedReason: "agent-not-installed" } });
+    const old = renderCardView({ entry: { agent: "claude" } });
+    expect(screen.queryByRole("button", { name: "Install Claude Code" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+    old.unmount();
+
+    const actions = installMockSessionWith({ helperVersion: "0.3.33", state: { endedReason: "agent-not-installed" } });
+    renderCardView({ entry: { agent: "claude" } });
+    expect(screen.getByText("Set up Claude Code on this Mac")).toBeInTheDocument();
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Step 1 of 3/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Install Claude Code" }));
+    expect(actions.beginSetup).toHaveBeenCalledWith("install", "claude");
+  });
+
+  it("setup screens after a setup session ends", () => {
+    const cases: [string, string, string][] = [
+      ["setup-installed", "Claude Code is installed", "Sign in to Claude Code"],
+      ["setup-signed-in", "", "Start Claude Code"],
+    ];
+    for (const [reason, title, button] of cases) {
+      const actions = installMockSessionWith({ helperVersion: "0.3.33", state: { endedReason: reason as never } });
+      const r = renderCardView({ entry: { agent: "claude" } });
+      if (title) expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: button })).toBeInTheDocument();
+      expect(actions.beginSetup).not.toHaveBeenCalled();
+      r.unmount();
+    }
   });
 
   it("2a: folder missing on resume shows the folder, ~-shortened", () => {

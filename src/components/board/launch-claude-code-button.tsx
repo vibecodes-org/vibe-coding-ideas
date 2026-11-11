@@ -55,13 +55,15 @@ import {
 import { readPlatformSignals, resolveTerminalPlatform } from "@/lib/terminal/platform";
 import { buildOpenTerminalDeepLink, MAX_OPEN_TERMINAL_URL_LENGTH } from "@/lib/terminal/deep-link";
 import { fetchHelperStatus } from "@/lib/terminal/helper-row";
+import { AGENT_INSTALL_GUIDE_URLS } from "@/lib/terminal/agent-install";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 
 const APP_URL = resolveAppUrl();
-const INSTALL_GUIDE_URL = "https://docs.claude.com/en/docs/claude-code";
-// Codex support (docs/codex-terminal-ux-design.html §2/§10). The old
-// developers.openai.com/codex/cli/ address now redirects here (checked 15 Oct 2026).
-export const CODEX_INSTALL_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
+// Card 63a60792: both install pages now come from the one shared table (the old
+// docs.claude.com and developers.openai.com addresses redirect elsewhere).
+const INSTALL_GUIDE_URL = AGENT_INSTALL_GUIDE_URLS.claude;
+// Codex support (docs/codex-terminal-ux-design.html §2/§10).
+export const CODEX_INSTALL_GUIDE_URL = AGENT_INSTALL_GUIDE_URLS.codex;
 
 // Copy for the default-destination work (card 5a24479e). Exported for tests.
 export const BOARD_PRIMARY_TITLE_BROWSER = "Opens the browser terminal on this board";

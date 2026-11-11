@@ -103,6 +103,7 @@ import { decideE2eePolicy, E2EE_NEGOTIATION_GRACE_MS } from "@/lib/terminal/e2ee
 import {
   MAX_LAUNCH_URL_LENGTH,
   buildLaunchDeepLink,
+  type SetupAction,
   redactDeepLinkToken,
 } from "@/lib/terminal/deep-link";
 import { shouldSkipHelperToken } from "@/lib/terminal/helper-row";
@@ -510,7 +511,14 @@ export interface PairInfo {
 
 export interface TerminalSessionActions {
   /** Mint a session and open the browser leg; autoLaunch fires the vibecodes:// deep link. */
-  connect: (options?: { autoLaunch?: boolean; agent?: "claude" | "codex" }) => Promise<void>;
+  connect: (options?: { autoLaunch?: boolean; agent?: "claude" | "codex"; setup?: SetupAction }) => Promise<void>;
+  /**
+   * Card 63a60792 (in-app setup): start a short setup session in this tab (the
+   * helper runs only the agent's own installer or sign-in), reusing the tab the
+   * way "Start again" does. Always fires the launch link: the user already has a
+   * paired helper, or setup would not have been offered.
+   */
+  beginSetup: (action: SetupAction, agent: "claude" | "codex") => void;
   /**
    * Install-first entry gate. This is the ONE place a browser "open" is turned into
    * either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
@@ -633,6 +641,8 @@ export interface UseTerminalSessionResult {
    * suggesting `claude update` or turning the setting off.
    */
   remoteControlEarlyExit: boolean;
+  /** Card 63a60792: the setup action this tab's current session runs, or null for an ordinary launch. */
+  setupAction?: SetupAction | null;
   /** isInputEnabled(state, readOnly) — convenience, the same predicate xterm's onData gates on. */
   inputEnabled: boolean;
   /** Install-first gate inputs, corrected client-side on mount (SSR default: unsupported/unpaired). */
@@ -738,6 +748,11 @@ export function useTerminalSession(
    * under the ended overlay). Reset by connect() and attachToExisting.
    */
   const rcLaunchRef = useRef<{ sessionId: string; firstOutputAt: number | null } | null>(null);
+  // Card 63a60792 (in-app setup): the setup action of the session being started
+  // or running in this tab. Read by connect() (the mint) and fireLaunchDeepLink
+  // (the link); reset on every connect(), so only beginSetup() ever sets it.
+  const setupActionRef = useRef<{ action: SetupAction; agent: "claude" | "codex" } | null>(null);
+  const [setupAction, setSetupAction] = useState<SetupAction | null>(null);
   const [remoteControlEarlyExit, setRemoteControlEarlyExit] = useState(false);
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
@@ -1676,6 +1691,38 @@ export function useTerminalSession(
       // actually runs, same posture as `dims`.
       const skipHelperToken = shouldSkipHelperToken(lastHelperStatusRef.current, Date.now());
       const effectiveHelperToken = skipHelperToken ? undefined : helperToken;
+      // Card 63a60792: a setup session's link carries only the setup word and
+      // the agent (no folder, prompt, resume, model or board agents).
+      const setupRun = trigger === "connect" ? setupActionRef.current : null;
+      if (setupRun) {
+        let setupLink: string;
+        try {
+          setupLink = buildLaunchDeepLink({
+            relay: relayBaseUrl(),
+            session: sessionId,
+            token: bridgeToken,
+            helperToken: effectiveHelperToken,
+            cols: dims?.cols,
+            rows: dims?.rows,
+            agent: setupRun.agent === "codex" ? "codex" : undefined,
+            setup: setupRun.action,
+          });
+        } catch (err) {
+          logger.error("Terminal setup deep-link build failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          setLaunchPhase("helper-timeout");
+          return;
+        }
+        logger.info("Terminal firing setup deep link", {
+          sessionId,
+          action: setupRun.action,
+          agent: setupRun.agent,
+          url: redactDeepLinkToken(setupLink),
+        });
+        if (!openLaunchLinkAndArmTimeout(setupLink)) setLaunchPhase("helper-timeout");
+        return;
+      }
       const carriedForResume = promptPartsRef.current;
       const forcedCwd = opts?.forceResumeCwd?.trim() || null;
       // Card 5e654dd1 (Nick, 26 Oct 2026): a reattach whose row has a Claude
@@ -1942,6 +1989,17 @@ export function useTerminalSession(
     [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout, currentLaunchDims],
   );
   fireLaunchDeepLinkRef.current = fireLaunchDeepLink;
+
+  // Card 63a60792: how a setup session ended (outcome only, once per session).
+  const setupResultSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    const run = setupActionRef.current;
+    if (!run || state.status !== "session-ended" || !state.sessionId) return;
+    const reason = state.endedReason;
+    if (!reason || !reason.startsWith("setup-") || setupResultSentRef.current === state.sessionId) return;
+    setupResultSentRef.current = state.sessionId;
+    posthogRef.current?.capture("terminal_setup_result", { agent: run.agent, action: run.action, outcome: reason });
+  }, [state.status, state.sessionId, state.endedReason]);
 
   const teardownSocket = useCallback(() => {
     clearConnectTimer();
@@ -2553,7 +2611,7 @@ export function useTerminalSession(
   // (manual reconnect), we stay in the cross-machine "copy a command" flow. Callers
   // must gate autoLaunch behind the install-first flow (setup Connect / paired
   // auto-connect / Retry) — never on a bare "open" for an unpaired browser.
-  const connect = useCallback(async (opts?: { autoLaunch?: boolean; agent?: "claude" | "codex" }) => {
+  const connect = useCallback(async (opts?: { autoLaunch?: boolean; agent?: "claude" | "codex"; setup?: SetupAction }) => {
     // Claim this attempt's generation. A later connect() bumps it, which makes this
     // one abort at the post-mint checkpoint below instead of racing a 2nd session.
     const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
@@ -2567,6 +2625,10 @@ export function useTerminalSession(
     // Task 5c8969cc: same per-attempt reset for the early-exit hint.
     rcLaunchRef.current = null;
     setRemoteControlEarlyExit(false);
+    // Card 63a60792: this attempt is a setup session only when asked to be.
+    const setupRun = opts?.setup ? { action: opts.setup, agent: opts.agent === "codex" ? ("codex" as const) : ("claude" as const) } : null;
+    setupActionRef.current = setupRun;
+    setSetupAction(setupRun?.action ?? null);
     removeLaunchIframe();
     // Stuck-pairing watchdog (card cbe60db5): the ONE opt-out — a literal
     // manual connect({autoLaunch:false}) is the legitimate indefinite-wait
@@ -2584,7 +2646,7 @@ export function useTerminalSession(
     // Hook-initiated launch (no payload carried from the launch button, which
     // already did its own fresh read): re-read the recorded folders now so the
     // prompt + cwd below reflect a folder recorded since the page loaded.
-    if (!promptPartsRef.current) {
+    if (!promptPartsRef.current && !setupRun) {
       await refreshRecordedPaths();
       // A newer connect() started while we awaited the read → it owns the
       // outcome; don't mint a session nobody is waiting on.
@@ -2641,13 +2703,17 @@ export function useTerminalSession(
           // launchFromBus before this connect() runs) — a fresh launch or
           // the legacy `--continue` resume has no `resumeId` and sends
           // nothing here.
-          ...(promptPartsRef.current?.resumeId ? { resumeId: promptPartsRef.current.resumeId } : {}),
+          ...(!setupRun && promptPartsRef.current?.resumeId ? { resumeId: promptPartsRef.current.resumeId } : {}),
           // Codex support (FR-1/FR-5, implementation slice 2): tell the mint
           // route which agent this launch is starting so it stamps the new
           // registry row's `agent` column correctly. Omitted for "claude"
           // (the mint route's own default) — same posture as every other
           // optional field here.
-          ...(promptPartsRef.current?.agent === "codex" ? { agent: "codex" as const } : {}),
+          ...(setupRun
+            ? { setup: setupRun.action, ...(setupRun.agent === "codex" ? { agent: "codex" as const } : {}) }
+            : promptPartsRef.current?.agent === "codex"
+              ? { agent: "codex" as const }
+              : {}),
         }),
       });
       if (!res.ok) {
@@ -2732,7 +2798,7 @@ export function useTerminalSession(
     // launch carried (if it WAS a resume) — the bridge-version-frame handler
     // above overwrites it with the bridge's own announced `conv` once that
     // arrives, which is the more authoritative id.
-    setClaudeSessionId(promptPartsRef.current?.resumeId ?? null);
+    setClaudeSessionId(setupRun ? null : promptPartsRef.current?.resumeId ?? null);
 
     // Best-effort identity PATCH (C4): the browser already resolves a cwd to
     // build the launch prompt — forward it to the registry row so "My
@@ -2740,7 +2806,9 @@ export function useTerminalSession(
     // nothing about the terminal itself, the identity line is just honestly
     // blank until it lands (or forever, if there's no cwd to report).
     try {
-      const { cwd } = resolveLaunchPromptParts();
+      // A setup session has no project folder: record none, so it never shows
+      // in Recent or counts as the board's folder (card 63a60792, R6).
+      const { cwd } = setupRun ? { cwd: null } : resolveLaunchPromptParts();
       setSessionCwd(cwd && cwd.trim() ? cwd.trim() : null);
       if (cwd && cwd.trim()) {
         void fetch(`/api/terminal/session/${encodeURIComponent(data.sessionId)}`, {
@@ -3165,6 +3233,17 @@ export function useTerminalSession(
     }
   }, [connect, requestExpand]);
 
+  // Card 63a60792 (in-app setup): a short install / sign-in session in this tab.
+  const beginSetup = useCallback(
+    (action: SetupAction, agent: "claude" | "codex") => {
+      // Counts only: never the installer's output, an address or a command.
+      posthogRef.current?.capture("terminal_setup_clicked", { agent, action });
+      requestExpand();
+      void connect({ autoLaunch: true, agent, setup: action });
+    },
+    [connect, requestExpand],
+  );
+
   // The "In the browser" menu item (board toolbar) fires the launch bus; the caller
   // forwards its payload here. The payload (the button's resolved compact prompt, as
   // head/tail parts) is remembered so this launch AND a later Retry carry the exact
@@ -3347,6 +3426,7 @@ export function useTerminalSession(
     autoAccept,
     // Task 5c8969cc — show the "stopped straight away" line on the ended panel.
     remoteControlEarlyExit,
+    setupAction,
     inputEnabled: isInputEnabled(state, readOnly),
     platform,
     paired,
@@ -3355,6 +3435,7 @@ export function useTerminalSession(
     pairingTimedOut,
     actions: {
       connect,
+      beginSetup,
       beginBrowserLaunch,
       launchFromBus,
       reconnectNow,

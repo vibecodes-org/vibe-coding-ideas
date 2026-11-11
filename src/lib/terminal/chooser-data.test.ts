@@ -716,6 +716,11 @@ describe("visibleRecentRows", () => {
     };
   }
 
+  it("a setup session (no folder) stays out of Recent (card 63a60792)", () => {
+    const recent = [recentRow({ sid: "setup", cwd: null, displayName: "Set up Codex" })];
+    expect(visibleRecentRows(recent)).toEqual([]);
+  });
+
   it("excludes rows with no recorded cwd", () => {
     const recent = [recentRow({ sid: "no-cwd", cwd: null })];
     expect(visibleRecentRows(recent)).toEqual([]);

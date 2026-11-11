@@ -43,6 +43,7 @@ function mockActions(): TerminalSessionActions {
   return {
     connect: vi.fn(),
     beginBrowserLaunch: vi.fn(),
+    beginSetup: vi.fn(),
     launchFromBus: vi.fn(),
     reconnectNow: vi.fn(),
     end: vi.fn(),

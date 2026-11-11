@@ -65,6 +65,11 @@ const NEVER_STARTED: ReadonlySet<EndedReason> = new Set<EndedReason>([
   "clone-failed",
   "clone-no-access",
   "git-missing",
+  // Card 63a60792: setup sessions never held a conversation either.
+  "setup-installed",
+  "setup-install-failed",
+  "setup-signed-in",
+  "setup-signin-failed",
 ]);
 
 /**

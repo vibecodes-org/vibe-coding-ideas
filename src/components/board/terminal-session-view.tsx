@@ -88,7 +88,10 @@ import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
 import { endedCopy, endedReasonAllowsResume, type EndedCopy } from "@/lib/terminal/ended-copy";
 import { parseRepoFromGithubUrl, slugifyIdeaTitle } from "@/lib/launch-claude-code";
-import { CODEX_INSTALL_GUIDE_URL } from "./launch-claude-code-button";
+import { AGENT_INSTALL_GUIDE_URLS } from "@/lib/terminal/agent-install";
+import { setupScreen, type SetupScreen } from "@/lib/terminal/agent-setup";
+import { setupLiveStrip, type SetupButtonId } from "@/lib/terminal/setup-copy";
+import { TerminalAgentSetupPanel } from "./terminal-agent-setup-panel";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -389,6 +392,7 @@ export function TerminalSessionView({
     peerDegraded,
     helperVersion,
     peerNotice,
+    setupAction,
     notEncryptedYet,
     e2eeActive,
     pair,
@@ -613,6 +617,46 @@ export function TerminalSessionView({
   const [endedDetailsShownFor, setEndedDetailsShownFor] = useState<string | null>(null);
   const endedSid = pair?.sessionId ?? "";
   const endedDetailsShown = view === "session-ended" && endedDetailsShownFor === endedSid;
+  // Card 63a60792 (in-app setup): the setup screen for this ending, if any.
+  // "Rather do it yourself?" is remembered per session so a new session starts
+  // on the main setup screen again.
+  const [diyOpenFor, setDiyOpenFor] = useState<string | null>(null);
+  const setupScr: SetupScreen | null =
+    view === "session-ended"
+      ? setupScreen({ reason: state.endedReason, helperVersion, diyOpen: diyOpenFor === endedSid })
+      : null;
+  const handleSetupAction = (id: Exclude<SetupButtonId, "copy-command" | "guide">) => {
+    switch (id) {
+      case "install":
+        actions.beginSetup("install", launchAgent);
+        break;
+      case "signin":
+        actions.beginSetup("signin", launchAgent);
+        break;
+      case "signin-code":
+        actions.beginSetup("signin-code", launchAgent);
+        break;
+      case "start":
+      case "start-again":
+        actions.beginBrowserLaunch();
+        break;
+      case "update":
+        helperUpdate.start();
+        break;
+      case "diy":
+        setDiyOpenFor(endedSid);
+        break;
+      case "back":
+        setDiyOpenFor(null);
+        break;
+      case "show":
+        setEndedDetailsShownFor(endedSid);
+        break;
+      case "sessions":
+        onBrowseSessions?.();
+        break;
+    }
+  };
   // Sleep/resume routing fix (card dccd6c95): the generic error panel (view
   // === "error", not the same-owner "Taken over" branch) used to be a dead
   // end — its only action re-mints an unrelated session via "Try again". If
@@ -1012,6 +1056,9 @@ export function TerminalSessionView({
               onConnect={() => void actions.connect({ autoLaunch: true, agent })}
               onConnectSetup={() => void actions.connect({ autoLaunch: true, agent: launchAgent })}
               ended={ended}
+              setupScreen={setupScr}
+              setupAgent={launchAgent}
+              onSetupAction={handleSetupAction}
               onShowEndedDetails={() => setEndedDetailsShownFor(endedSid)}
               onDownloadHelper={helperUpdate.start}
               agent={agent}
@@ -1062,6 +1109,16 @@ export function TerminalSessionView({
               >
                 Show the message
               </button>
+            </div>
+          )}
+          {state.status === "connected" && setupAction && (
+            <div
+              className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300"
+              data-testid="agent-setup-strip"
+              role="status"
+            >
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              <b>{setupLiveStrip(launchAgent, setupAction)}</b>
             </div>
           )}
           {state.status === "disconnected" && (
@@ -1181,6 +1238,9 @@ function StateOverlay({
   onConnect,
   onConnectSetup,
   ended,
+  setupScreen: setupScr,
+  setupAgent,
+  onSetupAction,
   onShowEndedDetails,
   onRetry,
   onLaunchAgain,
@@ -1222,6 +1282,11 @@ function StateOverlay({
   onConnectSetup: () => void;
   /** Card 6b2cb8ac: what the ended panel says (src/lib/terminal/ended-copy.ts). */
   ended: EndedCopy;
+  /** Card 63a60792: the setup screen for this ending (null → the ordinary ended content). */
+  setupScreen: SetupScreen | null;
+  /** The agent this tab launches (the setup screens name it). */
+  setupAgent: LaunchAgent;
+  onSetupAction: (id: Exclude<SetupButtonId, "copy-command" | "guide">) => void;
   /** Card 6b2cb8ac: "Show what happened" — swap the message for the one-line bar. */
   onShowEndedDetails: () => void;
   onRetry: () => void;
@@ -1308,7 +1373,16 @@ function StateOverlay({
         </>
       )}
 
-      {view === "session-ended" && (
+      {view === "session-ended" && setupScr && (
+        <TerminalAgentSetupPanel
+          screen={setupScr}
+          agent={setupAgent}
+          onAction={onSetupAction}
+          canBrowseSessions={!!onBrowseSessions}
+        />
+      )}
+
+      {view === "session-ended" && !setupScr && (
         <>
           <Square className="h-7 w-7 text-zinc-400" />
           {/* Card 6b2cb8ac: title + message per ending, from the approved
@@ -1339,7 +1413,7 @@ function StateOverlay({
           {/* Card 6b2cb8ac (mock 2b/2c): the agent isn't installed on this Mac. */}
           {ended.installLink && (
             <a
-              href={ended.installLink.agent === "codex" ? CODEX_INSTALL_GUIDE_URL : CLAUDE_CODE_INSTALL_URL}
+              href={AGENT_INSTALL_GUIDE_URLS[ended.installLink.agent]}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[12px] font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-100"
@@ -1745,9 +1819,6 @@ function ComingSoonPanel() {
     </>
   );
 }
-
-/** Card 6b2cb8ac (mock 2b): where to install Claude Code. */
-const CLAUDE_CODE_INSTALL_URL = "https://docs.claude.com/en/docs/claude-code";
 
 /** `/Users/<you>/x` → `~/x` for display (the mock's folder wording). */
 function homeShortPath(path: string): string {
