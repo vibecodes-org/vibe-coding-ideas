@@ -106,6 +106,15 @@ describe("composeBoardColumns", () => {
   });
 });
 
+describe("composeBoardColumns duplicate cards", () => {
+  it("shows a card once when two page requests both returned it", () => {
+    const columns = [makeColumn({ id: "col-1" })];
+    const tasks = [makeTask({ id: "task-1" }), makeTask({ id: "task-2" }), makeTask({ id: "task-1" })];
+    const result = composeBoardColumns(columns, tasks, null);
+    expect(result[0].tasks.map((t) => t.id)).toEqual(["task-1", "task-2"]);
+  });
+});
+
 describe("composeSuggestionsByTask", () => {
   const now = Date.parse("2026-07-11T12:00:00Z");
 

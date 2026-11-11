@@ -16,21 +16,22 @@ export function cappedSupabase(tables: Record<string, Row[]>) {
   function from(table: string) {
     const eqs: [string, unknown][] = [];
     const ins: [string, unknown[]][] = [];
-    const orders: string[] = [];
+    const notNulls: string[] = [];
+    const orders: { col: string; asc: boolean }[] = [];
     let range: [number, number] | null = null;
     let limit: number | null = null;
     const chain: Record<string, unknown> = {};
     const run = () => {
       requests.push({ table, range });
       let rows = (tables[table] ?? []).filter(
-        (r) => eqs.every(([c, v]) => r[c] === v) && ins.every(([c, vs]) => vs.includes(r[c]))
+        (r) => eqs.every(([c, v]) => r[c] === v) && notNulls.every((c) => r[c] != null) && ins.every(([c, vs]) => vs.includes(r[c]))
       );
       rows = [...rows].sort((a, b) => {
-        for (const col of orders) {
+        for (const { col, asc } of orders) {
           const x = a[col] as string | number;
           const y = b[col] as string | number;
-          if (x < y) return -1;
-          if (x > y) return 1;
+          if (x < y) return asc ? -1 : 1;
+          if (x > y) return asc ? 1 : -1;
         }
         return 0;
       });
@@ -42,8 +43,9 @@ export function cappedSupabase(tables: Record<string, Row[]>) {
     };
     chain.select = () => chain;
     chain.eq = (c: string, v: unknown) => (eqs.push([c, v]), chain);
+    chain.not = (c: string) => (notNulls.push(c), chain); // only .not(col, "is", null)
     chain.in = (c: string, vs: unknown[]) => (ins.push([c, vs]), chain);
-    chain.order = (c: string) => (orders.push(c), chain);
+    chain.order = (c: string, o?: { ascending?: boolean }) => (orders.push({ col: c, asc: o?.ascending !== false }), chain);
     chain.range = (a: number, b: number) => ((range = [a, b]), chain);
     chain.limit = (n: number) => ((limit = n), chain);
     chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>

@@ -40,9 +40,17 @@ type RawSuggestionRow = {
  */
 export function composeBoardColumns(
   rawColumns: BoardColumn[],
-  rawTasks: RawTaskRow[],
+  allRawTasks: RawTaskRow[],
   taskLabelRows: RawTaskLabelRow[] | null
 ): BoardColumnWithTasks[] {
+  // Paged loads read the table in several requests, so a card moved between two
+  // requests could appear in both pages. Keep the first copy of each id.
+  const seenTaskIds = new Set<string>();
+  const rawTasks = allRawTasks.filter((t) => {
+    if (seenTaskIds.has(t.id)) return false;
+    seenTaskIds.add(t.id);
+    return true;
+  });
   const taskLabelsMap: Record<string, BoardLabel[]> = {};
   if (taskLabelRows) {
     for (const row of taskLabelRows) {
