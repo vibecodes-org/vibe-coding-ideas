@@ -994,13 +994,24 @@ async function main() {
       const cap = setTimeout(finish, ms);
       const attempt = () => {
         if (done) return;
-        try { cws = new WebSocket(url); } catch { setTimeout(attempt, 1000); return; }
+        let opened = false;
+        let retryQueued = false;
+        const retrySoon = () => {
+          if (retryQueued || done) return;
+          retryQueued = true;
+          const t = setTimeout(attempt, 1000);
+          t.unref?.();
+        };
+        try { cws = new WebSocket(url); } catch { retrySoon(); return; }
         cws.on("open", () => {
+          opened = true;
           try { cws.close(1000, why); } catch { /* ignore */ }
           setTimeout(finish, 300);
         });
-        cws.on("close", finish);
-        cws.on("error", () => { setTimeout(attempt, 1000); });
+        // ws emits "error" and then "close" for a FAILED connect, so "close" alone
+        // must not end the attempt window: only a close after a real open does.
+        cws.on("close", () => { if (opened) finish(); else retrySoon(); });
+        cws.on("error", () => { /* the close that follows decides */ });
       };
       attempt();
     });

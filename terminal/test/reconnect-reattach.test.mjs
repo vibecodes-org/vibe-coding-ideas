@@ -386,6 +386,48 @@ test("(f3) card f4be2981: with the default (no budget) a long outage never reaps
   assert.match(spawned.getStderr(), /one short attempt to report the end/);
 });
 
+test("(f4) card f4be2981: agent exits while the link is down, the relay returns on the same port inside the courtesy window -> relay gets the 1000 close and a browser sees the ended reason", { timeout: 60_000 }, async (t) => {
+  const session = `ra-f4-${Math.random().toString(36).slice(2, 8)}`;
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const relayA = await startStandinRelay({ port: 0, secret: SECRET, graceMs: 30_000 });
+  const port = relayA.port;
+  const tokens = await mintSessionTokens({ sub: owner, idea: "idea-RA", sid: session, secret: SECRET });
+  let relayB = null;
+  t.after(async () => { try { await relayB?.close(); } catch { /* */ } });
+
+  const mark = newMark();
+  const spawned = spawnBridge({
+    relayUrl: relayA.url, session, token: tokens.bridge, cmd: immuneCmd(mark),
+    env: { BRIDGE_END_COURTESY_MS: "9000" },
+  });
+  t.after(() => { if (spawned.child.exitCode === null) spawned.child.kill("SIGKILL"); });
+  const sentinelPid = await findSentinel(mark);
+  t.after(() => killHard(sentinelPid));
+  await new Promise((r) => setTimeout(r, 11000)); // past the 10s early-exit window, so the end reason is pty-exit
+
+  await relayA.close();
+  await waitFor(() => /will reconnect|relay link dropped/.test(spawned.getStderr()), 8000, "bridge noticed the drop");
+  killHard(sentinelPid); // the agent exits while the link is down
+  await waitFor(() => /one short attempt to report the end/.test(spawned.getStderr()), 8000, "courtesy attempt started");
+  // The relay is still away for a couple of failed attempts, then comes back on the SAME port.
+  await new Promise((r) => setTimeout(r, 2500));
+  const closed = [];
+  relayB = await startStandinRelay({ port, secret: SECRET, graceMs: 30_000, onSessionClosed: (sid, reason) => closed.push([sid, reason]) });
+
+  await Promise.race([
+    once(spawned.child, "exit"),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("bridge exit timeout")), HARD_TIMEOUT_MS)),
+  ]);
+  await waitFor(() => closed.length > 0, 3000, "relay got the bridge's end");
+  assert.equal(closed[0][0], session);
+
+  // A browser attaching now gets the ended reason from the tombstone, not an empty session.
+  const browser = await openRawLeg(relayB.url, session, "browser", tokens.browser);
+  await waitFor(() => browser.closed, 3000, "browser closed with the ended reason");
+  assert.equal(browser.closed[0], 1000);
+  assert.match(browser.closed[1], /pty-exit/);
+});
+
 // ── final sweep: NOTHING may survive this suite ───────────────────────────────
 after(async () => {
   const strays = await pgrepPids("^sleep 47");

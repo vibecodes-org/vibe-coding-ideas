@@ -901,6 +901,114 @@ describe("useTerminalSession", () => {
   // relay then preempted the older one (4001), whose close flipped the tab to
   // the "taken over" error and nulled the live socket ref — while the newer
   // socket kept streaming output. Output showed; keystrokes went nowhere.
+  // Card f4be2981: with a helper at 0.3.34+ the Mac may be away for hours, so the
+  // browser must never give up on a clock; older helpers keep the 90s window.
+  describe("long-hold sessions (card f4be2981)", () => {
+    async function connected(helperVersion: string) {
+      vi.useFakeTimers();
+      const { result } = setup();
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: helperVersion }) }));
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      return result;
+    }
+    async function dropRepeatedly(result: { current: { state: { status: string } } }, rounds: number) {
+      await act(async () => {
+        for (let i = 0; i < rounds && result.current.state.status !== "session-ended"; i++) {
+          vi.advanceTimersByTime(12_000);
+          const ws = mockSockets[mockSockets.length - 1];
+          if (ws.readyState !== MockWebSocket.CLOSED) ws.simulateAbnormalDrop();
+        }
+      });
+    }
+
+    it("(a) 0.3.34: no reconnect-exhausted after the 90s window, nor after an 8h clock jump", async () => {
+      const result = await connected("0.3.34");
+      act(() => latestSocket().simulateAbnormalDrop());
+      await dropRepeatedly(result, 16); // well past RECONNECT_GRACE_MS
+      expect(result.current.state.status).toBe("disconnected");
+      act(() => {
+        vi.setSystemTime(Date.now() + 8 * 3600 * 1000); // the Mac slept for 8 hours
+      });
+      await dropRepeatedly(result, 4);
+      expect(result.current.state.status).toBe("disconnected");
+      expect(result.current.state.endedReason).toBeNull();
+    });
+
+    it("(a) 0.3.33: the 90s window still ends it", async () => {
+      const result = await connected("0.3.33");
+      act(() => latestSocket().simulateAbnormalDrop());
+      await dropRepeatedly(result, 16);
+      expect(result.current.state.status).toBe("session-ended");
+      expect(result.current.state.endedReason).toBe("reconnect-failed");
+    });
+
+    it("(b) 0.3.34: peer-degraded does not end the session after 90s", async () => {
+      const result = await connected("0.3.34");
+      act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "peer-degraded" }) }));
+      expect(result.current.peerDegraded).toBe(true);
+      await act(async () => {
+        vi.advanceTimersByTime(120_000);
+      });
+      expect(result.current.state.status).toBe("connected");
+      expect(result.current.peerDegraded).toBe(true);
+    });
+
+    it("(b) 0.3.33: peer-degraded still ends it after the 90s window", async () => {
+      const result = await connected("0.3.33");
+      act(() => latestSocket().onmessage?.({ data: JSON.stringify({ t: "peer-degraded" }) }));
+      await act(async () => {
+        vi.advanceTimersByTime(95_000);
+      });
+      expect(result.current.state.status).toBe("session-ended");
+    });
+
+    it("(c) the tab becoming visible while disconnected reattaches at once and resets the backoff", async () => {
+      const result = await connected("0.3.34");
+      act(() => latestSocket().simulateAbnormalDrop());
+      // Raise the backoff: a few failed attempts push the next delay well past 1s.
+      await dropRepeatedly(result, 3);
+      const before = mockSockets.length;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(mockSockets.length).toBe(before + 1); // no waiting for the backoff timer
+      // Backoff reset: after this attempt drops, the next try is ~1s away.
+      act(() => latestSocket().simulateAbnormalDrop());
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      expect(mockSockets.length).toBe(before + 2);
+    });
+
+    it("(c) the network coming back while disconnected reattaches at once", async () => {
+      const result = await connected("0.3.34");
+      act(() => latestSocket().simulateAbnormalDrop());
+      await dropRepeatedly(result, 3);
+      const before = mockSockets.length;
+      await act(async () => {
+        window.dispatchEvent(new Event("online"));
+      });
+      expect(mockSockets.length).toBe(before + 1);
+    });
+
+    it("(c) a clock jump (the Mac slept) while disconnected reattaches at once", async () => {
+      const result = await connected("0.3.34");
+      act(() => latestSocket().simulateAbnormalDrop());
+      await dropRepeatedly(result, 3);
+      const before = mockSockets.length;
+      await act(async () => {
+        vi.setSystemTime(Date.now() + 10 * 60 * 1000);
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(mockSockets.length).toBeGreaterThan(before);
+    });
+  });
+
   describe("stale sockets can't freeze the tab (card 3746b312)", () => {
     function typedBytes(ws: MockWebSocket): string[] {
       // ArrayBuffer.isView, not instanceof: TextEncoder's bytes can come from another realm under jsdom.
