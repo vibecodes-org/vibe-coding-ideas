@@ -87,6 +87,7 @@ import { capRefusalMessage } from "@/lib/terminal/session-cap";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
 import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
 import { endedCopy, endedReasonAllowsResume, type EndedCopy } from "@/lib/terminal/ended-copy";
+import { reconnectCopy } from "@/lib/terminal/reconnect-copy";
 import { parseRepoFromGithubUrl, slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { AGENT_INSTALL_GUIDE_URLS } from "@/lib/terminal/agent-install";
 import { setupScreen, type SetupScreen } from "@/lib/terminal/agent-setup";
@@ -126,6 +127,8 @@ export interface SessionSummary {
   sessionKey: string | null;
   /** Mirrored so a pop-out payload can carry the CURRENT read-only toggle across into the popped window (D1). */
   readOnly: boolean;
+  /** Card f4be2981: the Mac is away while our own link is up (collapsed bar shows "Reconnecting…"). */
+  peerDegraded?: boolean;
   /**
    * Task d3de150c ("Terminal mode" auto-accept toggle) — mirrored the same
    * way `readOnly` is, so the dock's collapsed-bar indicator and a pop-out
@@ -390,6 +393,7 @@ export function TerminalSessionView({
     state,
     launchPhase,
     peerDegraded,
+    longWait,
     helperVersion,
     peerNotice,
     setupAction,
@@ -462,6 +466,7 @@ export function TerminalSessionView({
       // session's E2EE key — handed over via the dock's PopoutPayload.
       sessionKey: pair?.sessionKey ?? null,
       readOnly,
+      peerDegraded,
       autoAccept,
     });
     if (shouldAnnounceAttention(prevStatusRef.current, state.status, isActive)) {
@@ -480,6 +485,7 @@ export function TerminalSessionView({
     isActive,
     label,
     readOnly,
+    peerDegraded,
     autoAccept,
   ]);
 
@@ -538,7 +544,7 @@ export function TerminalSessionView({
   // doc for why the close REASON (not just the 4001 code) is required to
   // tell the two apart.
   const takenOver = view === "error" && isSameOwnerPreemptedClose(state.closeCode, state.closeReason);
-  const meta = takenOver ? TAKEN_OVER_META : dockStatusMeta(view, state.errorKind);
+  const meta = takenOver ? TAKEN_OVER_META : dockStatusMeta(view, state.errorKind, peerDegraded);
   const showStream = state.status === "connected" || state.status === "disconnected";
   // Only worth showing once there's an actual (live or reconnecting) bridge to
   // update — a setup/coming-soon/idle panel has nothing to nudge about yet.
@@ -1124,16 +1130,24 @@ export function TerminalSessionView({
           {state.status === "disconnected" && (
             <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
               <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-              <b>Reconnecting to your session…</b> Your machine may have slept or dropped Wi-Fi. Your agent keeps running locally while we reattach.
+              <b>{reconnectCopy(false).title}</b> {reconnectCopy(false).text}
               <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
                 Reconnect now
               </button>
             </div>
           )}
           {state.status === "connected" && peerDegraded && (
-            <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+            <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
               <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-              <b>Connection interrupted — reconnecting…</b> Your machine may have slept; we&apos;re holding your session and will resume automatically.
+              <b>{reconnectCopy(!!longWait).title}</b> {reconnectCopy(!!longWait).text}
+              <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
+                Reconnect now
+              </button>
+              {reconnectCopy(!!longWait).showEndSession && (
+                <button className="ml-2 underline hover:text-amber-200" onClick={actions.end}>
+                  End session
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1174,7 +1188,11 @@ export interface StatusMeta {
 export function dockStatusMeta(
   view: DockView,
   errorKind: TerminalConnectionState["errorKind"],
+  // Card f4be2981: our own link can be up while the Mac is away. That is NOT
+  // "Connected" - show the same "Reconnecting…" label as a dropped link.
+  peerDegraded = false,
 ): StatusMeta {
+  if (view === "connected" && peerDegraded) view = "disconnected";
   switch (view) {
     case "connected":
       return { label: "Connected", Icon: CircleDot, className: "border-emerald-500/50 bg-emerald-500/10 text-emerald-400" };

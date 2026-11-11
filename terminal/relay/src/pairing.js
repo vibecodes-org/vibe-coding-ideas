@@ -203,7 +203,9 @@ export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
 
 // ── Reconnect grace window (fix/terminal-reconnect-reattach) ──────────────────
 //
-// THE ONE SHARED NUMBER. When a single leg drops, the relay does NOT tear the
+// The grace window for OLD bridges (and old browsers). A bridge that sends
+// hold=1 (helper 0.3.34+, card f4be2981) is held with no time limit instead; see
+// holdPolicy below. When a single leg drops, the relay does NOT tear the
 // session down; it holds the owner binding + the surviving socket and arms a
 // grace alarm for this long, waiting for the dropped role to re-attach (same sid
 // + same owner) so the pair can resume with no re-mint. The three reconnect
@@ -221,6 +223,14 @@ export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
 // torn down honestly (survivor gets PEER_GONE, owner binding + state cleared, so
 // the waiver dies with it) and the UX falls back to a clean fresh launch.
 export const RECONNECT_GRACE_MS = 90_000;
+
+/** Stored as graceDeadline for a long-hold session: "held, no deadline". */
+export const LONG_HOLD_DEADLINE = Number.MAX_SAFE_INTEGER;
+
+/** "long" = hold until the max-age backstop / explicit end; "grace" = the 90 s window. */
+export function holdPolicy({ bridgeLongHold }) {
+  return bridgeLongHold === true ? "long" : "grace";
+}
 
 /**
  * How long a session that the BRIDGE ended on purpose (close 1000 with a

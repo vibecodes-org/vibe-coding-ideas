@@ -39,6 +39,7 @@ const {
   Menu,
   nativeImage,
   Notification,
+  powerSaveBlocker,
   shell,
   Tray,
 } = require("electron");
@@ -49,6 +50,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { shouldRegisterProtocolInDev } = require("./proto-reg");
 const lifecycle = require("./lifecycle");
+const stayAwake = require("./stay-awake");
 const { TRAY_ICON_PNG_BASE64 } = require("./tray-icon");
 
 const LAUNCH_PREFIX = "vibecodes://";
@@ -432,6 +434,38 @@ process.on("unhandledRejection", (reason) => handleCrash("unhandledRejection", r
 
 // ── child-bridge bookkeeping + quit-when-idle (design §1/§2) ─────────────────
 const children = new Set();
+
+// Stay-awake while an agent is busy (card f4be2981). Each bridge reports
+// {type:"busy", busy} over IPC when its agent starts/stops printing; we hold
+// macOS's "prevent idle sleep" lock while any agent is busy and release it when
+// none is (or a bridge exits, or the helper quits).
+const busyChildren = new Set();
+let stayAwakeBlockerId = null;
+function applyStayAwake() {
+  const decision = stayAwake.decideStayAwake(busyChildren.size, stayAwakeBlockerId !== null);
+  if (decision === "start") {
+    try {
+      stayAwakeBlockerId = powerSaveBlocker.start("prevent-app-suspension");
+      log("info", "stay-awake lock taken", { busy: busyChildren.size });
+    } catch (e) {
+      log("warn", "could not take the stay-awake lock", { err: String(e?.message || e) });
+    }
+    // The menu-bar line is the only place the user can see WHY the Mac stays awake,
+    // so make sure the menu-bar item exists while the lock is held.
+    if (stayAwakeBlockerId !== null) createTray();
+  } else if (decision === "stop") {
+    releaseStayAwake();
+    if (!alwaysOn) destroyTray();
+    return;
+  }
+  refreshTray();
+}
+function releaseStayAwake() {
+  if (stayAwakeBlockerId === null) return;
+  try { powerSaveBlocker.stop(stayAwakeBlockerId); } catch { /* already stopped */ }
+  stayAwakeBlockerId = null;
+  log("info", "stay-awake lock released");
+}
 // bridge child -> its PTY child's pid (the grandchild — `claude`). Reported by
 // the bridge over IPC ({type:"pty-pid"}) right after its pty.spawn. Needed
 // because the grandchild is its OWN session/group leader (spawn-helper setsid):
@@ -608,10 +642,17 @@ async function handleLaunchUrl(rawUrl) {
       ptyPids.set(child, m.pid);
       log("debug", "recorded bridge's pty pid", { pid: m.pid });
     }
+    if (m && m.type === "busy" && typeof m.busy === "boolean") {
+      if (m.busy) busyChildren.add(child);
+      else busyChildren.delete(child);
+      applyStayAwake();
+    }
   });
 
   child.on("exit", (code, signal) => {
     children.delete(child);
+    busyChildren.delete(child);
+    applyStayAwake();
     log("info", "bridge exited", { code, signal, active: children.size });
     // Trust nothing: whatever the bridge's exit looked like, VERIFY the
     // grandchild is gone (reapGrandchild registers in activeReaps synchronously,
@@ -625,6 +666,8 @@ async function handleLaunchUrl(rawUrl) {
   });
   child.on("error", (err) => {
     children.delete(child);
+    busyChildren.delete(child);
+    applyStayAwake();
     log("error", "bridge failed to start", { err: String(err?.message || err) });
     const ptyPid = ptyPids.get(child);
     ptyPids.delete(child);
@@ -1312,6 +1355,9 @@ function quitFromTray() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: trayStatusLabel(), enabled: false },
+    ...(stayAwakeBlockerId !== null && busyChildren.size > 0
+      ? [{ label: stayAwake.stayAwakeLabel(busyChildren.size), enabled: false }]
+      : []),
     { type: "separator" },
     {
       label: "Open VibeCodes",
@@ -1379,6 +1425,8 @@ function beginCleanQuit(reason) {
   if (quitting) return;
   quitting = true;
   quitReason = reason;
+  busyChildren.clear();
+  releaseStayAwake();
   if (lingerTimer) {
     clearTimeout(lingerTimer);
     lingerTimer = null;

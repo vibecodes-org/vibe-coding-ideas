@@ -319,6 +319,7 @@ export function startStandinRelay(opts = {}) {
   /** (Re)arm the idle timer for a session (called on attach + every message). */
   function bumpIdle(session, legs) {
     clearTimeout(legs.idleTimer);
+    if (legs.longHold) return; // card f4be2981: no idle cap for a long-hold bridge
     legs.idleTimer = setTimeout(() => endSession(session, idleCloseReason(idleMs)), idleMs);
     legs.idleTimer.unref?.();
   }
@@ -501,6 +502,7 @@ export function startStandinRelay(opts = {}) {
         idleTimer: null,
         maxTimer: null,
         graceTimer: null,
+        longHold: false,
         bridgeHelperVersion: null,
         bridgeHost: null,
         bridgeConv: null,
@@ -531,6 +533,7 @@ export function startStandinRelay(opts = {}) {
 
     const firstLeg = legs.bridge === null && legs.browser === null;
     const wasHeld = legs.graceTimer != null;
+    if (role === "bridge" && url.searchParams.get("hold") === "1") legs.longHold = true;
     if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
     log("attached", { session, role });
@@ -624,7 +627,13 @@ export function startStandinRelay(opts = {}) {
       legs[role] = null;
       log("detached", { session, role });
       if (sessions.get(session) !== legs) return;
-      if (!legs.graceTimer) {
+      if (!legs.graceTimer && legs.longHold) {
+        // Card f4be2981: held with no deadline; only max-age / explicit end / the
+        // bridge reporting its agent exited ends it. A sentinel timer that never fires.
+        clearTimeout(legs.idleTimer);
+        legs.graceTimer = setTimeout(() => {}, 2 ** 31 - 1);
+        legs.graceTimer.unref?.();
+      } else if (!legs.graceTimer) {
         clearTimeout(legs.idleTimer); // idle is suspended while degraded
         legs.graceTimer = setTimeout(() => {
           const cur = sessions.get(session);

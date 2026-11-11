@@ -97,7 +97,7 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
     autoConnectWhenExpanded: false,
     attachExisting: attach,
   });
-  const { state, readOnly, autoAccept, inputEnabled, launchPhase, platform, paired, containerRef, actions } = session;
+  const { state, readOnly, autoAccept, inputEnabled, launchPhase, platform, paired, containerRef, actions, peerDegraded } = session;
 
   // Keep the parent's action registry current — same "every render, no deps"
   // pattern as terminal-session-view.tsx's onRegisterActions, since `actions`
@@ -145,7 +145,7 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
   // ever calling dockStatusMeta for this state; dockStatusMeta itself stays
   // untouched, so every genuine dock error keeps its rose pill everywhere
   // else.
-  const meta = broughtBack ? MOVED_TO_DOCK_META : dockStatusMeta(view, state.errorKind);
+  const meta = broughtBack ? MOVED_TO_DOCK_META : dockStatusMeta(view, state.errorKind, peerDegraded);
 
   // card 101bbb2d: this window was opened BY SCRIPT (the dock's window.open
   // in openPopoutWindow), so `window.close()` from its OWN script is

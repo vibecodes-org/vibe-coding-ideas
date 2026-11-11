@@ -51,6 +51,8 @@ import {
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
   RECONNECT_GRACE_MS,
+  LONG_HOLD_DEADLINE,
+  holdPolicy,
   TOMBSTONE_MS,
   idleCloseReason,
   maxCloseReason,
@@ -994,6 +996,15 @@ export class TerminalRelay {
     await this.state.storage.put("lastActivityAt", now);
     this._lastPersistedActivityAt = now;
 
+    // Long-hold opt-in (card f4be2981): a bridge that says hold=1 will keep
+    // reconnecting for as long as its agent runs, so this session is held with
+    // no 90 s grace and no idle cap; only the max-age backstop, an explicit end
+    // or the bridge reporting its agent exited ends it. Old bridges never send
+    // this and keep today's behaviour.
+    if (role === "bridge" && url.searchParams.get("hold") === "1") {
+      await this.state.storage.put("bridgeLongHold", true);
+    }
+
     // 4b) GRACE-WINDOW REATTACH reconciliation. If the session was being HELD open
     //     for a dropped leg (graceDeadline set), this attach may complete the pair
     //     again. When BOTH legs are present once more, clear the grace hold and
@@ -1387,7 +1398,8 @@ export class TerminalRelay {
     const now = Date.now();
     // Open (or keep) the grace hold; the grace alarm governs teardown from here.
     if ((await this.state.storage.get("graceDeadline")) == null) {
-      await this.state.storage.put("graceDeadline", now + this.graceMs());
+      const longHold = holdPolicy({ bridgeLongHold: (await this.state.storage.get("bridgeLongHold")) === true }) === "long";
+      await this.state.storage.put("graceDeadline", longHold ? LONG_HOLD_DEADLINE : now + this.graceMs());
     }
     await this.armAlarm(now);
 
@@ -1425,8 +1437,10 @@ export class TerminalRelay {
     const started = this._sessionStartedAtCache;
     const last = (await this.state.storage.get("lastActivityAt")) ?? now;
     const grace = await this.state.storage.get("graceDeadline");
-    const candidates = [last + this.idleMs(), started + this.maxMs()];
-    if (grace != null) candidates.push(grace);
+    const longHold = (await this.state.storage.get("bridgeLongHold")) === true;
+    const candidates = [started + this.maxMs()];
+    if (!longHold) candidates.push(last + this.idleMs());
+    if (grace != null && !(longHold && grace === LONG_HOLD_DEADLINE)) candidates.push(grace);
     await this.state.storage.setAlarm(Math.min(...candidates));
   }
 
@@ -1493,7 +1507,8 @@ export class TerminalRelay {
 
     // Idle only governs a WHOLE session; a held (degraded) session has stale activity
     // by definition and is governed by the grace deadline above instead.
-    if (grace == null && last != null && now - last >= this.idleMs()) {
+    const longHoldSession = (await this.state.storage.get("bridgeLongHold")) === true;
+    if (!longHoldSession && grace == null && last != null && now - last >= this.idleMs()) {
       const sid = await this.state.storage.get("sid");
       const idleMs = now - last;
       this.log("session ended", { why: "idle-timeout", sid, idleMs });
@@ -1598,6 +1613,7 @@ export class TerminalRelay {
       "sessionStartedAt",
       "lastActivityAt",
       "graceDeadline",
+      "bridgeLongHold",
       "bridgeHelperVersion",
       "bridgeHost",
       "bridgeConv",

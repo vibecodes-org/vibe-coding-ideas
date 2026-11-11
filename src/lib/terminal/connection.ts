@@ -14,7 +14,7 @@
 // xterm DOM rendering lives in the component; everything here is testable without
 // a DOM, a socket, or React.
 
-import { shouldShowHelperUpdateNudge } from "./helper-version";
+import { compareHelperVersions, parseHelperVersion, shouldShowHelperUpdateNudge } from "./helper-version";
 
 /** How long we wait for the relay handshake before declaring an error (≈30s). */
 export const CONNECT_TIMEOUT_MS = 30_000;
@@ -30,6 +30,45 @@ export const CONNECT_TIMEOUT_MS = 30_000;
  * honestly and the UX falls back to a clean fresh launch.
  */
 export const RECONNECT_GRACE_MS = 90_000;
+
+/**
+ * Card f4be2981 (sessions survive sleep). A helper at or above this version keeps
+ * its agent alive for as long as the Mac is away and tells the relay to hold the
+ * session with no 90s limit (`hold=1`). With such a helper the browser never gives
+ * up on its own either; older helpers keep the 90s window above.
+ */
+export const LONG_HOLD_MIN_HELPER = "0.3.34";
+
+export function supportsLongHold(helperVersion: string | null | undefined): boolean {
+  const have = parseHelperVersion(helperVersion);
+  const need = parseHelperVersion(LONG_HOLD_MIN_HELPER);
+  if (!have || !need) return false;
+  return compareHelperVersions(have, need) >= 0;
+}
+
+/** Reconnect backoff: 1s doubling, capped at 8s (old helpers) or 30s (long-hold). */
+export function reconnectBackoffMs(attempt: number, longHold: boolean, rand: () => number = Math.random): number {
+  const cap = longHold ? 30_000 : 8_000;
+  return Math.min(1000 * 2 ** attempt, cap) + Math.floor(rand() * 250);
+}
+
+/** How long the Mac may be missing (browser link up) before the bar says "Still waiting for your Mac". */
+export const LONG_WAIT_NOTICE_MS = 180_000;
+
+export function shouldShowLongWait(args: {
+  waitingSince: number | null;
+  now: number;
+  visible: boolean;
+  online: boolean;
+  browserLinkUp: boolean;
+}): boolean {
+  const { waitingSince, now, visible, online, browserLinkUp } = args;
+  if (waitingSince === null || !visible || !online || !browserLinkUp) return false;
+  return now - waitingSince > LONG_WAIT_NOTICE_MS;
+}
+
+/** A timer tick this much later than expected means the computer slept. */
+export const CLOCK_JUMP_MS = 20_000;
 
 /**
  * Bug (regression backfill, board card TBD): the minimum real time that must

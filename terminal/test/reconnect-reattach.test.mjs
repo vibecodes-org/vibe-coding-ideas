@@ -351,6 +351,41 @@ test("(f2) reconnect budget exhausted (relay stays down) → bridge reaps its ch
   console.log("[ra/f2] PASS — reconnect budget bounded the retries, child reaped, no leak");
 });
 
+test("(f3) card f4be2981: with the default (no budget) a long outage never reaps the child; the agent exiting then ends the bridge", { timeout: 40_000 }, async (t) => {
+  const session = `ra-f3-${Math.random().toString(36).slice(2, 8)}`;
+  const owner = `user-${Math.random().toString(36).slice(2, 8)}`;
+  const relay = await startStandinRelay({ port: 0, secret: SECRET, graceMs: 30_000 });
+  const tokens = await mintSessionTokens({ sub: owner, idea: "idea-RA", sid: session, secret: SECRET });
+  const browser = await openRawLeg(relay.url, session, "browser", tokens.browser);
+  t.after(() => { try { browser.ws.terminate(); } catch { /* */ } });
+
+  const mark = newMark();
+  // No BRIDGE_RECONNECT_MS: the new default is no limit. A short courtesy window keeps
+  // the final exit quick (the relay is down, so the courtesy attempt cannot succeed).
+  const spawned = spawnBridge({
+    relayUrl: relay.url, session, token: tokens.bridge, cmd: immuneCmd(mark),
+    env: { BRIDGE_END_COURTESY_MS: "800" },
+  });
+  t.after(() => { if (spawned.child.exitCode === null) spawned.child.kill("SIGKILL"); });
+  const sentinelPid = await findSentinel(mark);
+  t.after(() => killHard(sentinelPid));
+
+  await relay.close();
+  // Far longer than the old tiny test budget (1.5s) used by f2.
+  await new Promise((r) => setTimeout(r, 5000));
+  assert.equal(spawned.child.exitCode, null, "bridge is still running after a long outage");
+  assert.equal(pidAlive(sentinelPid), true, "the agent was NOT killed by the outage");
+
+  // The agent exits while the link is down: the bridge ends cleanly (after one short courtesy try).
+  killHard(sentinelPid);
+  const [code] = await Promise.race([
+    once(spawned.child, "exit"),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("bridge exit timeout")), HARD_TIMEOUT_MS)),
+  ]);
+  assert.equal(code, 0);
+  assert.match(spawned.getStderr(), /one short attempt to report the end/);
+});
+
 // ── final sweep: NOTHING may survive this suite ───────────────────────────────
 after(async () => {
   const strays = await pgrepPids("^sleep 47");

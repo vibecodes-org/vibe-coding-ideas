@@ -161,7 +161,7 @@ test("(a) ws-close: escalation reaches SIGKILL(+group) and the bridge exits only
   // window, then (no reattach) closes the survivor with PEER_GONE. A tiny graceMs
   // keeps this fast; the bridge treats that deliberate PEER_GONE as a session end and
   // runs the SAME verified-kill teardown under test here.
-  const { session, tokens, relay, browser } = await startSession(t, { graceMs: 300 });
+  const { session, tokens, relay, browser } = await startSession(t, { graceMs: 300, maxMs: 4000 });
   const mark = newMark();
   const spawned = spawnBridge({
     relayUrl: relay.url,
@@ -177,6 +177,9 @@ test("(a) ws-close: escalation reaches SIGKILL(+group) and the bridge exits only
 
   // Browser leg leaves → relay holds, then (grace expiry) closes the bridge leg with
   // PEER_GONE → the bridge's verified-kill teardown reaps the child.
+  // Card f4be2981: a bridge that sends hold=1 is no longer torn down by the 90s
+  // grace, so the relay-side end here is its max-age backstop (a deliberate 1000
+  // close): the same ws-close path and the same verified-kill teardown.
   browser.close();
   const { code } = await waitForExit(spawned.child, HARD_TIMEOUT_MS, "bridge (ws-close)");
 

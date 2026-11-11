@@ -1524,3 +1524,34 @@ describe("TerminalSessionView — ended screens from the approved mock (card 6b2
     expect(screen.queryByRole("button", { name: /Launch again/ })).not.toBeInTheDocument();
   });
 });
+
+// Card f4be2981: the pill must never say "Connected" while the Mac is away.
+describe("peer away (card f4be2981)", () => {
+  afterEach(() => cleanup());
+
+  function installDegraded(longWait: boolean) {
+    installMockSession();
+    const base = mockedUseTerminalSession.getMockImplementation()!;
+    mockedUseTerminalSession.mockImplementation(
+      (...args) => ({ ...base(...args), peerDegraded: true, longWait }),
+    );
+  }
+
+  it("shows Reconnecting… and not Connected, with the kept-session wording and no End session link", () => {
+    installDegraded(false);
+    renderView(false);
+    expect(screen.getAllByText("Reconnecting…").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Connected")).toBeNull();
+    expect(screen.getByText("Reconnecting to your session…")).toBeTruthy();
+    expect(screen.getByText("Reconnect now")).toBeTruthy();
+    expect(screen.queryByText("Still waiting for your Mac.")).toBeNull();
+  });
+
+  it("after the long wait shows Still waiting for your Mac and an End session link", () => {
+    installDegraded(true);
+    renderView(false);
+    expect(screen.getByText("Still waiting for your Mac.")).toBeTruthy();
+    expect(screen.getByText("Reconnect now")).toBeTruthy();
+    expect(screen.getAllByText("End session").length).toBeGreaterThan(0);
+  });
+});

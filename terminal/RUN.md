@@ -181,6 +181,15 @@ API** (so an idle DO is evicted from memory and stops billing duration) plus DO
   that never goes idle (e.g. runaway output), not a bound on a normal working
   day — it does not slide on activity, unlike the idle cap.
 
+**Long-hold sessions (card f4be2981, helper 0.3.34+).** A bridge that attaches
+with `hold=1` keeps its agent alive and reconnects for as long as it runs, so the
+relay holds such a session with **no 90 s grace and no idle cap** when a leg or
+both legs vanish (the Mac slept, Wi-Fi dropped). Only the 24 h max-duration
+backstop, an explicit end, or the bridge reporting its agent exited ends it. Old
+bridges send no `hold` and keep the 90 s grace and the idle cap. The helper holds
+the macOS prevent-idle-sleep lock while any agent printed something in the last
+2 minutes.
+
 Both reasons are classified by the dock (`src/lib/terminal/connection.ts`) into the
 calm idle / max-duration copy. Override the caps via env (`[vars]` in
 `wrangler.toml`, or `--var KEY:VALUE` for a quick local run). The stand-in relay
@@ -242,7 +251,7 @@ Ending: a bridge that stops on purpose closes 1000 with a reason token
 `git-missing`). The relay ends the session at once (closed callback
 `bridge_ended`), forwards the reason to the browser, and keeps a 10-minute
 tombstone (`TERMINAL_TOMBSTONE_MS`) so a late browser attach gets the same
-reason. Only an abnormal close (1006, errors) gets the 90s reconnect hold.
+reason. Only an abnormal close (1006, errors) gets a reconnect hold (90s for old bridges, no limit for hold=1 bridges).
 
 Helper control legs are per Mac: the helper connects with `machineLabel`
 (fixed name) and `machineAliases`; `/helper/status?machines=` and
