@@ -8,7 +8,7 @@ function createMockServer() {
   const registeredTools = new Map<string, ToolHandler>();
   return {
     server: {
-      tool: vi.fn((name: string, ...rest: unknown[]) => {
+      registerTool: vi.fn((name: string, ...rest: unknown[]) => {
         const handler = rest[rest.length - 1] as ToolHandler;
         registeredTools.set(name, handler);
       }),
@@ -38,10 +38,10 @@ describe("instrumentServer", () => {
 
     // Register a tool through the instrumented server
     const handler = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
-    instrumented.tool("test_tool", "description", {}, handler);
+    instrumented.registerTool("test_tool", { description: "desc" }, handler);
 
-    // The original server.tool should have been called
-    expect(server.tool).toHaveBeenCalledOnce();
+    // The original server.registerTool should have been called
+    expect(server.registerTool).toHaveBeenCalledOnce();
 
     // Execute the wrapped handler
     const wrappedHandler = registeredTools.get("test_tool")!;
@@ -78,7 +78,7 @@ describe("instrumentServer", () => {
     const handler = vi.fn(async () => {
       throw new Error("Tool failed");
     });
-    instrumented.tool("failing_tool", "desc", {}, handler);
+    instrumented.registerTool("failing_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("failing_tool")!;
     await expect(wrappedHandler({}, {})).rejects.toThrow("Tool failed");
@@ -106,7 +106,7 @@ describe("instrumentServer", () => {
       content: [{ type: "text", text: "Error: something went wrong" }],
       isError: true,
     }));
-    instrumented.tool("error_result_tool", "desc", {}, handler);
+    instrumented.registerTool("error_result_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("error_result_tool")!;
     await wrappedHandler({}, {});
@@ -126,7 +126,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("tool_with_idea", "desc", {}, handler);
+    instrumented.registerTool("tool_with_idea", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("tool_with_idea")!;
     await wrappedHandler({ idea_id: "abc-123", other: "arg" }, {});
@@ -146,7 +146,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("no_idea_tool", "desc", {}, handler);
+    instrumented.registerTool("no_idea_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("no_idea_tool")!;
     await wrappedHandler({ task_id: "task-1" }, {});
@@ -171,7 +171,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("get_agent_skill_content", "desc", {}, handler);
+    instrumented.registerTool("get_agent_skill_content", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("get_agent_skill_content")!;
     await wrappedHandler({ agent_id: "bot-42", skill_name: "x" }, {});
@@ -191,8 +191,8 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("set_agent_identity", "desc", {}, handler);
-    instrumented.tool("plain_tool", "desc", {}, handler);
+    instrumented.registerTool("set_agent_identity", { description: "desc" }, handler);
+    instrumented.registerTool("plain_tool", { description: "desc" }, handler);
 
     await registeredTools.get("set_agent_identity")!({ bot_id: "bot-7" }, {});
     await registeredTools.get("plain_tool")!({ task_id: "task-1" }, {});
@@ -215,7 +215,7 @@ describe("instrumentServer", () => {
     const handler = vi.fn(async () => {
       throw new Error("Tool failed");
     });
-    instrumented.tool("failing_agent_tool", "desc", {}, handler);
+    instrumented.registerTool("failing_agent_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("failing_agent_tool")!;
     await expect(wrappedHandler({ agent_id: "bot-9" }, {})).rejects.toThrow("Tool failed");
@@ -235,7 +235,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
-    instrumented.tool("safe_tool", "desc", {}, handler);
+    instrumented.registerTool("safe_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("safe_tool")!;
     const result = await wrappedHandler({}, {});
@@ -259,7 +259,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("connect_tool", "desc", {}, handler);
+    instrumented.registerTool("connect_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("connect_tool")!;
     await wrappedHandler({}, {});
@@ -288,7 +288,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("fallback_tool", "desc", {}, handler);
+    instrumented.registerTool("fallback_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("fallback_tool")!;
     await wrappedHandler({}, {});
@@ -308,7 +308,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
-    instrumented.tool("safe_connect_tool", "desc", {}, handler);
+    instrumented.registerTool("safe_connect_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("safe_connect_tool")!;
     const result = await wrappedHandler({}, {});
@@ -330,7 +330,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("no_connect_tool", "desc", {}, handler);
+    instrumented.registerTool("no_connect_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("no_connect_tool")!;
     await wrappedHandler({}, {});
@@ -362,7 +362,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("session_tool", "desc", {}, handler);
+    instrumented.registerTool("session_tool", { description: "desc" }, handler);
 
     await registeredTools.get("session_tool")!({}, {});
 
@@ -381,7 +381,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [] }));
-    instrumented.tool("no_session_tool", "desc", {}, handler);
+    instrumented.registerTool("no_session_tool", { description: "desc" }, handler);
 
     await registeredTools.get("no_session_tool")!({}, {});
 
@@ -408,7 +408,7 @@ describe("instrumentServer", () => {
     const handler = vi.fn(async () => {
       throw new Error("Tool failed");
     });
-    instrumented.tool("failing_session_tool", "desc", {}, handler);
+    instrumented.registerTool("failing_session_tool", { description: "desc" }, handler);
 
     await expect(
       registeredTools.get("failing_session_tool")!({}, {})
@@ -430,7 +430,7 @@ describe("instrumentServer", () => {
     );
 
     const handler = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
-    instrumented.tool("no_ctx_tool", "desc", {}, handler);
+    instrumented.registerTool("no_ctx_tool", { description: "desc" }, handler);
 
     const wrappedHandler = registeredTools.get("no_ctx_tool")!;
     const result = await wrappedHandler({}, {});

@@ -92,8 +92,8 @@ const handler = createMcpHandler(
   (server) => {
     const instrumentedServer = instrumentServer(
       server,
-      async (extra) => {
-        const authInfo = extra.authInfo;
+      async (ctx) => {
+        const authInfo = ctx.http?.authInfo;
         if (!authInfo) throw new Error("Authentication required");
         const realUserId = authInfo.extra?.userId as string;
         // Ambient identity retired (docs/agent-voice-comments-design.html
@@ -133,8 +133,8 @@ const handler = createMcpHandler(
 
     registerTools(
       instrumentedServer,
-      async (extra) => {
-        const authInfo = extra.authInfo;
+      async (ctx) => {
+        const authInfo = ctx.http?.authInfo;
         if (!authInfo) {
           throw new Error("Authentication required");
         }
@@ -178,9 +178,10 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "vibecodes", version: "1.0.0" },
     instructions: SERVER_INSTRUCTIONS,
-  },
-  {
-    streamableHttpEndpoint: "/api/mcp",
+    // New-era clients may reuse the tool list for 5 minutes (card 739db945,
+    // decision 2). The list is identical for every user, hence "public".
+    // mcp-handler 2 serves old-era clients on the same endpoint automatically.
+    cacheHints: { "tools/list": { ttlMs: 300_000, cacheScope: "public" } },
   }
 );
 
@@ -275,4 +276,5 @@ const authHandler = withMcpAuth(handler, verifyToken, {
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
 });
 
-export { authHandler as GET, authHandler as POST, authHandler as DELETE };
+// GET stays exported: old-era clients open it and the 405 is the correct answer.
+export { authHandler as GET, authHandler as POST };

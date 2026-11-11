@@ -1,9 +1,9 @@
 import type { McpContext } from "./context";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyMcpServer = { tool: (...args: any[]) => any };
+type AnyMcpServer = { registerTool: (...args: any[]) => any };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ServerExtra = { authInfo?: any; [key: string]: any };
+type ServerExtra = { http?: { authInfo?: any; [key: string]: any }; [key: string]: any };
 
 export interface ToolLogEntry {
   tool_name: string;
@@ -55,7 +55,7 @@ function extractAgentId(args: Record<string, unknown>): string | null {
 
 /**
  * Wraps an MCP server to instrument all tool calls with timing and logging.
- * The wrapper intercepts `server.tool()` registrations and wraps each handler
+ * The wrapper intercepts `server.registerTool()` registrations and wraps each handler
  * to measure duration, capture success/failure, and fire-and-forget log entries.
  *
  * @param server The MCP server to wrap
@@ -71,19 +71,16 @@ export function instrumentServer(
   mode: "stdio" | "remote",
   mcpConnectFn?: McpConnectFn
 ): AnyMcpServer {
-  const originalTool = server.tool.bind(server);
+  const originalRegisterTool = server.registerTool.bind(server);
 
   return {
     ...server,
-    tool: (
+    registerTool: (
       name: string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...rest: any[]
     ) => {
-      // server.tool() can be called with 3 or 4 args:
-      // tool(name, description, schema, handler)  — 4 args
-      // tool(name, schema, handler)                — 3 args
-      // We need to wrap the last argument (the handler)
+      // server.registerTool(name, config, handler): wrap the last argument (the handler)
       const handler = rest[rest.length - 1] as (
         args: Record<string, unknown>,
         extra: ServerExtra
@@ -165,7 +162,7 @@ export function instrumentServer(
       // Replace the handler (last arg) with the wrapped version
       const newRest = [...rest];
       newRest[newRest.length - 1] = wrappedHandler;
-      return originalTool(name, ...newRest);
+      return originalRegisterTool(name, ...newRest);
     },
   };
 }
