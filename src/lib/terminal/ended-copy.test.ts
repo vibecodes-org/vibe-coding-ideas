@@ -137,6 +137,13 @@ describe("ended copy — pinned to the approved mock", () => {
     expect(text({ reason: "agent-force-stopped", agent: "codex" }).bodyText).toBe(
       "Codex was force-stopped by something else on your Mac. Your conversation is saved."
     );
+    const s = text({ reason: "agent-stopped-suddenly", detail: "6" });
+    expect(s.title).toBe("Session ended");
+    expect(s.bodyText).toBe("Claude Code stopped suddenly on your Mac (signal 6). Your conversation is saved.");
+    expect(s.primary).toBe("resume");
+    expect(text({ reason: "agent-stopped-suddenly", detail: "1", agent: "codex" }).bodyText).toBe(
+      "Codex stopped suddenly on your Mac (signal 1). Your conversation is saved."
+    );
   });
 
   it("unknown repo / folder still reads as plain English", () => {
@@ -169,6 +176,7 @@ describe("endedReasonAllowsResume", () => {
       "max-duration",
       "reconnect-failed",
       "agent-force-stopped",
+      "agent-stopped-suddenly",
       "agent-stopped-with-error",
     ] as const) {
       expect(endedReasonAllowsResume(r), r).toBe(true);

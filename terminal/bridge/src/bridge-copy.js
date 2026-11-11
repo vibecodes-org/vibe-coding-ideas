@@ -150,7 +150,12 @@ export function earlyExitLine(agent, exitCode) {
  */
 export function agentEndLine(agent, { exitCode, signal } = {}) {
   if (Number.isInteger(signal) && /** @type {number} */ (signal) > 0) {
-    return yellow(`${agentName(agent)} was force-stopped by something else on this Mac (signal ${signal}).`);
+    // Only SIGKILL (9) and SIGTERM (15) are a deliberate stop from outside;
+    // any other signal (a hang-up, a crash) gets neutral wording.
+    if (signal === 9 || signal === 15) {
+      return yellow(`${agentName(agent)} was force-stopped by something else on this Mac (signal ${signal}).`);
+    }
+    return yellow(`${agentName(agent)} stopped suddenly (signal ${signal}).`);
   }
   if (Number.isInteger(exitCode) && exitCode !== 0) {
     return yellow(`${agentName(agent)} stopped with an error (exit code ${exitCode}).`);

@@ -168,7 +168,10 @@ export type EndedReason =
   // Card 4cd8270f: the agent ran, then something on the Mac killed it
   // (`pty-exit:signal-<n>`) or it quit with a non-zero code
   // (`pty-exit:code-<n>`). The conversation did run, so Resume stays.
+  // `agent-force-stopped` is signals 9 (SIGKILL) and 15 (SIGTERM) only; any
+  // other signal (a hang-up, a crash) is `agent-stopped-suddenly`.
   | "agent-force-stopped"
+  | "agent-stopped-suddenly"
   | "agent-stopped-with-error";
 
 export interface TerminalConnectionState {
@@ -200,7 +203,7 @@ export interface TerminalConnectionState {
    * `agent-stopped-early` (from the bridge's `agent-stopped-early:<code>`
    * token), or `"old-helper"` when an old helper's bare `pty-exit` arrived
    * before any output (see the reducer's old-helper rule). Card 4cd8270f: the
-   * signal number for `agent-force-stopped`, the exit code for
+   * signal number for `agent-force-stopped` / `agent-stopped-suddenly`, the exit code for
    * `agent-stopped-with-error`. Null otherwise.
    */
   endedDetail: string | null;
@@ -380,10 +383,10 @@ export function parseEndedReason(reason: string | undefined): {
   if (token === "pty-exit" && detail) {
     const m = /^(signal|code)-(\d{1,3})$/.exec(detail);
     if (m) {
-      return {
-        endedReason: m[1] === "signal" ? "agent-force-stopped" : "agent-stopped-with-error",
-        endedDetail: String(Number(m[2])),
-      };
+      const n = Number(m[2]);
+      const endedReason: EndedReason =
+        m[1] === "code" ? "agent-stopped-with-error" : n === 9 || n === 15 ? "agent-force-stopped" : "agent-stopped-suddenly";
+      return { endedReason, endedDetail: String(n) };
     }
   }
   const r = raw.toLowerCase();

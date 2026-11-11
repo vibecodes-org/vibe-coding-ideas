@@ -976,8 +976,12 @@ describe("bridge end reasons (card 6b2cb8ac)", () => {
     expect(unknown.endedReason).toBe("remote");
   });
 
-  it("card 4cd8270f: pty-exit:signal-<n> → agent-force-stopped, pty-exit:code-<n> → agent-stopped-with-error, number as detail", () => {
+  it("card 4cd8270f: signal 9/15 → agent-force-stopped, other signals → agent-stopped-suddenly, code → agent-stopped-with-error, number as detail", () => {
     expect(parseEndedReason("pty-exit:signal-9")).toEqual({ endedReason: "agent-force-stopped", endedDetail: "9" });
+    expect(parseEndedReason("pty-exit:signal-15")).toEqual({ endedReason: "agent-force-stopped", endedDetail: "15" });
+    for (const n of ["1", "6", "11"]) {
+      expect(parseEndedReason(`pty-exit:signal-${n}`)).toEqual({ endedReason: "agent-stopped-suddenly", endedDetail: n });
+    }
     expect(parseEndedReason("pty-exit:code-1")).toEqual({ endedReason: "agent-stopped-with-error", endedDetail: "1" });
     expect(parseEndedReason("pty-exit:code-137")).toEqual({ endedReason: "agent-stopped-with-error", endedDetail: "137" });
   });

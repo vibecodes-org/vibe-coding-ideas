@@ -231,6 +231,21 @@ export function endedCopy(input: EndedCopyInput): EndedCopy {
         { primary: "resume" }
       );
 
+    case "agent-stopped-suddenly":
+      // Card 4cd8270f: a signal other than 9 / 15 (a hang-up, a crash) —
+      // neutral wording, since nothing says something else stopped it.
+      return plain(
+        "Session ended",
+        [
+          t(
+            detail && /^\d+$/.test(detail)
+              ? `${name} stopped suddenly on your Mac (signal ${detail}). Your conversation is saved.`
+              : `${name} stopped suddenly on your Mac. Your conversation is saved.`
+          ),
+        ],
+        { primary: "resume" }
+      );
+
     case "agent-stopped-with-error":
       // Card 4cd8270f: the agent quit with a non-zero exit code after running
       // for a while. Same shape as the force-stopped screen.
@@ -295,6 +310,7 @@ const ALL_REASONS: ReadonlyArray<EndedReason | null> = [
   "git-missing",
   "helper-closed",
   "agent-force-stopped",
+  "agent-stopped-suddenly",
   "agent-stopped-with-error",
 ];
 
@@ -306,7 +322,7 @@ export function collectEndedCopy(): string[] {
       for (const known of [true, false]) {
         for (const detail of reason === "agent-stopped-early"
           ? ["1", "old-helper", null]
-          : reason === "agent-stopped-with-error" || reason === "agent-force-stopped"
+          : reason === "agent-stopped-with-error" || reason === "agent-force-stopped" || reason === "agent-stopped-suddenly"
             ? ["1", "9", null]
             : [null]) {
           const copy = endedCopy({

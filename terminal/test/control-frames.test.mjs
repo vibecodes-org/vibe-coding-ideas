@@ -323,7 +323,7 @@ test("sanitizeBridgeEndReason keeps a safe token, else 'ended'", () => {
   assert.equal(sanitizeBridgeEndReason("/Users/x"), "ended");
 });
 
-test("card 4cd8270f: ptyExitReason / bridgeEndDetail / isPtyExitReason", () => {
+test("card 4cd8270f: ptyExitReason / bridgeEndDetail", () => {
   assert.equal(ptyExitReason({ exitCode: 0, signal: 9 }), "pty-exit:signal-9");
   assert.equal(ptyExitReason({ exitCode: 1, signal: 0 }), "pty-exit:code-1");
   assert.equal(ptyExitReason({ exitCode: 0, signal: 0 }), "pty-exit");
