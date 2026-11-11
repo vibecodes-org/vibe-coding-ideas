@@ -17,7 +17,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     let end = Infinity;
     const mine: { col: string; val: unknown }[] = [];
     const chain: Record<string, unknown> = {};
-    for (const m of ["select", "not", "or", "gte", "order", "in"]) chain[m] = () => chain;
+    for (const m of ["select", "not", "or", "gte", "gt", "order", "in"]) chain[m] = () => chain;
     chain.eq = (col: string, val: unknown) => {
       eqs.push({ table, col, val });
       mine.push({ col, val });
@@ -143,9 +143,10 @@ describe("fitReport", () => {
     const base = buildWeeklyReport({ steps: [], runs: [], templates: [], comments: [], botIds: new Set(), usage: [], ideas: [], paths: [], weekEndsAt: end, weeks });
     return {
       ...base,
-      boards: Array.from({ length: n }, (_, i) => ({ idea_id: `00000000-0000-4000-a000-${String(i).padStart(12, "0")}`, title: `Board number ${i}`, project_path: `/Users/someone/projects/board-${i}`, usd: series(123.45), runs: series(3) })),
+      boards: Array.from({ length: n }, (_, i) => ({ idea_id: `00000000-0000-4000-a000-${String(i).padStart(12, "0")}`, title: `Board number ${i}`, project_path: `/Users/someone/projects/board-${i}`, usd: series(123.45), main_window_usd: series(10.5), runs: series(3) })),
       workflows: Array.from({ length: n }, (_, i) => ({ name: `Workflow ${i}`, runs: series(3), usd: series(99.12), median_usd: series(12.34), sent_back: series(1), cost_missing: series(0) })),
       steps: Array.from({ length: n * 3 }, (_, i) => ({ workflow: `Workflow ${i}`, step: `Step ${i}`, version: "a1b2c3", runs: series(3), median_usd: series(2.5), usd: series(7.77), cost_missing: series(0) })),
+      sessions_this_week: Array.from({ length: n }, (_, i) => ({ conversation: `abcdef${String(i).padStart(2, "0")}`, board: `Board number ${i}`, name: `Session ${i}`, first_call_at: "2026-10-30T01:00:00Z", last_call_at: "2026-10-31T01:00:00Z", main_window_usd: 20.5, steps_usd: 30.25, steps: 4 })),
       runs_this_week: Array.from({ length: n }, (_, i) => ({ run_id: `00000000-0000-4000-b000-${String(i).padStart(12, "0")}`, workflow: `Workflow ${i}`, usd: 12.5, sent_back: i % 2 === 0 })),
     };
   }
@@ -166,6 +167,17 @@ describe("fitReport", () => {
     expect(text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
     expect(text).not.toContain("\n");
     expect(out.steps.length).toBeGreaterThan(0);
+  });
+
+  it("trims the sessions list first, to at most 10, and stays under 12,000 characters with 10 sessions and 15 boards", () => {
+    const out = fitReport(big(8, 15), "2026-10-31T06:00:00.000Z");
+    expect(compactResult(out).content[0].text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    expect(out.sessions_this_week.length).toBeLessThanOrEqual(10);
+    const full = fitReport(big(8, 3), "2026-10-31T06:00:00.000Z");
+    expect(full.sessions_this_week).toHaveLength(3);
+    const huge = fitReport(big(26, 60), "2026-10-31T06:00:00.000Z");
+    expect(huge.sessions_this_week.length).toBeLessThanOrEqual(10);
+    expect(huge.steps.length).toBeGreaterThan(0);
   });
 
   it("leaves a small report whole, with no truncated field", () => {

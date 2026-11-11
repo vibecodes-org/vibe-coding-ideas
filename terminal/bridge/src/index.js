@@ -59,6 +59,12 @@ import { findConversationFolder } from "./transcript-folder.js";
 import { withoutFolderRecordStep } from "../../shared/launch-prompt.mjs";
 import { resolveMachineNames } from "../../shared/machine-name.mjs";
 import { stripClaudeWorktreeSuffix } from "../../shared/project-path.mjs";
+import {
+  USAGE_SEND_INTERVAL_MS,
+  createUsageReporter,
+  locateConversationFile,
+  readMainWindowUsage,
+} from "./main-window-usage.js";
 import { isBinaryInstalled } from "../../shared/binary-check.mjs";
 import {
   sanitizeHelperVersion,
@@ -545,6 +551,37 @@ async function recordFolder(folderPath, how) {
   }
 }
 
+// The main window's own usage (card f2a563ca): totals of the conversation's
+// calls that no workflow step took, sent hourly and once when the agent exits.
+// In-app Claude sessions with a known conversation id only. Best effort, never throws.
+async function postMainWindowUsage(body, { signal }) {
+  if (!TOKEN || !SESSION) return false;
+  try {
+    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/usage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sid: SESSION, token: TOKEN, ...body }),
+      signal,
+    });
+    log(res.ok ? "info" : "warn", "main window usage sent", { status: res.status, hours: body.hours.length });
+    return res.ok;
+  } catch (e) {
+    log("warn", "couldn't send the main window's usage totals", { err: String(e?.message || e) });
+    return false;
+  }
+}
+const USAGE_CONVERSATION_ID = AGENT === "claude" && !explicitCmd ? CONV || RESUME_ID || null : null;
+const usageReporter = createUsageReporter({
+  conversationId: USAGE_CONVERSATION_ID,
+  locate: () => locateConversationFile({ id: USAGE_CONVERSATION_ID, fs, env: process.env, homedir: os.homedir() }),
+  read: readMainWindowUsage,
+  post: postMainWindowUsage,
+  log,
+});
+let usageTimer = null;
+// Set when the agent exits, so the process waits (at most 10 s) for the last send.
+let usageFinal = Promise.resolve();
+
 // Codex reads custom agents only from role files (see session-agents.js), so
 // a Codex launch writes them to a private temp folder — outside the project
 // and ~/.codex — that is removed when this bridge exits, on every exit path
@@ -923,7 +960,7 @@ async function main() {
     // status.
     process.exitCode = code;
     // give sockets a tick to flush their close frame, then exit
-    const exitSoon = () => setTimeout(() => process.exit(code), 200).unref();
+    const exitSoon = () => { usageFinal.then(() => setTimeout(() => process.exit(code), 200).unref()); };
 
     // No PTY (blocked prompt launch) or Windows (conpty — no POSIX signal
     // escalation): node-pty's own kill + the short flush window is all there is.
@@ -1044,6 +1081,10 @@ async function main() {
     }
     term = spawned;
     const spawnedAt = Date.now();
+    if (USAGE_CONVERSATION_ID && !usageTimer) {
+      usageTimer = setInterval(() => void usageReporter.send(), USAGE_SEND_INTERVAL_MS);
+      usageTimer.unref();
+    }
 
     // Tell the supervising helper (if any) which pid to verify-kill should WE
     // die uncleanly (a SIGKILL'd bridge can run no cleanup — matrix row c).
@@ -1079,6 +1120,8 @@ async function main() {
     term.onExit(({ exitCode, signal }) => {
       ptyExited = true; // lets an in-flight kill escalation confirm instantly
       log("info", "PTY exited", { exitCode, signal });
+      if (usageTimer) clearInterval(usageTimer);
+      usageFinal = usageReporter.send({ final: true });
       // Card 6b2cb8ac: an agent that quits within seconds, without saying why
       // on screen, gets a plain line and its own end reason, so the page shows
       // "stopped on your Mac straight away" (with no Resume) instead of a

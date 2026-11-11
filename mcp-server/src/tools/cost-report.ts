@@ -5,7 +5,9 @@ import { readAll, readByIds } from "../../../src/lib/step-cost/paging";
 import type { ReportCommentRow } from "../../../src/lib/step-cost/report";
 import {
   buildWeeklyReport,
+  type WeeklyConversationRow,
   type WeeklyIdeaRow,
+  type WeeklyMainHourRow,
   type WeeklyPathRow,
   type WeeklyReportData,
   type WeeklyRunRow,
@@ -55,6 +57,49 @@ interface BoardRows {
   comments: ReportCommentRow[];
   botIds: string[];
   usage: WeeklyUsageRow[];
+  mainHours: WeeklyMainHourRow[];
+  conversations: WeeklyConversationRow[];
+}
+
+/**
+ * The main window's own usage on one board (card f2a563ca): the hour rows
+ * inside the window plus the conversation rows, with each conversation's
+ * newest session name. A board with none reads as empty.
+ */
+async function readMainWindow(db: Db, ideaId: string, since: string) {
+  const mainHours = await readAll<WeeklyMainHourRow>((from, to) =>
+    db
+      .from("session_main_usage_hours")
+      .select("conversation_id, user_id, idea_id, hour, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens")
+      .eq("idea_id", ideaId)
+      .gt("hour", since)
+      .order("id")
+      .range(from, to)
+  );
+  if (mainHours.length === 0) return { mainHours, conversations: [] as WeeklyConversationRow[] };
+  const convRows = await readAll<WeeklyConversationRow>((from, to) =>
+    db
+      .from("session_main_usage")
+      .select("conversation_id, user_id, idea_id, first_call_at, last_call_at, step_ids")
+      .eq("idea_id", ideaId)
+      .order("user_id")
+      .order("conversation_id")
+      .range(from, to)
+  );
+  // Newest session row's display name per conversation (scoped by board, newest first).
+  const names = await readAll<{ claude_session_id: string | null; display_name: string | null }>((from, to) =>
+    db
+      .from("terminal_sessions")
+      .select("claude_session_id, display_name")
+      .eq("idea_id", ideaId)
+      .not("claude_session_id", "is", null)
+      .order("created_at", { ascending: false })
+      .order("sid")
+      .range(from, to)
+  );
+  const nameOf = new Map<string, string | null>();
+  for (const n of names) if (n.claude_session_id && !nameOf.has(n.claude_session_id)) nameOf.set(n.claude_session_id, n.display_name);
+  return { mainHours, conversations: convRows.map((c) => ({ ...c, name: nameOf.get(c.conversation_id) ?? null })) };
 }
 
 /**
@@ -117,7 +162,8 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
         .in("id", chunk)
     ))
   );
-  if (steps.length === 0) return { steps, runs: [], templates, comments: [], botIds: [], usage: [] };
+  const main = await readMainWindow(db, ideaId, since);
+  if (steps.length === 0) return { steps, runs: [], templates, comments: [], botIds: [], usage: [], ...main };
   const runIds = [...new Set(steps.map((s) => s.run_id).filter((id): id is string => !!id))];
   const runs = await readByIds<WeeklyRunRow>(runIds, (chunk) => db.from("workflow_runs").select("id, template_id, status").in("id", chunk));
   // Which failure authors are agents. bot_profiles can be read by any signed-in user.
@@ -125,10 +171,10 @@ async function readBoard(db: Db, ideaId: string, since: string): Promise<BoardRo
   const botIds = (
     await readByIds<{ id: string }>(failureAuthors, (chunk) => db.from("bot_profiles").select("id").in("id", chunk))
   ).map((b) => b.id);
-  return { steps, runs, templates, comments, botIds, usage };
+  return { steps, runs, templates, comments, botIds, usage, ...main };
 }
 
-type CappedList = "steps" | "runs_this_week" | "boards" | "workflows";
+type CappedList = "steps" | "runs_this_week" | "boards" | "workflows" | "sessions_this_week";
 
 export type FittedReport = WeeklyReportData & {
   generated_at: string;
@@ -140,8 +186,8 @@ export type FittedReport = WeeklyReportData & {
  * keeping the biggest spenders (lists arrive sorted by cost). Says what was cut.
  */
 export function fitReport(data: WeeklyReportData, generatedAt: string, maxChars = TARGET_CHARS): FittedReport {
-  const keys: CappedList[] = ["steps", "runs_this_week", "boards", "workflows"];
-  const caps: Record<CappedList, number> = { steps: 25, runs_this_week: 10, boards: 15, workflows: 15 };
+  const keys: CappedList[] = ["steps", "runs_this_week", "boards", "workflows", "sessions_this_week"];
+  const caps: Record<CappedList, number> = { steps: 25, runs_this_week: 10, boards: 15, workflows: 15, sessions_this_week: 10 };
   const build = (): FittedReport => {
     const truncated: NonNullable<FittedReport["truncated"]> = {};
     for (const k of keys) {
@@ -154,14 +200,18 @@ export function fitReport(data: WeeklyReportData, generatedAt: string, maxChars 
       runs_this_week: data.runs_this_week.slice(0, caps.runs_this_week),
       boards: data.boards.slice(0, caps.boards),
       workflows: data.workflows.slice(0, caps.workflows),
+      sessions_this_week: data.sessions_this_week.slice(0, caps.sessions_this_week),
       ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
     };
   };
   const size = (o: unknown) => JSON.stringify(o).length;
   let out = build();
   while (size(out) > maxChars) {
-    // Cut the list with the most items still shown; the first in order wins ties.
-    const next = keys.filter((k) => caps[k] > 0).sort((a, b) => caps[b] - caps[a])[0];
+    // The sessions list goes first; after that, cut the list with the most items still shown (the first in order wins ties).
+    const next =
+      caps.sessions_this_week > 0 && data.sessions_this_week.length > 0
+        ? "sessions_this_week"
+        : keys.filter((k) => caps[k] > 0).sort((a, b) => caps[b] - caps[a])[0];
     if (!next) break;
     caps[next] = Math.max(0, caps[next] - (caps[next] > 4 ? 3 : 1));
     out = build();
@@ -195,7 +245,7 @@ export async function getCostReport(ctx: McpContext, params: z.infer<typeof getC
     .filter((p) => p.owner_user_id === caller)
     .map((p) => ({ idea_id: p.idea_id, absolute_path: stripClaudeWorktreeSuffix(p.absolute_path), updated_at: p.updated_at }));
 
-  const all: BoardRows = { steps: [], runs: [], templates: [], comments: [], botIds: [], usage: [] };
+  const all: BoardRows = { steps: [], runs: [], templates: [], comments: [], botIds: [], usage: [], mainHours: [], conversations: [] };
   for (let i = 0; i < ideaIds.length; i += BOARD_CONCURRENCY) {
     const rows = await Promise.all(ideaIds.slice(i, i + BOARD_CONCURRENCY).map((id) => readBoard(db, id, since)));
     for (const r of rows) {
@@ -205,6 +255,8 @@ export async function getCostReport(ctx: McpContext, params: z.infer<typeof getC
       all.comments.push(...r.comments);
       all.botIds.push(...r.botIds);
       all.usage.push(...r.usage);
+      all.mainHours.push(...r.mainHours);
+      all.conversations.push(...r.conversations);
     }
   }
 

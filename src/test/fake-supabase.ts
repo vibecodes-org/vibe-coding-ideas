@@ -10,6 +10,7 @@ export type FakeCall = {
   table: string;
   op: "select" | "insert" | "update" | "upsert" | "delete";
   payload?: unknown;
+  options?: unknown;
   filters: [string, unknown][];
 };
 
@@ -28,11 +29,12 @@ export function fakeSupabase(opts: {
       return opts.tables?.[table]?.(call) ?? { data: null, error: null };
     };
     for (const op of ["select", "insert", "update", "upsert", "delete"] as const) {
-      chain[op] = (payload?: unknown) => {
+      chain[op] = (payload?: unknown, options?: unknown) => {
         // `.insert(x).select()` stays an insert: only write verbs set the op.
         if (op !== "select") {
           call.op = op;
           call.payload = payload;
+          call.options = options;
         }
         return chain;
       };

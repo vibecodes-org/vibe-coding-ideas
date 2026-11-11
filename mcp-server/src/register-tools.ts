@@ -390,7 +390,7 @@ export function registerTools(
 
   server.tool(
     "get_cost_report",
-    "Read-only weekly cost figures for the boards you belong to, the same figures as the Admin step-cost report: per board, workflow and step, with runs, send-backs and cost per week (7-day windows, newest last, the latest ending at week_ends_at), the price table used and this week's runs. Raw series only, no trends. Dollar figures are list-price estimates. Names and numbers only, never card content or prompts. Reply is capped near 12,000 characters; lists are cut to the biggest spenders and a truncated field says so.",
+    "Read-only weekly cost figures for the boards you belong to, the step figures are the same as the Admin step-cost report: per board, workflow and step, with runs, send-backs and cost per week (7-day windows, newest last, the latest ending at week_ends_at), the price table used and this week's runs. Also the main window's own usage that steps did not already count (main_window_total_usd and main_window_usd per board, and sessions_this_week with main window next to steps): in-app Claude sessions only, totals sent by the Mac app (helper 0.3.32 or later; 0 can mean the Mac app is older), steps and main window never overlap. Raw series only, no trends. Dollar figures are list-price estimates. Names and numbers only, never card content or prompts. Reply is capped near 12,000 characters; lists are cut to the biggest spenders and a truncated field says so.",
     getCostReportSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

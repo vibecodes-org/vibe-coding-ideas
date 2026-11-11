@@ -25,78 +25,9 @@
 
 const TOOL_SUFFIX = /__(claim_next_step|complete_step|fail_step)$/;
 
-/** Last `"key":<digits>` in s, as the awk's num() reads it (first match). */
-function num(s, key) {
-  const m = new RegExp(`"${key}":([0-9]+)`).exec(s);
-  return m ? Number(m[1]) : 0;
-}
+import { readCall, totalCalls } from "../../terminal/shared/transcript-usage.mjs";
 
-/**
- * One transcript line → one model call's counts, or null if the line isn't
- * an assistant call. A port of the live command's awk, line for line.
- */
-export function readCall(line) {
-  if (!line.includes('"type":"assistant"')) return null;
-  const idm = /"id":"(msg_[A-Za-z0-9_]+)"/.exec(line);
-  if (!idm) return null;
-  const at = line.lastIndexOf('"usage":{');
-  if (at < 0) return null;
-  const u = line.slice(at);
-  let model = /"model":"([^"]+)"/.exec(line)?.[1] ?? "unknown";
-  const input = num(u, "input_tokens");
-  const read = num(u, "cache_read_input_tokens");
-  const write = num(u, "cache_creation_input_tokens");
-  const write1h = num(u, "ephemeral_1h_input_tokens");
-  if (/haiku-5-5/.test(model) && input + read + write > 100000) model += "+long";
-  let len = 0;
-  const s = line.indexOf('"content":[');
-  const e = line.indexOf(',"stop_reason":');
-  if (s >= 0 && e > s) {
-    const seg = line
-      .slice(s + 11, e)
-      .replace(/"signature":"[^"]*"/g, "")
-      .replace(/"(type|id|name|caller|container)":("[^"]*"|null|\{[^{}]*\})/g, "");
-    len = Buffer.byteLength(seg, "utf8");
-  }
-  return { id: idm[1], model, input, read, write5m: Math.max(0, write - write1h), write1h, reported: num(u, "output_tokens"), len };
-}
-
-/**
- * Totals model calls the way the live command does: one entry per model.
- * weights[i] (default 1) is the share of line i's call that belongs to this
- * step, taken from the first line of each call.
- */
-export function totalCalls(lines, weights = []) {
-  const calls = new Map();
-  for (const [i, line] of lines.entries()) {
-    const c = readCall(line);
-    if (!c) continue;
-    const prev = calls.get(c.id);
-    calls.set(c.id, {
-      ...c,
-      weight: prev?.weight ?? weights[i] ?? 1,
-      reported: Math.max(c.reported, prev?.reported ?? 0),
-      len: (prev?.len ?? 0) + c.len,
-    });
-  }
-  const byModel = new Map();
-  for (const c of calls.values()) {
-    const est = Math.floor(c.len / 3.5 + 0.5);
-    const m = byModel.get(c.model) ?? {
-      model: c.model, calls: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0,
-    };
-    const w = c.weight;
-    m.calls += w;
-    m.input_tokens += c.input * w;
-    m.output_tokens += Math.max(c.reported, est) * w;
-    m.cache_read_tokens += c.read * w;
-    m.cache_write_5m_tokens += c.write5m * w;
-    m.cache_write_1h_tokens += c.write1h * w;
-    byModel.set(c.model, m);
-  }
-  const round = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, typeof v === "number" ? Math.round(v) : v]));
-  return [...byModel.values()].map(round);
-}
+export { readCall, totalCalls };
 
 function resultText(block) {
   const c = block.content;
