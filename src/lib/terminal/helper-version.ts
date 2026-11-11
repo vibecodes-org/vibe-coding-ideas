@@ -159,8 +159,12 @@
  *  launch and open-terminal links for the account it belongs to, and another
  *  account's link can no longer change its saved connection. Adds "Sign out
  *  this Mac". An older helper still works, so this is a soft nudge (Nick's
- *  choice, 10 Nov 2026): prompted to update, not forced. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.30";
+ *  choice, 10 Nov 2026): prompted to update, not forced.
+ *  0.3.31 (card 9efc01c3 stage 2, 11 Nov 2026): a link's new connection pass is
+ *  saved only after the relay accepts it, so a forged link can't knock the
+ *  always-on connection offline; reopened conversations wait for the relay.
+ *  Same soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.31";
 
 export type HelperVersionParts = readonly [number, number, number];
 
