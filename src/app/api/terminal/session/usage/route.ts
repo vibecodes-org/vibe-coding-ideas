@@ -5,12 +5,16 @@
 // sent hourly while a session runs and once when it ends. Each send carries the
 // whole conversation's figures for the last 35 days, so writes replace: the
 // hour rows upsert on (conversation_id, hour, model), and sending the same
-// totals twice changes nothing.
+// totals twice changes nothing. Rows this conversation has in that window but
+// the send no longer carries (hours that dropped to zero once a step closed) are
+// deleted, so usage a step has since taken over is not counted twice.
 //
 // AUTH: the bridge's own session token (authorizeBridgeSession). An ended row
 // is accepted (the last send happens as the row ends); a missing row is 409.
 // The board and owner come from the session row, never from the request, and
-// when the row names a conversation the request's must match it (403).
+// when the row names a conversation the request's must match it (403). A
+// conversation that already has figures under another user is refused (403) and
+// nothing is written; every write and delete is also scoped by the owner.
 //
 // PRIVACY: numbers, model names, times, step ids and the conversation id only.
 // The schema is strict, so any extra key is refused.
@@ -107,6 +111,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "conversation-mismatch" }, { status: 403 });
     }
 
+    // Another user's conversation id (board members can read them) must never
+    // let this owner overwrite or delete its figures.
+    const { data: foreign, error: foreignErr } = await supabase
+      .from("session_main_usage")
+      .select("user_id")
+      .eq("conversation_id", conversationId)
+      .neq("user_id", ownerId)
+      .limit(1);
+    const { data: foreignHours, error: foreignHoursErr } = await supabase
+      .from("session_main_usage_hours")
+      .select("user_id")
+      .eq("conversation_id", conversationId)
+      .neq("user_id", ownerId)
+      .limit(1);
+    if (foreignErr || foreignHoursErr) {
+      logger.error("Terminal usage record: owner check failed", {
+        sid,
+        error: (foreignErr ?? foreignHoursErr)?.message,
+      });
+      return NextResponse.json({ error: "Couldn't read the usage" }, { status: 500 });
+    }
+    if ((Array.isArray(foreign) && foreign.length > 0) || (Array.isArray(foreignHours) && foreignHours.length > 0)) {
+      logger.warn("Terminal usage record refused: conversation belongs to another user", { sid, ideaId });
+      return NextResponse.json({ error: "conversation-owned" }, { status: 403 });
+    }
+
     const updatedAt = new Date().toISOString();
     for (let i = 0; i < hours.length; i += CHUNK) {
       const { error } = await supabase.from("session_main_usage_hours").upsert(
@@ -123,6 +153,25 @@ export async function POST(req: Request) {
         logger.error("Terminal usage record: hour upsert failed", { sid, ideaId, error: error.message });
         return NextResponse.json({ error: "Couldn't save the usage" }, { status: 500 });
       }
+    }
+
+    // Every hour this conversation has inside the window the send covers (a
+    // little inside its edge, as the bridge cuts at its own clock) that this
+    // request did not just write is stale: delete it.
+    // A send at the bridge's cap (2000 rows) has cut its oldest hours off, so those are left alone.
+    const windowStart = new Date(since + 3_600_000).getTime();
+    const deleteFrom =
+      hours.length >= 2000 ? Math.max(windowStart, Math.min(...hours.map((h) => Date.parse(h.hour)))) : windowStart;
+    const { error: staleErr } = await supabase
+      .from("session_main_usage_hours")
+      .delete()
+      .eq("conversation_id", conversationId)
+      .eq("user_id", ownerId)
+      .gte("hour", new Date(deleteFrom).toISOString())
+      .lt("updated_at", updatedAt);
+    if (staleErr) {
+      logger.error("Terminal usage record: stale hour delete failed", { sid, ideaId, error: staleErr.message });
+      return NextResponse.json({ error: "Couldn't save the usage" }, { status: 500 });
     }
 
     const { error: convErr } = await supabase.from("session_main_usage").upsert(

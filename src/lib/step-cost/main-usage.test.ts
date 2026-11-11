@@ -101,43 +101,68 @@ describe("mainWindowOwnUsage", () => {
     expect(r.hours[0].input_tokens).toBe(10);
   });
 
-  it("finds the same step-open spans as the live awk command", () => {
-    // Step 1 closes through its usage run; step 2 through an accepted completion.
-    const bash = (ts: string) => call("msg_bash", ts, { block: { type: "tool_use", id: "toolu_b", name: "Bash", input: { command: `mark='${MARK1}'` } } });
-    const lines = [
-      call("msg_a", "2026-11-10T09:00:00Z"),
-      claim(MARK1, CT1, STEP1, "2026-11-10T09:05:00Z"),
-      call("msg_b", "2026-11-10T09:10:00Z"),
-      claim(MARK2, CT2, STEP2, "2026-11-10T09:11:00Z"),
-      call("msg_c", "2026-11-10T09:12:00Z"),
-      bash("2026-11-10T09:15:00Z"),
-      call("msg_d", "2026-11-10T09:16:00Z"),
-      finishCall("toolu_2", CT2, "2026-11-10T09:20:00Z"),
-      finishResult("toolu_2", "2026-11-10T09:21:00Z"),
-      call("msg_e", "2026-11-10T09:30:00Z"),
-    ];
-    const own = mainWindowOwnUsage(lines);
-    const ownCalls = own.hours.reduce((n: number, h: { calls: number }) => n + h.calls, 0);
-
-    // The live command, run for each claim's marker; its calls are the step share.
+  // Runs the live usage command once per marker over the same lines and returns the
+  // token totals it gives the steps. Input tokens are exact in a transcript (output is
+  // estimated by the command), so they are what we compare.
+  function liveStepShare(lines: string[], marks: string[]) {
     const root = mkdtempSync(join(tmpdir(), "main-usage-"));
     try {
       mkdirSync(join(root, "projects", "-repo"), { recursive: true });
       writeFileSync(join(root, "projects", "-repo", "s.jsonl"), lines.join("\n") + "\n");
-      let stepShare = 0;
-      for (const mark of [MARK1, MARK2]) {
+      let input = 0;
+      for (const mark of marks) {
         const r = spawnSync("bash", ["-c", stepUsageCommand(mark, "")], {
           encoding: "utf8",
           env: { PATH: process.env.PATH ?? "", HOME: join(root, "nohome"), CLAUDE_CONFIG_DIR: root, NODE_ENV: "test" as const },
         });
         const out = r.stdout.trim();
-        if (out.startsWith("{")) for (const m of JSON.parse(out).models) stepShare += m.calls;
+        if (out.startsWith("{")) for (const m of JSON.parse(out).models) input += m.input_tokens;
       }
-      // Calls: a, b, c, bash, d, finish, e = 7. The live rule's step shares plus ours add to 7.
-      // (The command rounds per model, so allow half a call.)
-      expect(Math.abs(stepShare + ownCalls - 7)).toBeLessThanOrEqual(1);
+      return input;
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  }
+  const usageRun = (id: string, mark: string, ts: string) =>
+    call(id, ts, { block: { type: "tool_use", id: "toolu_" + id, name: "Bash", input: { command: `mark='${mark}'` } } });
+
+  it("splits every call between the steps and the main window exactly like the live awk command", () => {
+    // The real order: each step runs its usage command, THEN calls complete_step.
+    // Nine calls of 10 input tokens each: the step share plus ours must be 90, exactly.
+    const lines = [
+      call("msg_a", "2026-11-10T09:00:00Z"),
+      claim(MARK1, CT1, STEP1, "2026-11-10T09:05:00Z"),
+      call("msg_b", "2026-11-10T09:10:00Z"),
+      claim(MARK2, CT2, STEP2, "2026-11-10T09:11:00Z"),
+      call("msg_c", "2026-11-10T09:12:00Z"), // two steps open: half each
+      usageRun("msg_run1", MARK1, "2026-11-10T09:15:00Z"), // step 1's usage run closes it
+      call("msg_d", "2026-11-10T09:16:00Z"),
+      finishCall("toolu_1", CT1, "2026-11-10T09:17:00Z"), // complete_step comes after the usage run
+      finishResult("toolu_1", "2026-11-10T09:17:30Z"),
+      usageRun("msg_run2", MARK2, "2026-11-10T09:18:00Z"),
+      finishCall("toolu_2", CT2, "2026-11-10T09:19:00Z"),
+      finishResult("toolu_2", "2026-11-10T09:19:30Z"),
+      call("msg_e", "2026-11-10T09:30:00Z"),
+    ];
+    const own = mainWindowOwnUsage(lines);
+    const ownInput = own.hours.reduce((n, h) => n + h.input_tokens, 0);
+    const stepInput = liveStepShare(lines, [MARK1, MARK2]);
+    expect(stepInput + ownInput).toBe(90); // 9 calls x 10
+    expect(own.stepIds).toEqual([STEP1, STEP2]);
+  });
+
+  it("a step completed without a usage run: its calls are in no step figure and not in ours", () => {
+    // A step closed by its completion alone (no usage run) is never run through the usage
+    // command, so no step figure holds it; the scanner takes its calls out of the main
+    // window's figure too. Those calls are counted nowhere. Pinned, not ideal (see the notes).
+    const lines = [
+      claim(MARK1, CT1, STEP1, "2026-11-10T09:00:00Z"),
+      call("msg_b", "2026-11-10T09:10:00Z"),
+      finishCall("toolu_1", CT1, "2026-11-10T09:20:00Z"),
+      finishResult("toolu_1", "2026-11-10T09:21:00Z"),
+      call("msg_c", "2026-11-10T09:30:00Z"), // after the close: main window
+    ];
+    const own = mainWindowOwnUsage(lines);
+    expect(own.hours.reduce((n, h) => n + h.input_tokens, 0)).toBe(10); // msg_c only
   });
 });
