@@ -30,6 +30,7 @@ import {
   createWorkflowTemplateSchema,
   skipStep,
   applyWorkflowTemplate,
+  suggestWorkflow,
   modelTierClause,
   resolveModelTier,
   resolveTierAdherence,
@@ -7714,5 +7715,144 @@ describe("completeStep / failStep — ran_in_own_agent", () => {
     const { ctx, updates } = ctxFor({ status: "awaiting_approval", claim_token_hash: null });
     await failStep(ctx, { step_id: STEP_ID, output: "no" } as Parameters<typeof failStep>[1]);
     expect(updates[0]).not.toHaveProperty("ran_in_own_agent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// claimNextStep — card with no workflow at all (card 69ca757c)
+// ---------------------------------------------------------------------------
+
+function noWorkflowClaimCtx(opts: { steps: unknown[]; templateCount: number }) {
+  return makeContext(((table: string) => {
+    if (table === "task_workflow_steps") return createChain(opts.steps).chain;
+    if (table === "board_tasks") return createChain({ idea_id: IDEA_ID }).chain;
+    if (table === "workflow_templates") {
+      const tc: Record<string, unknown> = {};
+      for (const m of ["select", "eq"]) tc[m] = vi.fn(() => tc);
+      tc.then = (resolve: (v: unknown) => void) =>
+        Promise.resolve({ count: opts.templateCount, data: null, error: null }).then(resolve);
+      return tc;
+    }
+    return createChain([]).chain; // no suggestions of any status
+  }) as unknown as McpContext["supabase"]["from"]);
+}
+
+describe("claimNextStep — no workflow", () => {
+  it("returns no_workflow with the suggest instruction when the card has no steps", async () => {
+    const result = (await claimNextStep(noWorkflowClaimCtx({ steps: [], templateCount: 2 }), {
+      task_id: TASK_ID,
+    })) as Record<string, unknown>;
+    expect(result.no_workflow).toBe(true);
+    expect(result.done).toBe(false);
+    expect(result.instruction).toContain("suggest_workflow");
+    expect(result.claim_token).toBeUndefined();
+  });
+
+  it("keeps done: true when steps exist but all are finished", async () => {
+    const result = await claimNextStep(
+      noWorkflowClaimCtx({ steps: [makeStepRow({ status: "completed" })], templateCount: 2 }),
+      { task_id: TASK_ID }
+    );
+    expect(result).toEqual({ done: true, message: "All steps complete or no pending steps" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// suggestWorkflow
+// ---------------------------------------------------------------------------
+
+const TEMPLATE_ID = "00000000-0000-4000-a000-000000000070";
+
+function suggestCtx(opts: {
+  task?: unknown;
+  steps?: unknown[];
+  template?: unknown;
+  open?: unknown[];
+  insertError?: { code?: string; message: string } | null;
+  inserted?: unknown[];
+}) {
+  let openReads = 0;
+  return makeContext(((table: string) => {
+    if (table === "board_tasks")
+      return createChain(opts.task === undefined ? { id: TASK_ID, idea_id: IDEA_ID } : opts.task).chain;
+    if (table === "task_workflow_steps") return createChain(opts.steps ?? []).chain;
+    if (table === "workflow_templates")
+      return createChain(opts.template === undefined ? { id: TEMPLATE_ID } : opts.template).chain;
+    if (table === "workflow_suggestions") {
+      const c = createChain(null);
+      const chain = c.chain;
+      chain.insert = vi.fn((row: unknown) => {
+        opts.inserted?.push(row);
+        return Promise.resolve({ error: opts.insertError ?? null });
+      });
+      chain.then = (resolve: (v: unknown) => void) => {
+        openReads += 1;
+        const open = opts.open ?? [];
+        // After a successful insert, the re-read finds the new row.
+        const data = open.length > 0 || openReads === 1 ? open : [{ id: "new-sug", label_id: null, source: "agent", status: "suggested" }];
+        return Promise.resolve({ data, error: null }).then(resolve);
+      };
+      return chain;
+    }
+    return createChain(null).chain;
+  }) as unknown as McpContext["supabase"]["from"]);
+}
+
+describe("suggestWorkflow", () => {
+  const params = { task_id: TASK_ID, template_id: TEMPLATE_ID, reason: "Fits a bug fix." };
+
+  it("inserts an agent suggestion with no label", async () => {
+    const inserted: unknown[] = [];
+    const result = (await suggestWorkflow(suggestCtx({ inserted }), params)) as Record<string, unknown>;
+    expect(inserted).toEqual([
+      {
+        idea_id: IDEA_ID,
+        task_id: TASK_ID,
+        label_id: null,
+        suggested_template_id: TEMPLATE_ID,
+        source: "agent",
+        status: "suggested",
+        reason: "Fits a bug fix.",
+      },
+    ]);
+    expect(result.instruction).toContain("Stop and tell the user");
+  });
+
+  it("refuses when the card already has a workflow", async () => {
+    await expect(
+      suggestWorkflow(suggestCtx({ steps: [{ id: "s" }] }), params)
+    ).rejects.toThrow("already has a workflow");
+  });
+
+  it("refuses a template from another idea", async () => {
+    await expect(suggestWorkflow(suggestCtx({ template: null }), params)).rejects.toThrow(
+      "isn't available for this idea"
+    );
+  });
+
+  it("refuses a missing task", async () => {
+    await expect(suggestWorkflow(suggestCtx({ task: null }), params)).rejects.toThrow("Task not found");
+  });
+
+  it("returns the existing open suggestion without inserting", async () => {
+    const inserted: unknown[] = [];
+    const open = [{ id: "old", label_id: null, source: "agent", status: "suggested" }];
+    const result = (await suggestWorkflow(suggestCtx({ open, inserted }), params)) as Record<string, unknown>;
+    expect(result.already_open).toBe(true);
+    expect(inserted).toEqual([]);
+  });
+
+  it("returns the winner when a duplicate-key race happens", async () => {
+    const result = (await suggestWorkflow(
+      suggestCtx({ insertError: { code: "23505", message: "dup" } }),
+      params
+    )) as Record<string, unknown>;
+    expect(result.already_open).toBe(true);
+  });
+
+  it("surfaces other insert errors", async () => {
+    await expect(
+      suggestWorkflow(suggestCtx({ insertError: { code: "42501", message: "denied" } }), params)
+    ).rejects.toThrow("Failed to record suggestion: denied");
   });
 });

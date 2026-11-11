@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 90 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 91 tools.",
 };
 
 function ToolTable({
@@ -296,7 +296,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">90 tools</strong> across 10
+            <strong className="text-foreground">91 tools</strong> across 10
             categories:
           </p>
 
@@ -340,7 +340,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflows" toolCount={24}>
+            <CollapsibleTools title="Workflows" toolCount={25}>
               <ToolTable
                 tools={[
                   { name: "get_cost_report", description: "Weekly cost figures for your boards (per board, workflow and step, with runs and send-backs), the step figures are the same as the Admin Token usage page. Also the main window's own usage (in-app Claude sessions only, sent as totals by the Mac app, never overlapping the step figures; 0 can mean the Mac app is too old) per board and week, and this week's busiest sessions. Read-only, names and numbers only" },
@@ -348,6 +348,7 @@ export default function McpIntegrationPage() {
                   { name: "create_workflow_template", description: "Create a new workflow template with steps" },
                   { name: "update_workflow_template", description: "Update a template's name, description, or steps" },
                   { name: "delete_workflow_template", description: "Delete a workflow template" },
+                  { name: "suggest_workflow", description: "For a task with no workflow: record one of the board's existing templates as a suggestion for a human to Keep, Replace or Remove (attaches nothing)" },
                   { name: "apply_workflow_template", description: "Apply a template to a task, creating a workflow run" },
                   { name: "sync_board_agents", description: "Save a claimed step's agent, and the rest of its run's agents, as Claude Code subagents in your project folder and wait until they are loaded (for sessions VibeCodes didn't launch)" },
                   { name: "claim_next_step", description: "Claim the next pending step for execution (orchestration entry point)" },

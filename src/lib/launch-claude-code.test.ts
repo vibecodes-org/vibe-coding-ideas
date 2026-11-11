@@ -376,6 +376,8 @@ describe("buildBoardBootstrapPrompt", () => {
     });
     expect(p).not.toMatch(/get_task, assign it to yourself/);
     expect(p).toMatch(/don't assign it to yourself/);
+    expect(p).toMatch(/If not, follow get_task's workflow_instruction/);
+    expect(p).not.toMatch(/If not, assign it to yourself/);
   });
 
   it("create-new mode injects mkdir and git clone when repo present", () => {

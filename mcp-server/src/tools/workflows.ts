@@ -29,6 +29,7 @@ import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-m
 import { pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
+import { noWorkflowInstruction } from "../lib/no-workflow";
 import {
   buildApprovalNotes,
   type ApprovalNote,
@@ -654,6 +655,73 @@ export async function deleteWorkflowTemplate(
   return { success: true, template_id: params.template_id };
 }
 
+// --- Suggest Workflow (agent) ---
+
+export const suggestWorkflowSchema = z.object({
+  task_id: z.string().uuid().describe("The board task ID that has no workflow"),
+  template_id: z.string().uuid().describe("The ID of one of this idea's existing workflow templates"),
+  reason: z.string().min(1).max(500).describe("One sentence: why this workflow fits the task"),
+});
+
+export async function suggestWorkflow(
+  ctx: McpContext,
+  params: z.infer<typeof suggestWorkflowSchema>
+) {
+  const { data: task, error: taskError } = await ctx.supabase
+    .from("board_tasks")
+    .select("id, idea_id")
+    .eq("id", params.task_id)
+    .maybeSingle();
+  if (taskError || !task) throw new Error(`Task not found: ${params.task_id}`);
+
+  const { data: existingSteps, error: stepsError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("id")
+    .eq("task_id", params.task_id)
+    .limit(1);
+  if (stepsError) throw new Error(`Failed to check workflow steps: ${stepsError.message}`);
+  if ((existingSteps ?? []).length > 0) throw new Error("This task already has a workflow.");
+
+  const { data: template } = await ctx.supabase
+    .from("workflow_templates")
+    .select("id")
+    .eq("id", params.template_id)
+    .eq("idea_id", task.idea_id)
+    .maybeSingle();
+  if (!template) throw new Error("That template isn't available for this idea.");
+
+  const existingOpen = await fetchOpenSuggestions(ctx, params.task_id);
+  if (existingOpen.length > 0) {
+    return { suggestion: existingOpen[0], already_open: true };
+  }
+
+  const { error: insertError } = await ctx.supabase.from("workflow_suggestions").insert({
+    idea_id: task.idea_id,
+    task_id: params.task_id,
+    label_id: null,
+    suggested_template_id: params.template_id,
+    source: "agent",
+    status: "suggested",
+    reason: params.reason,
+  });
+
+  if (insertError) {
+    if (insertError.code === "23505") {
+      // Lost a race with another suggestion: return the one that won.
+      const raced = await fetchOpenSuggestions(ctx, params.task_id);
+      if (raced.length > 0) return { suggestion: raced[0], already_open: true };
+    }
+    throw new Error(`Failed to record suggestion: ${insertError.message}`);
+  }
+
+  const [suggestion] = await fetchOpenSuggestions(ctx, params.task_id);
+  return {
+    suggestion,
+    instruction:
+      "Suggestion recorded. Stop and tell the user; do not start work until it is resolved.",
+  };
+}
+
 // --- Apply Workflow Template ---
 
 export const applyWorkflowTemplateSchema = z.object({
@@ -905,6 +973,23 @@ export async function claimNextStep(
         instruction:
           "This task has an unresolved workflow suggestion — do NOT start work. Surface it to a human to Keep / Replace / Remove first. Agents cannot resolve suggestions.",
       };
+    }
+
+    if ((allSteps ?? []).length === 0) {
+      // A card with no workflow at all: nothing is claimed, minted or written.
+      const { data: taskRow } = await ctx.supabase
+        .from("board_tasks")
+        .select("idea_id")
+        .eq("id", params.task_id)
+        .maybeSingle();
+      const ideaId = (taskRow as { idea_id?: string } | null)?.idea_id;
+      if (ideaId) {
+        return {
+          done: false,
+          no_workflow: true,
+          instruction: await noWorkflowInstruction(ctx, params.task_id, ideaId),
+        };
+      }
     }
 
     return { done: true, message: "All steps complete or no pending steps" };

@@ -3,6 +3,7 @@ import { DEFAULT_BOARD_COLUMNS } from "../constants";
 import { pickCurrentRunKey, pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import { fetchAllRows } from "../../../src/lib/db-helpers";
 import type { McpContext } from "../context";
+import { noWorkflowInstruction } from "../lib/no-workflow";
 import {
   groupStepComments,
   type StepCommentRow,
@@ -21,7 +22,7 @@ export const OPEN_SUGGESTION_FIELDS =
 export function shapeOpenSuggestion(row: Record<string, unknown>) {
   return {
     suggestion_id: row.id as string,
-    label_id: row.label_id as string,
+    label_id: (row.label_id as string | null) ?? null,
     rule_id: (row.rule_id as string | null) ?? null,
     suggested_template_id: (row.suggested_template_id as string | null) ?? null,
     recommended_template_id: (row.recommended_template_id as string | null) ?? null,
@@ -438,11 +439,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
         `This task has an unresolved workflow suggestion. Do NOT begin work or assign yourself. ` +
         `Surface it to a human to Keep / Replace / Remove. Agents cannot resolve suggestions.`;
     } else {
-      workflow_instruction =
-        `This task has no workflow. Before starting work, pick the team agent that best fits it ` +
-        `(your .vibecodes config botId, or choose from list_idea_agents) and call update_task with ` +
-        `assignee_id set to that agent's ID so the board shows who is working on it. ` +
-        `When finished, move the task to the appropriate done/verify column using move_task.`;
+      workflow_instruction = await noWorkflowInstruction(ctx, params.task_id, params.idea_id);
     }
   }
 

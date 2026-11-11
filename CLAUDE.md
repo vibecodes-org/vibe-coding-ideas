@@ -19,7 +19,7 @@ Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui (New Y
 
 ### Board Task Workflow — BEFORE ANY IMPLEMENTATION
 1. **Check the VibeCodes board** for a matching task (`get_my_tasks` or `get_board`)
-2. **If task exists:** move it to "In Progress", read all comments (`get_task`) and add a comment. Assign it to yourself only if it has no workflow: on a workflow task, claiming a step records who does each step.
+2. **If task exists:** move it to "In Progress", read all comments (`get_task`) and add a comment. Assign it to yourself only if it has no workflow: on a workflow task, claiming a step records who does each step. If it has no workflow, follow get_task's workflow_instruction (it may ask you to suggest one and wait).
 3. **If no task exists:** Proceed normally, consider creating one
 4. **When finished:** Move to "Verify" with summary comment
 5. **Post research/analysis as task comments** — preserve context for future sessions
