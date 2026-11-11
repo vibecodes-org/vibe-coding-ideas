@@ -1101,6 +1101,117 @@ export type Database = {
           },
         ];
       };
+      session_main_usage_hours: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          user_id: string;
+          idea_id: string;
+          hour: string;
+          model: string;
+          calls: number;
+          input_tokens: number;
+          output_tokens: number;
+          cache_read_tokens: number;
+          cache_write_5m_tokens: number;
+          cache_write_1h_tokens: number;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          user_id: string;
+          idea_id: string;
+          hour: string;
+          model: string;
+          calls?: number;
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_tokens?: number;
+          cache_write_5m_tokens?: number;
+          cache_write_1h_tokens?: number;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          conversation_id?: string;
+          user_id?: string;
+          idea_id?: string;
+          hour?: string;
+          model?: string;
+          calls?: number;
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_tokens?: number;
+          cache_write_5m_tokens?: number;
+          cache_write_1h_tokens?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "session_main_usage_hours_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "session_main_usage_hours_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      session_main_usage: {
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          idea_id: string;
+          machine_label: string | null;
+          first_call_at: string | null;
+          last_call_at: string | null;
+          step_ids: string[];
+          reported_at: string;
+        };
+        Insert: {
+          conversation_id: string;
+          user_id: string;
+          idea_id: string;
+          machine_label?: string | null;
+          first_call_at?: string | null;
+          last_call_at?: string | null;
+          step_ids?: string[];
+          reported_at?: string;
+        };
+        Update: {
+          conversation_id?: string;
+          user_id?: string;
+          idea_id?: string;
+          machine_label?: string | null;
+          first_call_at?: string | null;
+          last_call_at?: string | null;
+          step_ids?: string[];
+          reported_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "session_main_usage_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "session_main_usage_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       workflow_step_usage: {
         Row: {
           id: string;

@@ -192,6 +192,11 @@ export default function AdminPage() {
             the read-only <code className="rounded bg-muted px-1.5 py-0.5 text-xs">get_cost_report</code>{" "}
             MCP tool, as weekly figures for the boards the caller belongs to.
             It returns names and numbers only, never card content or prompts.
+            It also reports the main window&apos;s own usage between steps, per
+            board and week, and the week&apos;s busiest sessions. Those figures
+            come from in-app Claude sessions only, as totals the Mac app sends
+            (a Mac app older than the release that added this shows zero), and
+            never overlap the step figures.
           </p>
           <p className="text-muted-foreground">
             For runs from before cost tracking, run{" "}

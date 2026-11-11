@@ -68,7 +68,7 @@ describe("buildWeeklyReport", () => {
   it("totals cost per week, per board, per workflow and per step", () => {
     const r = buildWeeklyReport(input({ steps, usage: us }));
     expect(r.vibecodes_total_usd).toEqual([0, 2, 4]);
-    expect(r.boards).toEqual([{ idea_id: "i1", title: "Board One", project_path: null, usd: [0, 2, 4], runs: [0, 1, 1] }]);
+    expect(r.boards).toEqual([{ idea_id: "i1", title: "Board One", project_path: null, usd: [0, 2, 4], main_window_usd: [0, 0, 0], runs: [0, 1, 1] }]);
     expect(r.workflows).toEqual([{ name: "Bug Fix", runs: [0, 1, 1], usd: [0, 2, 4], median_usd: [null, null, 4], sent_back: [0, 0, 0], cost_missing: [0, 0, 0] }]);
     const build = r.steps.find((s) => s.step === "Build")!;
     expect(build.runs).toEqual([0, 1, 1]);
@@ -269,5 +269,52 @@ describe("buildWeeklyReport", () => {
       expect(admin.templates[0].wholeRun?.medianCost).toBe(4);
       expect(wf(weekly).median_usd[2]).toBe(admin.templates[0].wholeRun!.medianCost);
     });
+  });
+});
+
+describe("main-window usage (card f2a563ca)", () => {
+  const CONV = "aaaaaaaa-1111-4111-8111-111111111111";
+  const hour = (daysBeforeEnd: number, over: object = {}) => ({
+    conversation_id: CONV, idea_id: "i1", hour: at(daysBeforeEnd), model: "claude-opus-5-5",
+    input_tokens: 0, output_tokens: 0, cache_read_tokens: ONE_DOLLAR, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0, ...over,
+  });
+
+  it("counts an hour in the week it falls in; a boundary hour goes to the earlier window", () => {
+    const r = buildWeeklyReport(input({ mainHours: [hour(3), hour(7), hour(0.5)] }));
+    // at(7) is the start of the newest window: the earlier one. at(3) and at(0.5) are in the newest.
+    expect(r.main_window_total_usd).toEqual([0, 1, 2]);
+    expect(r.prices["claude-opus-5-5"]).toBeDefined();
+  });
+
+  it("lists a board that only has main-window usage, and leaves step figures alone", () => {
+    const r = buildWeeklyReport(input({ mainHours: [hour(1)] }));
+    expect(r.boards).toEqual([{ idea_id: "i1", title: "Board One", project_path: null, usd: [0, 0, 0], main_window_usd: [0, 0, 1], runs: [0, 0, 0] }]);
+    expect(r.vibecodes_total_usd).toEqual([0, 0, 0]);
+  });
+
+  it("shows no main-window usage and no sessions when nothing is reported", () => {
+    const r = buildWeeklyReport(input());
+    expect(r.main_window_total_usd).toEqual([0, 0, 0]);
+    expect(r.sessions_this_week).toEqual([]);
+  });
+
+  it("lists this week's sessions, biggest first, with the steps they ran that count this week", () => {
+    const CONV2 = "bbbbbbbb-2222-4222-8222-222222222222";
+    const steps = [step("s1", "r1", "Build", at(2)), step("s2", "r2", "Build", at(10))];
+    const r = buildWeeklyReport(
+      input({
+        steps,
+        usage: [usage("s1", "r1", ONE_DOLLAR), usage("s2", "r2", ONE_DOLLAR)],
+        mainHours: [hour(1), hour(2, { conversation_id: CONV2, cache_read_tokens: 3 * ONE_DOLLAR })],
+        conversations: [
+          { conversation_id: CONV, idea_id: "i1", first_call_at: at(3), last_call_at: at(1), step_ids: ["s1", "s2"], name: "Coordinator" },
+          { conversation_id: CONV2, idea_id: "i1", first_call_at: at(2), last_call_at: at(2), step_ids: [] },
+        ],
+      }),
+    );
+    expect(r.sessions_this_week.map((s) => s.conversation)).toEqual(["bbbbbbbb", "aaaaaaaa"]);
+    expect(r.sessions_this_week[0]).toMatchObject({ board: "Board One", name: null, main_window_usd: 3, steps_usd: 0, steps: 0 });
+    // s2 is counted in an earlier week, so only s1 shows against this week.
+    expect(r.sessions_this_week[1]).toMatchObject({ name: "Coordinator", main_window_usd: 1, steps_usd: 1, steps: 1 });
   });
 });

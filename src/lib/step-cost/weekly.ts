@@ -5,7 +5,7 @@
 // report.ts), so the figures agree. Returns totals and names only, never card
 // titles, card content, prompts or outputs.
 
-import { MODEL_PRICES, priceKey } from "./pricing";
+import { MODEL_PRICES, priceKey, usageCost } from "./pricing";
 import {
   countedSteps,
   isWholeRun,
@@ -41,6 +41,28 @@ export interface WeeklyTemplateRow { id: string; idea_id: string; name: string; 
 export interface WeeklyIdeaRow { id: string; title: string }
 export interface WeeklyPathRow { idea_id: string; absolute_path: string; updated_at: string }
 
+/** The main window's own usage for one hour and model, net of what steps counted (card f2a563ca). */
+export interface WeeklyMainHourRow {
+  conversation_id: string;
+  idea_id: string;
+  hour: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_5m_tokens: number;
+  cache_write_1h_tokens: number;
+}
+/** One reported conversation: its first and last call, the steps it ran, and its newest session name. */
+export interface WeeklyConversationRow {
+  conversation_id: string;
+  idea_id: string;
+  first_call_at: string | null;
+  last_call_at: string | null;
+  step_ids: string[];
+  name?: string | null;
+}
+
 export interface WeeklyInput {
   steps: WeeklyStepRow[];
   runs: WeeklyRunRow[];
@@ -52,8 +74,23 @@ export interface WeeklyInput {
   usage: WeeklyUsageRow[];
   ideas: WeeklyIdeaRow[];
   paths: WeeklyPathRow[];
+  /** Main-window usage rows (optional: nothing reported yet means zeros). */
+  mainHours?: WeeklyMainHourRow[];
+  conversations?: WeeklyConversationRow[];
   weekEndsAt: Date;
   weeks: number;
+}
+
+export interface WeeklySession {
+  /** First 8 characters of the conversation id. */
+  conversation: string;
+  board: string;
+  name: string | null;
+  first_call_at: string | null;
+  last_call_at: string | null;
+  main_window_usd: number;
+  steps_usd: number;
+  steps: number;
 }
 
 export interface WeeklyReportData {
@@ -61,12 +98,16 @@ export interface WeeklyReportData {
   prices: Record<string, { in: number; out: number; cache_read: number; cache_write_5m: number; cache_write_1h: number }>;
   unpriced_models: string[];
   vibecodes_total_usd: number[];
+  /** The main window's own usage per week (in-app Claude sessions only; steps and main window never overlap). */
+  main_window_total_usd: number[];
   /** Finished steps per week with no cost recorded (or an unpriced model). Their cost is missing, not zero. */
   cost_missing: number[];
-  boards: { idea_id: string; title: string; project_path: string | null; usd: number[]; runs: number[] }[];
+  boards: { idea_id: string; title: string; project_path: string | null; usd: number[]; main_window_usd: number[]; runs: number[] }[];
   workflows: { name: string; runs: number[]; usd: number[]; median_usd: (number | null)[]; sent_back: number[]; cost_missing: number[] }[];
   steps: { workflow: string; step: string; version: string; runs: number[]; median_usd: (number | null)[]; usd: number[]; cost_missing: number[] }[];
   runs_this_week: { run_id: string; workflow: string; usd: number; sent_back: boolean }[];
+  /** This week's busiest in-app sessions: main window next to the steps they ran. Biggest first. */
+  sessions_this_week: WeeklySession[];
 }
 
 /** Dollars to the cent, or to the tenth of a cent for tiny amounts, so small figures don't read as zero. */
@@ -160,6 +201,29 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     const key = priceKey(u.model);
     if (key) usedFamilies.add(key);
   }
+  // Main-window usage, priced from the same table.
+  const mainHours = input.mainHours ?? [];
+  const mainUsd = zeros(weeks);
+  const mainByBoard = new Map<string, number[]>();
+  const mainByConv = new Map<string, number>(); // conversation -> latest week's usd
+  const unpricedMain = new Set<string>();
+  for (const h of mainHours) {
+    const week = idx(h.hour);
+    if (week < 0) continue;
+    const cost = usageCost(h);
+    if (cost === null) {
+      unpricedMain.add(h.model);
+      continue;
+    }
+    const key = priceKey(h.model);
+    if (key) usedFamilies.add(key);
+    mainUsd[week] += cost;
+    const b = mainByBoard.get(h.idea_id) ?? zeros(weeks);
+    b[week] += cost;
+    mainByBoard.set(h.idea_id, b);
+    if (week === weeks - 1) mainByConv.set(h.conversation_id, (mainByConv.get(h.conversation_id) ?? 0) + cost);
+  }
+  for (const m of unpricedMain) unpricedModels.add(m);
   const prices: WeeklyReportData["prices"] = {};
   for (const key of [...usedFamilies].sort()) {
     const p = MODEL_PRICES[key];
@@ -208,15 +272,17 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     n[r.week]++;
     boardRuns.set(r.idea, n);
   }
-  const boards = [...boardUsd.keys()]
+  const boardIds = new Set([...boardUsd.keys(), ...mainByBoard.keys()]);
+  const boards = [...boardIds]
     .map((id) => ({
       idea_id: id,
       title: titles.get(id) ?? "(unknown board)",
       project_path: pathOf.get(id)?.absolute_path ?? null,
-      usd: boardUsd.get(id)!.map(roundUsd),
+      usd: (boardUsd.get(id) ?? zeros(weeks)).map(roundUsd),
+      main_window_usd: (mainByBoard.get(id) ?? zeros(weeks)).map(roundUsd),
       runs: boardRuns.get(id) ?? zeros(weeks),
     }))
-    .sort((a, b) => sum(b.usd) - sum(a.usd) || a.title.localeCompare(b.title));
+    .sort((a, b) => sum(b.usd) + sum(b.main_window_usd) - (sum(a.usd) + sum(a.main_window_usd)) || a.title.localeCompare(b.title));
 
   // Workflows
   const wfs = new Map<string, { usd: number[]; runs: number[]; sent: number[]; miss: number[]; runCosts: number[][] }>();
@@ -298,16 +364,47 @@ export function buildWeeklyReport(input: WeeklyInput): WeeklyReportData {
     .map((r) => ({ run_id: r.id, workflow: nameOf.get(r.wf) ?? r.wf, usd: roundUsd(r.usd), sent_back: r.sentBack }))
     .sort((a, b) => b.usd - a.usd || a.run_id.localeCompare(b.run_id));
 
+  // This week's sessions: main window next to the steps (counted this week) the conversation ran.
+  const sessionsThisWeek: WeeklySession[] = [];
+  const convs = new Map((input.conversations ?? []).map((c) => [c.conversation_id, c]));
+  for (const [id, mainUsdWeek] of mainByConv) {
+    const c = convs.get(id);
+    const ideaId = c?.idea_id ?? mainHours.find((h) => h.conversation_id === id)?.idea_id ?? "";
+    let stepsUsd = 0;
+    let stepCount = 0;
+    for (const sid of c?.step_ids ?? []) {
+      const step = counted.find((x) => x.id === sid && x.week === latest);
+      if (!step) continue;
+      stepCount++;
+      stepsUsd += stepCost.get(sid) ?? 0;
+    }
+    sessionsThisWeek.push({
+      conversation: id.slice(0, 8),
+      board: titles.get(ideaId) ?? "(unknown board)",
+      name: c?.name ?? null,
+      first_call_at: c?.first_call_at ?? null,
+      last_call_at: c?.last_call_at ?? null,
+      main_window_usd: roundUsd(mainUsdWeek),
+      steps_usd: roundUsd(stepsUsd),
+      steps: stepCount,
+    });
+  }
+  sessionsThisWeek.sort(
+    (a, b) => b.main_window_usd + b.steps_usd - (a.main_window_usd + a.steps_usd) || a.conversation.localeCompare(b.conversation),
+  );
+
   return {
     weeks: weekWindows(weekEndsAt, weeks),
     prices,
     unpriced_models: [...unpricedModels].sort(),
     vibecodes_total_usd: total.map(roundUsd),
+    main_window_total_usd: mainUsd.map(roundUsd),
     cost_missing: missing,
     boards,
     workflows,
     steps,
     runs_this_week: runsThisWeek,
+    sessions_this_week: sessionsThisWeek,
   };
 }
 
