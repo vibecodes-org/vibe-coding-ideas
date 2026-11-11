@@ -513,6 +513,44 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">Sessions can message each other</h2>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              Any of your in-browser sessions, Claude Code or Codex, can send a
+              short message to another of{" "}
+              <strong className="text-foreground">your</strong> running
+              sessions. Ask one, for example, to &quot;get the other session to
+              review your plan&quot;. The message appears in the other terminal
+              marked with who sent it, and the reply comes back the same way.
+              Sessions can never reach anyone else&apos;s. A tab you aren&apos;t
+              looking at shows a small &quot;message&quot; label when one
+              arrives, until you open it.
+            </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              A message from another session can ask for things, but it{" "}
+              <strong className="text-foreground">cannot approve anything</strong>
+              : not a &quot;run this command?&quot; question, not a workflow
+              step. It is never typed into one of those questions; if the
+              session is busy, or you are typing in it, the message waits and is
+              handed over when the session is free. The sender is always told
+              plainly whether it was delivered, is waiting, or could not be
+              delivered. Limits: 10 messages a minute and 60 an hour into any
+              one session, 2,000 characters each, and a message still waiting
+              after 30 minutes is dropped. For now only Claude Code sessions can
+              receive messages; Codex sessions can send them.
+            </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              <strong className="text-foreground">Privacy:</strong> what you
+              type in the terminal is scrambled so even VibeCodes&apos; own
+              relay can&apos;t read it. Session-to-session messages are not:
+              they pass through our relay readable (though the relay can&apos;t
+              fake one). Don&apos;t put passwords or keys in them. It needs the
+              latest helper app.
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">Troubleshooting</h2>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">

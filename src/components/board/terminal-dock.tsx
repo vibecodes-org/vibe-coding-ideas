@@ -483,6 +483,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Single shared aria-live announcer for background-tab attention (a11y §14) —
   // one region so simultaneous background transitions never talk over each other.
   const [announcement, setAnnouncement] = useState("");
+  // Card f0a13bde: tabs that got a message from another session while the user
+  // was looking elsewhere. Cleared when the tab is opened.
+  const [messageKeys, setMessageKeys] = useState<ReadonlySet<string>>(() => new Set());
   // Multi-session stage 3 (C3/C4): the global "My sessions" panel — one
   // instance, opened from the collapsed bar's button (always visible,
   // collapsed or expanded) OR by a cap refusal on ANY tab's mint (E1, design
@@ -1048,6 +1051,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     },
     [ideaId, ideaTitle],
   );
+
+  // Card f0a13bde: a message arrived for a tab the user isn't looking at. It
+  // gets the small "message" pill (cleared when the tab is opened) and one line
+  // in the shared announcer. The open tab shows the message in the terminal.
+  const handlePeerMessage = useCallback(
+    (key: string) => {
+      setMessageKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+      announce(`${labelFor(key)}: message from another session`);
+    },
+    [announce, labelFor],
+  );
+  useEffect(() => {
+    setMessageKeys((prev) => {
+      if (!prev.has(activeKey)) return prev;
+      const next = new Set(prev);
+      next.delete(activeKey);
+      return next;
+    });
+  }, [activeKey, messageKeys]);
 
   // Card 3ddcbc2e: a popped-out window's title is a snapshot taken at pop-out,
   // so a later rename (tab editor, My Sessions, chooser — all of which land in
@@ -3340,6 +3362,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                             other board
                           </span>
                         )}
+                        {/* Card f0a13bde (approved mock, section 1): another of the
+                            user's sessions sent this one a message while the
+                            user was looking at a different tab. Same shape as
+                            the amber "other board" pill, in sky. Background
+                            tabs only; cleared when the tab is opened. */}
+                        {!isActive && messageKeys.has(entry.key) && (
+                          <span
+                            data-testid="tab-message-pill"
+                            className="inline-flex flex-none items-center gap-1 rounded-full border border-sky-500/45 bg-sky-500/[0.13] px-2 py-px text-[10px] font-bold tracking-wide text-sky-300"
+                            title="Another of your sessions sent this one a message"
+                          >
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                            message
+                          </span>
+                        )}
                         {/* Pencil renders on the ACTIVE tab only (design §2's
                             deliberate, human-approved trade — a permanent
                             second icon on every background tab would crush
@@ -3587,6 +3624,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onReportSummary={reportSummary}
             onRegisterActions={registerActions}
             onAnnounce={announce}
+            onPeerMessage={handlePeerMessage}
             onCapExceeded={openMySessions}
             onConversationLive={reconnectToLiveSession}
             onBrowseSessions={() => openChooserToBrowse(entry.key)}

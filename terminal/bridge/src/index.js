@@ -75,6 +75,8 @@ import {
 } from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
+import { buildSessionEnvValue, encodePeerAckFrame, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
+import { createPeerBridge, hookSettingsArgs, newHookSecret, startHookServer } from "./peer-bridge.js";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -651,7 +653,10 @@ let sessionAgentFlags = [];
 // computed right after the same fetch (whether or not agents came back) and
 // placed before the agents flags, with the prompt still last.
 let autoCompactFlags = [];
-const launchFlags = () => [...autoCompactFlags, ...sessionAgentFlags];
+// Session-to-session messages (card f0a13bde): Claude launches carry `--settings`
+// with http hooks that report to this bridge's own loopback listener.
+let peerHookFlags = [];
+const launchFlags = () => [...autoCompactFlags, ...sessionAgentFlags, ...peerHookFlags];
 let spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
 
 /**
@@ -1215,6 +1220,40 @@ async function main() {
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }
+  // Session-to-session messages (card f0a13bde). Needs the session key: it
+  // signs what may arrive here and proves who is sending from this session.
+  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude also gets hooks that
+  // report its state (so a message is never typed into a yes/no prompt).
+  /** @type {ReturnType<typeof createPeerBridge> | null} */
+  let peerBridge = null;
+  if (E2EE_KEY && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
+    const envValue = buildSessionEnvValue(E2EE_KEY, SESSION);
+    cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), VIBECODES_SESSION: envValue };
+    peerBridge = createPeerBridge({
+      key: E2EE_KEY,
+      sid: SESSION,
+      agent: AGENT,
+      explicitCmd: Boolean(explicitCmd),
+      envValue,
+      writePty: (d) => { if (term) term.write(d); },
+      sendAck: (frame) => outputBatcher.sendControl(frame),
+      log,
+    });
+    if (AGENT === "claude") {
+      try {
+        const secret = newHookSecret();
+        const hooks = await startHookServer({ secret, onEvent: (j) => peerBridge.handleHook(j), log });
+        peerHookFlags = hookSettingsArgs(hooks.port, secret);
+        spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+        log("info", "peer message hooks listening", { port: hooks.port });
+      } catch (e) {
+        log("warn", "peer message hooks unavailable — this session cannot receive messages", { err: String(e?.message || e) });
+        peerBridge = null;
+      }
+    }
+    const peerTick = setInterval(() => peerBridge?.tick(), 60_000);
+    peerTick.unref?.();
+  }
   if (MODE === "direct" && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
 
@@ -1471,7 +1510,9 @@ async function main() {
             return;
           }
           bytesIn += plaintext.length;
-          if (term) term.write(plaintext.toString("utf8"));
+          const typed = plaintext.toString("utf8");
+          peerBridge?.handleInput(typed);
+          if (term) term.write(typed);
           return;
         }
         bytesIn += data.length;
@@ -1528,6 +1569,20 @@ async function main() {
           log("info", "relay reports pair reattached — e2ee rekeyed for the new attach");
         } else {
           log("debug", "relay reports pair reattached");
+        }
+        return;
+      }
+      // A message from another of this person's sessions (card f0a13bde). Never
+      // typed from here: the bridge checks the signature, then decides how it
+      // reaches the agent. A bridge with no peer support (no key) still answers.
+      if (isPeerBridgeFrameType(text)) {
+        if (peerBridge) {
+          peerBridge.handleFrame(text).catch((e) => log("warn", "peer message handling failed", { err: String(e?.message || e) }));
+        } else {
+          try {
+            const id = JSON.parse(text)?.id;
+            if (typeof id === "string" && id.length <= 64) outputBatcher.sendControl(encodePeerAckFrame(id, "cannot-receive"));
+          } catch { /* not a frame we can answer */ }
         }
         return;
       }

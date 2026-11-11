@@ -60,6 +60,15 @@ import {
 import { shouldPersistActivity, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS } from "./activity-throttle.js";
 import { computeHelperStatus } from "./helper-status.js";
 import {
+  PEER_MESSAGE_MIN_HELPER,
+  PEER_RATE_PER_HOUR,
+  PEER_RATE_PER_MINUTE,
+  encodePeerNoticeFrame,
+  helperVersionAtLeast,
+  isPeerBridgeFrameType,
+  parsePeerAckFrame,
+} from "../../shared/peer-frames.mjs";
+import {
   authorizeAttach,
   authorizeControl,
   mintNotifyToken,
@@ -166,6 +175,19 @@ export default {
       const session = url.searchParams.get("session");
       if (!isValidSession(session)) {
         return jsonResponse({ ended: false, reason: "bad-session" }, 400);
+      }
+      const id = env.TERMINAL_RELAY.idFromName(session);
+      const stub = env.TERMINAL_RELAY.get(id);
+      return stub.fetch(request);
+    }
+
+    // Session-to-session messages (card f0a13bde): a plain HTTP POST from the
+    // app, routed to the target session's own DO exactly like /end. Auth (the
+    // control token) is checked inside the DO.
+    if (url.pathname === "/message" && request.method === "POST") {
+      const session = url.searchParams.get("session");
+      if (!isValidSession(session)) {
+        return jsonResponse({ outcome: "not-running", reason: "bad-session" }, 400);
       }
       const id = env.TERMINAL_RELAY.idFromName(session);
       const stub = env.TERMINAL_RELAY.get(id);
@@ -504,6 +526,102 @@ export class TerminalRelay {
   }
 
   /**
+   * `POST /message?session=<sid>` body `{ id, frame, fromName }` (card f0a13bde):
+   * hand a signed peer message to THIS session's bridge leg only, then wait a
+   * few seconds for the bridge's own answer. The relay can read the text
+   * (decision B) but never logs it, never forwards it to the browser, and can't
+   * forge one: the bridge checks a signature made with the session's own key.
+   * Answers `{ outcome }`: delivered | waiting | not-running | helper-too-old |
+   * rate-limited | unconfirmed | cannot-receive | rejected.
+   * @param {Request} request @param {URL} url
+   */
+  async handlePeerMessage(request, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = request.headers.get("Authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret: this.env.TERMINAL_SESSION_SECRET, session });
+    if (!auth.ok) {
+      this.log("peer message rejected (auth)", { session, reason: auth.reason });
+      return jsonResponse({ error: "unauthorized" }, 401);
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "bad-body" }, 400);
+    }
+    const id = body?.id;
+    const frame = body?.frame;
+    if (typeof id !== "string" || id.length < 8 || id.length > 64 || typeof frame !== "string" || frame.length > 16 * 1024) {
+      return jsonResponse({ error: "bad-body" }, 400);
+    }
+    let framed = null;
+    try {
+      framed = JSON.parse(frame);
+    } catch { /* checked below */ }
+    if (!framed || framed.t !== "peer-message" || framed.id !== id) {
+      return jsonResponse({ error: "bad-body" }, 400);
+    }
+
+    const bridge = this.liveSockets("role:bridge")[0] ?? null;
+    if (!bridge) {
+      this.log("peer message: no live bridge", { session });
+      return jsonResponse({ outcome: "not-running" }, 200);
+    }
+    const helperVersion = await this.state.storage.get("bridgeHelperVersion");
+    if (!helperVersionAtLeast(helperVersion, PEER_MESSAGE_MIN_HELPER)) {
+      this.log("peer message: helper too old", { session, helperVersion: helperVersion ?? null });
+      return jsonResponse({ outcome: "helper-too-old" }, 200);
+    }
+
+    // Loop guard: at most N a minute and M an hour into this session.
+    const t = Date.now();
+    const rate = (await this.state.storage.get("peerRate")) ?? {};
+    const minute = rate.minute && t - rate.minute.start < 60_000 ? rate.minute : { start: t, count: 0 };
+    const hour = rate.hour && t - rate.hour.start < 3_600_000 ? rate.hour : { start: t, count: 0 };
+    if (minute.count >= PEER_RATE_PER_MINUTE || hour.count >= PEER_RATE_PER_HOUR) {
+      this.log("peer message: rate limited", { session });
+      return jsonResponse({ outcome: "rate-limited" }, 200);
+    }
+    minute.count += 1;
+    hour.count += 1;
+    await this.state.storage.put("peerRate", { minute, hour });
+
+    if (!this._peerWaiters) this._peerWaiters = new Map();
+    /** @type {Promise<string>} */
+    const answer = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this._peerWaiters.delete(id);
+        resolve("unconfirmed");
+      }, 5000);
+      this._peerWaiters.set(id, (outcome) => {
+        clearTimeout(timer);
+        this._peerWaiters.delete(id);
+        resolve(outcome);
+      });
+    });
+    try {
+      bridge.send(frame);
+    } catch (e) {
+      this._peerWaiters.get(id)?.("unconfirmed");
+      this.log("peer message send failed", { session, err: String(e) });
+      return jsonResponse({ outcome: "not-running" }, 200);
+    }
+    const outcome = await answer;
+    if (outcome === "delivered" || outcome === "waiting") {
+      // A small notice for the tab: the sender's name only, never the text.
+      const browser = this.liveSockets("role:browser")[0] ?? null;
+      if (browser) {
+        try {
+          browser.send(encodePeerNoticeFrame(framed.from?.name));
+        } catch { /* the browser leg is closing */ }
+      }
+    }
+    this.log("peer message outcome", { session, outcome, chars: typeof framed.text === "string" ? framed.text.length : 0 });
+    return jsonResponse({ outcome }, 200);
+  }
+
+  /**
    * `POST /helper/command?session=<helperSid>` body `{ cmd, value? }` — the
    * Helper row's Stop/Update actions and the always-on toggle. A dumb
    * forwarder (mirrors the bridge-version frame's relay role): if a helper
@@ -744,6 +862,9 @@ export class TerminalRelay {
     const url = new URL(request.url);
     if (url.pathname === "/end" && request.method === "POST") {
       return this.handleEnd(request, url);
+    }
+    if (url.pathname === "/message" && request.method === "POST") {
+      return this.handlePeerMessage(request, url);
     }
     if (url.pathname === "/helper/status" && request.method === "GET") {
       return this.handleHelperStatus(request, url);
@@ -1042,6 +1163,24 @@ export class TerminalRelay {
     }
 
     if (role !== "bridge" && role !== "browser") return;
+
+    // Session-to-session messages (card f0a13bde). Only the relay itself may
+    // create a peer-message or notice frame, so any such frame from a browser
+    // or a bridge is dropped. The one exception: the bridge's answer to a
+    // message the relay sent, which resolves that request and goes no further.
+    if (typeof message === "string" && message.includes("peer-message")) {
+      if (role === "bridge") {
+        const ack = parsePeerAckFrame(message);
+        if (ack) {
+          this._peerWaiters?.get(ack.id)?.(ack.outcome);
+          return;
+        }
+      }
+      if (isPeerBridgeFrameType(message)) {
+        this.log("dropped a peer-message frame from a leg", { role });
+        return;
+      }
+    }
 
     // Forward verbatim + opaque. Never inspect or log the payload.
     const peer = this.findPeer(role);

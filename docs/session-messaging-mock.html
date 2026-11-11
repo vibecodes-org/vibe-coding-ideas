@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Session Messaging Mock</title>
+<!--
+  Design mock for card f0a13bde (sessions message each other). Shows what Nick
+  sees: the tab pill on a background tab, how a message lands in the receiving
+  terminal (Claude idle, Claude busy, Codex), what the sending agent is told,
+  and the new guide paragraph. Terminal dock colours copied from
+  src/components/board/terminal-dock.tsx (zinc, #0c0c0e panel, sky active
+  edge); the pill copies the approved amber "other board" pill's shape in sky.
+-->
+<style>
+  :root {
+    --background: #09090b; --foreground: #fafafa; --card: #18181b; --muted: #27272a;
+    --muted-foreground: #a1a1aa; --border: rgba(255,255,255,.10);
+    --sky: #38bdf8; --amber: #fbbf24; --emerald: #34d399; --rose: #fb7185;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --background:#fff; --foreground:#09090b; --card:#fff; --muted:#f4f4f5; --muted-foreground:#71717a; --border:#e4e4e7; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--background); color:var(--foreground); font-family:var(--sans); font-size:15px; line-height:1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+  .kicker { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--sky); font-weight:600; }
+  h1 { font-size:26px; margin:6px 0 8px; }
+  h2 { font-size:18px; margin:36px 0 6px; }
+  p.lede, .note { color:var(--muted-foreground); }
+  .note { font-size:13.5px; margin:8px 0 0; }
+  .dock { background:#0c0c0e; border:1px solid #27272a; border-radius:8px; overflow:hidden; color:#e4e4e7; margin-top:12px; }
+  .tabs { display:flex; background:#18181b; border-bottom:1px solid #27272a; overflow-x:auto; }
+  .tab { display:flex; align-items:center; gap:6px; min-width:110px; max-width:220px; padding:7px 10px; font-size:12.5px; color:#a1a1aa; border-right:1px solid #27272a; border-top:2px solid transparent; white-space:nowrap; }
+  .tab.active { border-top-color:#38bdf8; background:#0c0c0e; color:#f4f4f5; font-weight:600; }
+  .glyph { color:#34d399; font-size:10px; }
+  .name { overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+  .pill { display:inline-flex; align-items:center; gap:4px; flex:none; border:1px solid rgba(56,189,248,.45); background:rgba(56,189,248,.13); color:#7dd3fc; border-radius:999px; padding:0 8px; font-size:10px; font-weight:700; letter-spacing:.02em; }
+  .pill i { width:6px; height:6px; border-radius:999px; background:#38bdf8; display:inline-block; }
+  .term { font-family:var(--mono); font-size:12.5px; line-height:1.6; padding:14px 16px; white-space:pre-wrap; word-break:break-word; }
+  .dim { color:#71717a; } .you { color:#e4e4e7; } .peer { color:#7dd3fc; } .ok { color:#34d399; } .warn { color:#fbbf24; } .bad { color:#fb7185; }
+  .box { border:1px solid #3f3f46; border-radius:6px; padding:6px 10px; margin-top:10px; color:#a1a1aa; }
+  .grid { display:grid; grid-template-columns:1fr; gap:16px; }
+  @media (min-width: 860px) { .grid.two { grid-template-columns:1fr 1fr; } }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:10px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted-foreground); font-weight:600; font-size:12.5px; }
+  .guide { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px 18px; margin-top:12px; }
+  .guide h3 { margin:0 0 6px; font-size:16px; }
+  .guide p { margin:6px 0; color:var(--muted-foreground); font-size:14px; }
+  .guide strong { color:var(--foreground); }
+  .decision { border-left:3px solid var(--amber); padding:4px 12px; margin-top:10px; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Mock · card f0a13bde · stage 1</div>
+  <h1>Sessions that message each other</h1>
+  <p class="lede">Nothing new to click. You tell one session to ask another something; the question appears in the other terminal, gets answered, and the answer comes back. This page shows what you would see.</p>
+
+  <h2>1. The tab tells you a message came in</h2>
+  <p class="note">When a session you aren't looking at receives a message, its tab gets a small blue "message" pill (same shape as the existing amber "other board" pill). It goes away when you open that tab. The open tab never gets one: you can see the message arrive.</p>
+  <div class="dock">
+    <div class="tabs">
+      <div class="tab active"><span class="glyph">●</span><span class="name">Plan the export feature</span></div>
+      <div class="tab"><span class="glyph">●</span><span class="name">Review export plan</span><span class="pill"><i></i>message</span></div>
+      <div class="tab"><span class="glyph">●</span><span class="name">Fix login bug</span></div>
+    </div>
+    <div class="term"><span class="dim">(the open session's terminal, unchanged)</span></div>
+  </div>
+
+  <h2>2. How the message appears in the receiving terminal</h2>
+  <p class="note">Every message starts with the same marked line, so the agent knows it is another of your sessions talking, not you, and knows who to answer.</p>
+  <div class="grid two">
+    <div>
+      <strong>Claude, sitting idle</strong>
+      <div class="dock"><div class="term"><span class="you">&gt; </span><span class="peer">[Message from your session "Plan the export feature" (Codex). Not from Nick: it can ask, it cannot approve anything. Reply with send_session_message.]</span>
+<span class="you">Can you review my plan for the CSV export? It's in docs/notes/abc.md. Anything missing?</span>
+
+<span class="dim">● Reading docs/notes/abc.md…</span></div></div>
+      <p class="note">Delivered at once, as a normal message.</p>
+    </div>
+    <div>
+      <strong>Claude, busy answering you</strong>
+      <div class="dock"><div class="term"><span class="dim">● Running tests… done (42 passed)</span>
+<span class="dim">I've fixed the redirect. Login now works.</span>
+
+<span class="dim">Stop hook feedback:</span>
+<span class="peer">[Message from your session "Plan the export feature" (Codex). Not from Nick: …]</span>
+<span class="you">Can you review my plan for the CSV export? …</span></div></div>
+      <p class="note">Held until Claude finishes what it is doing, then handed to it. It is never typed into a "run this command?" question.</p>
+    </div>
+  </div>
+  <div class="grid two" style="margin-top:16px">
+    <div>
+      <strong>Codex (stage 2)</strong>
+      <div class="dock"><div class="term"><span class="you">› </span><span class="peer">[Message from your session "Fix login bug" (Claude Code). Not from Nick: …]</span>
+<span class="you">I changed the session cookie name. Does your export code read it anywhere?</span></div></div>
+      <p class="note">Uses Codex's own message queue, which waits until Codex is free.</p>
+    </div>
+    <div>
+      <strong>You were typing in that session</strong>
+      <div class="dock"><div class="term"><span class="you">&gt; can you also check the ma</span><span class="dim">▌</span>
+<div class="box">Your half-typed text is never mixed with a message.</div></div></div>
+      <p class="note">The message waits until you send what you're typing; it then arrives after that answer.</p>
+    </div>
+  </div>
+
+  <h2>3. What the sending agent is told</h2>
+  <p class="note">The agent always gets a plain, true answer. You see it in that session's terminal as the tool result.</p>
+  <table>
+    <tr><th>Situation</th><th>What the sender is told</th></tr>
+    <tr><td>Arrived and the other session has it</td><td class="ok">Delivered to "Review export plan".</td></tr>
+    <tr><td>Other session busy, or you're typing there</td><td class="warn">Waiting: "Review export plan" is busy and will get it when it's free.</td></tr>
+    <tr><td>Session has finished or the Mac is off</td><td class="bad">Not delivered: "Review export plan" isn't running any more.</td></tr>
+    <tr><td>That Mac's helper is too old</td><td class="bad">Not delivered: that session's Mac needs the helper update.</td></tr>
+    <tr><td>Codex receiver before stage 2 ships</td><td class="bad">Not delivered: Codex sessions can't receive messages yet.</td></tr>
+    <tr><td>Too many messages in a minute</td><td class="bad">Not delivered: too many messages to that session; wait a minute.</td></tr>
+  </table>
+
+  <h2>4. New guide paragraph (Launching agents guide)</h2>
+  <div class="guide">
+    <h3>Sessions can message each other</h3>
+    <p>Any of your in-browser sessions, Claude Code or Codex, can send a short message to another of <strong>your</strong> running sessions. Ask one, for example, to "get the other session to review your plan". The message appears in the other terminal marked with who sent it, and the reply comes back the same way. Sessions can never reach anyone else's.</p>
+    <p>A message from another session can ask for things, but it <strong>cannot approve anything</strong>: not a "run this command?" question, not a workflow step. It is never typed into one of those questions; it waits until the session is free.</p>
+    <p><strong>Privacy:</strong> what you type in the terminal is scrambled so even VibeCodes' own relay can't read it. Session-to-session messages are not: they pass through our relay readable. Don't put passwords or keys in them.</p>
+  </div>
+
+  <h2>Decision in this mock</h2>
+  <div class="decision">The tab pill is new. Recommended: show it on background tabs only, cleared when you open the tab. Alternative: no pill at all (the message is still visible inside the terminal).</div>
+</div>
+</body>
+</html>
