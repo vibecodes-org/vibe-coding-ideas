@@ -1,5 +1,6 @@
 "use server";
 
+import { fetchAllRows } from "@/lib/db-helpers";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
@@ -816,11 +817,15 @@ export async function getUserRecentBoards(): Promise<RecentBoard[]> {
       .from("board_columns")
       .select("idea_id")
       .in("idea_id", ideaIds),
-    supabase
-      .from("board_tasks")
-      .select("idea_id, updated_at")
-      .in("idea_id", ideaIds)
-      .order("updated_at", { ascending: false }),
+    fetchAllRows((from, to) =>
+      supabase
+        .from("board_tasks")
+        .select("idea_id, updated_at")
+        .in("idea_id", ideaIds)
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to)
+    ),
   ]);
 
   const ideaIdsWithBoards = new Set((columnsData ?? []).map((c) => c.idea_id));

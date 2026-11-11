@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fetchAllRows } from "../../../src/lib/db-helpers";
 import type { McpContext } from "../context";
 import { applyKitToIdea } from "./kits";
 
@@ -80,11 +81,17 @@ export async function getIdea(ctx: McpContext, params: z.infer<typeof getIdeaSch
 
   let boardSummary = null;
   if (columns && columns.length > 0) {
-    const { data: tasks } = await ctx.supabase
-      .from("board_tasks")
-      .select("id, column_id, archived")
-      .eq("idea_id", params.idea_id)
-      .eq("archived", false);
+    // Paged: a bare select stops at 1,000 rows with no error, which would
+    // under-count the columns of a very large board.
+    const { data: tasks } = await fetchAllRows((from, to) =>
+      ctx.supabase
+        .from("board_tasks")
+        .select("id, column_id, archived")
+        .eq("idea_id", params.idea_id)
+        .eq("archived", false)
+        .order("id")
+        .range(from, to)
+    );
 
     boardSummary = columns.map((col) => ({
       column: col.title,

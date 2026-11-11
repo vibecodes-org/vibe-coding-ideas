@@ -12,7 +12,7 @@ import type {
 } from "@/types";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import { logger } from "@/lib/logger";
-import { chunkIds } from "@/lib/db-helpers";
+import { chunkIds, fetchAllRows } from "@/lib/db-helpers";
 
 // Raw row shapes as returned by the Supabase queries below — same loose typing
 // (cast at composition time) the board page RSC already uses for these joins.
@@ -40,9 +40,17 @@ type RawSuggestionRow = {
  */
 export function composeBoardColumns(
   rawColumns: BoardColumn[],
-  rawTasks: RawTaskRow[],
+  allRawTasks: RawTaskRow[],
   taskLabelRows: RawTaskLabelRow[] | null
 ): BoardColumnWithTasks[] {
+  // Paged loads read the table in several requests, so a card moved between two
+  // requests could appear in both pages. Keep the first copy of each id.
+  const seenTaskIds = new Set<string>();
+  const rawTasks = allRawTasks.filter((t) => {
+    if (seenTaskIds.has(t.id)) return false;
+    seenTaskIds.add(t.id);
+    return true;
+  });
   const taskLabelsMap: Record<string, BoardLabel[]> = {};
   if (taskLabelRows) {
     for (const row of taskLabelRows) {
@@ -96,10 +104,17 @@ export async function fetchTaskLabelsByLabelIds(
 
   const results = await Promise.all(
     chunkIds(labelIds).map((chunk) =>
-      supabase
-        .from("board_task_labels")
-        .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*)")
-        .in("label_id", chunk)
+      // Paged: one chunk of labels can own more than 1,000 task links, and an
+      // unpaged select stops at 1,000 rows with no error. Total order (id) keeps
+      // pages from repeating or skipping rows.
+      fetchAllRows<RawTaskLabelRow>((from, to) =>
+        supabase
+          .from("board_task_labels")
+          .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*)")
+          .in("label_id", chunk)
+          .order("id")
+          .range(from, to)
+      )
     )
   );
 
@@ -220,11 +235,16 @@ export async function fetchBoardRefreshData(
       supabase.from("board_columns").select("*").eq("idea_id", ideaId).order("position", { ascending: true }),
       // Assignee join column-scoped to what board-task-card.tsx / task-detail-dialog.tsx
       // render — must mirror the board page RSC's select() above exactly (see file header).
-      supabase
-        .from("board_tasks")
-        .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
-        .eq("idea_id", ideaId)
-        .order("position", { ascending: true }),
+      // Paged (fetchAllRows): a board past 1,000 cards (archived included) silently lost the rest.
+      fetchAllRows<RawTaskRow>((from, to) =>
+        supabase
+          .from("board_tasks")
+          .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
+          .eq("idea_id", ideaId)
+          .order("position", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
       supabase.from("board_labels").select("*").eq("idea_id", ideaId).order("created_at", { ascending: true }),
       supabase
         .from("workflow_suggestions")

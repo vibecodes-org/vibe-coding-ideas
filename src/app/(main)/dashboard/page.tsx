@@ -33,6 +33,7 @@ import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
 import { getActiveKitsWithSteps } from "@/actions/kits";
 import { fetchTaskLabelsByLabelIds } from "@/lib/board-refetch";
+import { fetchAllRows } from "@/lib/db-helpers";
 import { getAiAccess } from "@/actions/ai";
 import { getAgentStatus, type AgentWorkflowStep } from "@/lib/agent-status";
 import { Button } from "@/components/ui/button";
@@ -200,7 +201,7 @@ export default async function DashboardPage() {
   // the query the way re-invoking the builder's own `.then()` would.
   const userBoardLabelsPromise = (
     allUserIdeaIds.length > 0
-      ? supabase.from("board_labels").select("id, idea_id").in("idea_id", allUserIdeaIds)
+      ? fetchAllRows((from, to) => supabase.from("board_labels").select("id, idea_id").in("idea_id", allUserIdeaIds).order("id").range(from, to))
       : Promise.resolve({ data: [] as { id: string; idea_id: string }[], error: null })
   ).then((r) => r);
 
@@ -236,11 +237,15 @@ export default async function DashboardPage() {
       : Promise.resolve({ data: [] }),
     // Board tasks for user's ideas (non-archived only, with title for first-run preview)
     allUserIdeaIds.length > 0
-      ? supabase
-          .from("board_tasks")
-          .select("idea_id, column_id, title, updated_at")
-          .in("idea_id", allUserIdeaIds)
-          .eq("archived", false)
+      ? fetchAllRows((from, to) =>
+          supabase
+            .from("board_tasks")
+            .select("idea_id, column_id, title, updated_at")
+            .in("idea_id", allUserIdeaIds)
+            .eq("archived", false)
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [] }),
     // Tasks assigned to bots (non-archived, with column + idea info)
     botUserIds.length > 0
@@ -275,10 +280,14 @@ export default async function DashboardPage() {
       : Promise.resolve({ data: [] }),
     // Task counts for all user ideas (for IdeaCard badge) — covers displayed ideas
     allUserIdeaIds.length > 0
-      ? supabase
-          .from("board_tasks")
-          .select("idea_id")
-          .in("idea_id", allUserIdeaIds)
+      ? fetchAllRows((from, to) =>
+          supabase
+            .from("board_tasks")
+            .select("idea_id")
+            .in("idea_id", allUserIdeaIds)
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [] }),
     // Active discussions across user's ideas
     allUserIdeaIds.length > 0

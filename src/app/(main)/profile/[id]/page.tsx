@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { stripMarkdownForMeta } from "@/lib/utils";
+import { fetchAllRows } from "@/lib/db-helpers";
 import type { Comment, IdeaWithAuthor } from "@/types";
 import type { Metadata } from "next";
 
@@ -182,10 +183,14 @@ export default async function ProfilePage({ params }: PageProps) {
   ];
   const taskCounts: Record<string, number> = {};
   if (allProfileIdeaIds.length > 0) {
-    const { data: taskRows } = await supabase
-      .from("board_tasks")
-      .select("idea_id")
-      .in("idea_id", allProfileIdeaIds);
+    const { data: taskRows } = await fetchAllRows((from, to) =>
+      supabase
+        .from("board_tasks")
+        .select("idea_id")
+        .in("idea_id", allProfileIdeaIds)
+        .order("id")
+        .range(from, to)
+    );
     for (const row of taskRows ?? []) {
       taskCounts[row.idea_id] = (taskCounts[row.idea_id] ?? 0) + 1;
     }

@@ -16,6 +16,7 @@ import { AnnounceBoardIdea } from "@/components/board/terminal-dock-shell";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
+import { fetchAllRows } from "@/lib/db-helpers";
 import { composeBoardColumns, composeSuggestionsByTask, fetchTaskLabelsByLabelIds } from "@/lib/board-refetch";
 import type { BoardLabel } from "@/types";
 import type { Metadata } from "next";
@@ -135,11 +136,17 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
     // Assignee join column-scoped to what board-task-card.tsx / task-detail-dialog.tsx render.
-    supabase
-      .from("board_tasks")
-      .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
-      .eq("idea_id", id)
-      .order("position", { ascending: true }),
+    // Paged (fetchAllRows): the database returns at most 1,000 rows per request with no
+    // error, so a board past 1,000 cards (archived included) silently lost the rest.
+    fetchAllRows((from, to) =>
+      supabase
+        .from("board_tasks")
+        .select("*, assignee:users!board_tasks_assignee_id_fkey(id, full_name, email, avatar_url, is_bot)")
+        .eq("idea_id", id)
+        .order("position", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    ),
     supabase
       .from("board_labels")
       .select("*")

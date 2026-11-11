@@ -28,6 +28,7 @@ function makeChain(table: string) {
     not: passthrough,
     in: passthrough,
     order: passthrough,
+    range: passthrough,
     single: () => Promise.resolve(next()),
     maybeSingle: () => Promise.resolve(next()),
     // Make the chain itself awaitable for queries that don't call a terminal.

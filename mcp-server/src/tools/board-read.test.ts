@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpContext } from "../context";
+import { cappedSupabase } from "../../../src/test/capped-supabase";
 import { getBoard, getBoardSchema, getTask, getTaskSchema } from "./board-read";
 
 // ---------------------------------------------------------------------------
@@ -743,5 +744,29 @@ describe("getBoard — up_next (short look at the queue)", () => {
     expect(by["Backlog"].tasks.map((t) => t.id)).toEqual(["col-b-0", "col-b-1"]);
     expect(by["Backlog"].more).toBe(2);
     expect(r.columns.some((c) => c.title === "In Progress")).toBe(false);
+  });
+});
+
+describe("getBoard on a board with more than 1,000 cards", () => {
+  it("returns every card even though the database answers 1,000 rows per request", async () => {
+    const { client } = cappedSupabase({
+      board_columns: [{ id: "col-1", idea_id: IDEA_ID, title: "Backlog", position: 0, is_done_column: false }],
+      board_tasks: Array.from({ length: 1045 }, (_, i) => ({
+        id: `task-${String(i).padStart(5, "0")}`,
+        idea_id: IDEA_ID,
+        column_id: "col-1",
+        position: i,
+        archived: false,
+        title: `Card ${i}`,
+        workflow_step_total: 0,
+        attachment_count: 0,
+        board_task_labels: [],
+        users: null,
+      })),
+      board_labels: [],
+    });
+    const ctx = { supabase: client, userId: USER_ID } as unknown as McpContext;
+    const result = await getBoard(ctx, getBoardSchema.parse({ idea_id: IDEA_ID }));
+    expect(result.columns[0].tasks).toHaveLength(1045);
   });
 });

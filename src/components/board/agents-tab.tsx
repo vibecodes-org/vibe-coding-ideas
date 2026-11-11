@@ -33,6 +33,7 @@ import { getRoleColor } from "@/lib/agent-colors";
 import { allocateAllAgents, removeIdeaAgent, getRoleCoverage, setManualRoleMatch, clearManualRoleMatch, type RoleCoverageResult } from "@/actions/idea-agents";
 import { AgentAnimation } from "@/components/agents/agent-animation";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/db-helpers";
 import type { IdeaAgentWithDetails, BotProfile } from "@/types";
 
 interface AgentsTabProps {
@@ -90,16 +91,24 @@ export function AgentsTab({
       const supabase = createClient();
 
       const [taskResult, stepResult, templateResult] = await Promise.all([
-        supabase
-          .from("board_tasks")
-          .select("assignee_id")
-          .eq("idea_id", ideaId)
-          .not("assignee_id", "is", null),
-        supabase
-          .from("task_workflow_steps")
-          .select("bot_id, status")
-          .eq("idea_id", ideaId)
-          .not("bot_id", "is", null),
+        fetchAllRows((from, to) =>
+          supabase
+            .from("board_tasks")
+            .select("assignee_id")
+            .eq("idea_id", ideaId)
+            .not("assignee_id", "is", null)
+            .order("id")
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from("task_workflow_steps")
+            .select("bot_id, status")
+            .eq("idea_id", ideaId)
+            .not("bot_id", "is", null)
+            .order("id")
+            .range(from, to)
+        ),
         supabase
           .from("workflow_templates")
           .select("id, steps")

@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/db-helpers";
 import { requireAuth } from "@/lib/auth";
 import { IdeaFeed } from "@/components/ideas/idea-feed";
 import { CompleteProfileBanner } from "@/components/profile/complete-profile-banner";
@@ -143,10 +144,14 @@ export default async function FeedPage({
   const [allIdeasResult, taskCountsResult, latestDiscussionsResult] = await Promise.all([
     supabase.from("ideas").select("tags"),
     ideaIds.length > 0
-      ? supabase
-          .from("board_tasks")
-          .select("idea_id")
-          .in("idea_id", ideaIds)
+      ? fetchAllRows((from, to) =>
+          supabase
+            .from("board_tasks")
+            .select("idea_id")
+            .in("idea_id", ideaIds)
+            .order("id")
+            .range(from, to)
+        )
       : Promise.resolve({ data: [] }),
     ideaIds.length > 0
       ? supabase
