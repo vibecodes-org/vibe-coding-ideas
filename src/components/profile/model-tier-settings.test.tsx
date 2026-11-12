@@ -563,7 +563,7 @@ describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
     renderDialog();
     expect(screen.getAllByText("Memory limit")).toHaveLength(2);
     const claude = within(claudeGroup()).getAllByRole("button").map((b) => b.textContent);
-    expect(claude).toEqual(["Defaultsite: 300k", "200k", "300k", "400k", "500k", "1M"]);
+    expect(claude).toEqual(["Defaultsite: 300k", "150k", "200k", "300k", "400k", "1M"]);
     const codex = within(codexGroup()).getAllByRole("button").map((b) => b.textContent);
     expect(codex).toEqual(["DefaultCodex's own", "100k", "150k", "200k"]);
     expect(within(claudeGroup()).getByRole("button", { name: /^Default/ })).toHaveAttribute("aria-pressed", "true");
@@ -608,9 +608,9 @@ describe("ModelTierSettings — memory limits (task 5e654dd1)", () => {
 
   it("Save stays disabled until a memory limit changes, then Default sends null", async () => {
     vi.mocked(updateTerminalPreferences).mockResolvedValue({ ...savedResult });
-    renderDialog({ terminalAutoCompact: 500_000 });
+    renderDialog({ terminalAutoCompact: 150_000 });
     expect(screen.getByRole("button", { name: /^Save$/i })).toBeDisabled();
-    expect(within(claudeGroup()).getByRole("button", { name: "500k" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(claudeGroup()).getByRole("button", { name: "150k" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(within(claudeGroup()).getByRole("button", { name: /^Default/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
     await waitFor(() =>

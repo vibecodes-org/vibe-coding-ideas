@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Memory Limit 150k</title>
+<!--
+  Design mock for card 7141ed8c: a 150k choice on the Claude memory-limit strips
+  (Settings -> Model Tiers -> Terminal sessions, and Admin -> Platform), with the
+  site default moved from 300k to 150k. Styles copied from
+  docs/terminal-settings-consistency-mock.html, which was built from the real
+  components (effort-segmented-control.tsx: same flex weights, padding and font sizes).
+  Colours are the .dark tokens in src/app/globals.css. Only the memory-limit rows
+  are drawn; the other rows are unchanged and shown as a grey placeholder.
+-->
+<style>
+  :root {
+    --background: oklch(0.141 0.005 285.823); --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885); --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067); --primary: oklch(0.92 0.004 286.32);
+    --primary-foreground: oklch(0.21 0.006 285.885); --accent: oklch(0.274 0.006 286.033);
+    --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%);
+    --zinc-500: #71717a; --new: #38bdf8; --new-bg: rgba(56,189,248,.10); --warn: #fbbf24;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --background: #ffffff; --foreground: #09090b; --card: #ffffff; --muted: #f4f4f5;
+    --muted-foreground: #71717a; --primary: #18181b; --primary-foreground: #fafafa;
+    --accent: #f4f4f5; --border: #e4e4e7; --input: #e4e4e7;
+    --new: #0284c7; --new-bg: rgba(2,132,199,.08); --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: 18px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--new); font-weight: 600; }
+  h1 { font-size: 26px; margin: 6px 0 8px; letter-spacing: -.01em; }
+  h2 { font-size: 19px; margin: 44px 0 6px; }
+  .lede, .note { color: var(--muted-foreground); max-width: 820px; }
+  .note { font-size: 13.5px; margin: 4px 0 16px; }
+  button.theme { background: var(--muted); color: var(--foreground); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .row { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .frame { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .frame.phone { width: 375px; max-width: 100%; border: 1px dashed var(--border); border-radius: 14px; padding: 16px; }
+  .frame .lbl { font-size: 11px; color: var(--zinc-500); margin-bottom: 8px; }
+  .dialog { width: 672px; max-width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 24px; box-shadow: 0 16px 48px -20px rgba(0,0,0,.6); }
+  .phone .dialog { width: 100%; padding: 16px; }
+  .elided { font-size: 12px; color: var(--zinc-500); border: 1px dashed var(--border); border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 14px; }
+  .group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 0 0 10px; }
+  .agenthead { font-size: 13px; font-weight: 600; margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .field { margin: 0 0 16px; }
+  .field > * + * { margin-top: 6px; }
+  .label { font-size: 14px; font-weight: 500; line-height: 1.35; }
+  .help { font-size: 11px; color: var(--muted-foreground); margin: 6px 0 0; }
+  .seg { display: flex; overflow: hidden; border: 1px solid var(--input); border-radius: 6px; }
+  .seg span { flex: 1 1 0; min-width: 0; min-height: 36px; display: flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 11px; font-weight: 500; border-right: 1px solid var(--input); padding: 0 2px; cursor: pointer; user-select: none; }
+  .seg span:last-child { border-right: 0; }
+  .seg span:hover { background: var(--accent); }
+  .seg span.on { background: var(--foreground); color: var(--background); }
+  .seg span.def { flex-grow: 1.5; flex-direction: column; line-height: 1.15; padding-top: 3px; padding-bottom: 3px; }
+  .seg span .sub { font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
+  .seg span.on .sub { color: var(--background); opacity: .75; }
+  .seg span.isnew:not(.on) { box-shadow: inset 0 -2px 0 var(--new); }
+  .acard { width: 900px; max-width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 24px; background: var(--background); }
+  .phone .acard { width: 100%; padding: 16px; }
+  .acard h3 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .acard .desc { font-size: 14px; color: var(--muted-foreground); margin: 0 0 20px; }
+  .acard .xs { font-size: 12px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .acard .ctl { max-width: 420px; margin-bottom: 18px; }
+  .audit { font-size: 11px; color: var(--muted-foreground); margin-top: 6px; }
+  .audit b { color: var(--foreground); font-weight: 500; }
+  .abar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 6px; }
+  .abar .w { margin-right: auto; font-size: 12px; color: var(--muted-foreground); }
+  .btn { height: 32px; padding: 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; border: 1px solid var(--input); }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+  .toast { display: inline-flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 6px 0; }
+  .toast i { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; flex: none; }
+  .key { font-size: 12px; color: var(--muted-foreground); }
+  .key b { color: var(--new); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); }
+  td.old { color: var(--muted-foreground); }
+  .tbl { overflow-x: auto; }
+  ol.dec li { margin-bottom: 12px; max-width: 860px; }
+  .rec { color: var(--new); font-weight: 600; }
+  .warnbox { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 8px; padding: 12px 14px; max-width: 860px; font-size: 14px; }
+  .opts { display: flex; gap: 18px; flex-wrap: wrap; }
+  .opts .frame { width: 309px; max-width: 100%; }
+  @media (max-width: 520px) { h1 { font-size: 22px; } header { flex-direction: column; } .frame.phone { border: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="kicker">Design mock · for approval</div>
+      <h1>Claude sessions tidy up their memory sooner: a new 150k choice</h1>
+      <p class="lede">The only thing you'll see is a <b>150k</b> button at the start of the Claude "Memory limit" row, on your Settings screen and on the Admin page, taking the place of the unused 500k button so the row keeps six buttons. Then the site's choice moves from 300k to 150k, so new and resumed Claude sessions summarise their conversation at about 150,000 tokens instead of about 270,000. Everything else on these screens stays as it is. The buttons are clickable so you can read the help lines.</p>
+      <p class="key">The new button is underlined in <b>blue</b> in this mock only.</p>
+    </div>
+    <button class="theme" id="themeBtn" type="button">Light theme</button>
+  </header>
+
+  <h2>1. Settings → Model Tiers → Terminal sessions</h2>
+  <p class="note">You haven't picked your own memory limit, so you follow the site's choice. After the change the Default button reads "site: 150k". The Codex row underneath already has a 150k button and doesn't change.</p>
+  <div class="row">
+    <div class="frame"><div class="lbl">Desktop (dialog 672px)</div><div id="userDesk"></div></div>
+    <div class="frame phone"><div class="lbl">Phone (375px)</div><div id="userPhone"></div></div>
+  </div>
+
+  <h2>2. Admin → Platform → Claude Code terminal sessions</h2>
+  <p class="note">The same 150k button appears on the site-wide setting. Picking it and pressing Save is the switch; picking 300k again is the undo. Nothing needs a release to switch back.</p>
+  <div class="row">
+    <div class="frame"><div class="lbl">Desktop (1280px page)</div><div id="adminDesk"></div></div>
+    <div class="frame phone"><div class="lbl">Phone (375px)</div><div id="adminPhone"></div></div>
+  </div>
+  <p class="note" style="margin-top:14px">What Save says:</p>
+  <div class="toast"><i></i>Claude Code site defaults saved · memory limit 150k</div>
+
+  <h2>3. What changes for the helpers that do each step</h2>
+  <div class="warnbox">
+    <p style="margin-top:0">The memory limit is set once for the whole Claude session, and the helpers that do each workflow step live inside that session. Their own limit (400,000) can only make them tidy up sooner, never later. So at 150k, a step helper that grows past about 150,000 tokens will also summarise itself partway through its step.</p>
+    <p style="margin-bottom:0">How often, measured on this Mac over the last 7 days: about <b>1 in 4</b> step helpers grew past 150,000 (186 of 782). About <b>1 in 13</b> grew past 200,000 (58). None went past 300,000, and only 10 helpers summarised themselves all week. A summary keeps the helper going, but it can drop detail it was holding, which is the "lose its place mid-step" risk the card asks us to watch.</p>
+  </div>
+
+  <h2>4. Every wording change</h2>
+  <div class="tbl"><table>
+    <tr><th>Where</th><th>Today</th><th>After</th></tr>
+    <tr><td>Claude "Memory limit" buttons (Settings and Admin)</td><td class="old">Default | 200k 300k 400k 500k 1M</td><td>Default | 150k 200k 300k 400k 1M</td></tr>
+    <tr><td>Settings, Default button's second line</td><td class="old">site: 300k</td><td>site: 150k (follows the Admin setting)</td></tr>
+    <tr><td>Settings, help line on Default</td><td class="old">…tidy up their memory when it reaches 300,000 tokens…</td><td>…tidy up their memory when it reaches 150,000 tokens… (rest unchanged)</td></tr>
+    <tr><td>Admin save message</td><td class="old">memory limit 300k</td><td>memory limit 150k (same pattern)</td></tr>
+    <tr><td>Codex row, help guide</td><td class="old">—</td><td>No change</td></tr>
+  </table></div>
+
+  <h2>5. Your decisions</h2>
+  <ol class="dec">
+    <li><b>Which size for the site setting?</b>
+      <ul>
+        <li><b>150k</b>, as you approved on the earlier card. The main window re-reads the least, but about 1 in 4 step helpers would also summarise mid-step.</li>
+        <li><b>200k</b>, already a button today, so it could be switched on in Admin now with no build. A smaller saving on the main window, and about 1 in 13 step helpers affected.</li>
+      </ul>
+      <span class="rec">Recommended: 150k as approved, with a one-week check that also counts step helpers that summarised mid-step, and drop to 200k if any step loses its place.</span> Either way it's one click to undo.</li>
+    <li><b>Swap 150k in for 500k, or add it as a seventh button?</b> Nobody uses 500k (no user has picked their own size, and the site uses 300k). With seven buttons, the Admin page's first button ("Not set / Claude's own") no longer fits on a phone and its second line gets cut off (measured in this mock at phone width: it needs about 63 pixels and gets 57). With six it fits exactly as it does today. <span class="rec">Recommended: swap, so the row keeps six buttons like the Starting effort row above it.</span> Anyone who later wants 500k can still type /autocompact in the terminal.
+      <div class="opts" style="margin-top:10px">
+        <div class="frame"><div class="lbl">Swap (recommended): Admin row on a phone</div><div id="optSwap"></div></div>
+        <div class="frame"><div class="lbl">Add a seventh: second line cut off</div><div id="optAdd"></div></div>
+      </div>
+    </li>
+    <li><b>Who flips the site setting after the release?</b> <span class="rec">Recommended: you, on the Admin page (one click and Save), or the test step does it in your browser with your OK.</span> It records who changed it and when, and undoing it is the same click. The other way, a database change shipped with the release, is harder to undo and needs its own approval.</li>
+    <li><b>Differences kept from the Codex row:</b> Codex goes down to 100k and Claude stops at 150k; Claude goes up to 1M and Codex stops at 200k. That's because the two agents hold very different amounts. Unchanged from today.</li>
+  </ol>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById("themeBtn");
+  btn.addEventListener("click", function () {
+    var light = document.documentElement.getAttribute("data-theme") === "light";
+    document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+    btn.textContent = light ? "Light theme" : "Dark theme";
+  });
+
+  var CLAUDE_MEM = ["150k", "200k", "300k", "400k", "1M"];
+  var CLAUDE_MEM_ADD = ["150k", "200k", "300k", "400k", "500k", "1M"];
+  var CODEX_MEM = ["100k", "150k", "200k"];
+  var TOK = { "100k": "100,000", "150k": "150,000", "200k": "200,000", "300k": "300,000", "400k": "400,000", "500k": "500,000", "1M": "1,000,000" };
+  var site = { claudeMem: "150k" };
+  var u = { claudeMem: null, codexMem: null };
+  var a = { claudeMem: "150k" };
+
+  function strip(key, lead, items, value) {
+    var h = '<div class="seg" role="group">';
+    h += '<span class="def' + (lead.on ? " on" : "") + '" data-k="' + key + '" data-v="">' + lead.label + '<span class="sub">' + lead.sub + "</span></span>";
+    items.forEach(function (it) {
+      var cls = (value === it ? "on" : "") + (key.indexOf("laude") > -1 && it === "150k" ? " isnew" : "");
+      h += '<span class="' + cls.trim() + '" data-k="' + key + '" data-v="' + it + '">' + it + "</span>";
+    });
+    return h + "</div>";
+  }
+  var BOARD = " Board agents tidy up at 400,000 tokens, or sooner if your memory limit is lower. Change it any time by typing /autocompact in the terminal.";
+  function claudeHelp() {
+    if (u.claudeMem) return "New and resumed Claude Code sessions tidy up their memory when it reaches " + TOK[u.claudeMem] + " tokens (your setting)." + BOARD;
+    return "Uses the site default: new and resumed Claude Code sessions tidy up their memory when it reaches " + TOK[site.claudeMem] + " tokens." + BOARD;
+  }
+  function codexHelp() {
+    if (u.codexMem) return "New and resumed Codex sessions tidy up their memory when it reaches " + TOK[u.codexMem] + " tokens (your setting). Takes effect from your next launch or resume.";
+    return "Codex decides: about 245,000 tokens on today's Codex models. Applies to new and resumed sessions.";
+  }
+  function dialog() {
+    var h = '<div class="dialog"><div class="elided">Tier grid, unchanged</div><p class="group">Terminal sessions</p>';
+    h += '<div class="agenthead">Claude Code</div><div class="elided">Starting model, Starting effort: unchanged</div>';
+    h += '<div class="field"><div class="label">Memory limit</div>' + strip("u.claudeMem", { label: "Default", sub: "site: " + site.claudeMem, on: !u.claudeMem }, CLAUDE_MEM, u.claudeMem) + '<p class="help">' + claudeHelp() + "</p></div>";
+    h += '<div class="agenthead">Codex</div><div class="elided">Starting model, Starting effort: unchanged</div>';
+    h += '<div class="field"><div class="label">Memory limit</div>' + strip("u.codexMem", { label: "Default", sub: "Codex's own", on: !u.codexMem }, CODEX_MEM, u.codexMem) + '<p class="help">' + codexHelp() + "</p></div>";
+    return h + '<div class="elided" style="margin:0">Switches and Save, unchanged</div></div>';
+  }
+  function admin() {
+    var h = '<div class="acard"><h3>Claude Code terminal sessions</h3><p class="desc">What new in-browser Claude Code sessions start with, site-wide. Takes effect on the <b>next</b> session launched or resumed, with no deploy, and running sessions untouched. Users can choose their own in Settings → Model Tiers, and theirs wins.</p>';
+    h += '<div class="elided" style="max-width:420px">Starting model, Starting effort: unchanged</div>';
+    h += '<div class="ctl"><span class="xs">Memory limit</span>' + strip("a.claudeMem", { label: "Not set", sub: "Claude's own", on: !a.claudeMem }, CLAUDE_MEM, a.claudeMem);
+    h += '<p class="audit">' + (a.claudeMem ? "Last changed by <b>Nick Ball</b> · just now" : "Not set: Claude Code decides (about 967,000 tokens).") + "</p></div>";
+    return h + '<div class="abar"><span class="w">Save enables when you change a value.</span><span class="btn">Cancel</span><span class="btn primary">Save</span></div></div>';
+  }
+  function render() {
+    document.getElementById("userDesk").innerHTML = dialog();
+    document.getElementById("userPhone").innerHTML = dialog();
+    document.getElementById("adminDesk").innerHTML = admin();
+    document.getElementById("adminPhone").innerHTML = admin();
+    document.getElementById("optAdd").innerHTML = strip("x", { label: "Not set", sub: "Claude's own", on: false }, CLAUDE_MEM_ADD, "150k");
+    document.getElementById("optSwap").innerHTML = strip("x", { label: "Not set", sub: "Claude's own", on: false }, CLAUDE_MEM, "150k");
+  }
+  document.addEventListener("click", function (e) {
+    var s = e.target.closest(".seg span[data-k]");
+    if (!s) return;
+    var k = s.getAttribute("data-k"); if (k === "x") return;
+    var obj = k[0] === "u" ? u : a; obj[k.slice(2)] = s.getAttribute("data-v") || null;
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

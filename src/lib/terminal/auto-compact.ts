@@ -20,7 +20,7 @@ export const BOARD_AGENT_AUTO_COMPACT_WINDOW = 400_000;
 
 /** What the Settings and Admin strips offer. */
 export const AUTO_COMPACT_STEPS: Record<AutoCompactAgent, readonly number[]> = {
-  claude: [200_000, 300_000, 400_000, 500_000, 1_000_000],
+  claude: [150_000, 200_000, 300_000, 400_000, 1_000_000],
   codex: [100_000, 150_000, 200_000],
 };
 
