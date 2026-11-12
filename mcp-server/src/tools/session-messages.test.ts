@@ -5,8 +5,11 @@ import { buildSessionEnvValue, verifyPeerFrame } from "../../../terminal/shared/
 
 const ME = "00000000-0000-4000-a000-000000000001";
 const OTHER_USER = "00000000-0000-4000-a000-000000000009";
-const KEY_A = "a".repeat(43);
-const KEY_B = "b".repeat(43);
+// Database rows hold the key as base64 text. The helper (bridge) decodes it to a
+// 32-byte Buffer and uses THAT, so the tests must model both forms.
+const KEY_A = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + 3) % 256)).toString("base64");
+const KEY_B = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 11 + 5) % 256)).toString("base64");
+const bridgeKey = (b64: string) => Buffer.from(b64, "base64");
 
 type Row = Record<string, unknown>;
 let sessions: Row[] = [];
@@ -60,7 +63,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const FROM = () => buildSessionEnvValue(KEY_A, "sender-sid");
+const FROM = () => buildSessionEnvValue(bridgeKey(KEY_A), "sender-sid");
 
 describe("list_my_sessions", () => {
   it("lists only the caller's own active sessions and never a key", async () => {
@@ -78,7 +81,7 @@ describe("send_session_message", () => {
     const r = await sendSessionMessage(ctx(), { to: "Review", message: "hello\x1b[31m there", from_session: FROM() });
     expect(r).toMatchObject({ delivered: true, outcome: "delivered" });
     expect(JSON.stringify(r)).not.toContain("hello");
-    const v = verifyPeerFrame({ key: KEY_B, text: lastBody!.frame, sid: "target-sid" });
+    const v = verifyPeerFrame({ key: bridgeKey(KEY_B), text: lastBody!.frame, sid: "target-sid" });
     expect(v.ok).toBe(true);
     if (v.ok) {
       expect(v.env.text).toBe("hello[31m there");
@@ -86,8 +89,19 @@ describe("send_session_message", () => {
     }
   });
 
+  it("works with keys the way the helper holds them: a Buffer decoded from the stored base64", async () => {
+    // Regression: the server once keyed with the base64 text, so every proof and every signature mismatched.
+    const r = await sendSessionMessage(ctx(), { to: "target-sid", message: "hi", from_session: buildSessionEnvValue(bridgeKey(KEY_A), "sender-sid") });
+    expect(r).toMatchObject({ delivered: true });
+    // The base64 text as a key must NOT verify: that was the bug.
+    expect(verifyPeerFrame({ key: KEY_B, text: lastBody!.frame, sid: "target-sid" }).ok).toBe(false);
+    expect(verifyPeerFrame({ key: bridgeKey(KEY_B), text: lastBody!.frame, sid: "target-sid" }).ok).toBe(true);
+    const bad = await sendSessionMessage(ctx(), { to: "target-sid", message: "hi", from_session: buildSessionEnvValue(KEY_A, "sender-sid") });
+    expect(bad.outcome).toBe("not-sent");
+  });
+
   it("refuses a missing or wrong proof and sends nothing", async () => {
-    for (const from of [undefined, "sender-sid.wrongproof", buildSessionEnvValue("x".repeat(43), "sender-sid"), buildSessionEnvValue(KEY_A, "foreign-sid")]) {
+    for (const from of [undefined, "sender-sid.wrongproof", buildSessionEnvValue(Buffer.alloc(32, 9), "sender-sid"), buildSessionEnvValue(bridgeKey(KEY_A), "foreign-sid")]) {
       const r = await sendSessionMessage(ctx(), { to: "target-sid", message: "hi", from_session: from });
       expect(r.delivered).toBe(false);
       expect(r.outcome).toBe("not-sent");

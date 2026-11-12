@@ -96,6 +96,15 @@ export async function listMySessions(ctx: McpContext, params: z.infer<typeof lis
   };
 }
 
+/**
+ * The database stores a session's key as base64 text, but the helper decodes it to a
+ * 32-byte Buffer and signs/verifies with that. Use the same form here or no proof or
+ * signature ever matches. (Helpers already installed can't change, so we adapt.)
+ */
+function helperKey(stored: string): Buffer {
+  return Buffer.from(stored, "base64");
+}
+
 export async function sendSessionMessage(ctx: McpContext, params: z.infer<typeof sendSessionMessageSchema>) {
   const owner = ctx.ownerUserId ?? ctx.userId;
   const secret = sessionSecret();
@@ -105,7 +114,7 @@ export async function sendSessionMessage(ctx: McpContext, params: z.infer<typeof
   if (!parts) return { delivered: false, outcome: "not-sent", message: MISSING_FROM };
   const rows = await activeRows(ctx, owner);
   const sender = rows.find((r) => r.sid === parts.sid);
-  if (!sender || !sender.e2ee_session_key || !verifySenderProof(sender.e2ee_session_key, parts.sid, parts.proof)) {
+  if (!sender || !sender.e2ee_session_key || !verifySenderProof(helperKey(sender.e2ee_session_key), parts.sid, parts.proof)) {
     logger.warn("Session messages: sender proof refused", { userId: owner });
     return {
       delivered: false,
@@ -141,7 +150,7 @@ export async function sendSessionMessage(ctx: McpContext, params: z.infer<typeof
   }
   const id = randomUUID();
   const frame = encodePeerFrame(
-    signPeerEnvelope(target.row.e2ee_session_key, {
+    signPeerEnvelope(helperKey(target.row.e2ee_session_key), {
       id,
       to: target.row.sid,
       from: { sid: sender.sid, name: peerSessionName(sender), agent: sender.agent },
