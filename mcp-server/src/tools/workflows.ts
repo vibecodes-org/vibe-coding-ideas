@@ -26,10 +26,11 @@ import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { decideStepRematch, sameRole } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
-import { pickNextOpenStep } from "../../../src/lib/workflow-current-run";
+import { pickCurrentRunKey, pickNextOpenStep } from "../../../src/lib/workflow-current-run";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
 import { noWorkflowInstruction } from "../lib/no-workflow";
+import { workflowFinishedReply } from "./next-card";
 import {
   buildApprovalNotes,
   type ApprovalNote,
@@ -992,6 +993,21 @@ export async function claimNextStep(
       }
     }
 
+    // Every step of the live run is completed or skipped: the whole workflow is
+    // finished (an approval pause is NOT finished and keeps the old reply).
+    const liveKey = pickCurrentRunKey(allSteps ?? []);
+    const liveSteps = (allSteps ?? []).filter((s) => (s.run_id ?? null) === liveKey);
+    if (
+      liveSteps.length > 0 &&
+      liveSteps.every((s) => s.status === "completed" || s.status === "skipped")
+    ) {
+      return {
+        done: true,
+        message: "This card's workflow is finished.",
+        ...(await workflowFinishedReply(ctx, params.task_id)),
+      };
+    }
+
     return { done: true, message: "All steps complete or no pending steps" };
   }
 
@@ -1884,6 +1900,7 @@ export async function completeStep(
   return {
     step: savedStep(updated),
     run_complete: runComplete,
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
     status: newStatus,
     output_source: outputSource,
     ...(passedOutputIgnored && { passed_output_ignored: true }),
@@ -2529,7 +2546,11 @@ export async function skipStep(
     runComplete = await checkAndCompleteRun(ctx.supabase, step.run_id);
   }
 
-  return { step: savedStep(updated), run_complete: runComplete };
+  return {
+    step: savedStep(updated),
+    run_complete: runComplete,
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
+  };
 }
 
 // --- Update Step (pending only) ---
@@ -2712,7 +2733,11 @@ export async function approveStep(
     runComplete = await checkAndCompleteRun(ctx.supabase, step.run_id);
   }
 
-  return { step: savedStep(updated), run_complete: runComplete };
+  return {
+    step: savedStep(updated),
+    run_complete: runComplete,
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
+  };
 }
 
 
