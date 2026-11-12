@@ -54,3 +54,33 @@ describe("AgentsTab stats on a board past 1,000 rows", () => {
     expect(screen.getByText("663")).toBeInTheDocument(); // pending
   });
 });
+
+describe("AgentsTab explainer note", () => {
+  const agent = {
+    id: "ia-1",
+    bot_id: BOT,
+    added_by: "u1",
+    bot: { id: BOT, name: "Atlas", role: "Engineer", avatar_url: null, owner: { id: "u1", full_name: "Nick" } },
+  } as unknown as IdeaAgentWithDetails;
+  const props = {
+    ideaId: "idea-1",
+    userBotProfiles: [],
+    currentUserId: "u1",
+    isAuthor: true,
+    isTeamMember: true,
+    isReadOnly: false,
+  };
+
+  it("shows the note when the board has agents", async () => {
+    localStorage.clear();
+    render(<AgentsTab {...props} ideaAgentDetails={[agent]} />);
+    expect(await screen.findByText("matched automatically")).toBeInTheDocument();
+  });
+
+  it("does not show the note in the empty state", async () => {
+    localStorage.clear();
+    render(<AgentsTab {...props} ideaAgentDetails={[]} />);
+    await Promise.resolve();
+    expect(screen.queryByText("matched automatically")).not.toBeInTheDocument();
+  });
+});
