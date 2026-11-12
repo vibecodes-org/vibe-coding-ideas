@@ -140,31 +140,47 @@ export interface UnmeasuredAlert {
   topReasonQuote: string | null;
 }
 
+/** A run's card. `archived` cards still merge their runs but get no Open link. */
+export type AlertCardRef = { taskId: string; title: string | null; archived?: boolean } | null;
+
 /**
  * Build the strip payload. `cardsByRun` maps a run id to its card (a missing
- * entry or null means the card is archived or deleted).
+ * entry or null means the card is gone). A card whose workflow was reset or
+ * re-run has several runs: they are merged into one entry (counts added,
+ * newest time kept, most common reason across all their records).
  */
 export function buildUnmeasuredAlert(
   rows: UnmeasuredAlertRow[],
-  cardsByRun: Map<string, { taskId: string; title: string } | null>
+  cardsByRun: Map<string, AlertCardRef>
 ): UnmeasuredAlert | null {
   const flagged = flaggedRuns(rows);
   if (flagged.length === 0) return null;
   const top = boardTopReason(rows, flagged);
   if (!top) return null;
-  return {
-    cards: flagged.map((f) => {
-      const card = cardsByRun.get(f.runId) ?? null;
-      return {
-        taskId: card?.taskId ?? null,
-        title: card?.title ?? null,
-        count: f.count,
-        lastAt: f.lastAt,
-        reasonText: f.topReason.label.text,
-        reasonQuote: f.topReason.label.quote ?? null,
-      };
-    }),
-    topReasonText: top.label.text,
-    topReasonQuote: top.label.quote ?? null,
-  };
+
+  // Runs on the same card share a key; a run with no known card stands alone.
+  const byCard = new Map<string, { ref: AlertCardRef; runIds: Set<string> }>();
+  for (const f of flagged) {
+    const ref = cardsByRun.get(f.runId) ?? null;
+    const key = ref ? `task:${ref.taskId}` : `run:${f.runId}`;
+    const entry = byCard.get(key);
+    if (entry) entry.runIds.add(f.runId);
+    else byCard.set(key, { ref, runIds: new Set([f.runId]) });
+  }
+
+  const cards: UnmeasuredAlertCard[] = [];
+  for (const { ref, runIds } of byCard.values()) {
+    const mine = rows.filter((r) => countsTowardAlert(r) && runIds.has(r.run_id as string));
+    const label = toReason(pickTop(groupReasons(mine))).label;
+    cards.push({
+      taskId: ref && !ref.archived ? ref.taskId : null,
+      title: ref && !ref.archived ? ref.title : null,
+      count: mine.length,
+      lastAt: mine.reduce((m, r) => (r.created_at > m ? r.created_at : m), mine[0].created_at),
+      reasonText: label.text,
+      reasonQuote: label.quote ?? null,
+    });
+  }
+  cards.sort((a, b) => (a.lastAt < b.lastAt ? 1 : a.lastAt > b.lastAt ? -1 : 0));
+  return { cards, topReasonText: top.label.text, topReasonQuote: top.label.quote ?? null };
 }

@@ -108,6 +108,29 @@ describe("boardTopReason and buildUnmeasuredAlert", () => {
       expect.arrayContaining([["t1", 2], [null, 1]])
     );
   });
+  it("merges two runs on one card into one entry", () => {
+    const two = [
+      row({ run_id: "old", reason: "Refused", created_at: "2026-11-05T10:00:00Z" }),
+      row({ run_id: "old", reason: "Refused", created_at: "2026-11-05T11:00:00Z" }),
+      row({ run_id: "new", reason: "Other", created_at: "2026-11-09T10:00:00Z" }),
+    ];
+    const card = { taskId: "t1", title: "Card A" };
+    const alert = buildUnmeasuredAlert(two, new Map([["old", card], ["new", card]]));
+    expect(alert?.cards).toHaveLength(1);
+    expect(alert?.cards[0]).toMatchObject({
+      taskId: "t1",
+      count: 3,
+      lastAt: "2026-11-09T10:00:00Z",
+      reasonQuote: "Refused",
+    });
+  });
+  it("merges runs on an archived card but gives no link", () => {
+    const two = [row({ run_id: "x" }), row({ run_id: "y" })];
+    const ref = { taskId: "t9", title: null, archived: true };
+    const alert = buildUnmeasuredAlert(two, new Map([["x", ref], ["y", ref]]));
+    expect(alert?.cards).toHaveLength(1);
+    expect(alert?.cards[0]).toMatchObject({ taskId: null, title: null, count: 2 });
+  });
   it("returns null when nothing is flagged", () => {
     expect(buildUnmeasuredAlert([], new Map())).toBeNull();
   });

@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import {
   alertWindowStart,
   buildUnmeasuredAlert,
+  type AlertCardRef,
   flaggedRuns,
   type UnmeasuredAlert,
   type UnmeasuredAlertRow,
@@ -76,10 +77,10 @@ export function toUnmeasuredAlert(
 ): UnmeasuredAlert | null {
   if (!data) return null;
   const byId = new Map(tasks.map((t) => [t.id, t]));
-  const cardsByRun = new Map<string, { taskId: string; title: string } | null>();
+  const cardsByRun = new Map<string, AlertCardRef>();
   for (const [runId, taskId] of data.runTasks) {
     const t = byId.get(taskId);
-    cardsByRun.set(runId, t && !t.archived ? { taskId: t.id, title: t.title } : null);
+    cardsByRun.set(runId, t ? { taskId: t.id, title: t.title, archived: t.archived } : { taskId, title: null, archived: true });
   }
   return buildUnmeasuredAlert(data.rows, cardsByRun);
 }
