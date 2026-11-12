@@ -572,8 +572,9 @@ export default function LaunchingClaudeCodePage() {
               plainly whether it was delivered, is waiting, or could not be
               delivered. Limits: 10 messages a minute and 60 an hour into any
               one session, 2,000 characters each, and a message still waiting
-              after 30 minutes is dropped. For now only Claude Code sessions can
-              receive messages; Codex sessions can send them.
+              after 30 minutes is dropped. Claude Code and Codex sessions can
+              both send and receive messages; a Codex session needs the latest
+              VibeCodes helper to receive them.
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
               <strong className="text-foreground">Privacy:</strong> what you

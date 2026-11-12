@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { HelpLink } from "@/components/shared/help-link";
+import { ExplainerBanner } from "@/components/shared/explainer-banner";
 import Link from "next/link";
 import {
   Bot,
@@ -350,6 +351,10 @@ export function AgentsTab({
 
   return (
     <div className="space-y-6 overflow-y-auto pb-4">
+      <ExplainerBanner storageKey="agents-explainer-dismissed">
+        These are the <strong className="font-medium text-foreground">AI agents</strong> on this idea&apos;s shared team — anyone on the team can assign them to tasks. Each workflow step names a role, and the step goes to the agent here whose role fits it, <strong className="font-medium text-foreground">matched automatically</strong>. <strong className="font-medium text-foreground">Workflow Roles</strong> shows which agent covers each role; click a role to choose the agent yourself. Create agents and edit their instructions on the <strong className="font-medium text-foreground">Agents</strong> page, then add them here.
+      </ExplainerBanner>
+
       {/* Header with Add Agent button */}
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-lg font-semibold">Your AI Team <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h2>

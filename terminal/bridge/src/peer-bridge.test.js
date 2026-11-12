@@ -1,7 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { buildHookSettings, createPeerBridge, hookSettingsArgs, startHookServer } from "./peer-bridge.js";
+import {
+  buildHookSettings,
+  CODEX_HOOK_COMMAND,
+  CODEX_HOOK_ENV,
+  codexHookArgs,
+  codexHookHash,
+  codexHookUrl,
+  createPeerBridge,
+  hookSettingsArgs,
+  startHookServer,
+} from "./peer-bridge.js";
 import { encodePeerFrame, parsePeerAckFrame, signPeerEnvelope } from "../../shared/peer-message.mjs";
 
 const KEY = "k".repeat(43);
@@ -87,6 +97,17 @@ test("a late idle_prompt notice during a permission prompt does not allow typing
   assert.deepEqual(acks, [{ id: "id-000001", outcome: "waiting" }]);
 });
 
+test("the session record notes what happened to each message, never its text", async () => {
+  const logs = [];
+  const { bridge } = make({ log: (level, msg, extra) => logs.push({ level, msg, extra }) });
+  hook(bridge, "UserPromptSubmit");
+  await bridge.handleFrame(frame({ text: "secret plan" }));
+  const held = logs.find((l) => l.msg === "peer message held until the session is free");
+  assert.ok(held);
+  assert.deepEqual(held.extra, { id: "id-000001", phase: "busy", held: 1 });
+  assert.ok(!JSON.stringify(logs).includes("secret plan"));
+});
+
 test("busy: nothing is typed, the sender hears waiting, and the Stop hook hands the message over", async () => {
   const { bridge, writes, acks } = make();
   hook(bridge, "UserPromptSubmit");
@@ -137,13 +158,74 @@ test("a replayed id is refused the second time", async () => {
   assert.deepEqual(acks.map((a) => a.outcome), ["waiting", "rejected"]);
 });
 
-test("no key: cannot-receive. Codex or a custom command: cannot-receive (stage 1)", async () => {
-  for (const over of [{ key: null }, { agent: "codex" }, { explicitCmd: true }]) {
+test("no key, a custom command, or another agent: cannot-receive", async () => {
+  for (const over of [{ key: null }, { agent: "gemini" }, { explicitCmd: true }, { agent: "codex", explicitCmd: true }]) {
     const { bridge, writes, acks } = make(over);
     await bridge.handleFrame(frame());
     assert.equal(acks[0].outcome, "cannot-receive");
     assert.deepEqual(writes, []);
   }
+});
+
+test("Codex busy: held, then handed over at the end of its turn", async () => {
+  const { bridge, writes, acks } = make({ agent: "codex" });
+  hook(bridge, "SessionStart");
+  hook(bridge, "UserPromptSubmit");
+  await bridge.handleFrame(frame());
+  assert.deepEqual(writes, []);
+  assert.deepEqual(acks, [{ id: "id-000001", outcome: "waiting" }]);
+  const out = hook(bridge, "Stop", { stop_hook_active: false });
+  assert.equal(out.decision, "block");
+  assert.match(out.reason, /\nhi$/);
+});
+
+test("Codex launched with no prompt is free once it has started; with a prompt it is not", async () => {
+  const free = make({ agent: "codex", startsIdle: true });
+  hook(free.bridge, "SessionStart", { source: "startup" });
+  const p = free.bridge.handleFrame(frame());
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(free.writes.at(-1), "\r");
+  hook(free.bridge, "UserPromptSubmit");
+  await p;
+  assert.deepEqual(free.acks, [{ id: "id-000001", outcome: "delivered" }]);
+
+  const busy = make({ agent: "codex", startsIdle: false });
+  hook(busy.bridge, "SessionStart", { source: "startup" });
+  await busy.bridge.handleFrame(frame());
+  assert.deepEqual(busy.writes, []);
+  assert.equal(busy.acks[0].outcome, "waiting");
+});
+
+test("a late SessionStart never overrides a running turn or an open question", async () => {
+  for (const ev of ["UserPromptSubmit", "PermissionRequest"]) {
+    const { bridge, writes } = make({ agent: "codex", startsIdle: true });
+    hook(bridge, ev);
+    hook(bridge, "SessionStart");
+    await bridge.handleFrame(frame());
+    assert.deepEqual(writes, []);
+  }
+});
+
+test("Codex hook fingerprints match the ones Codex itself computes", () => {
+  // Taken from `codex app-server` hooks/list (Codex 0.163.0) for a test command.
+  const cmd = 'cat >> "$VCH/hook.log"; echo >> "$VCH/hook.log"';
+  assert.equal(codexHookHash("stop", null, cmd), "sha256:5cbf8b83e8ab71110661a6cd8b50804268b20ad185f3648e6cd4bfd09bac8ef5");
+  assert.equal(codexHookHash("user_prompt_submit", null, cmd), "sha256:0104f1630d47d459ec971dc1b913573c571aec0930d25538262f194755104fb7");
+});
+
+test("Codex launch flags: one hook per event, all pre-approved, no address baked in", () => {
+  const args = codexHookArgs();
+  const values = args.filter((_, i) => i % 2 === 1);
+  assert.ok(args.filter((_, i) => i % 2 === 0).every((a) => a === "-c"));
+  const events = values.filter((v) => !v.startsWith("hooks.state=")).map((v) => v.split("=")[0]);
+  assert.deepEqual(events, ["hooks.UserPromptSubmit", "hooks.Stop", "hooks.PostToolUse", "hooks.PermissionRequest", "hooks.SessionStart"]);
+  const state = values.find((v) => v.startsWith("hooks.state="));
+  for (const label of ["user_prompt_submit", "stop", "post_tool_use", "permission_request", "session_start"]) {
+    assert.ok(state.includes(`"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${codexHookHash(label, null, CODEX_HOOK_COMMAND)}"}`));
+  }
+  assert.ok(!args.join(" ").includes("127.0.0.1"));
+  assert.ok(CODEX_HOOK_COMMAND.includes(`"$${CODEX_HOOK_ENV}"`));
+  assert.equal(codexHookUrl(4321, "abc"), "http://127.0.0.1:4321/abc/hook");
 });
 
 test("a send_session_message call gets from_session filled in; other tools are untouched", () => {

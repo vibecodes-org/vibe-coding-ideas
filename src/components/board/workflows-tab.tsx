@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import { HelpLink } from "@/components/shared/help-link";
+import { ExplainerBanner } from "@/components/shared/explainer-banner";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -21,8 +22,6 @@ import {
   AlertTriangle,
   Package,
   Lightbulb,
-  Info,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -836,12 +835,6 @@ export function WorkflowsTab({
   const [editSteps, setEditSteps] = useState<WorkflowTemplateStep[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Explainer banner dismiss state
-  const [explainerDismissed, setExplainerDismissed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("workflows-explainer-dismissed") === "1";
-  });
-
   // Save to My Templates state
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [savedTemplateIds, setSavedTemplateIds] = useState<Set<string>>(new Set());
@@ -1051,24 +1044,9 @@ export function WorkflowsTab({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {/* Explainer banner */}
-      {!explainerDismissed && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 px-4 py-3">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Workflow templates define a sequence of steps that <strong className="font-medium text-foreground">AI agents</strong> follow when working on a task. Templates can be applied to tasks manually or <strong className="font-medium text-foreground">triggered automatically</strong> when a label is added. Each step has an assigned role — agents matching that role claim and execute the step via MCP, producing deliverables that chain into the next step. Steps marked as <strong className="font-medium text-foreground">approvals</strong> pause for human review before the workflow continues.
-          </p>
-          <button
-            onClick={() => {
-              setExplainerDismissed(true);
-              localStorage.setItem("workflows-explainer-dismissed", "1");
-            }}
-            className="mt-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+      <ExplainerBanner storageKey="workflows-explainer-dismissed">
+        Workflow templates define a sequence of steps that <strong className="font-medium text-foreground">AI agents</strong> follow when working on a task. Templates can be applied to tasks manually or <strong className="font-medium text-foreground">triggered automatically</strong> when a label is added. Each step has an assigned role — agents matching that role claim and execute the step via MCP, producing deliverables that chain into the next step. Steps marked as <strong className="font-medium text-foreground">approvals</strong> pause for human review before the workflow continues.
+      </ExplainerBanner>
 
       <div className="flex min-h-0 flex-1 gap-4">
       {/* Left panel — template list */}

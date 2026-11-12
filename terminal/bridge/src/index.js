@@ -87,8 +87,17 @@ import {
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 import { buildSessionEnvValue, encodePeerAckFrame, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
-import { createPeerBridge, hookSettingsArgs, newHookSecret, startHookServer } from "./peer-bridge.js";
+import {
+  CODEX_HOOK_ENV,
+  codexHookArgs,
+  codexHookUrl,
+  createPeerBridge,
+  hookSettingsArgs,
+  newHookSecret,
+  startHookServer,
+} from "./peer-bridge.js";
 import { createSessionEventLog } from "./session-events.js";
+import { postJsonWithRetry, startupFailureLine } from "./startup-fetch.js";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -432,6 +441,8 @@ if (process.env.VIBECODES_PACKAGED === "1" || (process.env.TERMINAL_APP_URL || "
   log("info", "bridge started", { helper: process.env.BRIDGE_HELPER_VERSION || null, pid: process.pid });
 }
 const E2EE_KEY_FETCH_TIMEOUT_MS = 5000;
+/** Which start-up fetches failed for good (shown in the terminal). */
+const startupFetchFailed = { key: false, agents: false };
 
 /**
  * Fetch this session's E2EE key from the app. Never throws — any failure
@@ -443,26 +454,24 @@ const E2EE_KEY_FETCH_TIMEOUT_MS = 5000;
  */
 async function fetchE2eeSessionKey() {
   if (!TOKEN || !SESSION) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), E2EE_KEY_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/key`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sid: SESSION, token: TOKEN }),
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    if (!body?.delivered || typeof body.sessionKey !== "string") return null;
-    const key = Buffer.from(body.sessionKey, "base64");
-    return key.length === 32 ? key : null;
-  } catch (e) {
-    log("warn", "e2ee key fetch failed — running this session unencrypted", { err: String(e?.message || e) });
+  // Card f0a13bde follow-up: retried (network errors, time-outs, server
+  // errors), and a final failure is reported so the terminal can say so.
+  const result = await postJsonWithRetry(
+    `${APP_URL.replace(/\/$/, "")}/api/terminal/session/key`,
+    { sid: SESSION, token: TOKEN },
+    { timeoutMs: E2EE_KEY_FETCH_TIMEOUT_MS },
+  );
+  if (!result.ok) {
+    startupFetchFailed.key = true;
+    log("warn", "e2ee key fetch failed — running this session unencrypted", { err: result.reason, attempts: result.attempts });
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+  if (result.attempts > 1) log("info", "e2ee key fetch succeeded after retry", { attempts: result.attempts });
+  const body = /** @type {any} */ (result.body);
+  // An honest "no key" (session ended, or predates the feature) is not a fault.
+  if (!body?.delivered || typeof body.sessionKey !== "string") return null;
+  const key = Buffer.from(body.sessionKey, "base64");
+  return key.length === 32 ? key : null;
 }
 
 // ── The board's agents as real subagents (task 59889027) ────────────────────
@@ -477,24 +486,19 @@ const WANTS_AGENTS = !SETUP && wantsSessionAgents({ agent: AGENT, explicitCmd })
 async function fetchSessionAgents() {
   if (!TOKEN || !SESSION) return null;
   if (!WANTS_AGENTS) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SESSION_AGENTS_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/terminal/session/agents`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      // `agent` picks the tier models/efforts: Claude's or Codex's.
-      body: JSON.stringify({ sid: SESSION, token: TOKEN, agent: AGENT }),
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (e) {
-    log("warn", "session agents fetch failed — launching without them", { err: String(e?.message || e) });
+  const result = await postJsonWithRetry(
+    `${APP_URL.replace(/\/$/, "")}/api/terminal/session/agents`,
+    // `agent` picks the tier models/efforts: Claude's or Codex's.
+    { sid: SESSION, token: TOKEN, agent: AGENT },
+    { timeoutMs: SESSION_AGENTS_FETCH_TIMEOUT_MS },
+  );
+  if (!result.ok) {
+    startupFetchFailed.agents = true;
+    log("warn", "session agents fetch failed — launching without them", { err: result.reason, attempts: result.attempts });
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+  if (result.attempts > 1) log("info", "session agents fetch succeeded after retry", { attempts: result.attempts });
+  return result.body;
 }
 
 // ── Claude Code's version, for the memory-limit flag (task 5e654dd1) ─────────
@@ -1397,8 +1401,9 @@ async function main() {
   }
   // Session-to-session messages (card f0a13bde). Needs the session key: it
   // signs what may arrive here and proves who is sending from this session.
-  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude also gets hooks that
-  // report its state (so a message is never typed into a yes/no prompt).
+  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude and Codex also get
+  // hooks that report their state (so a message is never typed into a yes/no
+  // prompt). Codex's hooks arrive pre-approved (see codexHookArgs).
   /** @type {ReturnType<typeof createPeerBridge> | null} */
   let peerBridge = null;
   if (E2EE_KEY && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
@@ -1413,12 +1418,31 @@ async function main() {
       writePty: (d) => { if (term) term.write(d); },
       sendAck: (frame) => outputBatcher.sendControl(frame),
       log,
+      startsIdle: !PROMPT,
     });
-    if (AGENT === "claude") {
+    if (AGENT === "claude" || AGENT === "codex") {
       try {
         const secret = newHookSecret();
-        const hooks = await startHookServer({ secret, onEvent: (j) => peerBridge.handleHook(j), log });
-        peerHookFlags = hookSettingsArgs(hooks.port, secret);
+        let firstHook = true;
+        const hooks = await startHookServer({
+          secret,
+          onEvent: (j) => {
+            // Session record: proof the agent is reporting its state at all.
+            if (firstHook) {
+              firstHook = false;
+              log("info", "peer message hooks reporting", { event: typeof j?.hook_event_name === "string" ? j.hook_event_name : null });
+            }
+            return peerBridge.handleHook(j);
+          },
+          log,
+        });
+        if (AGENT === "codex") {
+          // Codex hooks are commands; the listener's address travels in the env.
+          cachedSpawnEnv = { ...cachedSpawnEnv, [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
+          peerHookFlags = codexHookArgs();
+        } else {
+          peerHookFlags = hookSettingsArgs(hooks.port, secret);
+        }
         spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
         log("info", "peer message hooks listening", { port: hooks.port });
       } catch (e) {
@@ -1431,6 +1455,12 @@ async function main() {
   }
   if (MODE === "direct" && WANTS_AGENTS && !term) spawnPty();
   if (E2EE_KEY) log("info", "e2ee key collected — this session will be encrypted");
+  // Say it in the terminal when a start-up fetch failed for good, instead of
+  // the session quietly running without encryption, messages or agents.
+  {
+    const line = startupFailureLine({ keyFailed: startupFetchFailed.key, agentsFailed: startupFetchFailed.agents });
+    if (line) writeLines(line);
+  }
 
   /**
    * FRESH LAUNCH (card 6b2cb8ac), run once on the relay's `attached` frame:

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { E2EE_COPY } from "./e2ee-copy";
+import { E2EE_COPY, notEncryptedCopy } from "./e2ee-copy";
+import { MINIMUM_RECOMMENDED_HELPER_VERSION } from "./helper-version";
 
 /** Every user-facing string in the module, flattened for the blanket checks below. */
 function allStrings(): string[] {
@@ -68,5 +69,27 @@ describe("E2EE_COPY — design doc §6 exact strings", () => {
   // every time, there is no second/escalated variant to drift from it).
   it("integrity.body leads with the calm, non-accusatory framing (network hiccup, not tampering)", () => {
     expect(E2EE_COPY.integrity.body.toLowerCase()).toContain("network hiccup");
+  });
+});
+
+// Card f0a13bde follow-up: an up-to-date helper must never be told to update.
+describe("notEncryptedCopy", () => {
+  it("an old or unknown helper gets the update wording and the Update now button", () => {
+    for (const v of ["0.3.1", null, undefined, "garbage"]) {
+      const c = notEncryptedCopy(v);
+      expect(c.offerUpdate).toBe(true);
+      expect(c.body).toBe(E2EE_COPY.nudge.body);
+      expect(c.chipTooltip).toBe(E2EE_COPY.chip.notE2eeTooltip);
+    }
+  });
+
+  it("an up-to-date helper is told this session's start-up failed, with no update offer", () => {
+    for (const v of [MINIMUM_RECOMMENDED_HELPER_VERSION, "99.0.0"]) {
+      const c = notEncryptedCopy(v);
+      expect(c.offerUpdate).toBe(false);
+      expect(c.body).toBe(E2EE_COPY.startupFailed.body);
+      expect(c.sub).toMatch(/open a new one/);
+      expect(`${c.body} ${c.sub} ${c.chipTooltip}`).not.toMatch(/needs an update|Update the helper/);
+    }
   });
 });
