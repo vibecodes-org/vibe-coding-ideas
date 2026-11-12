@@ -552,7 +552,10 @@ export default function WorkflowsPage() {
                   hands back a short summary; the session then calls{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">complete_step</code> without
                   pasting anything (the saved write-up is what gets stored), with the
-                  step&apos;s token use for the admin cost report. If the step has an approval gate, it pauses for
+                  step&apos;s token use for the admin cost report. If a step finishes with no cost recorded
+                  (other than one deliberately run without a helper, with a reason given), the board warns the
+                  team with an amber strip at the top of the board (looking back 14 days) and a note in the
+                  card&apos;s Workflow section. If the step has an approval gate, it pauses for
                   human review
                 </p>
               </div>

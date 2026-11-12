@@ -42,6 +42,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SetupCompletenessBanner } from "@/components/board/setup-completeness-banner";
+import { UnmeasuredCostBanner } from "@/components/board/unmeasured-cost-banner";
+import type { UnmeasuredAlert } from "@/lib/step-cost/unmeasured-alert";
 import type { IdeaHealth } from "@/lib/idea-health";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { Loader2 } from "lucide-react";
@@ -158,6 +160,8 @@ interface KanbanBoardProps {
   hasWorkflowTemplates?: boolean;
   hasKit?: boolean;
   ideaHealth?: IdeaHealth;
+  /** Card fe1896ee: finished steps with no cost recorded (team members only; null = nothing to warn about). */
+  unmeasuredAlert?: UnmeasuredAlert | null;
 }
 
 // Edge-scroll constants
@@ -275,6 +279,7 @@ export function KanbanBoard({
   hasWorkflowTemplates = false,
   hasKit = false,
   ideaHealth,
+  unmeasuredAlert,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
   const botRoles = useMemo(() => {
@@ -1220,6 +1225,14 @@ export function KanbanBoard({
         aiGenerateOpen={aiGenerateOpen}
         onAiGenerateOpenChange={setAiGenerateOpen}
       />
+      {unmeasuredAlert && !isReadOnly && (
+        <UnmeasuredCostBanner
+          alert={unmeasuredAlert}
+          ideaId={ideaId}
+          isReadOnly={isReadOnly}
+          className="mb-3"
+        />
+      )}
       {/* Setup completeness banner — replaces individual NudgeBanners */}
       {ideaHealth && !isBoardEmpty && (
         <SetupCompletenessBanner

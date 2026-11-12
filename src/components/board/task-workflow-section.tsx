@@ -50,6 +50,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
+import { flaggedRuns, type UnmeasuredAlertRow } from "@/lib/step-cost/unmeasured-alert";
 import {
   approveWorkflowStep,
   retryWorkflowStep,
@@ -255,6 +257,8 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   const [steps, setSteps] = useState<TaskWorkflowStep[] | null>(null);
   const [runs, setRuns] = useState<Array<WorkflowRun & { template_name?: string }>>([]);
   const [showEarlier, setShowEarlier] = useState(false);
+  // Card fe1896ee: finished attempts with no cost recorded, for the note under the template name.
+  const [unmeasuredRows, setUnmeasuredRows] = useState<UnmeasuredAlertRow[]>([]);
   const [loading, setLoading] = useState(true);
   // Track the OPEN step by id, not by a captured object — the dialog then always
   // renders the freshest copy from `steps`, so an edit saved inside the dialog
@@ -306,6 +310,12 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   );
   const selectedIsEarlier = !!selectedStep && !liveSteps.some((s) => s.id === selectedStep.id);
 
+  // Only the live (newest) run is flagged here; records on earlier runs don't count.
+  const unmeasuredNote = useMemo(
+    () => (liveKey ? flaggedRuns(unmeasuredRows.filter((r) => r.run_id === liveKey))[0] ?? null : null),
+    [unmeasuredRows, liveKey]
+  );
+
   const fetchData = useCallback(async () => {
     const supabase = supabaseRef.current;
     const [stepsRes, runRes] = await Promise.all([
@@ -333,6 +343,28 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
         } as WorkflowRun & { template_name?: string };
       })
     );
+    // Hint only: a failed read shows no note and no toast. This is the one deliberate
+    // exception to "never fail silently", because nothing here is an action; it is logged.
+    const runIds = (runRes.data ?? []).map((r) => r.id);
+    if (runIds.length > 0) {
+      try {
+        const { data, error } = await supabase
+          .from("workflow_step_unmeasured")
+          .select("run_id, kind, reason, created_at")
+          .in("run_id", runIds);
+        if (error) {
+          logger.warn("Unmeasured-cost note read failed", { taskId, message: error.message });
+          setUnmeasuredRows([]);
+        } else {
+          setUnmeasuredRows((data ?? []) as UnmeasuredAlertRow[]);
+        }
+      } catch (err) {
+        logger.warn("Unmeasured-cost note read failed", { taskId, message: String(err) });
+        setUnmeasuredRows([]);
+      }
+    } else {
+      setUnmeasuredRows([]);
+    }
     setLoading(false);
   }, [taskId]);
 
@@ -640,6 +672,29 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               {unmatchedSteps.map((s) => s.agent_role).join(", ")}.
               Allocate agents with matching roles from the{" "}
               <Link href="?tab=agents" className="underline hover:text-amber-300">Agents tab</Link>.
+            </p>
+          </div>
+        )}
+
+        {/* Missing cost note (live run) */}
+        {unmeasuredNote && (
+          <div
+            className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2"
+            data-testid="unmeasured-cost-note"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
+            <p className="text-xs text-amber-400">
+              {unmeasuredNote.count} finished step{unmeasuredNote.count > 1 ? "s" : ""} in this run{" "}
+              {unmeasuredNote.count > 1 ? "have" : "has"} no cost recorded (a step that was redone counts
+              each time).{" "}
+              {unmeasuredNote.topReason.label.quote ? (
+                <>The session said: &ldquo;{unmeasuredNote.topReason.label.quote}&rdquo;</>
+              ) : (
+                <>{unmeasuredNote.topReason.label.text.replace(/:$/, "")}</>
+              )}
+              {unmeasuredNote.otherReasons > 0 &&
+                ` and ${unmeasuredNote.otherReasons} other reason${unmeasuredNote.otherReasons > 1 ? "s" : ""}`}
+              .
             </p>
           </div>
         )}
