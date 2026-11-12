@@ -84,7 +84,7 @@ import {
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
-import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
+import { E2EE_COPY, notEncryptedCopy } from "@/lib/terminal/e2ee-copy";
 import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
 import { endedCopy, endedReasonAllowsResume, type EndedCopy } from "@/lib/terminal/ended-copy";
 import { reconnectCopy } from "@/lib/terminal/reconnect-copy";
@@ -568,6 +568,8 @@ export function TerminalSessionView({
   const helperUpdate = useHelperUpdateFlow({ sessionCount: liveSessionCount ?? (thisTabLive ? 1 : 0) });
   const showHelperNudge =
     showStream && !dismissedHelperNudge && helperUpdate.phase === "idle" && shouldShowHelperUpdateNudge(helperVersion);
+  // Card f0a13bde follow-up: only blame the helper when it really is old.
+  const notEncrypted = notEncryptedCopy(helperVersion);
   const canLaunch =
     state.status === "idle" ||
     state.status === "error" ||
@@ -905,7 +907,7 @@ export function TerminalSessionView({
           {notEncryptedYet && (
             <span
               className="inline-flex flex-none items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] font-semibold text-zinc-300"
-              title={E2EE_COPY.chip.notE2eeTooltip}
+              title={notEncrypted.chipTooltip}
               tabIndex={0}
             >
               <LockOpen className="h-3 w-3" aria-hidden="true" />
@@ -1068,10 +1070,10 @@ export function TerminalSessionView({
           >
             <LockOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              {E2EE_COPY.nudge.body}
-              <span className="block text-[11px] font-normal text-zinc-500">{E2EE_COPY.nudge.sub}</span>
+              {notEncrypted.body}
+              <span className="block text-[11px] font-normal text-zinc-500">{notEncrypted.sub}</span>
             </span>
-            <HelperUpdateButton onClick={helperUpdate.start} />
+            {notEncrypted.offerUpdate && <HelperUpdateButton onClick={helperUpdate.start} />}
             <button
               type="button"
               className="shrink-0 text-sky-400 hover:text-sky-200"
