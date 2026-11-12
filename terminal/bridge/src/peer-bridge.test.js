@@ -87,6 +87,17 @@ test("a late idle_prompt notice during a permission prompt does not allow typing
   assert.deepEqual(acks, [{ id: "id-000001", outcome: "waiting" }]);
 });
 
+test("the session record notes what happened to each message, never its text", async () => {
+  const logs = [];
+  const { bridge } = make({ log: (level, msg, extra) => logs.push({ level, msg, extra }) });
+  hook(bridge, "UserPromptSubmit");
+  await bridge.handleFrame(frame({ text: "secret plan" }));
+  const held = logs.find((l) => l.msg === "peer message held until claude is free");
+  assert.ok(held);
+  assert.deepEqual(held.extra, { id: "id-000001", phase: "busy", held: 1 });
+  assert.ok(!JSON.stringify(logs).includes("secret plan"));
+});
+
 test("busy: nothing is typed, the sender hears waiting, and the Stop hook hands the message over", async () => {
   const { bridge, writes, acks } = make();
   hook(bridge, "UserPromptSubmit");

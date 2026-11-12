@@ -183,11 +183,20 @@ export function createPeerBridge(deps) {
       if (seen.size > 500) seen.delete(seen.values().next().value);
       if (agent !== "claude" || explicitCmd) return ack(v.env.id, "cannot-receive");
 
+      // Session record: what happened to each incoming message (never its text).
+      const phase = state.phase;
       const r = onMessage(state, { id: v.env.id, text: formatPeerMessage(v.env.from, v.env.text) }, now());
       state = r.state;
-      if (r.decision === "full") return ack(v.env.id, "rate-limited");
-      if (r.decision === "hold") return ack(v.env.id, "waiting");
+      if (r.decision === "full") {
+        log("info", "peer message refused, too many waiting", { id: v.env.id, phase });
+        return ack(v.env.id, "rate-limited");
+      }
+      if (r.decision === "hold") {
+        log("info", "peer message held until claude is free", { id: v.env.id, phase, held: state.inbox.length });
+        return ack(v.env.id, "waiting");
+      }
       const outcome = await typeNow(v.env);
+      log("info", "peer message typed in", { id: v.env.id, outcome });
       ack(v.env.id, outcome);
     },
 
