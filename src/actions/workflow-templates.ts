@@ -317,6 +317,12 @@ export async function applyWorkflowTemplateWithContext(
     throw new Error("Task not found");
   }
 
+  // A workflow belongs to one board. Row-level security lets people read
+  // workflows on public boards, so never attach one from another board.
+  if (template.idea_id !== task.idea_id) {
+    throw new Error("That workflow doesn't belong to this card's board");
+  }
+
   // Check for active runs on this task
   const { data: activeRun } = await supabase
     .from("workflow_runs")
@@ -883,6 +889,18 @@ export async function applyNewTaskWorkflow(
 
   if (!user) throw new Error("Not authenticated");
 
+  // Never trust the board id from the browser: use the card's real board.
+  const { data: task, error: taskErr } = await supabase
+    .from("board_tasks")
+    .select("idea_id")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (taskErr) throw new Error(taskErr.message);
+  if (!task) throw new Error("Task not found");
+  if (task.idea_id !== ideaId) {
+    throw new Error("That card isn't on this board");
+  }
+
   let templateId: string | null = null;
 
   if (choice === "auto") {
@@ -900,7 +918,7 @@ export async function applyNewTaskWorkflow(
     const { data: rules, error: rulesErr } = await supabase
       .from("workflow_auto_rules")
       .select("label_id, template_id")
-      .eq("idea_id", ideaId);
+      .eq("idea_id", task.idea_id);
     if (rulesErr) throw new Error(rulesErr.message);
 
     templateId = pickAutoRuleTemplate(ordered, rules ?? []).templateId;

@@ -59,3 +59,10 @@ Nick approved all five decisions as recommended.
 - Unassigned bug NOT reproduced live: no Docker/local database in this environment, so only a unit test covers it (the old code passed the word "unassigned" as the assignee id).
 - No Playwright spec added: the e2e suite needs a live database and login which this environment lacks. Dialog behaviour is covered by unit tests.
 - Guide pages updated: workflows, kanban-boards, getting-started.
+
+## Review round 1 fix (12 Nov 2026)
+
+- Workflows are tied to one board through workflow_templates.idea_id (never null). Every caller (card button, auto-rules, suggestions, New Task dialog) uses a template of the card's own board, so the ownership check sits in applyWorkflowTemplateWithContext: it refuses when template.idea_id differs from the card's board. This also closes the gap in the card's Apply Workflow button.
+- applyNewTaskWorkflow now looks up the card's real board, refuses if it differs from the board id sent, and reads label rules for the real board.
+- Tests: both refusals added; the effort test fixture got an idea_id.
+- addLabelsToTask still takes a browser board id for auto-rules, but any template from another board is now refused by the core check, so no cross-board attach is possible.

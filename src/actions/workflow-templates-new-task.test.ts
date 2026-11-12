@@ -37,6 +37,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   for (const k of Object.keys(queues)) delete queues[k];
   mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } } });
+  // Default: the card is on idea-1.
+  queues["board_tasks"] = [{ data: { idea_id: "idea-1" }, error: null }];
 });
 
 function appliedTemplateLookups() {
@@ -87,6 +89,30 @@ describe("applyNewTaskWorkflow", () => {
       "Template not found"
     );
     expect(mockFrom.mock.calls.some(([t]) => t === "workflow_auto_rules")).toBe(false);
+  });
+});
+
+describe("applyNewTaskWorkflow ownership checks", () => {
+  it("refuses when the card is on a different board than the one sent", async () => {
+    queues["board_tasks"] = [{ data: { idea_id: "real-board" }, error: null }];
+    await expect(applyNewTaskWorkflow("task-1", "idea-1", "t-x", [])).rejects.toThrow(
+      "isn't on this board"
+    );
+    expect(appliedTemplateLookups()).toBe(0);
+  });
+
+  it("refuses a hand-picked workflow from another board", async () => {
+    queues["workflow_templates"] = [
+      { data: { id: "t-x", idea_id: "someone-elses-board", steps: [] }, error: null },
+    ];
+    queues["board_tasks"] = [
+      { data: { idea_id: "idea-1" }, error: null },
+      { data: { id: "task-1", idea_id: "idea-1" }, error: null },
+    ];
+    await expect(applyNewTaskWorkflow("task-1", "idea-1", "t-x", [])).rejects.toThrow(
+      "doesn't belong to this card's board"
+    );
+    expect(mockFrom.mock.calls.some(([t]) => t === "workflow_runs")).toBe(false);
   });
 });
 
