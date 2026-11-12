@@ -87,7 +87,15 @@ import {
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 import { buildSessionEnvValue, encodePeerAckFrame, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
-import { createPeerBridge, hookSettingsArgs, newHookSecret, startHookServer } from "./peer-bridge.js";
+import {
+  CODEX_HOOK_ENV,
+  codexHookArgs,
+  codexHookUrl,
+  createPeerBridge,
+  hookSettingsArgs,
+  newHookSecret,
+  startHookServer,
+} from "./peer-bridge.js";
 import { createSessionEventLog } from "./session-events.js";
 import { postJsonWithRetry, startupFailureLine } from "./startup-fetch.js";
 
@@ -1393,8 +1401,9 @@ async function main() {
   }
   // Session-to-session messages (card f0a13bde). Needs the session key: it
   // signs what may arrive here and proves who is sending from this session.
-  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude also gets hooks that
-  // report its state (so a message is never typed into a yes/no prompt).
+  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude and Codex also get
+  // hooks that report their state (so a message is never typed into a yes/no
+  // prompt). Codex's hooks arrive pre-approved (see codexHookArgs).
   /** @type {ReturnType<typeof createPeerBridge> | null} */
   let peerBridge = null;
   if (E2EE_KEY && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
@@ -1409,12 +1418,31 @@ async function main() {
       writePty: (d) => { if (term) term.write(d); },
       sendAck: (frame) => outputBatcher.sendControl(frame),
       log,
+      startsIdle: !PROMPT,
     });
-    if (AGENT === "claude") {
+    if (AGENT === "claude" || AGENT === "codex") {
       try {
         const secret = newHookSecret();
-        const hooks = await startHookServer({ secret, onEvent: (j) => peerBridge.handleHook(j), log });
-        peerHookFlags = hookSettingsArgs(hooks.port, secret);
+        let firstHook = true;
+        const hooks = await startHookServer({
+          secret,
+          onEvent: (j) => {
+            // Session record: proof the agent is reporting its state at all.
+            if (firstHook) {
+              firstHook = false;
+              log("info", "peer message hooks reporting", { event: typeof j?.hook_event_name === "string" ? j.hook_event_name : null });
+            }
+            return peerBridge.handleHook(j);
+          },
+          log,
+        });
+        if (AGENT === "codex") {
+          // Codex hooks are commands; the listener's address travels in the env.
+          cachedSpawnEnv = { ...cachedSpawnEnv, [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
+          peerHookFlags = codexHookArgs();
+        } else {
+          peerHookFlags = hookSettingsArgs(hooks.port, secret);
+        }
         spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
         log("info", "peer message hooks listening", { port: hooks.port });
       } catch (e) {

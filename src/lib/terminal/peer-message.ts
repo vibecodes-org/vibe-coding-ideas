@@ -68,7 +68,7 @@ export function outcomeText(outcome: PeerOutcome, targetName: string): string {
     case "helper-too-old":
       return `Not delivered: the Mac that runs "${targetName}" needs the VibeCodes helper update.`;
     case "cannot-receive":
-      return `Not delivered: "${targetName}" can't receive messages (Codex sessions can't receive them yet, and neither can sessions started with a custom command or before this feature).`;
+      return `Not delivered: "${targetName}" can't receive messages (sessions started with a custom command can't, and neither can Codex sessions on an older VibeCodes helper or sessions started before this feature).`;
     case "rate-limited":
       return `Not delivered: too many messages to "${targetName}"; wait a minute.`;
     case "unconfirmed":
@@ -108,8 +108,9 @@ export function toListedSession(
     board: ideaTitle,
     task: row.task_title?.trim() || null,
     machine: row.machine_label,
-    // Stage 1: Claude only, and only with a key. The send result is the final word.
-    can_receive: row.agent === "claude" && !!row.e2ee_session_key,
+    // Claude or Codex, only with a key. A Codex session on an older helper
+    // still answers "cannot-receive": the send result is the final word.
+    can_receive: (row.agent === "claude" || row.agent === "codex") && !!row.e2ee_session_key,
     ...(you ? { you: true } : {}),
   };
 }

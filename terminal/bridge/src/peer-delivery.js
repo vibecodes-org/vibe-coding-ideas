@@ -1,5 +1,5 @@
 // Session-to-session messages (card f0a13bde): when a message may be typed
-// into a Claude session, and when it must wait. Pure, so the whole table can
+// into a Claude or Codex session, and when it must wait. Pure, so the whole table can
 // be tested without a terminal.
 //
 // The hazard this exists for: Claude asks "run this command? yes/no" in the
@@ -21,6 +21,8 @@
 //   idle     the turn ended (Stop). The "waiting for you" notice (idle_prompt)
 //            only turns unknown into idle; it never overrides busy or asking,
 //            because it can arrive late, while a prompt or turn is live.
+//            Codex has no such notice. Its SessionStart does the same job,
+//            but only for a launch with no prompt (otherwise a turn follows).
 //   typing   a message is being pasted and submitted right now. Every other
 //            message waits until that one is finished.
 
@@ -77,7 +79,7 @@ export function onInput(state, bytes) {
 /**
  * A hook event from Claude.
  * @param {PeerState} state
- * @param {{ name: string, notification?: string, stopHookActive?: boolean }} ev
+ * @param {{ name: string, notification?: string, stopHookActive?: boolean, startsIdle?: boolean }} ev
  * @param {number} now
  * @returns {{ state: PeerState, block: string[] | null, dropped: string[] }} `block`: the held message texts to hand over, or null
  */
@@ -98,6 +100,8 @@ export function onHook(state, ev, now) {
         return { state: s.phase === "unknown" ? { ...s, phase: "idle" } : s, block: null, dropped };
       }
       return { state: s, block: null, dropped };
+    case "SessionStart":
+      return { state: ev.startsIdle && s.phase === "unknown" ? { ...s, phase: "idle" } : s, block: null, dropped };
     case "Stop": {
       if (s.inbox.length > 0) {
         // Hand everything over and let Claude carry on; it is busy again.

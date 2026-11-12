@@ -71,7 +71,7 @@ describe("list_my_sessions", () => {
     expect(r.sessions.map((s) => s.id).sort()).toEqual(["sender-sid", "target-sid"]);
     expect(JSON.stringify(r)).not.toContain(KEY_A);
     expect(JSON.stringify(r)).not.toContain(KEY_B);
-    expect(r.sessions.find((s) => s.id === "sender-sid")).toMatchObject({ you: true, agent: "Codex", can_receive: false });
+    expect(r.sessions.find((s) => s.id === "sender-sid")).toMatchObject({ you: true, agent: "Codex", can_receive: true });
     expect(r.sessions.find((s) => s.id === "target-sid")).toMatchObject({ agent: "Claude Code", can_receive: true, board: "My Board" });
   });
 });

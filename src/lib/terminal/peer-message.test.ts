@@ -42,8 +42,9 @@ describe("outcomeText", () => {
 });
 
 describe("toListedSession", () => {
-  it("says Codex sessions can't receive yet, and Claude sessions with a key can", () => {
-    expect(toListedSession(row({ agent: "codex" }), "B", false).can_receive).toBe(false);
+  it("says Claude and Codex sessions with a key can receive, and none without one", () => {
+    expect(toListedSession(row({ agent: "codex" }), "B", false).can_receive).toBe(true);
+    expect(toListedSession(row({ agent: "codex", e2ee_session_key: null }), "B", false).can_receive).toBe(false);
     expect(toListedSession(row(), "B", false).can_receive).toBe(true);
     expect(toListedSession(row({ e2ee_session_key: null }), "B", false).can_receive).toBe(false);
     expect(toListedSession(row(), "B", true).you).toBe(true);
