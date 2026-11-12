@@ -49,7 +49,10 @@ export const sendSessionMessageSchema = z.object({
     .describe("Your own session value: the VIBECODES_SESSION environment variable (run `printenv VIBECODES_SESSION`). Claude Code sessions fill this in automatically: leave it out."),
 });
 
-const MISSING_FROM =
+export const WRONG_FROM =
+  "Couldn't confirm which session you are (the from_session value is wrong, or your session has ended). Re-run `printenv VIBECODES_SESSION` and try again.";
+
+export const MISSING_FROM =
   "Can't tell which session you are. Run `printenv VIBECODES_SESSION` in your terminal and pass that value as from_session. " +
   "If it is empty, this session was not started from VibeCodes' in-browser terminal (or was started before this feature): " +
   "only in-browser sessions can send messages.";
@@ -105,23 +108,37 @@ function helperKey(stored: string): Buffer {
   return Buffer.from(stored, "base64");
 }
 
-export async function sendSessionMessage(ctx: McpContext, params: z.infer<typeof sendSessionMessageSchema>) {
-  const owner = ctx.ownerUserId ?? ctx.userId;
-  const secret = sessionSecret();
+type SessionRow = PeerSessionRow & { expires_at: string };
 
-  // 1. Who is sending: id plus a proof only that session's own helper can make.
-  const parts = splitSessionEnvValue(params.from_session ?? "");
-  if (!parts) return { delivered: false, outcome: "not-sent", message: MISSING_FROM };
+export type CallingSession =
+  | { ok: true; owner: string; sender: SessionRow; rows: SessionRow[] }
+  | { ok: false; message: string };
+
+/**
+ * Who is calling: the session id plus a proof only that session's own helper can
+ * make, checked against the live session rows of the same person. Shared by
+ * send_session_message and offer_next_card so the check can't drift.
+ */
+export async function verifyCallingSession(ctx: McpContext, fromSession: string | undefined): Promise<CallingSession> {
+  const owner = ctx.ownerUserId ?? ctx.userId;
+  const parts = splitSessionEnvValue(fromSession ?? "");
+  if (!parts) return { ok: false, message: MISSING_FROM };
   const rows = await activeRows(ctx, owner);
   const sender = rows.find((r) => r.sid === parts.sid);
   if (!sender || !sender.e2ee_session_key || !verifySenderProof(helperKey(sender.e2ee_session_key), parts.sid, parts.proof)) {
     logger.warn("Session messages: sender proof refused", { userId: owner });
-    return {
-      delivered: false,
-      outcome: "not-sent",
-      message: "Couldn't confirm which session you are (the from_session value is wrong, or your session has ended). Re-run `printenv VIBECODES_SESSION` and try again.",
-    };
+    return { ok: false, message: WRONG_FROM };
   }
+  return { ok: true, owner, sender, rows };
+}
+
+export async function sendSessionMessage(ctx: McpContext, params: z.infer<typeof sendSessionMessageSchema>) {
+  const secret = sessionSecret();
+
+  // 1. Who is sending.
+  const caller = await verifyCallingSession(ctx, params.from_session);
+  if (!caller.ok) return { delivered: false, outcome: "not-sent", message: caller.message };
+  const { owner, sender, rows } = caller;
 
   // 2. The target: one of the same person's other live sessions.
   const target = resolvePeerTarget(rows, params.to, sender.sid);

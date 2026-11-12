@@ -163,6 +163,10 @@ import {
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
 import { getMachineIdentities } from "@/lib/terminal/machine-identity";
+import { listRecordedProjectPaths } from "@/actions/launch-path";
+import { buildTaskBrowserLaunchPayload } from "@/lib/terminal/task-launch-payload";
+import { TerminalOfferStrip } from "./terminal-offer-strip";
+import { useSessionOffers, type SessionOffer } from "./use-session-offers";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
   DISPLAY_NAME_COUNTER_THRESHOLD,
@@ -2102,6 +2106,46 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     return subscribeBrowserLaunch((payload) => deliverLaunch(payload ?? null));
   }, [enabled, deliverLaunch]);
 
+  // ── "next card" offers (card 7c728159) ─────────────────────────────────────
+  const { offers: sessionOffers, setStatus: setOfferStatus } = useSessionOffers();
+
+  const startOfferedCard = useCallback(
+    async (offer: SessionOffer) => {
+      if (!offer.next_task_id || !offer.next_task_title) return;
+      // Same folder and machine reads as the card menu's launch: fresh list,
+      // falling back to the one the page loaded with.
+      const names = getMachineIdentities();
+      let paths: RecordedProjectPath[] = recordedProjectPaths ?? [];
+      try {
+        const fresh = await listRecordedProjectPaths(ideaId);
+        if (fresh) paths = fresh;
+      } catch (err) {
+        logger.warn("Could not refresh project folders for the next-card launch", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      try {
+        deliverLaunch(
+          buildTaskBrowserLaunchPayload({
+            ideaId,
+            ideaTitle,
+            ideaGithubUrl,
+            recordedPaths: paths,
+            machineNames: names,
+            taskId: offer.next_task_id,
+            taskTitle: offer.next_task_title,
+            agent: offer.agent === "codex" ? "codex" : "claude",
+          }),
+        );
+        await setOfferStatus(offer.sid, "started");
+      } catch (err) {
+        logger.warn("Could not start the next card", { error: err instanceof Error ? err.message : String(err) });
+        toast.error("Couldn't start the next card. Try again.");
+      }
+    },
+    [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths, deliverLaunch, setOfferStatus],
+  );
+
   const handlePlus = useCallback(() => {
     // Card 7ee218b1: the "+" now also shows at 1 session, where the
     // pristine slot may already be consumed OR may not be — either way this
@@ -3600,6 +3644,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           // Board-switch UX fix (task b70bcbeb): this entry's OWN board, never
           // the dock's current view — see `resolveTabBoardIdentity`.
           const boardIdentity = resolveTabBoardIdentity(entry, ideaId, ideaTitle);
+          const entrySid = summaries[entry.key]?.sessionId ?? null;
+          const offer = entrySid ? sessionOffers.get(entrySid) : undefined;
+          const offerStrip = offer ? (
+            <TerminalOfferStrip
+              status={offer.status === "started" ? "started" : "offered"}
+              nextTitle={offer.next_task_title}
+              stillWorkingOn={offer.still_working_on}
+              phone={mobileViewport}
+              sameBoard={offer.idea_id === ideaId}
+              onNotNow={() => void setOfferStatus(offer.sid, "dismissed")}
+              onDismiss={() => void setOfferStatus(offer.sid, "dismissed")}
+              onStart={() => void startOfferedCard(offer)}
+              onClose={() => {
+                actionsMapRef.current.get(entry.key)?.end();
+                removeEntry(entry.key);
+              }}
+            />
+          ) : null;
           return (
           <TerminalSessionView
             key={entry.key}
@@ -3631,6 +3693,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             agent={chooserAgent}
             onAgentChange={handleAgentPickerChange}
             liveSessionCount={liveSessionCount}
+            offerStrip={offerStrip}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}

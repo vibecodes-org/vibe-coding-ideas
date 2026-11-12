@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 91 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 92 tools.",
 };
 
 function ToolTable({
@@ -296,7 +296,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">91 tools</strong> across 10
+            <strong className="text-foreground">92 tools</strong> across 10
             categories:
           </p>
 
@@ -318,7 +318,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Board & Tasks" toolCount={15}>
+            <CollapsibleTools title="Board & Tasks" toolCount={16}>
               <ToolTable
                 tools={[
                   { name: "get_board", description: "Kanban board overview with columns and task summaries" },
@@ -336,6 +336,7 @@ export default function McpIntegrationPage() {
                   { name: "record_project_path", description: "Save this idea's local project folder so future Claude Code launches reopen it" },
                   { name: "list_my_sessions", description: "List your other live in-browser sessions (Claude Code or Codex) that you can message. Only your own are ever listed" },
                   { name: "send_session_message", description: "Send a short plain-text message to another of your live in-browser sessions; you are told plainly whether it was delivered, is waiting, or could not be delivered" },
+                  { name: "offer_next_card", description: "When a card's whole workflow has finished, show a \"Start in a new tab\" bar in your own in-browser terminal tab. It only shows the bar; it never starts anything. The server chooses the next card" },
                 ]}
               />
             </CollapsibleTools>

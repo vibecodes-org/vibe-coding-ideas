@@ -153,6 +153,12 @@ test("a send_session_message call gets from_session filled in; other tools are u
   assert.deepEqual(hook(bridge, "PreToolUse", { tool_name: "Bash", tool_input: {} }), {});
 });
 
+test("an offer_next_card call gets from_session filled in too", () => {
+  const { bridge } = make();
+  const r = hook(bridge, "PreToolUse", { tool_name: "mcp__vibecodes__offer_next_card", tool_input: { finished_task_id: "t" } });
+  assert.deepEqual(r.hookSpecificOutput.updatedInput, { finished_task_id: "t", from_session: "me.proof" });
+});
+
 test("hook settings use the secret path and cover every event", () => {
   const s = buildHookSettings(4321, "sec");
   assert.deepEqual(Object.keys(s.hooks).sort(), ["Notification", "PermissionRequest", "PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);

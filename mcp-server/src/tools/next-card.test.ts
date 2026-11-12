@@ -137,6 +137,8 @@ describe("workflowFinishedReply", () => {
     expect(r.instruction).toContain("then STOP");
     expect(r.instruction).toContain('"Finished one" is finished. Next up on the board: "Next one".');
     expect(r.instruction).toContain("Do NOT claim, move or start");
+    expect(r.instruction).toContain('offer_next_card with finished_task_id "T1"');
+    expect(r.instruction).toContain('Click "Start in a new tab" below');
   });
   it("still finishes, with next_card null, when the lookup throws (A6)", async () => {
     const r = await workflowFinishedReply(fakeCtx({ ...board }, { failTable: "board_columns" }), "T1");

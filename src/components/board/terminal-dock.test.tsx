@@ -111,6 +111,19 @@ const { reportEndedSidOverride } = vi.hoisted(() => ({
   reportEndedSidOverride: { current: null as string | null },
 }));
 
+// Card 7c728159: the "next card" offers hook talks to Supabase, so the dock
+// tests drive it through a controllable map instead.
+const { offersMock, setOfferStatusMock } = vi.hoisted(() => ({
+  offersMock: { current: new Map<string, Record<string, unknown>>() },
+  setOfferStatusMock: vi.fn(async () => {}),
+}));
+vi.mock("./use-session-offers", () => ({
+  useSessionOffers: () => ({ offers: offersMock.current, setStatus: setOfferStatusMock }),
+}));
+vi.mock("@/actions/launch-path", () => ({
+  listRecordedProjectPaths: vi.fn(async () => []),
+}));
+
 // Card c0b790d6: lets a test give the "resume-ended-" button's payload a
 // `resumeId` (the ended row's own `claudeSessionId`) so a click actually
 // exercises `reconnectIfConversationLive` — without this the payload never
@@ -163,6 +176,7 @@ vi.mock("./terminal-session-view", () => ({
     isActive,
     poppedOut,
     wakeResume,
+    offerStrip,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string; agent?: string };
     agent?: string;
@@ -183,6 +197,7 @@ vi.mock("./terminal-session-view", () => ({
     // needing the real TerminalSessionView's placeholder markup.
     isActive?: boolean;
     poppedOut?: boolean;
+    offerStrip?: React.ReactNode;
     // Card dccd6c95 (sleep/resume routing, wake recheck): the dock's own
     // `computeWakeRecheck` derivation is exercised directly by
     // wake-recheck.test.ts; this stub only needs to prove the dock actually
@@ -355,6 +370,7 @@ vi.mock("./terminal-session-view", () => ({
         >
           report connected
         </button>
+        {offerStrip}
         {onPopOut && (
           <button data-testid={`pop-out-${entry.key}`} onClick={onPopOut}>
             Pop out
@@ -662,6 +678,7 @@ afterEach(() => {
   window.sessionStorage.clear();
   reportEndedSidOverride.current = null;
   reportConnectedSidOverride.current = null;
+  offersMock.current = new Map();
   resumeEndedConvOverride.current = undefined;
   resumeEndedOwnSidOverride.current = "sid-ended-own-tab";
 });
@@ -3340,5 +3357,78 @@ describe("TerminalDock — message pill on a background tab (card f0a13bde)", ()
       fireEvent.click(screen.getByTestId(`peer-msg-${second}`));
     });
     expect(screen.queryByTestId("tab-message-pill")).not.toBeInTheDocument();
+  });
+});
+
+// Card 7c728159: the "next card" bar under a session's terminal.
+describe("TerminalDock — next-card offer strip (card 7c728159)", () => {
+  function offerFor(sid: string, over: Record<string, unknown> = {}) {
+    return {
+      sid,
+      user_id: "u1",
+      idea_id: "idea-1",
+      finished_task_id: "t-done",
+      finished_task_title: "Done card",
+      next_task_id: "t-next",
+      next_task_title: "Fix the footer",
+      agent: "codex",
+      still_working_on: 0,
+      status: "offered",
+      created_at: "",
+      updated_at: "",
+      ...over,
+    };
+  }
+
+  async function connectedTab() {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    return screen.getByTestId("session-view").dataset.key as string;
+  }
+
+  it("shows no strip on a tab whose session has no offer", async () => {
+    offersMock.current = new Map([["sid-for-other", offerFor("sid-for-other")]]);
+    const key = await connectedTab();
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    expect(screen.queryByTestId("offer-strip")).not.toBeInTheDocument();
+  });
+
+  it("shows the next card, and Not now marks the offer dismissed", async () => {
+    const key = await connectedTab();
+    offersMock.current = new Map([[`sid-for-${key}`, offerFor(`sid-for-${key}`)]]);
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    expect(await screen.findByTestId("offer-strip")).toHaveTextContent("Fix the footer");
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    expect(setOfferStatusMock).toHaveBeenCalledWith(`sid-for-${key}`, "dismissed");
+  });
+
+  it("Start in a new tab opens the offered card in a new tab and marks the offer started", async () => {
+    const key = await connectedTab();
+    offersMock.current = new Map([[`sid-for-${key}`, offerFor(`sid-for-${key}`)]]);
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(await screen.findByRole("button", { name: /Start in a new tab/ }));
+    await waitFor(() => expect(setOfferStatusMock).toHaveBeenCalledWith(`sid-for-${key}`, "started"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("session-view").some((v) => v.dataset.taskId === "t-next")).toBe(true),
+    );
+  });
+
+  it("Close this session removes the tab in one click", async () => {
+    const key = await connectedTab();
+    offersMock.current = new Map([
+      [`sid-for-${key}`, offerFor(`sid-for-${key}`, { next_task_id: null, next_task_title: null })],
+    ]);
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(await screen.findByRole("button", { name: "Close this session" }));
+    await waitFor(() => expect(screen.queryByTestId("offer-strip")).not.toBeInTheDocument());
+  });
+
+  it("on another board gives no start button", async () => {
+    const key = await connectedTab();
+    offersMock.current = new Map([[`sid-for-${key}`, offerFor(`sid-for-${key}`, { idea_id: "idea-OTHER" })]]);
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    await screen.findByTestId("offer-strip");
+    expect(screen.queryByRole("button", { name: /Start in a new tab/ })).not.toBeInTheDocument();
   });
 });

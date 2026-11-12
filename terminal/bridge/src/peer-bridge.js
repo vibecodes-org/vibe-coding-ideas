@@ -13,7 +13,7 @@ import {
 } from "../../shared/peer-message.mjs";
 import { createPeerState, endTyping, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
 
-export const SEND_TOOL_MATCHER = "^mcp__.+__(send_session_message|list_my_sessions)$";
+export const SEND_TOOL_MATCHER = "^mcp__.+__(send_session_message|list_my_sessions|offer_next_card)$";
 const HOOK_TIMEOUT_SECONDS = 5;
 const SUBMIT_WAIT_MS = 3000;
 const PASTE_SETTLE_MS = 150;

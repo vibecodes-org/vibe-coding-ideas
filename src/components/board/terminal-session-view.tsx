@@ -341,6 +341,8 @@ interface TerminalSessionViewProps {
    * ever moves. Undefined in tabbed mode (only one pane is visible anyway).
    */
   paneOrder?: number;
+  /** The "next card" bar (card 7c728159), drawn under the terminal while connected. Never shown in a pop-out. */
+  offerStrip?: ReactNode;
 }
 
 export function TerminalSessionView({
@@ -375,6 +377,7 @@ export function TerminalSessionView({
   lastHelperStatus,
   wakeResume,
   sessionStillLive: sessionStillLiveProp,
+  offerStrip,
   paneOrder,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
@@ -1221,6 +1224,9 @@ export function TerminalSessionView({
             </div>
           )}
         </div>
+
+        {/* "Next card" bar (card 7c728159): below the terminal, connected tabs only, never in a pop-out. */}
+        {state.status === "connected" && !poppedOut && offerStrip}
 
         {/* Input affordance — read-write bar, or the read-only explanatory note. */}
         {state.status === "connected" && (
