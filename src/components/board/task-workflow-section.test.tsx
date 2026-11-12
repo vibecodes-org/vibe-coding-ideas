@@ -26,12 +26,19 @@ const RUNS = [
   { id: OLD, task_id: "task-1", status: "failed", created_at: "2026-10-19T10:00:00Z", workflow_templates: { name: "Bug Fix" } },
 ];
 
+// Card fe1896ee: rows the "no cost recorded" note reads. Tests set this.
+let UNMEASURED: Array<{ run_id: string; kind: string; reason: string | null; created_at: string }> = [];
+const um = (run: string, reason: string | null = "Refused by shell") => ({
+  run_id: run, kind: "unavailable", reason, created_at: "2026-11-10T10:00:00Z",
+});
+
 vi.mock("@/lib/supabase/client", () => {
   const channel = { on: () => channel, subscribe: () => channel, unsubscribe: () => {} };
   return {
     createClient: () => ({
       from: (table: string) => ({
         select: () => ({
+          in: () => Promise.resolve({ data: UNMEASURED, error: null }),
           eq: () => {
             const data = table === "task_workflow_steps" ? STEPS : RUNS;
             const p = Promise.resolve({ data, error: null });
@@ -67,7 +74,33 @@ vi.mock("./kanban-board", async () => {
 import { TaskWorkflowSection } from "./task-workflow-section";
 
 describe("TaskWorkflowSection - current run only", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    UNMEASURED = [];
+  });
+
+  it("shows the missing-cost note for the live run, even for a single record", async () => {
+    UNMEASURED = [um(NEW)];
+    render(<TaskWorkflowSection taskId="task-1" ideaId="idea-1" />);
+    const note = await screen.findByTestId("unmeasured-cost-note");
+    expect(note).toHaveTextContent("1 finished step in this run has no cost recorded");
+    expect(note).toHaveTextContent("Refused by shell");
+  });
+
+  it("counts repeats and other reasons in the note", async () => {
+    UNMEASURED = [um(NEW), um(NEW), um(NEW, "Something else")];
+    render(<TaskWorkflowSection taskId="task-1" ideaId="idea-1" />);
+    const note = await screen.findByTestId("unmeasured-cost-note");
+    expect(note).toHaveTextContent("3 finished steps in this run have no cost recorded");
+    expect(note).toHaveTextContent("and 1 other reason");
+  });
+
+  it("shows no note for records on an earlier run, deliberate skips, or none", async () => {
+    UNMEASURED = [um(OLD), um(OLD), um(NEW, "No helper ran: review skipped")];
+    render(<TaskWorkflowSection taskId="task-1" ideaId="idea-1" />);
+    await screen.findByText("New plan");
+    expect(screen.queryByTestId("unmeasured-cost-note")).not.toBeInTheDocument();
+  });
 
   it("shows only the live run's steps and counts, with earlier runs closed", async () => {
     render(<TaskWorkflowSection taskId="task-1" ideaId="idea-1" />);

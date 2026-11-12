@@ -17,6 +17,7 @@ import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
 import { fetchAllRows } from "@/lib/db-helpers";
+import { loadUnmeasuredAlertData, toUnmeasuredAlert } from "@/lib/step-cost/unmeasured-alert-loader";
 import { composeBoardColumns, composeSuggestionsByTask, fetchTaskLabelsByLabelIds } from "@/lib/board-refetch";
 import type { BoardLabel } from "@/types";
 import type { Metadata } from "next";
@@ -133,6 +134,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     { count: workflowTemplateCount },
     { count: autoRuleCount },
     { data: recordedProjectPaths },
+    unmeasuredData,
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
     // Assignee join column-scoped to what board-task-card.tsx / task-detail-dialog.tsx render.
@@ -190,6 +192,9 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           .eq("idea_id", id)
           .eq("owner_user_id", user.id)
       : Promise.resolve({ data: null }),
+    // Card fe1896ee: finished steps with no cost recorded. Team members only (the
+    // table's read rule allows them); a failed read just means no strip.
+    isTeamMember ? loadUnmeasuredAlertData(supabase, id) : Promise.resolve(null),
   ]);
 
   const hasWorkflowTemplates = (workflowTemplateCount ?? 0) > 0;
@@ -349,6 +354,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           hasWorkflowTemplates={hasWorkflowTemplates}
           hasKit={!!(idea as unknown as { project_kit: { name: string } | null }).project_kit}
           ideaHealth={ideaHealth}
+          unmeasuredAlert={toUnmeasuredAlert(unmeasuredData, rawTasks ?? [])}
         />
       </BoardPageTabs>
       <KitAppliedToast />

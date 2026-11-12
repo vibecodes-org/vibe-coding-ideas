@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Missing cost warning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Dark theme tokens copied from src/app/globals.css (the app's default theme) */
+  :root {
+    --background: oklch(0.141 0.005 285.823);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885);
+    --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067);
+    --border: oklch(1 0 0 / 10%);
+    --amber-400: #fbbf24;
+    --amber-300: #fcd34d;
+    --violet-400: #a78bfa;
+    --emerald-500: #10b981;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.45; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--muted-foreground); margin: 0 0 28px; max-width: 760px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-foreground); margin: 40px 0 6px; font-weight: 600; }
+  .why { color: var(--muted-foreground); font-size: 13px; margin: 0 0 14px; max-width: 760px; }
+  .frame { border: 1px dashed oklch(1 0 0 / 18%); border-radius: 12px; padding: 16px; background: var(--background); }
+  .crumb { font-size: 14px; color: var(--muted-foreground); padding: 0 0 14px; }
+  .crumb b { color: var(--foreground); font-weight: 500; }
+
+  /* Banner: same shape as the board's setup banner, amber variant */
+  .banner { display: flex; align-items: center; gap: 12px; border-radius: 8px; border: 1px solid rgb(245 158 11 / .15); background: rgb(245 158 11 / .04); padding: 12px 16px; }
+  .banner.open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .icon { width: 32px; height: 32px; border-radius: 999px; background: rgb(245 158 11 / .10); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
+  .body { flex: 1; min-width: 0; }
+  .title { font-size: 14px; font-weight: 600; }
+  .desc { font-size: 12px; color: var(--muted-foreground); }
+  .desc q { color: var(--foreground); }
+  .actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .btn { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 6px; border: 1px solid rgb(245 158 11 / .30); background: rgb(245 158 11 / .10); color: var(--amber-400); font-family: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: rgb(245 158 11 / .20); }
+  .more { background: none; border: 0; color: var(--muted-foreground); font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .more:hover { color: var(--foreground); }
+  .x { background: none; border: 0; color: oklch(0.705 0.015 286.067 / .6); cursor: pointer; padding: 2px; font-size: 16px; line-height: 1; }
+  .list { margin-top: -1px; border: 1px solid rgb(245 158 11 / .15); border-top: 0; background: rgb(245 158 11 / .04); border-radius: 0 0 8px 8px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+  .num { min-width: 28px; height: 20px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--muted); color: var(--muted-foreground); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .row .t { flex: 1; color: var(--muted-foreground); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .t b { color: var(--foreground); font-weight: 500; }
+  .row a { color: var(--violet-400); text-decoration: none; white-space: nowrap; }
+
+  .cols { display: flex; gap: 12px; margin-top: 12px; overflow: hidden; }
+  .col { width: 260px; flex-shrink: 0; background: oklch(0.21 0.006 285.885 / .5); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .col h3 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 6px; height: 54px; margin-bottom: 8px; }
+
+  /* Card dialog workflow section */
+  .dialog { max-width: 620px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .wf-head { display: flex; justify-content: space-between; align-items: center; }
+  .wf-head h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .badge { font-size: 10px; border-radius: 6px; padding: 1px 6px; border: 1px solid rgb(59 130 246 / .25); background: rgb(59 130 246 / .15); color: #60a5fa; font-weight: 500; }
+  .small { font-size: 12px; color: var(--muted-foreground); }
+  .note { display: flex; gap: 8px; align-items: flex-start; border-radius: 6px; border: 1px solid rgb(245 158 11 / .20); background: rgb(245 158 11 / .05); padding: 8px 12px; margin-top: 12px; }
+  .note svg { flex-shrink: 0; margin-top: 2px; }
+  .note p { margin: 0; font-size: 12px; color: var(--amber-400); }
+  .note a { color: var(--amber-400); }
+  .bar { height: 6px; border-radius: 999px; background: var(--muted); margin-top: 12px; overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 50%; background: var(--emerald-500); border-radius: 999px; }
+  .step { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-size: 13px; }
+  .step .n { width: 20px; height: 20px; border-radius: 999px; background: rgb(16 185 129 / .2); color: #34d399; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .step .n.p { background: rgb(59 130 246 / .2); color: #60a5fa; }
+
+  .phone { width: 375px; max-width: 100%; border: 1px solid var(--border); border-radius: 20px; padding: 16px; background: var(--background); }
+  .phone .banner { flex-wrap: wrap; }
+  .phone .actions { width: 100%; justify-content: flex-start; padding-left: 44px; }
+  .phone .actions .x { margin-left: auto; }
+
+  .decisions { border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 16px 20px; max-width: 760px; }
+  .decisions li { margin: 6px 0; color: var(--muted-foreground); font-size: 13px; }
+  .decisions li b { color: var(--foreground); font-weight: 500; }
+  @media (max-width: 640px) {
+    .banner { flex-wrap: wrap; }
+    .actions { width: 100%; padding-left: 44px; }
+    .actions .x { margin-left: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Warning when a run's costs go missing</h1>
+  <p class="lede">A mock-up for agreement before anything is built. It shows the two places the warning would appear: a strip at the top of the board, and a note inside the card. The card names and figures are made up; the reason text is a real example from the board's history.</p>
+
+  <h2>1. Top of the board (closed)</h2>
+  <p class="why">Shows when, in the last 7 days, any card's run had 3 or more finished steps with no cost recorded. It uses the same strip, colours, close button and "show more" control as the existing "finish setting up your board" strip.</p>
+  <div class="frame">
+    <div class="crumb">Dashboard &rsaquo; Example project &rsaquo; <b>Board</b></div>
+    <div class="banner" role="status" aria-label="Missing step costs">
+      <div class="icon">⚠️</div>
+      <div class="body">
+        <div class="title">3 cards had steps finish with no cost recorded in the last 14 days</div>
+        <div class="desc">Most often the session said: <q>Session sandbox refuses to run the usage script from this isolated worktree</q>. Those costs are missing from the cost report, not zero.</div>
+      </div>
+      <div class="actions">
+        <button class="btn">Open latest card &rarr;</button>
+        <button class="more" aria-expanded="false">3 cards ▾</button>
+        <button class="x" aria-label="Dismiss missing cost warning">✕</button>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col"><h3>To Do</h3><div class="tile"></div><div class="tile"></div></div>
+      <div class="col"><h3>In Progress</h3><div class="tile"></div></div>
+      <div class="col"><h3>Verify</h3><div class="tile"></div><div class="tile"></div></div>
+      <div class="col"><h3>Done</h3><div class="tile"></div></div>
+    </div>
+  </div>
+
+  <h2>2. Top of the board (opened with "3 cards")</h2>
+  <p class="why">Each line is one card: how many steps finished without a cost, and the reason its session gave. "Open" opens the card on this board.</p>
+  <div class="frame">
+    <div class="banner open" role="status">
+      <div class="icon">⚠️</div>
+      <div class="body">
+        <div class="title">3 cards had steps finish with no cost recorded in the last 14 days</div>
+        <div class="desc">Most often the session said: <q>Session sandbox refuses to run the usage script from this isolated worktree</q>. Those costs are missing from the cost report, not zero.</div>
+      </div>
+      <div class="actions">
+        <button class="btn">Open latest card &rarr;</button>
+        <button class="more" aria-expanded="true">3 cards ▴</button>
+        <button class="x" aria-label="Dismiss missing cost warning">✕</button>
+      </div>
+    </div>
+    <div class="list">
+      <div class="row"><span class="num">47</span><span class="t"><b>Rewrite the welcome emails</b> · Session sandbox refuses to run the usage script from this isolated worktree</span><a href="#">Open &rarr;</a></div>
+      <div class="row"><span class="num">12</span><span class="t"><b>Add a price filter to search</b> · Session sandbox refuses to run the usage script from this isolated worktree</span><a href="#">Open &rarr;</a></div>
+      <div class="row"><span class="num">3</span><span class="t"><b>Fix the date on receipts</b> · Usage command was refused by the shell checker</span><a href="#">Open &rarr;</a></div>
+    </div>
+  </div>
+
+  <h2>3. Inside the card</h2>
+  <p class="why">A note in the card's Workflow section, styled like the existing "step has no matching agent" note in the same place. It counts only the card's current run.</p>
+  <div class="frame">
+    <div class="dialog">
+      <div class="wf-head">
+        <h3>Workflow <span class="badge">Running</span></h3>
+        <span class="small">2 of 4 steps completed</span>
+      </div>
+      <p class="small" style="margin:8px 0 0">Template: Feature Development</p>
+      <div class="note">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <p>47 finished steps in this run have no cost recorded (a step that was redone counts each time). The session said: <q>Session sandbox refuses to run the usage script from this isolated worktree</q>.</p>
+      </div>
+      <div class="bar"><span></span></div>
+      <div class="step"><span class="n">1</span>Plan</div>
+      <div class="step"><span class="n">2</span>Build</div>
+      <div class="step"><span class="n p">3</span>Code review</div>
+      <div class="step"><span class="n p" style="background:var(--muted);color:var(--muted-foreground)">4</span>Test and release summary</div>
+    </div>
+  </div>
+
+  <h2>4. Phone width (375px)</h2>
+  <p class="why">The buttons drop under the text instead of squeezing it; nothing scrolls sideways.</p>
+  <div class="phone">
+    <div class="banner" role="status">
+      <div class="icon">⚠️</div>
+      <div class="body">
+        <div class="title">3 cards had steps finish with no cost recorded in the last 14 days</div>
+        <div class="desc">Most often the session said: <q>Session sandbox refuses to run the usage script from this isolated worktree</q>. Those costs are missing from the cost report, not zero.</div>
+      </div>
+      <div class="actions">
+        <button class="btn">Open latest card &rarr;</button>
+        <button class="more">3 cards ▾</button>
+        <button class="x" aria-label="Dismiss">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Decisions for Nick</h2>
+  <div class="decisions">
+    <ol>
+      <li><b>When it shows:</b> 3 or more steps in one card's run finished with no cost (recommended). Steps the session deliberately didn't hand to a helper only ever came to 1 or 2 per run, while every run hit by the worktree refusal had 3 or more.</li>
+      <li><b>Time span for the board strip:</b> the last 14 days (approved).</li>
+      <li><b>Where:</b> both the board strip and the note in the card (recommended), or only one.</li>
+      <li><b>Closing the strip:</b> it stays closed until you reload in a new browser session or another card is flagged, same as the setup strip (recommended).</li>
+      <li><b>A notification as well:</b> leave it out for now and add it as a second stage if the strip isn't enough (recommended).</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>
