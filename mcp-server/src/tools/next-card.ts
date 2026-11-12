@@ -92,23 +92,31 @@ export async function pickNextCard(
   );
   if (wanted.length === 0) return null;
 
-  const { data: tasks, error: taskError } = await ctx.supabase
-    .from("board_tasks")
-    .select(
-      "id, title, column_id, position, archived, workflow_step_in_progress, workflow_step_awaiting_approval"
-    )
-    .eq("idea_id", ideaId)
-    .in(
-      "column_id",
-      wanted.map((c) => c.id)
-    )
-    .eq("archived", false)
-    .order("position", { ascending: true })
-    .order("id", { ascending: true })
-    .range(0, 49);
-  if (taskError) throw new Error(`Failed to fetch cards: ${taskError.message}`);
-
-  return chooseNextCard(wanted, (tasks ?? []) as NextCardTask[], excludeTaskId);
+  // One column at a time, To Do first, so a long Backlog can never push To Do
+  // cards out of the cap. Busy, archived and the finished card are filtered in
+  // the query (null-safe), so the cap counts only eligible cards.
+  for (const name of UP_NEXT_COLUMNS) {
+    for (const col of wanted.filter((c) => c.title.toLowerCase() === name)) {
+      const { data: tasks, error: taskError } = await ctx.supabase
+        .from("board_tasks")
+        .select(
+          "id, title, column_id, position, archived, workflow_step_in_progress, workflow_step_awaiting_approval"
+        )
+        .eq("idea_id", ideaId)
+        .eq("column_id", col.id)
+        .eq("archived", false)
+        .neq("id", excludeTaskId)
+        .or("workflow_step_in_progress.is.null,workflow_step_in_progress.eq.0")
+        .or("workflow_step_awaiting_approval.is.null,workflow_step_awaiting_approval.eq.0")
+        .order("position", { ascending: true })
+        .order("id", { ascending: true })
+        .range(0, 49);
+      if (taskError) throw new Error(`Failed to fetch cards: ${taskError.message}`);
+      const next = chooseNextCard([col], (tasks ?? []) as NextCardTask[], excludeTaskId);
+      if (next) return next;
+    }
+  }
+  return null;
 }
 
 const STAY_PUT =

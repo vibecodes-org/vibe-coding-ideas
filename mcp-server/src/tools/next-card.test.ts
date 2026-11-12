@@ -13,7 +13,9 @@ import {
   workflowFinishedReply,
   type NextCardTask,
 } from "./next-card";
-import { skipStep, approveStep, claimNextStep } from "./workflows";
+import { skipStep, approveStep, claimNextStep, completeStep } from "./workflows";
+import { mintClaimToken } from "../claim-token";
+import { pickNextCard } from "./next-card";
 
 const cols = [
   { id: "c-back", title: "Backlog" },
@@ -97,7 +99,7 @@ function fakeCtx(tables: Record<string, unknown>, opts: { failTable?: string } =
         ? { data: null, error: { message: "boom" } }
         : { data: tables[table] ?? null, error: null };
     const chain: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "in", "order", "range", "update", "neq", "limit"]) {
+    for (const m of ["select", "eq", "in", "order", "range", "update", "neq", "limit", "or", "insert", "not", "is", "gt", "lt", "gte", "lte", "match", "filter"]) {
       chain[m] = () => chain;
     }
     chain.maybeSingle = () =>
@@ -164,6 +166,33 @@ describe("tool replies when the run finishes", () => {
     expect(r.workflow_finished).toBe(true);
     expect(r.finished_card).toEqual({ id: "T1", title: "Finished one" });
   });
+  it("complete_step on the last step (A1)", async () => {
+    const tok = mintClaimToken();
+    const ctx = fakeCtx({
+      task_workflow_steps: {
+        ...stepRow,
+        status: "in_progress",
+        claim_token_hash: tok.hash,
+        idea_id: "I1",
+        human_check_required: false,
+      },
+      board_columns: cols,
+      board_tasks: [
+        { id: "T1", title: "Finished one", idea_id: "I1", column_id: "c-todo", position: 1 },
+        { id: "T2", title: "Next one", idea_id: "I1", column_id: "c-todo", position: 2 },
+      ],
+    });
+    const r = (await completeStep(ctx, {
+      claim_token: tok.token,
+      step_id: stepId,
+      output: "done",
+    })) as Record<string, unknown>;
+    expect(r.run_complete).toBe(true);
+    expect(r.workflow_finished).toBe(true);
+    expect(r.finished_card).toEqual({ id: "T1", title: "Finished one" });
+    expect(r.next_card).toEqual({ id: "T2", title: "Next one", column: "To DO" });
+    expect(r.instruction).toContain('"Finished one" is finished. Next up on the board: "Next one".');
+  });
   it("approve_step (A2)", async () => {
     const ctx = fakeCtx({
       task_workflow_steps: { ...stepRow, status: "awaiting_approval", idea_id: "I1", human_check_required: true },
@@ -190,5 +219,107 @@ describe("tool replies when the run finishes", () => {
     ];
     const r = await claimNextStep(fakeCtx({ task_workflow_steps: steps, ...board }), { task_id: "T1" });
     expect(r).toEqual({ done: true, message: "All steps complete or no pending steps" });
+  });
+});
+
+/**
+ * A fake that honours the filters pickNextCard sends (eq, neq, in, or, order,
+ * range), so a cap or a filter that hides cards shows up as a failing test.
+ */
+function filteringCtx(tables: Record<string, Record<string, unknown>[]>, calls: string[] = []) {
+  const from = (table: string) => {
+    let rows = [...(tables[table] ?? [])];
+    const chain: Record<string, unknown> = {};
+    chain.select = () => chain;
+    chain.eq = (col: string, val: unknown) => {
+      if (table === "board_tasks" && col === "column_id") calls.push(String(val));
+      rows = rows.filter((r) => r[col] === val);
+      return chain;
+    };
+    chain.neq = (col: string, val: unknown) => {
+      rows = rows.filter((r) => r[col] !== val);
+      return chain;
+    };
+    chain.in = (col: string, vals: unknown[]) => {
+      rows = rows.filter((r) => vals.includes(r[col]));
+      return chain;
+    };
+    chain.or = (expr: string) => {
+      const parts = expr.split(",").map((p) => p.split("."));
+      rows = rows.filter((r) =>
+        parts.some(([col, op, val]) =>
+          op === "is" ? r[col] == null : String(r[col]) === val
+        )
+      );
+      return chain;
+    };
+    chain.order = (col: string, o: { ascending: boolean }) => {
+      rows.sort((a, b) => {
+        const x = a[col] as number | string;
+        const y = b[col] as number | string;
+        const c = x < y ? -1 : x > y ? 1 : 0;
+        return o.ascending ? c : -c;
+      });
+      return chain;
+    };
+    chain.range = (from: number, to: number) => {
+      rows = rows.slice(from, to + 1);
+      return chain;
+    };
+    chain.then = (res: (v: unknown) => void) => Promise.resolve({ data: rows, error: null }).then(res);
+    return chain;
+  };
+  return { supabase: { from }, userId: "u" } as unknown as McpContext;
+}
+
+describe("pickNextCard with the 50-card cap", () => {
+  const colsI = cols.map((c) => ({ ...c, idea_id: "I1" }));
+  const task = (id: string, column_id: string, position: number, extra = {}) => ({
+    id,
+    title: id,
+    idea_id: "I1",
+    column_id,
+    position,
+    archived: false,
+    workflow_step_in_progress: 0,
+    workflow_step_awaiting_approval: 0,
+    ...extra,
+  });
+
+  it("still chooses the only To Do card when Backlog has 60 lower-position cards", async () => {
+    const backlog = Array.from({ length: 60 }, (_, i) => task(`B${i}`, "c-back", i));
+    const calls: string[] = [];
+    const ctx = filteringCtx(
+      { board_columns: colsI, board_tasks: [...backlog, task("TODO1", "c-todo", 5000)] },
+      calls
+    );
+    const next = await pickNextCard(ctx, "I1", "FINISHED");
+    expect(next).toEqual({ id: "TODO1", title: "TODO1", column: "To DO" });
+    expect(calls).toEqual(["c-todo"]); // Backlog never queried
+  });
+
+  it("busy and archived cards do not use up the cap", async () => {
+    const busy = Array.from({ length: 60 }, (_, i) =>
+      task(`X${i}`, "c-todo", i, i % 2 ? { workflow_step_in_progress: 1 } : { archived: true })
+    );
+    const ctx = filteringCtx({
+      board_columns: colsI,
+      board_tasks: [...busy, task("OK", "c-todo", 9000, { workflow_step_in_progress: null })],
+    });
+    expect((await pickNextCard(ctx, "I1", "FINISHED"))?.id).toBe("OK");
+  });
+
+  it("goes to Backlog, after To Do, only when To Do has no eligible card", async () => {
+    const calls: string[] = [];
+    const ctx = filteringCtx(
+      {
+        board_columns: colsI,
+        board_tasks: [task("FIN", "c-todo", 1), task("B1", "c-back", 1)],
+      },
+      calls
+    );
+    const next = await pickNextCard(ctx, "I1", "FIN");
+    expect(next?.id).toBe("B1");
+    expect(calls).toEqual(["c-todo", "c-back"]);
   });
 });
