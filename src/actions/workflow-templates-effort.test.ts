@@ -17,6 +17,7 @@ import { applyWorkflowTemplateWithContext } from "./workflow-templates";
 
 const TEMPLATE = {
   id: "tmpl-1",
+  idea_id: "i1",
   usage_count: 0,
   steps: [
     { title: "Review", role: "Code Reviewer", model_tier: "frontier", effort: "high" },

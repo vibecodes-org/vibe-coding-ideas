@@ -12,6 +12,7 @@ import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits, resolveSuggestionOnApply } from "@/lib/workflow-helpers";
 import { decideStepRematch } from "@/lib/role-matching";
 import { chunkIds, fetchAllRows } from "@/lib/db-helpers";
+import { pickAutoRuleTemplate, type AutoRuleLite } from "@/lib/auto-rule-pick";
 
 // ─── Templates ───
 
@@ -314,6 +315,12 @@ export async function applyWorkflowTemplateWithContext(
 
   if (taskError || !task) {
     throw new Error("Task not found");
+  }
+
+  // A workflow belongs to one board. Row-level security lets people read
+  // workflows on public boards, so never attach one from another board.
+  if (template.idea_id !== task.idea_id) {
+    throw new Error("That workflow doesn't belong to this card's board");
   }
 
   // Check for active runs on this task
@@ -811,4 +818,116 @@ export async function applyAutoRuleRetroactively(ruleId: string) {
   revalidatePath(`/ideas/${rule.idea_id}/board`);
 
   return { applied, skipped };
+}
+
+// ─── New Task dialog ───
+
+export type NewTaskWorkflowOptions = {
+  templates: { id: string; name: string; stepCount: number }[];
+  rules: AutoRuleLite[];
+};
+
+/** Templates and label rules for the New Task dialog's Workflow field. */
+export async function getNewTaskWorkflowOptions(
+  ideaId: string
+): Promise<NewTaskWorkflowOptions> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const [templatesRes, rulesRes] = await Promise.all([
+    supabase
+      .from("workflow_templates")
+      .select("id, name, steps")
+      .eq("idea_id", ideaId)
+      .order("name", { ascending: true }),
+    supabase
+      .from("workflow_auto_rules")
+      .select("label_id, template_id")
+      .eq("idea_id", ideaId),
+  ]);
+
+  if (templatesRes.error) throw new Error(templatesRes.error.message);
+  if (rulesRes.error) throw new Error(rulesRes.error.message);
+
+  return {
+    templates: (templatesRes.data ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      stepCount: Array.isArray(t.steps) ? t.steps.length : 0,
+    })),
+    rules: (rulesRes.data ?? []).map((r) => ({
+      label_id: r.label_id,
+      template_id: r.template_id,
+    })),
+  };
+}
+
+/**
+ * Attach the workflow chosen in the New Task dialog.
+ * - "none": nothing to attach.
+ * - "auto": same matcher as the dialog preview, on fresh rules. No fit check:
+ *   pressing Create with the preview on screen counts as confirming it.
+ * - anything else: a template id picked by hand.
+ * Returns the template id applied, or null.
+ */
+export async function applyNewTaskWorkflow(
+  taskId: string,
+  ideaId: string,
+  choice: string,
+  labelIdsInOrder: string[] = []
+): Promise<string | null> {
+  if (choice === "none") return null;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Never trust the board id from the browser: use the card's real board.
+  const { data: task, error: taskErr } = await supabase
+    .from("board_tasks")
+    .select("idea_id")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (taskErr) throw new Error(taskErr.message);
+  if (!task) throw new Error("Task not found");
+  if (task.idea_id !== ideaId) {
+    throw new Error("That card isn't on this board");
+  }
+
+  let templateId: string | null = null;
+
+  if (choice === "auto") {
+    if (labelIdsInOrder.length === 0) return null;
+
+    // Only trust label ids that are really on this card.
+    const { data: onTask, error: onTaskErr } = await supabase
+      .from("board_task_labels")
+      .select("label_id")
+      .eq("task_id", taskId);
+    if (onTaskErr) throw new Error(onTaskErr.message);
+    const valid = new Set((onTask ?? []).map((r) => r.label_id));
+    const ordered = labelIdsInOrder.filter((id) => valid.has(id));
+
+    const { data: rules, error: rulesErr } = await supabase
+      .from("workflow_auto_rules")
+      .select("label_id, template_id")
+      .eq("idea_id", task.idea_id);
+    if (rulesErr) throw new Error(rulesErr.message);
+
+    templateId = pickAutoRuleTemplate(ordered, rules ?? []).templateId;
+  } else {
+    templateId = choice;
+  }
+
+  if (!templateId) return null;
+
+  await applyWorkflowTemplateWithContext(supabase, user.id, taskId, templateId);
+  return templateId;
 }

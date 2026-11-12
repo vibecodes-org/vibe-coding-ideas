@@ -6705,6 +6705,31 @@ describe("applyWorkflowTemplate — model_tier", () => {
   });
 });
 
+describe("applyWorkflowTemplate — board check", () => {
+  it("refuses a template that belongs to a different board and creates nothing", async () => {
+    const tables: string[] = [];
+    const ctx = makeContext(((table: string) => {
+      tables.push(table);
+      if (table === "workflow_templates") {
+        return createChain({
+          id: "00000000-0000-4000-a000-0000000000bb", name: "Other", steps: [],
+          idea_id: "00000000-0000-4000-a000-0000000000ee", usage_count: 0,
+        }).chain;
+      }
+      if (table === "board_tasks") {
+        return createChain({ id: TASK_ID, idea_id: IDEA_ID, title: "Task" }).chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(
+      applyWorkflowTemplate(ctx, { task_id: TASK_ID, template_id: "00000000-0000-4000-a000-0000000000bb" })
+    ).rejects.toThrow("That workflow belongs to a different board.");
+    expect(tables).not.toContain("workflow_runs");
+    expect(tables).not.toContain("task_workflow_steps");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // addStepComment — mentions (parity with add_task_comment, design §6/§9)
 // ---------------------------------------------------------------------------

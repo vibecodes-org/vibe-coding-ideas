@@ -127,7 +127,9 @@ export default function GettingStartedPage() {
             </li>
             <li>
               <strong className="text-foreground">Workflow Triggers</strong> —
-              labels automatically apply the right workflow to new tasks
+              labels automatically apply the right workflow to new tasks. The New
+              Task dialog shows which one before you create the card, and lets
+              you pick another
             </li>
           </ul>
           <p className="text-muted-foreground">

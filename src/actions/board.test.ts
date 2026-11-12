@@ -156,6 +156,14 @@ describe("board actions — auto-rule adjudication scheduling", () => {
   });
 });
 
+describe("addLabelsToTask — skipAutoRules", () => {
+  it("inserts the labels but does not run auto-rules when skipAutoRules is set", async () => {
+    mockCheckAndApplyAutoRules.mockClear();
+    await addLabelsToTask("task-1", ["label-1", "label-2"], "idea-1", { skipAutoRules: true });
+    expect(mockCheckAndApplyAutoRules).not.toHaveBeenCalled();
+  });
+});
+
 describe("deleteBoardTask — failure logging", () => {
   beforeEach(() => {
     vi.clearAllMocks();

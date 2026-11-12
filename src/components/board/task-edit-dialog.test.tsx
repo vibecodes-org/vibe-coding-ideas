@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within, waitFor } from "@testing-library/react";
 
 // Regression guard for the "label dropdown bug" in the New Task dialog.
 //
@@ -38,6 +38,11 @@ vi.mock("@/actions/board", () => ({
   addLabelsToTask: vi.fn(),
 }));
 
+vi.mock("@/actions/workflow-templates", () => ({
+  getNewTaskWorkflowOptions: vi.fn(),
+  applyNewTaskWorkflow: vi.fn(),
+}));
+
 vi.mock("@/actions/ai", () => ({
   enhanceTaskDescription: vi.fn(),
 }));
@@ -51,14 +56,23 @@ vi.mock("@/lib/activity", () => ({
 }));
 
 vi.mock("./assignee-select", () => ({
-  AssigneeSelect: () => null,
+  AssigneeSelect: ({ onValueChange }: { onValueChange: (v: string) => void }) => (
+    <button type="button" onClick={() => onValueChange("unassigned")}>
+      pick-unassigned
+    </button>
+  ),
 }));
 
 import { TaskEditDialog } from "./task-edit-dialog";
+import { createBoardTask, addLabelsToTask } from "@/actions/board";
+import { getNewTaskWorkflowOptions, applyNewTaskWorkflow } from "@/actions/workflow-templates";
 import type { BoardLabel } from "@/types";
 
 afterEach(cleanup);
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getNewTaskWorkflowOptions).mockRejectedValue(new Error("not loaded"));
+});
 
 const labels: BoardLabel[] = [
   { id: "label-1", idea_id: "idea-1", name: "Bug", color: "red", created_at: "2026-01-01T00:00:00Z" },
@@ -126,5 +140,112 @@ describe("TaskEditDialog — Labels dropdown (plain dropdown, no Radix Popover)"
 
     const dialogContent = getDialogContent();
     expect(within(dialogContent).getAllByRole("checkbox")).toHaveLength(labels.length);
+  });
+});
+
+// ── Workflow field ──
+
+const wfOptions = {
+  templates: [
+    { id: "t-bug", name: "Bug Fix", stepCount: 3 },
+    { id: "t-feat", name: "Feature Development", stepCount: 4 },
+  ],
+  rules: [
+    { label_id: "label-1", template_id: "t-bug" },
+    { label_id: "label-2", template_id: "t-feat" },
+  ],
+};
+
+async function findTrigger() {
+  return screen.findByRole("combobox", { name: /Workflow/ });
+}
+
+function tickLabel(name: string) {
+  const row = within(getDialogContent())
+    .getAllByRole("checkbox")
+    .find((el) => el.textContent === name)!;
+  fireEvent.click(row);
+}
+
+describe("TaskEditDialog — Workflow field", () => {
+  it("is hidden when there are no templates", async () => {
+    vi.mocked(getNewTaskWorkflowOptions).mockResolvedValue({ templates: [], rules: [] });
+    setup();
+    await waitFor(() => expect(getNewTaskWorkflowOptions).toHaveBeenCalled());
+    expect(screen.queryByText("Workflow")).toBeNull();
+  });
+
+  it("is hidden when loading fails (never stuck on Loading)", async () => {
+    setup();
+    await waitFor(() => expect(getNewTaskWorkflowOptions).toHaveBeenCalled());
+    expect(screen.queryByText("Workflow")).toBeNull();
+    expect(screen.queryByText(/Loading/)).toBeNull();
+  });
+
+  it("previews Automatic following the tick order", async () => {
+    vi.mocked(getNewTaskWorkflowOptions).mockResolvedValue(wfOptions);
+    setup();
+    expect(await findTrigger()).toHaveTextContent("Automatic: none");
+    expect(screen.getByTestId("workflow-help")).toHaveTextContent("No label on this card has a workflow.");
+
+    openLabelDropdown();
+    tickLabel("Bug");
+    expect(screen.getByRole("combobox", { name: /Workflow/ })).toHaveTextContent("Automatic: Bug Fix");
+    expect(screen.getByTestId("workflow-help")).toHaveTextContent("From the Bug label.");
+
+    tickLabel("Feature");
+    expect(screen.getByRole("combobox", { name: /Workflow/ })).toHaveTextContent("Automatic: Bug Fix");
+    expect(screen.getByTestId("workflow-help")).toHaveTextContent(
+      "Bug and Feature both have workflows. Bug was picked first, so it wins."
+    );
+
+    // untick both, tick Feature then Bug
+    tickLabel("Bug");
+    tickLabel("Feature");
+    tickLabel("Feature");
+    tickLabel("Bug");
+    expect(screen.getByRole("combobox", { name: /Workflow/ })).toHaveTextContent("Automatic: Feature Development");
+  });
+
+  async function create() {
+    fireEvent.change(screen.getByPlaceholderText("Task title"), { target: { value: "A card" } });
+    fireEvent.submit(screen.getByPlaceholderText("Task title").closest("form")!);
+  }
+
+  it("Create skips label rules and applies the choice when options loaded", async () => {
+    vi.mocked(getNewTaskWorkflowOptions).mockResolvedValue(wfOptions);
+    vi.mocked(createBoardTask).mockResolvedValue("task-1");
+    setup();
+    await findTrigger();
+    openLabelDropdown();
+    tickLabel("Bug");
+    await create();
+    await waitFor(() => expect(applyNewTaskWorkflow).toHaveBeenCalled());
+    expect(addLabelsToTask).toHaveBeenCalledWith("task-1", ["label-1"], "idea-1", { skipAutoRules: true });
+    expect(applyNewTaskWorkflow).toHaveBeenCalledWith("task-1", "idea-1", "auto", ["label-1"]);
+  });
+
+  it("falls back to today's calls when options failed to load", async () => {
+    vi.mocked(createBoardTask).mockResolvedValue("task-1");
+    setup();
+    await waitFor(() => expect(getNewTaskWorkflowOptions).toHaveBeenCalled());
+    openLabelDropdown();
+    tickLabel("Bug");
+    await create();
+    await waitFor(() => expect(addLabelsToTask).toHaveBeenCalled());
+    expect(addLabelsToTask).toHaveBeenCalledWith("task-1", ["label-1"], "idea-1", { skipAutoRules: false });
+    expect(applyNewTaskWorkflow).not.toHaveBeenCalled();
+  });
+});
+
+describe("TaskEditDialog — explicit Unassigned", () => {
+  it("creates the card with no assignee instead of passing the word 'unassigned'", async () => {
+    vi.mocked(createBoardTask).mockResolvedValue("task-1");
+    setup();
+    fireEvent.click(screen.getByText("pick-unassigned"));
+    fireEvent.change(screen.getByPlaceholderText("Task title"), { target: { value: "A card" } });
+    fireEvent.submit(screen.getByPlaceholderText("Task title").closest("form")!);
+    await waitFor(() => expect(createBoardTask).toHaveBeenCalled());
+    expect(createBoardTask).toHaveBeenCalledWith("idea-1", "col-1", "A card", undefined, undefined);
   });
 });

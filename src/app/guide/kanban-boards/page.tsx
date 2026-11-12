@@ -107,6 +107,12 @@ export default function KanbanBoardsPage() {
               labels for categorization (per-idea, 12 colors)
             </li>
             <li>
+              <strong className="text-foreground">Workflow (when creating)</strong>{" "}
+              — the New Task dialog shows which workflow your labels will attach
+              (&quot;Automatic&quot;) and lets you pick another, or none, before
+              you press Create
+            </li>
+            <li>
               <strong className="text-foreground">Due Date</strong> — track
               deadlines with visual overdue/upcoming indicators
             </li>
@@ -299,7 +305,9 @@ export default function KanbanBoardsPage() {
             The <strong className="text-foreground">Workflows</strong> tab on
             each board lets you define reusable, multi-step processes for
             tasks — with role-based agent matching, approval gates, context
-            chaining between steps, and auto-application via labels.
+            chaining between steps, and auto-application via labels. You can see
+            and change which workflow a new task gets right in the New Task
+            dialog.
           </p>
           <p className="text-muted-foreground">
             Workflows are a core feature of VibeCodes.{" "}
