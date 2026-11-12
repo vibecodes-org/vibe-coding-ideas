@@ -10,6 +10,8 @@
 // assume the web app and helper deployed together — e2ee-copy.test.ts
 // enforces that mechanically.
 
+import { shouldShowHelperUpdateNudge } from "./helper-version";
+
 export const E2EE_COPY = {
   chip: {
     notE2ee: "Not encrypted end-to-end",
@@ -31,8 +33,39 @@ export const E2EE_COPY = {
     title: "Secure link interrupted",
     body: "Some data on this session’s encrypted stream couldn’t be verified, so we stopped it rather than show you output we can’t vouch for. This is usually a network hiccup. Your agent may still be running on your machine — reconnecting starts a fresh, verified stream.",
   },
+  // Card f0a13bde follow-up: the helper is already up to date, but THIS
+  // session couldn't fetch its key from the website when it started. Telling
+  // the user to update would be wrong; a new session is what fixes it.
+  startupFailed: {
+    chipTooltip:
+      "Traffic to this session is protected in transit, but the relay server can technically read it. This session couldn’t set up encryption when it started; a new session will.",
+    body: "This session isn’t end-to-end encrypted — it couldn’t set up encryption when it started, so messages from other sessions are off for it too.",
+    sub: "Your helper is up to date. Close this session and open a new one to get both back.",
+  },
   connected: {
     tooltip:
       "Connected · end-to-end encrypted — only this browser tab and the helper on your Mac hold the keys; the relay in between can’t read your session.",
   },
 } as const;
+
+/**
+ * Which "not encrypted" wording fits: an out-of-date (or unknown) helper gets
+ * the update nudge with its Update now button; an up-to-date helper means this
+ * session's start-up went wrong, so it says that and offers no update.
+ */
+export function notEncryptedCopy(helperVersion: string | null | undefined): {
+  chipTooltip: string;
+  body: string;
+  sub: string;
+  offerUpdate: boolean;
+} {
+  if (shouldShowHelperUpdateNudge(helperVersion)) {
+    return {
+      chipTooltip: E2EE_COPY.chip.notE2eeTooltip,
+      body: E2EE_COPY.nudge.body,
+      sub: E2EE_COPY.nudge.sub,
+      offerUpdate: true,
+    };
+  }
+  return { ...E2EE_COPY.startupFailed, offerUpdate: false };
+}
