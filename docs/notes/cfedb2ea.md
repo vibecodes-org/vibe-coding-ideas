@@ -66,3 +66,9 @@ Nick approved all five decisions as recommended.
 - applyNewTaskWorkflow now looks up the card's real board, refuses if it differs from the board id sent, and reads label rules for the real board.
 - Tests: both refusals added; the effort test fixture got an idea_id.
 - addLabelsToTask still takes a browser board id for auto-rules, but any template from another board is now refused by the core check, so no cross-board attach is possible.
+
+## Round 3: AI-session tool (12 Nov 2026)
+
+- mcp-server applyWorkflowTemplate (tools/workflows.ts) now refuses a template whose board differs from the card's real board ("That workflow belongs to a different board."). It is the single path for apply_workflow_template, create_task auto-rules, add-label auto-rules and apply_auto_rule_retroactively, so all are closed together. suggest_workflow already checked the board. Resync/reset act on a workflow already on the card, so no new attach.
+- Auto-rule create/update still accept a template id from another board, but applying such a rule is refused (retroactive counts it as skipped). Left as is to keep scope tight.
+- Test added in tools/workflows.test.ts.

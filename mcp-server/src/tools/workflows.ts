@@ -758,6 +758,12 @@ export async function applyWorkflowTemplate(
     throw new Error(`Task not found: ${params.task_id}`);
   }
 
+  // A workflow belongs to one board: use the card's real board, looked up
+  // here, and refuse a template from any other board (same rule as the web app).
+  if (template.idea_id !== task.idea_id) {
+    throw new Error("That workflow belongs to a different board.");
+  }
+
   // Check for active runs on this task
   const { data: activeRun } = await ctx.supabase
     .from("workflow_runs")
