@@ -132,7 +132,12 @@ export function usePlatformAgentAwareModelDefaults(): {
   useEffect(() => {
     let cancelled = false;
     const listener = (d: AgentAwarePlatformModelDefaults) => {
-      if (!cancelled) setDefaults(d);
+      if (!cancelled) {
+        setDefaults(d);
+        // A pushed value is a resolved value: don't keep showing "Loading…"
+        // while a slower first fetch is still pending.
+        setIsLoading(false);
+      }
     };
     agentAwareListeners.add(listener);
 
