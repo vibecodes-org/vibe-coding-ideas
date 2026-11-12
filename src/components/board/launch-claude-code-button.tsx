@@ -41,6 +41,7 @@ import {
   resolveEffectiveLaunchTarget,
   resolveLaunchCwd,
 } from "@/lib/launch-claude-code";
+import { buildTaskBrowserLaunchPayload } from "@/lib/terminal/task-launch-payload";
 import { LaunchPathDialog } from "./launch-path-dialog";
 import { listRecordedProjectPaths } from "@/actions/launch-path";
 import { isTerminalEnabled, relayBaseUrl } from "@/lib/terminal/connection";
@@ -218,6 +219,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const resolveFreshLaunch = useCallback(async (): Promise<{
     state: LaunchPathState;
     cwd: string | undefined;
+    paths: RecordedProjectPath[];
+    names: string[];
   }> => {
     const names = getMachineIdentities();
     if (names.join("\n") !== machineNames.join("\n")) setMachineNames(names);
@@ -237,7 +240,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       machineNames: names,
     });
     const state = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, target);
-    return { state, cwd: resolveLaunchCwd(state, target.cwd) };
+    return { state, cwd: resolveLaunchCwd(state, target.cwd), paths, names };
   }, [ideaId, ideaTitle, ideaGithubUrl, effectiveRecordedPaths, manualPin, machineNames]);
 
   const buildPrompt = useCallback(
@@ -531,7 +534,24 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // destination, unlike claude-cli://, is our own bridge, so it can act on
       // it). cwd rides the payload so a pinned/recorded existing folder is
       // honoured in the browser too.
-      return resolveFreshLaunch().then(({ state, cwd }) => {
+      return resolveFreshLaunch().then(({ state, cwd, paths, names }) => {
+        if (props.variant !== "board") {
+          // A card's launch is built by the shared pure builder, so the offer
+          // strip's "Start in a new tab" produces the same payload.
+          requestBrowserLaunch(
+            buildTaskBrowserLaunchPayload({
+              ideaId,
+              ideaTitle,
+              ideaGithubUrl,
+              recordedPaths: paths,
+              machineNames: names,
+              taskId: props.taskId,
+              taskTitle: props.taskTitle,
+              agent,
+            })
+          );
+          return true;
+        }
         // Task b563f4da: a fresh browser session also bootstraps the agent's
         // own guide (CLAUDE.md / AGENTS.md) — see buildGuideBootstrapStep.
         const essentials = buildCompactEssentials(state, false, agent, true);
@@ -541,8 +561,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
           // variants carry a task identity — a board-level launch never does, so
           // B10's dedupe never mistakes two board launches for the same task.
-          taskId: props.variant === "board" ? undefined : props.taskId,
-          taskTitle: props.variant === "board" ? undefined : props.taskTitle,
+          taskId: undefined,
+          taskTitle: undefined,
           // Carry the EXPLICIT agent choice verbatim — including "claude". A
           // launch fired from "Launch Claude Code in browser" MUST record
           // agent:"claude" so the dock's task-launch dialog pre-selects Claude
@@ -559,7 +579,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         browserLaunchingRef.current = false;
       });
     },
-    [posthog, buildCompactEssentials, resolveFreshLaunch, props],
+    [posthog, buildCompactEssentials, resolveFreshLaunch, props, ideaId, ideaTitle, ideaGithubUrl],
   );
 
   // Menu footer "Switch to …" link (spec §2b) — writes the remembered

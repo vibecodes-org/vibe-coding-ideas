@@ -356,6 +356,22 @@ export default function LaunchingClaudeCodePage() {
             approve the last step on the card&apos;s web page, the session
             gives this offer the next time it checks the card.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            In the browser terminal the offer also appears as a bar at the
+            bottom of that session&apos;s tab: &quot;Card finished. Next up:
+            &lt;card&gt;&quot; with{" "}
+            <strong className="text-foreground">&quot;Not now&quot;</strong> and{" "}
+            <strong className="text-foreground">&quot;Start in a new tab&quot;</strong>.
+            Start in a new tab opens the next card exactly as the card&apos;s
+            &quot;Launch in browser terminal&quot; does, with the same kind of
+            agent, and the old tab&apos;s bar then offers{" "}
+            <strong className="text-foreground">&quot;Close this session&quot;</strong>.
+            Nothing starts until you click. &quot;Not now&quot;, or saying
+            &quot;keep going here&quot;, removes the bar. On a phone the bar
+            only tells you to start it from your Mac. When the card was the
+            last one waiting, the bar says so and offers Dismiss and Close
+            this session.
+          </p>
         </section>
 
         <section>

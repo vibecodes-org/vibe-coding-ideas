@@ -142,7 +142,10 @@ export async function workflowFinishedReply(ctx: McpContext, taskId: string) {
       next_card: next,
       instruction:
         `This card's whole workflow is finished. Say this to the user, in these words, then STOP: ${workflowFinishedText(finished.title, next)} ` +
-        `${STAY_PUT} If you are still looking after other cards, say so and carry on with those only.`,
+        `${STAY_PUT} If you are still looking after other cards, say so and carry on with those only. ` +
+        `If you are running in VibeCodes' browser terminal, first call offer_next_card with finished_task_id "${finished.id}" (and still_working_on if you are looking after other cards), ` +
+        `and if it says it is shown, end your words to the user with: Click "Start in a new tab" below, or say "keep going here" and I'll carry on in this session. ` +
+        `If it refuses, use the words above instead.`,
     };
   } catch (err) {
     logger.warn("Next-card lookup failed", {

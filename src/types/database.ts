@@ -3324,6 +3324,66 @@ export type Database = {
         },
       ];
     };
+      terminal_session_offers: {
+        Row: {
+          sid: string;
+          user_id: string;
+          idea_id: string;
+          finished_task_id: string;
+          finished_task_title: string;
+          next_task_id: string | null;
+          next_task_title: string | null;
+          agent: string;
+          still_working_on: number;
+          status: "offered" | "dismissed" | "started";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          sid: string;
+          user_id: string;
+          idea_id: string;
+          finished_task_id: string;
+          finished_task_title: string;
+          next_task_id?: string | null;
+          next_task_title?: string | null;
+          agent?: string;
+          still_working_on?: number;
+          status?: "offered" | "dismissed" | "started";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          sid?: string;
+          user_id?: string;
+          idea_id?: string;
+          finished_task_id?: string;
+          finished_task_title?: string;
+          next_task_id?: string | null;
+          next_task_title?: string | null;
+          agent?: string;
+          still_working_on?: number;
+          status?: "offered" | "dismissed" | "started";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "terminal_session_offers_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "terminal_session_offers_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       // P2c — self-reported tier-adherence reporting views (migration 00135).

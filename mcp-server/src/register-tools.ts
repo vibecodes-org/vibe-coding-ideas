@@ -237,6 +237,7 @@ import {
   sendSessionMessage,
   sendSessionMessageSchema,
 } from "./tools/session-messages";
+import { offerNextCard, offerNextCardSchema } from "./tools/session-offers";
 import { LIVE_DATA_SENTENCE, RESPONSE_REMINDER } from "./steering-copy";
 import { missingUsageError } from "./lib/step-usage";
 
@@ -1890,6 +1891,23 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await sendSessionMessage(ctx, sendSessionMessageSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "offer_next_card",
+    {
+      description:
+        "Show the user a \"Start in a new tab\" bar in YOUR OWN in-browser terminal tab after a card's whole workflow has finished. It only shows the bar: it never starts anything, and you must not start the next card yourself. Call it when complete_step, approve_step or claim_next_step says the workflow is finished, passing finished_task_id (pass still_working_on if you are still looking after other cards). The next card is chosen by the server. Only works in a session started from VibeCodes' in-browser terminal; if it refuses, use the wording in the finished reply instead. If the user says \"keep going here\", call it again with withdraw: true to remove the bar.",
+      inputSchema: offerNextCardSchema,
+    },
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await offerNextCard(ctx, offerNextCardSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

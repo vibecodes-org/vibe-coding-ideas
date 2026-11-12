@@ -127,11 +127,11 @@ describe("MCP route serves both protocol eras on one endpoint (card 739db945)", 
     expect(body.result.instructions.length).toBeGreaterThan(0);
   });
 
-  it("old era: tools/list returns all 91 tools", async () => {
+  it("old era: tools/list returns all 92 tools", async () => {
     const res = await rawPost({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     expect(res.status).toBe(200);
     const body = await parseRpc(res);
-    expect(body.result.tools).toHaveLength(91);
+    expect(body.result.tools).toHaveLength(92);
     for (const t of body.result.tools) {
       expect(t.description.length).toBeGreaterThan(0);
       expect(t.inputSchema.type).toBe("object");
@@ -146,7 +146,7 @@ describe("MCP route serves both protocol eras on one endpoint (card 739db945)", 
     try {
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name)).toEqual(oldNames);
-      expect(tools).toHaveLength(91);
+      expect(tools).toHaveLength(92);
     } finally {
       await client.close();
     }
