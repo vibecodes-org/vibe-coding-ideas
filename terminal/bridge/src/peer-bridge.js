@@ -5,7 +5,7 @@
 // drive it with fakes. Message text is never logged here.
 
 import http from "node:http";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   encodePeerAckFrame,
   formatPeerMessage,
@@ -46,6 +46,69 @@ export function buildHookSettings(port, secret) {
 /** The extra launch arguments for Claude. */
 export function hookSettingsArgs(port, secret) {
   return ["--settings", JSON.stringify(buildHookSettings(port, secret))];
+}
+
+// Codex: command hooks (Codex has no http hooks). The command is the same in
+// every session; the listener's address arrives in this environment variable,
+// so the command's fingerprint never changes. Hook failures print nothing and
+// never block Codex.
+export const CODEX_HOOK_ENV = "VIBECODES_PEER_HOOK";
+export const CODEX_HOOK_COMMAND = `curl -s -m ${HOOK_TIMEOUT_SECONDS} -X POST -H 'content-type: application/json' --data-binary @- "$${CODEX_HOOK_ENV}" || true`;
+const CODEX_HOOK_EVENTS = /** @type {const} */ ([
+  ["UserPromptSubmit", "user_prompt_submit", null],
+  ["Stop", "stop", null],
+  ["PostToolUse", "post_tool_use", null],
+  ["PermissionRequest", "permission_request", null],
+  ["SessionStart", "session_start", null],
+]);
+// No PreToolUse hook for Codex: it passes its own session value when sending
+// (the tool's instructions tell it how), and PostToolUse already says "busy".
+// Where Codex files hooks passed on the command line (its "session flags").
+const CODEX_FLAG_HOOK_SOURCE = "/<session-flags>/config.toml";
+
+function sortKeys(v) {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]));
+  return v;
+}
+
+/**
+ * Codex runs a hook only once it is approved, and records the approval as the
+ * hook's fingerprint. This is that fingerprint, computed the way Codex does
+ * (sha256 of its key-sorted JSON form, unset fields left out, default timeout
+ * 600s), so the launch can carry the approval for the bridge's own hooks and
+ * the person never has to approve them by hand.
+ * @param {string} eventLabel e.g. "stop" @param {string | null} matcher @param {string} command
+ */
+export function codexHookHash(eventLabel, matcher, command) {
+  const identity = {
+    event_name: eventLabel,
+    ...(matcher ? { matcher } : {}),
+    hooks: [{ type: "command", command, timeout: 600, async: false }],
+  };
+  return "sha256:" + createHash("sha256").update(JSON.stringify(sortKeys(identity))).digest("hex");
+}
+
+const tomlString = (s) => JSON.stringify(s);
+
+/** The extra launch arguments for Codex: the hooks, then their approvals. */
+export function codexHookArgs() {
+  const args = [];
+  const state = [];
+  for (const [event, label, matcher] of CODEX_HOOK_EVENTS) {
+    const m = matcher ? `matcher=${tomlString(matcher)},` : "";
+    args.push("-c", `hooks.${event}=[{${m}hooks=[{type="command",command=${tomlString(CODEX_HOOK_COMMAND)}}]}]`);
+    const key = `${CODEX_FLAG_HOOK_SOURCE}:${label}:0:0`;
+    state.push(`${tomlString(key)}={trusted_hash=${tomlString(codexHookHash(label, matcher, CODEX_HOOK_COMMAND))}}`);
+  }
+  // One table: Codex reads a dotted -c path with a quoted key wrongly.
+  args.push("-c", `hooks.state={${state.join(",")}}`);
+  return args;
+}
+
+/** The listener address Codex's hook command posts to. */
+export function codexHookUrl(port, secret) {
+  return `http://127.0.0.1:${port}/${secret}/hook`;
 }
 
 /**
@@ -112,11 +175,13 @@ export function newHookSecret() {
  *   key: string | null, sid: string, agent: string, explicitCmd: boolean, envValue: string | null,
  *   writePty: (data: string) => void, sendAck: (frame: string) => void,
  *   log?: (level: string, msg: string, extra?: object) => void, now?: () => number,
- *   delay?: (ms: number) => Promise<void>,
- * }} deps
+ *   delay?: (ms: number) => Promise<void>, startsIdle?: boolean,
+ * }} deps  startsIdle: launched with no prompt, so the agent is idle once it has started
  */
 export function createPeerBridge(deps) {
   const { key, sid, agent, explicitCmd, envValue, writePty, sendAck } = deps;
+  const canReceive = (agent === "claude" || agent === "codex") && !explicitCmd;
+  const startsIdle = deps.startsIdle === true;
   const log = deps.log ?? (() => {});
   const now = deps.now ?? (() => Date.now());
   const delay = deps.delay ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
@@ -181,7 +246,7 @@ export function createPeerBridge(deps) {
       }
       seen.add(v.env.id);
       if (seen.size > 500) seen.delete(seen.values().next().value);
-      if (agent !== "claude" || explicitCmd) return ack(v.env.id, "cannot-receive");
+      if (!canReceive) return ack(v.env.id, "cannot-receive");
 
       // Session record: what happened to each incoming message (never its text).
       const phase = state.phase;
@@ -192,7 +257,7 @@ export function createPeerBridge(deps) {
         return ack(v.env.id, "rate-limited");
       }
       if (r.decision === "hold") {
-        log("info", "peer message held until claude is free", { id: v.env.id, phase, held: state.inbox.length });
+        log("info", "peer message held until the session is free", { id: v.env.id, phase, held: state.inbox.length });
         return ack(v.env.id, "waiting");
       }
       const outcome = await typeNow(v.env);
@@ -200,12 +265,12 @@ export function createPeerBridge(deps) {
       ack(v.env.id, outcome);
     },
 
-    /** A hook event from Claude; returns the JSON answer for Claude. */
+    /** A hook event from Claude or Codex; returns the JSON answer for the agent. */
     handleHook(json) {
       const name = typeof json?.hook_event_name === "string" ? json.hook_event_name : "";
       const r = onHook(
         state,
-        { name, notification: json?.notification_type, stopHookActive: json?.stop_hook_active === true },
+        { name, notification: json?.notification_type, stopHookActive: json?.stop_hook_active === true, startsIdle },
         now(),
       );
       state = r.state;
@@ -216,7 +281,7 @@ export function createPeerBridge(deps) {
         for (const f of w) f();
       }
       if (name === "Stop" && r.block) {
-        log("info", "handing held peer messages to Claude", { count: r.block.length });
+        log("info", "handing held peer messages to the agent", { count: r.block.length });
         return { decision: "block", reason: joinHeld(r.block) };
       }
       if (name === "PreToolUse" && typeof json?.tool_name === "string" && new RegExp(SEND_TOOL_MATCHER).test(json.tool_name) && envValue) {
