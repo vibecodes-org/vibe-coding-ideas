@@ -85,7 +85,7 @@ export const getBoardSchema = z.object({
 });
 
 /** Columns read by `up_next`, in fill order. */
-const UP_NEXT_COLUMNS = ["to do", "backlog"];
+export const UP_NEXT_COLUMNS =["to do", "backlog"];
 
 export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardSchema>) {
   // Check if columns exist; if not, initialize defaults

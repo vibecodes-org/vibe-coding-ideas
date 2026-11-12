@@ -566,7 +566,11 @@ export default function WorkflowsPage() {
                 <p>
                   <strong className="text-foreground">Loop</strong> — go back to
                   step 1 and claim the next pending step. When all steps are
-                  done, the workflow run is automatically marked as completed
+                  done, the workflow run is automatically marked as completed.
+                  The session then tells you the card is finished, names the
+                  next card (top of To Do, then Backlog) and suggests starting
+                  it in a fresh session instead of carrying on in the same
+                  conversation
                 </p>
               </div>
             </div>
@@ -577,7 +581,8 @@ export default function WorkflowsPage() {
               Claude Code to &quot;run the workflow on this task&quot; and it
               will execute the full loop — claiming steps, spawning each
               step&apos;s agent, doing the work, and completing each step
-              until the workflow is finished or an approval gate is reached.
+              until the workflow is finished (it then names the next card and
+              stops) or an approval gate is reached.
             </p>
           </div>
         </section>

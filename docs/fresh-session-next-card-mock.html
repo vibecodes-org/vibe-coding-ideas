@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fresh Session Offer</title>
+<!--
+  Design mock for card 72debfc0, stage 1: when a card's workflow finishes, the
+  session offers a fresh session for the next card. Terminal panel colours and
+  tab strip copied from src/components/board/terminal-dock.tsx (zinc, #0c0c0e
+  panel, #18181b strip, sky top border on the active tab, 38px "+" button).
+  Button colours follow terminal-task-launch-choice.tsx: emerald = "start
+  something new", sky = "attach to what's running", ghost zinc = back out.
+-->
+<style>
+  :root {
+    --background:#09090b; --foreground:#fafafa; --card:#18181b; --muted:#27272a;
+    --muted-foreground:#a1a1aa; --border:rgba(255,255,255,.1);
+    --sky:#38bdf8; --amber:#fbbf24; --emerald:#10b981;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --background:#fff; --foreground:#09090b; --card:#fff; --muted:#f4f4f5; --muted-foreground:#71717a; --border:#e4e4e7; --amber:#b45309; }
+  }
+  :root[data-theme="light"] { --background:#fff; --foreground:#09090b; --card:#fff; --muted:#f4f4f5; --muted-foreground:#71717a; --border:#e4e4e7; --amber:#b45309; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--background); color:var(--foreground); font-family:var(--sans); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1000px; margin:0 auto; padding:32px 16px 80px; }
+  header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; border-bottom:1px solid var(--border); padding-bottom:18px; }
+  .kicker { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--sky); font-weight:600; }
+  h1 { font-size:26px; margin:6px 0 8px; letter-spacing:-.01em; }
+  h2 { font-size:20px; margin:48px 0 6px; }
+  h3 { font-size:16px; margin:26px 0 4px; }
+  .lede, .note { color:var(--muted-foreground); }
+  .note { font-size:13.5px; margin:6px 0 0; }
+  button.theme { background:var(--muted); color:var(--foreground); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; white-space:nowrap; }
+  .rec { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.06em; color:#052e16; background:#34d399; border-radius:4px; padding:1px 6px; margin-left:8px; vertical-align:3px; }
+  .opt { border:1px solid var(--border); border-radius:10px; padding:18px; margin-top:16px; background:color-mix(in oklab, var(--muted) 25%, transparent); }
+  .opt.recd { border-color:#34d399; }
+  .pc { display:grid; grid-template-columns:1fr; gap:10px; margin-top:12px; font-size:14px; }
+  @media (min-width:760px) { .pc { grid-template-columns:1fr 1fr; } }
+  .pc div { border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+  .pc b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted-foreground); margin-bottom:4px; }
+  .pc ul { margin:0; padding-left:18px; }
+
+  /* Terminal panel (dark always, like the real one) */
+  .dock { background:#0c0c0e; border:1px solid #27272a; border-radius:8px; overflow:hidden; color:#e4e4e7; margin-top:12px; }
+  .tabs { display:flex; background:#18181b; border-bottom:1px solid #27272a; }
+  .tabrow { display:flex; min-width:0; flex:1; overflow-x:auto; }
+  .tab { display:flex; align-items:center; gap:6px; min-width:110px; max-width:230px; padding:9px 10px; font-size:12.5px; color:#a1a1aa; border-right:1px solid #27272a; border-top:2px solid transparent; white-space:nowrap; }
+  .tab.active { border-top-color:#38bdf8; background:#0c0c0e; color:#f4f4f5; font-weight:600; }
+  .tab.newtab { animation: pop .6s ease-out; }
+  @keyframes pop { from { background:#064e3b; } to { background:#0c0c0e; } }
+  .glyph { color:#34d399; font-size:10px; flex:none; }
+  .glyph.idle { color:#71717a; }
+  .name { overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+  .x { color:#52525b; font-size:12px; flex:none; }
+  .plus { width:38px; flex:none; display:flex; align-items:center; justify-content:center; border-left:1px solid #27272a; color:#a1a1aa; font-size:18px; }
+  .term { font-family:var(--mono); font-size:12.5px; line-height:1.6; padding:14px 16px; white-space:pre-wrap; word-break:break-word; min-height:120px; }
+  .dim { color:#71717a; } .you { color:#e4e4e7; } .ok { color:#34d399; } .warn { color:#fbbf24; } .hl { color:#f4f4f5; font-weight:600; }
+  .inputline { border:1px solid #3f3f46; border-radius:6px; padding:6px 10px; margin-top:12px; color:#a1a1aa; }
+
+  /* NEW: the offer strip at the foot of a tab */
+  .offer { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; border-top:1px solid #27272a; background:#141417; padding:10px 14px; font-family:var(--sans); outline:2px dashed var(--sky); outline-offset:-3px; }
+  .offer .txt { flex:1 1 280px; min-width:0; font-size:12.5px; color:#d4d4d8; }
+  .offer .txt .sub { display:block; font-size:11.5px; color:#71717a; margin-top:1px; }
+  .offer .txt .t { color:#f4f4f5; font-weight:600; }
+  .offer .btns { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+  .b { height:28px; padding:0 10px; border-radius:6px; font-size:12px; font-weight:500; display:inline-flex; align-items:center; gap:6px; border:0; cursor:pointer; font-family:var(--sans); white-space:nowrap; }
+  .b.ghost { background:transparent; color:#a1a1aa; }
+  .b.ghost:hover { background:#27272a; color:#f4f4f5; }
+  .b.outline { background:transparent; color:#e4e4e7; border:1px solid #3f3f46; }
+  .b.em { background:#10b981; color:#022c22; }
+  .b.em:hover { background:#34d399; }
+  .newtag { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.06em; color:var(--sky); border:1px solid var(--sky); border-radius:4px; padding:0 5px; margin-left:6px; vertical-align:2px; }
+
+  .phone { max-width:375px; }
+  .flow { display:grid; grid-template-columns:1fr; gap:14px; }
+  @media (min-width:900px) { .flow.two { grid-template-columns:1fr 1fr; } }
+  .step { font-size:12px; font-weight:600; color:var(--muted-foreground); text-transform:uppercase; letter-spacing:.05em; margin:14px 0 -4px; }
+  pre.prompt { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-family:var(--mono); font-size:12.5px; white-space:pre-wrap; word-break:break-word; margin:10px 0 0; }
+  pre.prompt .add { color:#34d399; }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:10px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted-foreground); font-weight:600; font-size:12.5px; }
+  .tbl { overflow-x:auto; }
+  .decision { border-left:3px solid var(--amber); padding:4px 12px; margin-top:10px; font-size:14px; }
+  ol.dec li { margin-bottom:10px; }
+  .reset { margin-top:10px; }
+  @media (max-width:520px) { h1 { font-size:22px; } header { flex-direction:column; } .opt { padding:12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="kicker">Mock · for your choice · stage 1</div>
+      <h1>Finish a card, then start the next one fresh</h1>
+      <p class="lede">Today one terminal session goes from card to card, so its conversation keeps growing and every action re-reads all of it. Here are three ways for the session to stop at the end of a card and offer you a fresh session for the next one. You can always say no and carry on as today. Anything new has a <span style="color:var(--sky)">blue dashed outline</span>; the rest is the terminal panel as it is now.</p>
+    </div>
+    <button class="theme" id="themeBtn" type="button">Light theme</button>
+  </header>
+
+  <h2>What all three have in common</h2>
+  <p class="note" style="font-size:14.5px">The offer comes only when a card's whole workflow has finished (not when a step stops for your approval: the session needs its memory of the card for that). "Next up" is the top card in To Do, then Backlog, the same rule the board's own "Launch Claude Code" uses. The fresh session is the same kind as the one finishing (Claude stays Claude, Codex stays Codex) and starts with the same start-up message a card's "..." menu launch uses today. If the session is still looking after other cards, it says so and stays open for them.</p>
+
+  <!-- ===================== OPTION A ===================== -->
+  <h2>Option A: the session tells you, you start it</h2>
+  <div class="opt">
+    <p class="note" style="margin:0">Only the session's words change. You start the next card yourself from its "..." menu, which already opens it in a new tab.</p>
+    <div class="dock">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab active"><span class="glyph">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term"><span class="dim">● complete_step … run complete</span>
+
+<span class="ok">✓</span> <span class="hl">"Warn on the board when a workflow run has many steps with no cost recorded"</span> is finished and in Verify.
+
+Next up on the board: <span class="hl">"In-app terminal: add Windows support"</span>.
+I suggest starting it in a fresh session. A fresh session starts small instead of re-reading this whole conversation, so every step on the next card costs less.
+To start it: open that card's "..." menu and pick "Launch in browser terminal". Or say "keep going here" and I'll carry on in this session.
+<div class="inputline">&gt; ▌</div></div>
+    </div>
+    <div class="pc">
+      <div><b>Good</b><ul><li>Smallest build: wording only, no screen changes.</li><li>Works the same on every screen, including a phone (you'd start it later on the Mac).</li></ul></div>
+      <div><b>Not so good</b><ul><li>Four clicks and a hunt for the card each time.</li><li>Easy to pick the wrong launch item (the menu has four).</li><li>The old session stays open until you close it.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ===================== OPTION B ===================== -->
+  <h2>Option B: say "yes" and the session opens it</h2>
+  <div class="opt">
+    <p class="note" style="margin:0">The session asks in the chat. When you type yes, it asks the app to open the next card in a new tab. Nothing to click.</p>
+    <div class="dock">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab active"><span class="glyph">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term"><span class="ok">✓</span> <span class="hl">"Warn on the board when a workflow run has many steps with no cost recorded"</span> is finished and in Verify.
+
+Next up on the board: <span class="hl">"In-app terminal: add Windows support"</span>.
+Shall I start it in a fresh session in a new tab? A fresh session starts small instead of re-reading this whole conversation, so every step on the next card costs less. Say "yes", name a different card, or say "keep going here".
+
+<span class="you">&gt; yes</span>
+
+<span class="dim">● start_fresh_session … opened</span>
+Started <span class="hl">"In-app terminal: add Windows support"</span> in a new tab. I have nothing else running, so you can close this tab whenever you like.
+<div class="inputline">&gt; ▌</div></div>
+    </div>
+    <div class="pc">
+      <div><b>Good</b><ul><li>Stays in the chat, the way you already work.</li><li>You can answer "do the bug card instead" in plain words.</li></ul></div>
+      <div><b>Not so good</b><ul><li>A session could open new sessions without asking you first: nothing in the app checks that you really said yes.</li><li>Needs a new board tool and a way for it to reach your open browser tab.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ===================== OPTION C ===================== -->
+  <h2>Option C: a button under the chat <span class="rec">RECOMMENDED</span></h2>
+  <div class="opt recd">
+    <p class="note" style="margin:0">The session says the same words as in B, and a strip appears at the foot of its tab with a button. Your click starts the fresh session, so a session can never start one on its own. Typing "keep going here" in the chat still works and hides the strip.</p>
+
+    <p class="step">1 · The card finishes</p>
+    <div class="dock">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab active"><span class="glyph">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term"><span class="ok">✓</span> <span class="hl">"Warn on the board when a workflow run has many steps with no cost recorded"</span> is finished and in Verify.
+
+Next up on the board: <span class="hl">"In-app terminal: add Windows support"</span>.
+I suggest starting it in a fresh session. A fresh session starts small instead of re-reading this whole conversation, so every step on the next card costs less. Click "Start in a new tab" below, or say "keep going here" and I'll carry on in this session.
+<div class="inputline">&gt; ▌</div></div>
+      <div class="offer">
+        <div class="txt">Card finished. Next up: <span class="t">In-app terminal: add Windows support</span><span class="sub">A fresh session starts small, so each step costs less.</span></div>
+        <div class="btns"><button class="b ghost" type="button">Not now</button><button class="b em" type="button" id="cGo">▸ Start in a new tab</button></div>
+      </div>
+    </div>
+
+    <p class="step">2 · After you click: the new tab opens and takes focus</p>
+    <div class="dock">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab"><span class="glyph idle">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+        <div class="tab active newtab"><span class="glyph">●</span><span class="name">In-app terminal: add Windows support</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term"><span class="dim">Starting Claude Code in ~/projects/vibe-coding-ideas (its own working copy) …</span>
+<span class="dim">● get_task … "In-app terminal: add Windows support"</span>
+Moved it to In Progress. It has a 4-step workflow; claiming step 1 (Plan) …
+</div>
+    </div>
+    <p class="note">The tab is named after the card, like any launch from a card's "..." menu.</p>
+
+    <p class="step">3 · Back on the old tab</p>
+    <div class="dock">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab active"><span class="glyph idle">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+        <div class="tab"><span class="glyph">●</span><span class="name">In-app terminal: add Windows support</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term"><span class="dim">… (the finished card's conversation, unchanged, so you can still scroll it or ask about it)</span></div>
+      <div class="offer">
+        <div class="txt">Started the next card in its own tab.<span class="sub">This session is idle. Close it when you're done with it; you can resume it later from My sessions.</span></div>
+        <div class="btns"><button class="b ghost" type="button">Dismiss</button><button class="b outline" type="button">Close this session</button></div>
+      </div>
+    </div>
+
+    <h3>On a phone (375px)</h3>
+    <p class="note">Launching runs on your Mac, so a phone can't start sessions (the card menu already says this). On a phone the strip says so and offers nothing to click except Dismiss. The session's chat wording is the same.</p>
+    <div class="dock phone">
+      <div class="tabs"><div class="tabrow">
+        <div class="tab active" style="min-width:0"><span class="glyph">●</span><span class="name">VibeCodes · b863</span><span class="x">✕</span></div>
+      </div><div class="plus">+</div></div>
+<div class="term" style="min-height:70px"><span class="ok">✓</span> <span class="hl">"Warn on the board when…"</span> is finished and in Verify. Next up: <span class="hl">"In-app terminal: add Windows support"</span>. …</div>
+      <div class="offer">
+        <div class="txt">Card finished. Next up: <span class="t">In-app terminal: add Windows support</span><span class="sub">Start it from your Mac: launching isn't available on a phone.</span></div>
+        <div class="btns"><button class="b ghost" type="button">Dismiss</button></div>
+      </div>
+    </div>
+
+    <h3>When there's nothing next, or the session is still busy</h3>
+    <div class="dock">
+      <div class="offer" style="border-top:0">
+        <div class="txt">Card finished. Nothing is waiting in To Do or Backlog.<span class="sub">Close this session when you're done with it.</span></div>
+        <div class="btns"><button class="b ghost" type="button">Dismiss</button><button class="b outline" type="button">Close this session</button></div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="offer" style="border-top:0">
+        <div class="txt">Card finished. Next up: <span class="t">In-app terminal: add Windows support</span><span class="sub">This session is still working on 2 other cards, so it stays open for them.</span></div>
+        <div class="btns"><button class="b ghost" type="button">Not now</button><button class="b em" type="button">▸ Start in a new tab</button></div>
+      </div>
+    </div>
+
+    <div class="pc">
+      <div><b>Good</b><ul><li>One click, and only your click starts a session.</li><li>You see the offer even if you weren't reading the chat.</li><li>The old conversation stays readable until you close it.</li><li>Same for Claude and Codex sessions.</li></ul></div>
+      <div><b>Not so good</b><ul><li>Biggest build of the three: a board tool, a strip in the panel, and the panel listening for it.</li><li>To pick a different card you still use that card's "..." menu (or tell the session, which then refreshes the strip).</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ===================== SAME TAB vs NEW TAB ===================== -->
+  <h2>Same tab or new tab?</h2>
+  <p class="note" style="font-size:14.5px">Shown for option C; the same choice applies to B.</p>
+  <div class="flow two">
+    <div class="opt recd" style="margin-top:8px">
+      <b>New tab</b> <span class="rec">RECOMMENDED</span>
+      <ul style="font-size:14px; padding-left:18px">
+        <li>The old conversation stays until you close it, so you can still check what it did.</li>
+        <li>Safe when the session is still looking after other cards: nothing it is running gets cut off.</li>
+        <li>The new session runs in its own working copy while the old one is open (that's how two sessions on one board already avoid treading on each other). Once you close the old one, the next fresh session goes back to the main folder.</li>
+        <li>Tabs can pile up: the strip's "Close this session" is there for that.</li>
+      </ul>
+    </div>
+    <div class="opt" style="margin-top:8px">
+      <b>Same tab (replace this session)</b>
+      <div class="dock">
+        <div class="offer" style="border-top:0">
+          <div class="txt">Card finished. Next up: <span class="t">In-app terminal: add Windows support</span><span class="sub">This session ends and the next card starts here. You can resume this one from My sessions.</span></div>
+          <div class="btns"><button class="b ghost" type="button">Not now</button><button class="b em" type="button">▸ Start it here</button></div>
+        </div>
+      </div>
+      <ul style="font-size:14px; padding-left:18px">
+        <li>Tidier: one tab per card, nothing to close.</li>
+        <li>The new session works in the main folder, not a separate copy.</li>
+        <li>Ends the old session: can't be offered while it's still looking after other cards, so it would need a fallback to "new tab" then.</li>
+        <li>The finished conversation disappears from view (resume it from My sessions).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================== WORDING ===================== -->
+  <h2>The exact words</h2>
+  <h3>What the session says when a card finishes</h3>
+  <div class="tbl"><table>
+    <tr><th>Situation</th><th>Option A</th><th>Options B and C</th></tr>
+    <tr><td>Next card exists, nothing else running</td>
+      <td>✓ "&lt;card&gt;" is finished and in Verify.<br>Next up on the board: "&lt;next card&gt;".<br>I suggest starting it in a fresh session. A fresh session starts small instead of re-reading this whole conversation, so every step on the next card costs less.<br>To start it: open that card's "..." menu and pick "Launch in browser terminal". Or say "keep going here" and I'll carry on in this session.</td>
+      <td>First three lines the same, then:<br><b>B:</b> Shall I start it in a fresh session in a new tab? … Say "yes", name a different card, or say "keep going here".<br><b>C:</b> Click "Start in a new tab" below, or say "keep going here" and I'll carry on in this session.</td></tr>
+    <tr><td>Still working on other cards</td><td colspan="2">Adds: "I'm still working on &lt;n&gt; other cards, so I'll stay open for them."</td></tr>
+    <tr><td>Nothing in To Do or Backlog</td><td colspan="2">✓ "&lt;card&gt;" is finished and in Verify. Nothing is waiting in To Do or Backlog. You can close this session when you're done with it.</td></tr>
+    <tr><td>You say "keep going here"</td><td colspan="2">Carries on exactly as today, and doesn't offer again until the next card finishes.</td></tr>
+  </table></div>
+
+  <h3>What the fresh session starts with</h3>
+  <p class="note">I recommend no change: the same start-up message a card's "..." menu launch sends today. Everything the session needs is on the card itself. The board-connection lines are shortened here; they're unchanged.</p>
+<pre class="prompt">Set up VibeCodes and work a board task for "VibeCodes".
+
+1. You should already be in ~/projects/vibe-coding-ideas (recorded from a previous session), or, if this launch was isolated, in a working copy under it. Either is correct: confirm and stay where you started. …
+2. Connect the board tools (if they're already available, skip this step): …
+3. Re-confirm the folder: …
+4. Work this task: get_task (task_id …, idea_id …), move it to In Progress, then start. Comment as you go.</pre>
+  <p class="note">Possible addition (not recommended), on the last line: <span style="font-family:var(--mono);color:#34d399">Started from your session that just finished "&lt;previous card&gt;".</span> It tells the new session nothing it needs, and the start-up message is close to its length limit.</p>
+
+  <!-- ===================== DECISIONS ===================== -->
+  <h2>Your decisions</h2>
+  <ol class="dec">
+    <li><b>Which option: A, B or C?</b> I recommend C: one click, and only your click starts a session.</li>
+    <li><b>New tab or same tab?</b> I recommend new tab: it never cuts off a session that is still looking after other cards, and you keep the old conversation to look back at.</li>
+    <li><b>The wording above</b>: change anything you like. I recommend keeping the fresh session's start-up message as it is today.</li>
+    <li><b>Offer only when the whole workflow finishes</b>, not when a step stops for your approval. I recommend this.</li>
+    <li><b>Where the new strip differs from existing panel controls</b> (CLAUDE.md asks me to list these):
+      <ul>
+        <li>It's a strip along the foot of the tab. The panel has no strip like it today: the nearest are the "This task already has a terminal running" box (a pop-up) and the full-panel "session ended" screen. A pop-up would cover the chat, so I used a strip.</li>
+        <li>Its buttons use the same colours as that box: green for "start something new", plain for "back out". "Close this session" is an outline button, like "Start again" on the ended screen.</li>
+        <li>On a phone it shows no start button, matching the card menu's "Launching runs on your Mac" rule.</li>
+      </ul></li>
+  </ol>
+  <div class="decision">Measure after a week: the main window's share of usage against the spike's starting figure (about 23% on the heaviest session).</div>
+</div>
+<script>
+  (function () {
+    var btn = document.getElementById("themeBtn");
+    btn.addEventListener("click", function () {
+      var light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      btn.textContent = light ? "Light theme" : "Dark theme";
+    });
+  })();
+</script>
+</body>
+</html>

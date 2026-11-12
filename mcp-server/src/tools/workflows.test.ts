@@ -7748,12 +7748,14 @@ describe("claimNextStep — no workflow", () => {
     expect(result.claim_token).toBeUndefined();
   });
 
-  it("keeps done: true when steps exist but all are finished", async () => {
-    const result = await claimNextStep(
+  it("keeps done: true, and says the workflow is finished, when steps exist but all are finished", async () => {
+    const result = (await claimNextStep(
       noWorkflowClaimCtx({ steps: [makeStepRow({ status: "completed" })], templateCount: 2 }),
       { task_id: TASK_ID }
-    );
-    expect(result).toEqual({ done: true, message: "All steps complete or no pending steps" });
+    )) as Record<string, unknown>;
+    expect(result.done).toBe(true);
+    expect(result.workflow_finished).toBe(true);
+    expect(result.message).toBe("This card's workflow is finished.");
   });
 });
 

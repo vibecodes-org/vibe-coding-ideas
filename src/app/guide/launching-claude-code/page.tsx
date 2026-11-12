@@ -345,6 +345,17 @@ export default function LaunchingClaudeCodePage() {
             assigned to the session); otherwise it assigns the task to you. Launching from a specific task skips the question and goes
             straight to that task.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            When a task&apos;s whole workflow is finished (not just paused for
+            your approval), the session tells you so, names the next card from{" "}
+            <strong className="text-foreground">To Do</strong> (then Backlog),
+            and suggests starting it in a fresh session from that card&apos;s
+            &quot;...&quot; menu instead of carrying on in the same growing
+            conversation. It then stops and waits; say &quot;keep going
+            here&quot; if you would rather stay in the same session. If you
+            approve the last step on the card&apos;s web page, the session
+            gives this offer the next time it checks the card.
+          </p>
         </section>
 
         <section>
