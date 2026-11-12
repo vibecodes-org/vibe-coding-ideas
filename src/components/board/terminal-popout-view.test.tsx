@@ -46,6 +46,7 @@ function mockActions(): TerminalSessionActions {
     beginSetup: vi.fn(),
     launchFromBus: vi.fn(),
     reconnectNow: vi.fn(),
+    reattachLiveSession: vi.fn(),
     end: vi.fn(),
     setReadOnly: vi.fn(),
     setAutoAccept: vi.fn(),

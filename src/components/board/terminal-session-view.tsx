@@ -93,6 +93,7 @@ import { AGENT_INSTALL_GUIDE_URLS } from "@/lib/terminal/agent-install";
 import { setupScreen, type SetupScreen } from "@/lib/terminal/agent-setup";
 import { setupLiveStrip, type SetupButtonId } from "@/lib/terminal/setup-copy";
 import { TerminalAgentSetupPanel } from "./terminal-agent-setup-panel";
+import { recordSessionEvent } from "@/lib/terminal/session-events-client";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -322,6 +323,12 @@ interface TerminalSessionViewProps {
    */
   wakeResume?: { cwd: string; claudeSessionId: string | null } | null;
   /**
+   * Card f4be2981 stage 2: whether the server still has THIS tab's session as
+   * running. Normally left out: the tab asks the server itself when it lands
+   * on an error panel or on its own "couldn't reconnect" ending. Tests pass it.
+   */
+  sessionStillLive?: boolean;
+  /**
    * Split view (Nick's field report, 7 Sep 2026 — tab labels crossed after a
    * resume/reconnect): the body maps every session in `sessions` array order
    * to keep them all mounted, but the tab strip above lays its columns out in
@@ -367,6 +374,7 @@ export function TerminalSessionView({
   onPaneFocusChange,
   lastHelperStatus,
   wakeResume,
+  sessionStillLive: sessionStillLiveProp,
   paneOrder,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
@@ -586,7 +594,46 @@ export function TerminalSessionView({
   // installed, the folder wasn't there, the download failed, it stopped
   // straight away) — there is no conversation to reopen, and today's Resume
   // there just died again.
+  // Card f4be2981 stage 2: a session the server still has as running is never
+  // offered Resume (always refused: the conversation is already live); the
+  // right action is to get back into it. Only for endings the BROWSER decided
+  // (an error, or its own "couldn't reconnect" give-up). An end the Mac or the
+  // relay reported is real, and keeps Resume.
+  const ownSid = pair?.sessionId ?? null;
+  const browserDecidedEnding =
+    !!ownSid &&
+    !takenOver &&
+    state.errorKind !== "owner-mismatch" &&
+    (view === "error" || (view === "session-ended" && state.endedReason === "reconnect-failed"));
+  const [serverLive, setServerLive] = useState<{ sid: string; live: boolean } | null>(null);
+  const [liveCheckTick, setLiveCheckTick] = useState(0);
+  useEffect(() => {
+    if (!browserDecidedEnding || !ownSid || sessionStillLiveProp !== undefined) return;
+    let cancelled = false;
+    fetch("/api/terminal/session/list")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { sessions?: Array<{ sid: string; status: string }> } | null) => {
+        if (cancelled || !body) return;
+        const row = body.sessions?.find((r) => r.sid === ownSid);
+        const live = row?.status === "active";
+        setServerLive({ sid: ownSid, live });
+        recordSessionEvent(ownSid, "live-check", { live, found: !!row, view });
+      })
+      .catch(() => {
+        /* offline: asked again when the network is back */
+      });
+    const onOnline = () => setLiveCheckTick((n) => n + 1);
+    window.addEventListener("online", onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", onOnline);
+    };
+  }, [browserDecidedEnding, ownSid, sessionStillLiveProp, view, liveCheckTick]);
+  const sessionStillLive =
+    sessionStillLiveProp ?? (!!serverLive && serverLive.sid === ownSid && serverLive.live);
+  const offerReconnectLive = browserDecidedEnding && sessionStillLive;
   const canResume =
+    !offerReconnectLive &&
     view === "session-ended" &&
     endedReasonAllowsResume(state.endedReason) &&
     !!sessionCwd &&
@@ -678,6 +725,7 @@ export function TerminalSessionView({
   const resumeCwd = sessionCwd ?? wakeResume?.cwd ?? null;
   const resumeClaudeSessionId = sessionCwd ? claudeSessionId : wakeResume?.claudeSessionId ?? null;
   const canResumeFromError =
+    !offerReconnectLive &&
     view === "error" &&
     !takenOver &&
     state.errorKind !== "owner-mismatch" &&
@@ -687,7 +735,27 @@ export function TerminalSessionView({
     state.errorKind !== "cap-reached" &&
     !!resumeCwd &&
     !!onResumeEndedSession;
+  // Card f4be2981 stage 2: which panel this tab showed, and which buttons it
+  // offered, every time that changes. This is what was missing on 12 Nov.
+  const panelSid = pair?.sessionId ?? null;
+  useEffect(() => {
+    if (view !== "error" && view !== "session-ended" && view !== "disconnected") return;
+    recordSessionEvent(panelSid, "panel.shown", {
+      view,
+      errorKind: state.errorKind ?? null,
+      endedReason: state.endedReason ?? null,
+      closeCode: state.closeCode ?? null,
+      closeReason: state.closeReason ?? null,
+      takenOver,
+      canResume,
+      canResumeFromError,
+      offerReconnectLive,
+      sessionStillLive,
+    });
+  }, [view, panelSid, state.errorKind, state.endedReason, state.closeCode, state.closeReason, takenOver, canResume, canResumeFromError, offerReconnectLive, sessionStillLive]);
+
   const handleResume = () => {
+    recordSessionEvent(pair?.sessionId, "resume.pressed", { view, hasCwd: !!resumeCwd, sessionStillLive });
     if (!resumeCwd) return;
     onResumeEndedSession?.(
       {
@@ -1058,6 +1126,8 @@ export function TerminalSessionView({
               takenOver={takenOver}
               canResume={canResume}
               canResumeFromError={canResumeFromError}
+              offerReconnectLive={offerReconnectLive}
+              onReconnectLive={actions.reattachLiveSession}
               pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true, agent })}
               onConnectSetup={() => void actions.connect({ autoLaunch: true, agent: launchAgent })}
@@ -1252,6 +1322,8 @@ function StateOverlay({
   takenOver,
   canResume,
   canResumeFromError,
+  offerReconnectLive = false,
+  onReconnectLive,
   pairingTimedOut,
   onConnect,
   onConnectSetup,
@@ -1283,6 +1355,9 @@ function StateOverlay({
   canResume: boolean;
   /** Card dccd6c95 (sleep/resume routing) — see the same-named const in TerminalSessionView. */
   canResumeFromError: boolean;
+  /** Card f4be2981 stage 2 — see the same-named const in TerminalSessionView. */
+  offerReconnectLive?: boolean;
+  onReconnectLive?: () => void;
   /**
    * Card cbe60db5 rework 10 (stuck-pairing watchdog): the hook's
    * legacy-waiting session has sat unpaired for a full RECONNECT_GRACE_MS
@@ -1446,7 +1521,9 @@ function StateOverlay({
               "Update now" first, because updating is the fix there; every
               other ending gets one "Start again" (renamed from "Launch
               again", decision 7). */}
-          {ended.showUpdate ? (
+          {offerReconnectLive && onReconnectLive ? (
+            <ReconnectLiveAction onReconnect={onReconnectLive} />
+          ) : ended.showUpdate ? (
             <div className="flex flex-wrap justify-center gap-2.5">
               <HelperUpdateButton onClick={onDownloadHelper} className="h-9 px-4 text-sm font-semibold" />
               <Button
@@ -1611,6 +1688,7 @@ function StateOverlay({
               (`canResumeFromError`), offer the SAME Resume machinery and
               EXACT copy the session-ended panel already uses, as the primary
               action above "Try again" — never replacing it. */}
+          {offerReconnectLive && onReconnectLive && <ReconnectLiveAction onReconnect={onReconnectLive} />}
           {canResumeFromError && (
             <Button className="bg-emerald-500 text-sm font-semibold text-emerald-950 hover:bg-emerald-400" onClick={onResume}>
               <RefreshCw className="h-4 w-4" /> Resume this conversation
@@ -1894,4 +1972,20 @@ function errorMessage(state: TerminalConnectionState): string {
     default:
       return "The terminal session didn't start. Try launching again.";
   }
+}
+
+/**
+ * Card f4be2981 stage 2: the session is still running on the Mac (the
+ * server says so), so the one useful action is to get back into it. Same
+ * look as the overlay's other Reconnect button.
+ */
+function ReconnectLiveAction({ onReconnect }: { onReconnect: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-2" data-testid="reconnect-live">
+      <p className="max-w-md text-[13px] text-zinc-400">This session is still running on your Mac.</p>
+      <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onReconnect}>
+        <RefreshCw className="h-3.5 w-3.5" /> Reconnect
+      </Button>
+    </div>
+  );
 }
