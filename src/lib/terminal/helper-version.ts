@@ -172,8 +172,12 @@
  *  each other, and the in-app setup screen can install and sign in Claude Code
  *  or Codex. An older helper still works; messaging tells the sender the
  *  helper is too old, and setup falls back to copy-the-command. Same soft
- *  nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.35";
+ *  nudge.
+ *  0.3.36 (card f0a13bde follow-up, 12 Nov 2026): a session's start-up fetches
+ *  (its key, the board's agents) retry and say so in the terminal if they
+ *  still fail; each incoming session message is noted in the session record.
+ *  Same soft nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.36";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
