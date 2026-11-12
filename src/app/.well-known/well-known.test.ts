@@ -31,6 +31,7 @@ describe("/.well-known/oauth-authorization-server", () => {
       token_endpoint_auth_methods_supported: ["client_secret_post"],
       code_challenge_methods_supported: ["S256"],
       scopes_supported: ["mcp:tools"],
+      authorization_response_iss_parameter_supported: true,
     });
   });
 

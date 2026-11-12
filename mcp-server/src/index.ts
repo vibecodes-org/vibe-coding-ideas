@@ -1,17 +1,12 @@
 import "dotenv/config";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { supabase, BOT_USER_ID, OWNER_USER_ID } from "./supabase";
 import { registerTools } from "./register-tools";
 import { instrumentServer } from "./instrument";
 import { getStdioAttachmentContext } from "./attachment-context-stdio";
 import { SERVER_INSTRUCTIONS } from "./steering-copy";
 import type { McpContext } from "./context";
-
-const server = new McpServer(
-  { name: "vibecodes-local", version: "1.0.0" },
-  { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
-);
 
 // Ambient identity retired (docs/agent-voice-comments-design.html §4.1):
 // stdio no longer reads or restores a persisted active-bot slot at runtime.
@@ -38,7 +33,12 @@ const getContext = (): McpContext => ({
   sessionId: STDIO_SESSION_ID,
 });
 
-const instrumentedServer = instrumentServer(server, getContext, (entry) => {
+function buildServer() {
+  const server = new McpServer(
+    { name: "vibecodes-local", version: "1.0.0" },
+    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
+  );
+  const instrumentedServer = instrumentServer(server, getContext, (entry) => {
   supabase
     .from("mcp_tool_log")
     .insert(entry)
@@ -60,12 +60,15 @@ const instrumentedServer = instrumentServer(server, getContext, (entry) => {
 // set_agent_identity is a Phase A deprecation stub — there is no
 // identity-change state left for this callback to update.
 registerTools(instrumentedServer, getContext, () => {}, getStdioAttachmentContext);
+  return server;
+}
 
 // --- Start server ---
 
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // serveStdio may call the factory twice (a probe instance, then the real one),
+  // so the server must be built inside it.
+  await serveStdio(() => buildServer());
   console.error("VibeCodes MCP server running on stdio");
 }
 

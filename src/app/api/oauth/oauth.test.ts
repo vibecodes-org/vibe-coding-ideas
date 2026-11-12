@@ -169,6 +169,27 @@ describe("POST /api/oauth/register", () => {
     expect(body.token_endpoint_auth_method).toBe("client_secret_post");
   });
 
+  it("accepts and ignores application_type (2026-07-28 clients send it)", async () => {
+    const chain = makeChain({ data: { client_id: "generated-uuid" }, error: null });
+    mockFrom.mockReturnValue(chain);
+
+    const request = new Request("http://localhost/api/oauth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirect_uris: ["http://localhost:3000/callback"],
+        client_name: "Native Client",
+        application_type: "native",
+      }),
+    });
+
+    const response = await registerPOST(request);
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.client_id).toBe("generated-uuid");
+    expect(body).not.toHaveProperty("application_type");
+  });
+
   it("rejects missing redirect_uris", async () => {
     const request = new Request("http://localhost/api/oauth/register", {
       method: "POST",

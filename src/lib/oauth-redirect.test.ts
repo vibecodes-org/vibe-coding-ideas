@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   redirectUriKey,
   matchRegisteredRedirectUri,
   redirectUriMatches,
   resolveRedirectTarget,
+  oauthIssuer,
 } from "./oauth-redirect";
 
 describe("redirectUriMatches — loopback host forms", () => {
@@ -163,5 +164,21 @@ describe("resolveRedirectTarget — where the browser is sent back", () => {
         "https://app.example.com/cb"
       )
     ).toBe("https://app.example.com/cb");
+  });
+});
+
+describe("oauthIssuer (RFC 9207 iss)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("uses NEXT_PUBLIC_APP_URL when set", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://vibecodes.co.uk");
+    expect(oauthIssuer("http://localhost:3000")).toBe("https://vibecodes.co.uk");
+  });
+
+  it("falls back to the given origin when unset or blank", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    expect(oauthIssuer("http://localhost:3000")).toBe("http://localhost:3000");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "   ");
+    expect(oauthIssuer("http://localhost:3000")).toBe("http://localhost:3000");
   });
 });

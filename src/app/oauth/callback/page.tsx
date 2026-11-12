@@ -3,6 +3,7 @@
 import { useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { oauthIssuer } from "@/lib/oauth-redirect";
 import {
   Card,
   CardDescription,
@@ -75,6 +76,7 @@ function OAuthCallbackContent() {
         const finalRedirect = new URL(redirectUri);
         finalRedirect.searchParams.set("code", code);
         finalRedirect.searchParams.set("state", state);
+        finalRedirect.searchParams.set("iss", oauthIssuer(window.location.origin));
         window.location.href = finalRedirect.toString();
       }
     }

@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { oauthIssuer } from "@/lib/oauth-redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -95,6 +96,7 @@ function OAuthAuthorizeContent() {
     const redirectUrl = new URL(redirectUri!);
     redirectUrl.searchParams.set("code", code);
     redirectUrl.searchParams.set("state", state!);
+    redirectUrl.searchParams.set("iss", oauthIssuer(window.location.origin));
     window.location.href = redirectUrl.toString();
   }
 

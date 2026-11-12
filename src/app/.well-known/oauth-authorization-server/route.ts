@@ -1,3 +1,5 @@
+import { oauthIssuer } from "@/lib/oauth-redirect";
+
 export const dynamic = "force-dynamic";
 
 const CORS_HEADERS: HeadersInit = {
@@ -8,8 +10,7 @@ const CORS_HEADERS: HeadersInit = {
 };
 
 export async function GET(request: Request) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const baseUrl = oauthIssuer(new URL(request.url).origin);
 
   return new Response(
     JSON.stringify({
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
       token_endpoint_auth_methods_supported: ["client_secret_post"],
       code_challenge_methods_supported: ["S256"],
       scopes_supported: ["mcp:tools"],
+      // RFC 9207: the redirect back to the client carries `iss`.
+      authorization_response_iss_parameter_supported: true,
     }),
     { status: 200, headers: CORS_HEADERS }
   );

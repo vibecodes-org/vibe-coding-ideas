@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.125",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@supabase/supabase-js": "^2.95.3",
     "ai": "^6.0.86",
     "dotenv": "^16.4.7",

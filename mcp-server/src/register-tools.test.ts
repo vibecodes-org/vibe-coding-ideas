@@ -98,7 +98,7 @@ const EXPECTED_TOOL_NAMES = [
 ];
 
 function createMockServer() {
-  return { tool: vi.fn() };
+  return { registerTool: vi.fn() };
 }
 
 describe("registerTools", () => {
@@ -108,13 +108,13 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(91);
+    expect(server.registerTool).toHaveBeenCalledTimes(91);
   });
 
   it("declares a result size limit on sync_board_agents so its file isn't saved to disk", () => {
     const registered: Record<string, { _meta?: Record<string, unknown> }> = {};
     const server = {
-      tool: vi.fn((name: string) => (registered[name] = {})),
+      registerTool: vi.fn((name: string, config: { _meta?: Record<string, unknown> }) => (registered[name] = { _meta: config._meta })),
     };
     registerTools(server, vi.fn());
     expect(registered.sync_board_agents._meta).toEqual({ "anthropic/maxResultSizeChars": 150_000 });
@@ -127,24 +127,25 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const registeredNames = server.tool.mock.calls.map(
+    const registeredNames = server.registerTool.mock.calls.map(
       (call: unknown[]) => call[0]
     );
     expect(registeredNames).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it("registers each tool with name, description, schema, and callback", () => {
+  it("registers each tool with name, config (description + input schema), and callback", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    for (const call of server.tool.mock.calls) {
-      const [name, description, schema, callback] = call;
+    for (const call of server.registerTool.mock.calls) {
+      const [name, config, callback] = call;
+      const { description, inputSchema: schema } = config;
       expect(typeof name).toBe("string");
       expect(typeof description).toBe("string");
       expect(description.length).toBeGreaterThan(0);
-      expect(typeof schema).toBe("object");
+      expect(typeof schema.safeParse).toBe("function");
       expect(typeof callback).toBe("function");
     }
   });
@@ -158,7 +159,7 @@ describe("registerTools", () => {
     registerTools(server, getContext);
 
     // Invoke the first tool callback (list_ideas)
-    const callback = server.tool.mock.calls[0][3];
+    const callback = server.registerTool.mock.calls[0][2];
     const result = await callback({}, {});
 
     expect(result.isError).toBe(true);
@@ -181,7 +182,7 @@ describe("registerTools", () => {
     // Invoke create_task (index 7 — shifted by get_idea_enhancement_prompt at
     // index 2 and get_new_idea_enhancement_prompt at index 3) with
     // valid-shaped args that will fail at DB
-    const callback = server.tool.mock.calls[7][3];
+    const callback = server.registerTool.mock.calls[7][2];
     const result = await callback(
       {
         idea_id: "00000000-0000-0000-0000-000000000001",
@@ -206,7 +207,7 @@ describe("registerTools", () => {
     registerTools(server, getContext);
 
     // Invoke get_idea (index 1) with invalid args (missing required idea_id)
-    const callback = server.tool.mock.calls[1][3];
+    const callback = server.registerTool.mock.calls[1][2];
     const result = await callback({}, {});
 
     expect(result.isError).toBe(true);
@@ -221,8 +222,8 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const extra = { authInfo: { token: "abc", userId: "user-1" } };
-    const callback = server.tool.mock.calls[0][3];
+    const extra = { http: { authInfo: { token: "abc", userId: "user-1" } } };
+    const callback = server.registerTool.mock.calls[0][2];
     await callback({}, extra);
 
     expect(getContext).toHaveBeenCalledWith(extra);
@@ -234,7 +235,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const registeredNames = server.tool.mock.calls.map(
+    const registeredNames = server.registerTool.mock.calls.map(
       (call: unknown[]) => call[0]
     );
     expect(registeredNames).toContain("list_agents");
@@ -260,12 +261,12 @@ describe("registerTools", () => {
 
     registerTools(server, getContext, onIdentityChange);
 
-    const setIdentityCall = server.tool.mock.calls.find(
+    const setIdentityCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "set_agent_identity"
     );
     expect(setIdentityCall).toBeDefined();
 
-    const callback = setIdentityCall![3];
+    const callback = setIdentityCall![2];
     const result = await callback({}, {});
 
     expect(result.isError).toBe(true);
@@ -286,10 +287,10 @@ describe("registerTools", () => {
     // Don't pass onIdentityChange
     registerTools(server, getContext);
 
-    const setIdentityCall = server.tool.mock.calls.find(
+    const setIdentityCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "set_agent_identity"
     );
-    const callback = setIdentityCall![3];
+    const callback = setIdentityCall![2];
 
     const result = await callback({ agent_id: "00000000-0000-4000-a000-000000000010" }, {});
     expect(result.isError).toBe(true);
@@ -306,10 +307,10 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const listBotsCall = server.tool.mock.calls.find(
+    const listBotsCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "list_agents"
     );
-    const callback = listBotsCall![3];
+    const callback = listBotsCall![2];
     const result = await callback({}, {});
 
     expect(result.isError).toBe(true);
@@ -326,10 +327,10 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const createBotCall = server.tool.mock.calls.find(
+    const createBotCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "create_agent"
     );
-    const callback = createBotCall![3];
+    const callback = createBotCall![2];
 
     // Missing required name
     const result = await callback({}, {});
@@ -343,10 +344,10 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const getIdeaCall = server.tool.mock.calls.find(
+    const getIdeaCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "get_idea"
     );
-    expect(getIdeaCall![1]).toContain("get_idea_enhancement_prompt");
+    expect((getIdeaCall![1] as { description: string }).description).toContain("get_idea_enhancement_prompt");
   });
 
   // Regression: both descriptions used to instruct clients to call
@@ -357,8 +358,8 @@ describe("registerTools", () => {
   it("save_step_output's description stays within 400 characters", () => {
     const server = createMockServer();
     registerTools(server, vi.fn());
-    const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "save_step_output");
-    expect((call![1] as string).length).toBeLessThanOrEqual(400);
+    const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === "save_step_output");
+    expect(((call![1] as { description: string }).description).length).toBeLessThanOrEqual(400);
   });
 
   it("claim_next_step's description defers to the instruction field, not set_agent_identity", () => {
@@ -366,10 +367,10 @@ describe("registerTools", () => {
 
     registerTools(server, vi.fn());
 
-    const claimCall = server.tool.mock.calls.find(
+    const claimCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "claim_next_step"
     );
-    const description = claimCall![1] as string;
+    const description = (claimCall![1] as { description: string }).description;
 
     expect(description).toContain("`instruction` field");
     expect(description).toContain("fresh subagent");
@@ -384,10 +385,10 @@ describe("registerTools", () => {
 
     registerTools(server, vi.fn());
 
-    const completeCall = server.tool.mock.calls.find(
+    const completeCall = server.registerTool.mock.calls.find(
       (call: unknown[]) => call[0] === "complete_step"
     );
-    const description = completeCall![1] as string;
+    const description = (completeCall![1] as { description: string }).description;
 
     // completeStep verifies the claim_token and attributes to step.bot_id; an
     // identity mismatch only logs a warning, it does not reject the call.
@@ -422,11 +423,11 @@ describe("registerTools", () => {
 
     registerTools(server, getContext, undefined, provider);
 
-    const call = server.tool.mock.calls.find(
+    const call = server.registerTool.mock.calls.find(
       (c: unknown[]) => c[0] === "get_idea_enhancement_prompt"
     );
     expect(call).toBeDefined();
-    const callback = call![3];
+    const callback = call![2];
     const result = await callback({ idea_id: IDEA_ID }, {});
 
     expect(result.isError).toBeUndefined();
@@ -447,11 +448,11 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    const call = server.tool.mock.calls.find(
+    const call = server.registerTool.mock.calls.find(
       (c: unknown[]) => c[0] === "get_new_idea_enhancement_prompt"
     );
     expect(call).toBeDefined();
-    const callback = call![3];
+    const callback = call![2];
     const result = await callback({ title: "New idea", description: "Draft desc" }, {});
 
     expect(result.isError).toBeUndefined();
@@ -470,9 +471,9 @@ describe("registerTools", () => {
     const server = createMockServer();
     registerTools(server, vi.fn());
 
-    const offenders = server.tool.mock.calls
+    const offenders = server.registerTool.mock.calls
       .filter((call: unknown[]) => call[0] !== "set_agent_identity")
-      .filter((call: unknown[]) => (call[1] as string).includes("set_agent_identity"))
+      .filter((call: unknown[]) => (call[1] as { description: string }).description.includes("set_agent_identity"))
       .map((call: unknown[]) => call[0]);
 
     expect(offenders).toEqual([]);
@@ -483,8 +484,8 @@ describe("registerTools", () => {
     registerTools(server, vi.fn());
 
     for (const name of ["add_task_comment", "add_step_comment"]) {
-      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name);
-      expect(call![1] as string).toContain("work_token");
+      const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === name);
+      expect((call![1] as { description: string }).description).toContain("work_token");
     }
   });
 
@@ -500,14 +501,14 @@ describe("registerTools", () => {
     const LIVE_TOOLS = ["get_board", "get_task", "get_my_tasks"];
 
     for (const name of LIVE_TOOLS) {
-      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name);
+      const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === name);
       expect(call, `expected ${name} to be registered`).toBeDefined();
-      expect(call![1] as string).toContain(LIVE_DATA_SENTENCE);
+      expect((call![1] as { description: string }).description).toContain(LIVE_DATA_SENTENCE);
     }
 
-    const offenders = server.tool.mock.calls
+    const offenders = server.registerTool.mock.calls
       .filter((call: unknown[]) => !LIVE_TOOLS.includes(call[0] as string))
-      .filter((call: unknown[]) => (call[1] as string).includes(LIVE_DATA_SENTENCE))
+      .filter((call: unknown[]) => (call[1] as { description: string }).description.includes(LIVE_DATA_SENTENCE))
       .map((call: unknown[]) => call[0]);
 
     expect(offenders).toEqual([]);
@@ -517,8 +518,8 @@ describe("registerTools", () => {
     const server = createMockServer();
     registerTools(server, vi.fn());
 
-    const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "get_board");
-    const description = call![1] as string;
+    const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === "get_board");
+    const description = (call![1] as { description: string }).description;
 
     // Replaced by LIVE_DATA_SENTENCE, which carries both clauses — kept side
     // by side they'd read as two slightly different rules (design doc §3b).
@@ -531,8 +532,8 @@ describe("registerTools", () => {
       const server = createMockServer();
       const from = vi.fn(() => { throw new Error("database touched"); });
       registerTools(server, vi.fn(() => ({ supabase: { from } as unknown as McpContext["supabase"], userId: "u" })));
-      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name)!;
-      const result = await call[3]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done" }, {});
+      const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === name)!;
+      const result = await call[2]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done" }, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("usage_command");
       expect(from).not.toHaveBeenCalled();
@@ -544,8 +545,8 @@ describe("registerTools", () => {
       const server = createMockServer();
       const from = vi.fn(() => { throw new Error("database touched"); });
       registerTools(server, vi.fn(() => ({ supabase: { from } as unknown as McpContext["supabase"], userId: "u" })));
-      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "complete_step")!;
-      const result = await call[3]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done", ...extra }, {});
+      const call = server.registerTool.mock.calls.find((c: unknown[]) => c[0] === "complete_step")!;
+      const result = await call[2]({ step_id: "00000000-0000-4000-8000-000000000001", claim_token: "ct_x", output: "done", ...extra }, {});
       expect(from).toHaveBeenCalled();
       expect(result.content[0].text).toContain("database touched");
     }

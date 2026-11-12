@@ -9,8 +9,8 @@
 // function instance → empty 500 "No response is returned from route handler".
 // Victims in production: /api/terminal/session and the three /api/ai/* routes.
 //
-// mcp-handler@1.1.0 uses the SDK's web-standard transport (no hono, no global
-// mutation). This test imports and INVOKES the handler — the mutation happened
+// mcp-handler@1.1.0 and 2.x use the SDK's web-standard transport (no hono, no
+// global mutation). This test imports and INVOKES the handler — the mutation happened
 // at transport construction, not just import — and asserts the globals survive.
 // The ordered e2e in e2e/auth/middleware.spec.ts is the full-stack pin.
 import { describe, it, expect } from "vitest";
@@ -23,12 +23,11 @@ describe("mcp-handler global object poisoning (card b6e5c728)", () => {
     const { createMcpHandler } = await import("mcp-handler");
     const handler = createMcpHandler(
       (server) => {
-        server.tool("noop", "does nothing", {}, async () => ({
+        server.registerTool("noop", { description: "does nothing" }, async () => ({
           content: [{ type: "text" as const, text: "ok" }],
         }));
       },
-      { serverInfo: { name: "poison-pin", version: "0.0.0" } },
-      { streamableHttpEndpoint: "/api/mcp" }
+      { serverInfo: { name: "poison-pin", version: "0.0.0" } }
     );
 
     // Drive a real request through the transport — the old hono-based transport

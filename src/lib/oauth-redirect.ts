@@ -100,3 +100,14 @@ export function resolveRedirectTarget(
     return registeredUri;
   }
 }
+
+/**
+ * The authorization server's issuer identifier (RFC 9207). One helper feeds
+ * both the metadata document's `issuer` and the `iss` parameter on the redirect
+ * back to the client, so the two can never disagree (a client that checks `iss`
+ * against the advertised issuer would refuse to sign in). `.trim() || fallback`
+ * because a blank env var must not become an empty issuer.
+ */
+export function oauthIssuer(fallbackOrigin: string): string {
+  return process.env.NEXT_PUBLIC_APP_URL?.trim() || fallbackOrigin;
+}
