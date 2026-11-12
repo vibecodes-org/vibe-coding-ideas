@@ -541,7 +541,8 @@ export async function addLabelToTask(
 export async function addLabelsToTask(
   taskId: string,
   labelIds: string[],
-  ideaId: string
+  ideaId: string,
+  opts?: { skipAutoRules?: boolean }
 ) {
   if (labelIds.length === 0) return;
 
@@ -560,6 +561,9 @@ export async function addLabelsToTask(
   const { error } = await supabase.from("board_task_labels").insert(rows);
 
   if (error) throw new Error(error.message);
+
+  // The New Task dialog attaches the workflow itself (applyNewTaskWorkflow).
+  if (opts?.skipAutoRules) return;
 
   // Check for auto-rule workflow application for each label
   for (const labelId of labelIds) {

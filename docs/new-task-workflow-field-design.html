@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Task Workflow Field</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:oklch(0.141 0.005 285.823);
+  --fg:oklch(0.985 0 0);
+  --card:oklch(0.21 0.006 285.885);
+  --muted:oklch(0.274 0.006 286.033);
+  --mfg:oklch(0.705 0.015 286.067);
+  --border:oklch(1 0 0 / 10%);
+  --input:oklch(1 0 0 / 15%);
+  --primary:oklch(0.92 0.004 286.32);
+  --pfg:oklch(0.21 0.006 285.885);
+  --note:#fbbf24;
+}
+body{font-family:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding:36px 16px 100px}
+h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
+.lede{color:var(--mfg);font-size:14px;max-width:720px;margin-bottom:28px}
+h2{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mfg);margin:40px 0 6px}
+.why{font-size:13px;color:var(--mfg);max-width:720px;margin-bottom:14px}
+.why b{color:var(--fg);font-weight:500}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px}
+.frame{border:1px dashed var(--border);border-radius:12px;padding:18px;background:oklch(0.17 0.005 285.8)}
+.cap{font-size:12px;color:var(--mfg);margin-bottom:10px}
+.cap b{color:var(--fg);font-weight:600}
+
+/* dialog */
+.dlg{background:var(--card);border:1px solid oklch(1 0 0 / 6%);border-radius:10px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.5);max-width:512px;position:relative}
+.dlg h3{font-size:18px;font-weight:600;margin-bottom:16px}
+.f{margin-bottom:14px}
+.lbl{font-size:14px;font-weight:500;margin-bottom:8px;display:block}
+.inp{height:36px;border:1px solid var(--input);border-radius:6px;background:oklch(1 0 0 / 4.5%);padding:0 12px;font-size:14px;display:flex;align-items:center}
+.ta{height:64px;align-items:flex-start;padding-top:8px;color:var(--mfg)}
+.sel{height:36px;border:1px solid var(--input);border-radius:6px;background:oklch(1 0 0 / 4.5%);padding:0 12px;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px;white-space:nowrap}
+.sel .v{overflow:hidden;text-overflow:ellipsis}
+.sel.ph{color:var(--mfg)}
+.chev{width:16px;height:16px;flex-shrink:0;color:var(--mfg)}
+.labels-btn{height:32px;border:1px solid var(--input);border-radius:6px;background:oklch(1 0 0 / 4.5%);padding:0 10px;font-size:12px;display:flex;align-items:center;gap:6px}
+.labels-btn svg{width:14px;height:14px;color:var(--mfg)}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:1px 8px;border-radius:999px;color:#fff}
+.chip.bug{background:#dc2626}.chip.feat{background:#2563eb}.chip.ux{background:#9333ea}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.help{font-size:12px;color:var(--mfg);margin-top:6px}
+.wf-new{outline:2px solid var(--note);outline-offset:6px;border-radius:6px}
+.hint{font-size:12px;color:var(--mfg);margin:4px 0 16px}
+.btns{display:flex;justify-content:flex-end;gap:8px}
+.btn{height:36px;padding:0 16px;border-radius:6px;font-size:14px;font-weight:500;display:inline-flex;align-items:center}
+.btn.o{border:1px solid var(--input);background:oklch(1 0 0 / 4.5%)}
+.btn.p{background:var(--primary);color:var(--pfg)}
+
+/* open select menu */
+.menu{position:absolute;left:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);z-index:5}
+.grp{font-size:12px;color:var(--mfg);padding:6px 8px 4px}
+.it{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:4px;font-size:14px}
+.it .n{font-size:12px;color:var(--mfg)}
+.it.on{background:var(--muted)}
+.it .tick{width:14px;height:14px}
+.sep{height:1px;background:var(--border);margin:4px -4px}
+
+/* card on board */
+.bcard{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;max-width:280px}
+.bcard .t{font-size:14px;font-weight:500;margin-bottom:6px}
+.badge{display:inline-flex;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--muted);color:var(--mfg)}
+
+.phone{width:375px;max-width:100%;border:1px solid var(--border);border-radius:24px;padding:16px;background:var(--bg)}
+.phone .dlg{padding:18px}
+
+.notes{border-left:3px solid var(--note);padding:10px 14px;background:oklch(0.2 0.02 80 / 25%);border-radius:0 8px 8px 0;font-size:13px;max-width:900px;margin-top:10px}
+.notes li{margin-left:18px;margin-bottom:4px}
+.decision{color:var(--note);font-weight:600}
+@media (max-width:480px){.frame{padding:10px}.dlg{padding:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>New Task: choose the card's workflow before Create</h1>
+  <p class="lede">One new field, <b>Workflow</b>, sits under Labels in the New Task dialog. It uses the same kind of dropdown as Assignee. Left alone, it shows which workflow the card's labels will attach, and updates as you pick labels. You can also pick a workflow yourself, or pick "None" for a plain note card. The yellow outline marks the new field. It is not part of the design.</p>
+
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  </svg>
+
+  <!-- 1 & 2 -->
+  <h2>1. Default: nothing touched</h2>
+  <p class="why">The field starts on <b>Automatic</b>. With no labels picked, nothing matches, so it reads "Automatic: none". With the Bug label picked, it reads "Automatic: Bug Fix". Leaving it on Automatic gives the same result as today.</p>
+  <div class="row">
+    <div class="frame">
+      <div class="cap"><b>No labels yet</b></div>
+      <div class="dlg">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Title</span><div class="inp">Export button does nothing on Safari</div></div>
+        <div class="f"><span class="lbl">Assignee</span><div class="sel ph"><span class="v">Unassigned</span><svg class="chev"><use href="#chev"/></svg></div></div>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><span style="color:var(--mfg)">Select labels…</span></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Automatic: none</span><svg class="chev"><use href="#chev"/></svg></div>
+          <div class="help">No label on this card has a workflow.</div></div>
+        <div class="hint">Paste or drop images to attach them</div>
+        <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="cap"><b>Bug label picked</b>: updates straight away</div>
+      <div class="dlg">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Title</span><div class="inp">Export button does nothing on Safari</div></div>
+        <div class="f"><span class="lbl">Assignee</span><div class="sel ph"><span class="v">Unassigned</span><svg class="chev"><use href="#chev"/></svg></div></div>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip bug">Bug</span></div></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Automatic: Bug Fix</span><svg class="chev"><use href="#chev"/></svg></div>
+          <div class="help">From the Bug label.</div></div>
+        <div class="hint">Paste or drop images to attach them</div>
+        <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <h2>2. Two labels that both have workflows</h2>
+  <p class="why">Today the label you <b>picked first</b> decides. The field shows that, so there is no surprise after Create. Here Bug was picked before Feature.</p>
+  <div class="row">
+    <div class="frame">
+      <div class="cap"><b>Bug, then Feature</b></div>
+      <div class="dlg">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Title</span><div class="inp">Export fails and needs a CSV option</div></div>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip bug">Bug</span><span class="chip feat">Feature</span></div></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Automatic: Bug Fix</span><svg class="chev"><use href="#chev"/></svg></div>
+          <div class="help">Bug and Feature both have workflows. Bug was picked first, so it wins.</div></div>
+        <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="cap"><b>The dropdown, open</b></div>
+      <div class="dlg" style="min-height:540px">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip bug">Bug</span><span class="chip feat">Feature</span></div></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Automatic: Bug Fix</span><svg class="chev"><use href="#chev"/></svg></div></div>
+        <div class="menu" style="top:178px">
+          <div class="it on"><span>Automatic: Bug Fix</span><svg class="tick"><use href="#tick"/></svg></div>
+          <div class="it"><span>None: no steps</span></div>
+          <div class="sep"></div>
+          <div class="grp">Workflows</div>
+          <div class="it"><span>Bug Fix</span><span class="n">3 steps</span></div>
+          <div class="it"><span>Design Review</span><span class="n">4 steps</span></div>
+          <div class="it"><span>Feature Development</span><span class="n">4 steps</span></div>
+          <div class="it"><span>Idea Validation</span><span class="n">1 step</span></div>
+          <div class="it"><span>Infrastructure Change</span><span class="n">2 steps</span></div>
+          <div class="it"><span>Quick Fix</span><span class="n">2 steps</span></div>
+          <div class="it"><span>Technical Spike</span><span class="n">2 steps</span></div>
+          <div class="it"><span>UX/UI Spike</span><span class="n">2 steps</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <h2>3. Picking for yourself</h2>
+  <p class="why">A pick applies to <b>this card only</b>. Labels are still added, but they do not change the workflow. "None" makes a quick note card with no steps.</p>
+  <div class="row">
+    <div class="frame">
+      <div class="cap"><b>Feature Development picked by hand</b></div>
+      <div class="dlg">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip bug">Bug</span><span class="chip feat">Feature</span></div></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Feature Development</span><svg class="chev"><use href="#chev"/></svg></div>
+          <div class="help">Your pick. Labels won't change it for this card.</div></div>
+        <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="cap"><b>None picked</b></div>
+      <div class="dlg">
+        <h3>New Task</h3>
+        <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip bug">Bug</span></div></div></div>
+        <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">None: no steps</span><svg class="chev"><use href="#chev"/></svg></div>
+          <div class="help">A plain card. You can add a workflow later from the card.</div></div>
+        <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <h2>4. Right after Create: no change to the board</h2>
+  <p class="why">The new card uses the pills the board already has. A card getting a workflow shows "Wiring workflow…" for a moment, then the usual progress. A card made with "None" shows the usual "No workflow" pill.</p>
+  <div class="frame" style="display:flex;gap:16px;flex-wrap:wrap">
+    <div class="bcard"><div class="t">Export button does nothing on Safari</div><div class="chips" style="margin-bottom:6px"><span class="chip bug">Bug</span></div><span class="badge" style="background:oklch(0.6 0.2 293 / 12%);color:#a78bfa;border:1px solid oklch(0.6 0.2 293 / 25%);font-size:10px">Wiring workflow…</span></div>
+    <div class="bcard"><div class="t">Remember to renew the domain</div><span class="badge" style="background:none;border:1px dashed oklch(0.705 0.015 286 / 40%);font-size:10px">No workflow</span></div>
+  </div>
+
+  <!-- 6 -->
+  <h2>5. Phone width (375px)</h2>
+  <p class="why">Same layout. The dropdown is full width and long names are cut off with "…" instead of pushing the page sideways.</p>
+  <div class="phone">
+    <div class="dlg">
+      <h3>New Task</h3>
+      <div class="f"><span class="lbl">Title</span><div class="inp">Redesign the settings page</div></div>
+      <div class="f"><span class="lbl">Labels</span><div class="labels-btn"><svg><use href="#tag"/></svg><div class="chips"><span class="chip ux">UX Redesign</span></div></div></div>
+      <div class="f wf-new"><span class="lbl">Workflow</span><div class="sel"><span class="v">Automatic: UX/UI Spike</span><svg class="chev"><use href="#chev"/></svg></div>
+        <div class="help">From the UX Redesign label.</div></div>
+      <div class="btns"><span class="btn o">Cancel</span><span class="btn p">Create</span></div>
+    </div>
+  </div>
+
+  <h2>Differences from the fields next to it</h2>
+  <div class="notes">
+    <ul>
+      <li><span class="decision">Decision 1:</span> Workflow has a small grey line under it saying where the choice came from. Assignee and Labels have none. Recommended: keep it, because "Automatic: Bug Fix" alone doesn't say why.</li>
+      <li>Same as Assignee: same dropdown, same size, label above, saves only when you press Create.</li>
+      <li>Hidden when the board has no workflows at all, the same way Labels is hidden when the board has no labels.</li>
+      <li>Not shown: the Title and Description buttons and image area are unchanged and left out of some frames to save space.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

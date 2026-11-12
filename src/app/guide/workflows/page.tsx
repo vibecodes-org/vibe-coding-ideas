@@ -150,7 +150,7 @@ export default function WorkflowsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Applying a Workflow</h2>
           <p className="mb-4 text-muted-foreground">
-            There are two ways to apply a workflow to a task:
+            There are three ways to apply a workflow to a task:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -158,6 +158,18 @@ export default function WorkflowsPage() {
               task, find the Workflow section, and click{" "}
               <strong className="text-foreground">Apply Workflow</strong>. Select
               a template and it will create steps for that task
+            </li>
+            <li>
+              <strong className="text-foreground">When you create the task</strong>{" "}
+              — the New Task dialog has a{" "}
+              <strong className="text-foreground">Workflow</strong> field under
+              Labels. It starts on{" "}
+              <strong className="text-foreground">Automatic</strong>, which shows
+              the workflow your labels will attach (or &quot;Automatic: none&quot;)
+              and updates as you tick labels. Pick a specific workflow to use that
+              one for this task only, or{" "}
+              <strong className="text-foreground">None</strong> for a plain card
+              with no steps
             </li>
             <li>
               <strong className="text-foreground">Workflow triggers</strong> — set up a
@@ -207,6 +219,13 @@ export default function WorkflowsPage() {
               review steps.
             </p>
           </div>
+          <p className="mt-4 text-muted-foreground">
+            In the New Task dialog, triggers are previewed before you press
+            Create. If two of the ticked labels both have triggers, the label you
+            ticked first wins, and the dialog says so. A workflow you pick by hand
+            (or None) overrides the triggers for that task only; the labels are
+            still added.
+          </p>
         </section>
 
         <section>
@@ -220,7 +239,9 @@ export default function WorkflowsPage() {
             <strong className="text-foreground">
               suggests instead of silently attaching it
             </strong>{" "}
-            — nothing is applied until a human decides.
+            — nothing is applied until a human decides. (Tasks created in the
+            New Task dialog are the exception: the dialog shows the workflow
+            before you press Create, so what it shows is what the task gets.)
           </p>
           <p className="mb-4 text-muted-foreground">
             Behind the scenes, a quick keyword check sorts both the task and the

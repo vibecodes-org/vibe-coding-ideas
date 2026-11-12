@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,22 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil, Tag, Check } from "lucide-react";
 import { AssigneeSelect } from "./assignee-select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  getNewTaskWorkflowOptions,
+  applyNewTaskWorkflow,
+  type NewTaskWorkflowOptions,
+} from "@/actions/workflow-templates";
+import { pickAutoRuleTemplate } from "@/lib/auto-rule-pick";
 import { Markdown } from "@/components/ui/markdown";
 import { getLabelColorConfig } from "@/lib/utils";
 import { createBoardTask, addLabelsToTask } from "@/actions/board";
@@ -59,6 +75,10 @@ export function TaskEditDialog({
   const [description, setDescription] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set());
+  // "auto" | "none" | a workflow template id
+  const [workflowChoice, setWorkflowChoice] = useState<string>("auto");
+  // null = not loaded yet, or loading failed: the field stays hidden and Create behaves as before
+  const [workflowOptions, setWorkflowOptions] = useState<NewTaskWorkflowOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingImages, setPendingImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -89,6 +109,55 @@ export function TaskEditDialog({
     } finally {
       setEnhancing(false);
     }
+  }
+
+  // Load workflow templates + label rules for the Workflow field when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setWorkflowOptions(null);
+    getNewTaskWorkflowOptions(ideaId)
+      .then((opts) => {
+        if (!cancelled) setWorkflowOptions(opts);
+      })
+      .catch((err) => {
+        // Fall back to today's behaviour (labels attach workflows on their own).
+        logger.error("Failed to load workflow options", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, ideaId]);
+
+  const workflowPreview = useMemo(() => {
+    if (!workflowOptions) return null;
+    const pick = pickAutoRuleTemplate(Array.from(selectedLabelIds), workflowOptions.rules);
+    const labelName = (id: string | null) =>
+      boardLabels.find((l) => l.id === id)?.name ?? "";
+    // A rule can point at a template missing from the list: treat as no match.
+    const templateName = pick.templateId
+      ? workflowOptions.templates.find((t) => t.id === pick.templateId)?.name ?? null
+      : null;
+    return {
+      templateId: templateName ? pick.templateId : null,
+      templateName,
+      sourceName: labelName(pick.sourceLabelId),
+      otherNames: pick.otherMatchedLabelIds.map(labelName),
+    };
+  }, [workflowOptions, selectedLabelIds, boardLabels]);
+
+  function workflowHelp(): string {
+    if (!workflowPreview) return "";
+    if (workflowChoice === "none") return "A plain card. You can add a workflow later from the card.";
+    if (workflowChoice !== "auto") return "Your pick. Labels won't change it for this card.";
+    if (!workflowPreview.templateId) return "No label on this card has a workflow.";
+    if (workflowPreview.otherNames.length === 0) return `From the ${workflowPreview.sourceName} label.`;
+    const all = [workflowPreview.sourceName, ...workflowPreview.otherNames];
+    const list =
+      all.length === 2 ? `${all[0]} and ${all[1]}` : `${all.slice(0, -1).join(", ")} and ${all[all.length - 1]}`;
+    return `${list} both have workflows. ${workflowPreview.sourceName} was picked first, so it wins.`;
   }
 
   // Scoped paste handler — only active when this dialog is open
@@ -209,6 +278,7 @@ export function TaskEditDialog({
     setDescription("");
     setAssigneeId("");
     setSelectedLabelIds(new Set());
+    setWorkflowChoice("auto");
     setPendingImages([]);
     setIsDragging(false);
     dragCounterRef.current = 0;
@@ -239,8 +309,10 @@ export function TaskEditDialog({
 
     // Build optimistic task
     const tempId = `temp-${crypto.randomUUID()}`;
-    const assignee = assigneeId
-      ? [...teamMembers, ...ideaAgents].find((m) => m.id === assigneeId) ?? null
+    // The Assignee picker's explicit "Unassigned" option has the value "unassigned", not a user id.
+    const effectiveAssigneeId = assigneeId === "unassigned" ? "" : assigneeId;
+    const assignee = effectiveAssigneeId
+      ? [...teamMembers, ...ideaAgents].find((m) => m.id === effectiveAssigneeId) ?? null
       : null;
     const selectedLabels = boardLabels.filter((l) => selectedLabelIds.has(l.id));
     const tempTask: BoardTaskWithAssignee = {
@@ -249,7 +321,7 @@ export function TaskEditDialog({
       column_id: columnId,
       title: title.trim(),
       description: description.trim() || null,
-      assignee_id: assigneeId || null,
+      assignee_id: effectiveAssigneeId || null,
       assignee,
       labels: selectedLabels,
       position: Date.now(), // high value to sort at end
@@ -277,6 +349,10 @@ export function TaskEditDialog({
     const rollback = ops.createTask(columnId, tempTask);
     ops.incrementPendingOps();
     const filesToUpload = pendingImages.map((entry) => entry.file);
+    // Snapshot before the dialog resets.
+    const labelIdsInOrder = Array.from(selectedLabelIds);
+    const choice = workflowChoice;
+    const useWorkflowField = workflowOptions !== null;
     handleOpenChange(false);
 
     // Background: server call
@@ -286,10 +362,23 @@ export function TaskEditDialog({
         columnId,
         title.trim(),
         description.trim() || undefined,
-        assigneeId || undefined
+        effectiveAssigneeId || undefined
       );
-      if (selectedLabelIds.size > 0) {
-        await addLabelsToTask(taskId, Array.from(selectedLabelIds), ideaId);
+      if (labelIdsInOrder.length > 0) {
+        await addLabelsToTask(taskId, labelIdsInOrder, ideaId, {
+          skipAutoRules: useWorkflowField,
+        });
+      }
+      if (useWorkflowField) {
+        try {
+          await applyNewTaskWorkflow(taskId, ideaId, choice, labelIdsInOrder);
+        } catch (err) {
+          if ((err as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) throw err;
+          logger.error("Failed to attach workflow to new task", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          toast.error("Card created, but the workflow couldn't be attached");
+        }
       }
       logTaskActivity(taskId, ideaId, currentUserId, "created");
 
@@ -525,6 +614,44 @@ export function TaskEditDialog({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {workflowOptions && workflowOptions.templates.length > 0 && workflowPreview && (
+            <div className="space-y-2">
+              <Label htmlFor="task-workflow">Workflow</Label>
+              <Select value={workflowChoice} onValueChange={setWorkflowChoice}>
+                <SelectTrigger id="task-workflow" className="w-full">
+                  <SelectValue>
+                    {workflowChoice === "auto"
+                      ? `Automatic: ${workflowPreview.templateName ?? "none"}`
+                      : workflowChoice === "none"
+                        ? "None: no steps"
+                        : workflowOptions.templates.find((t) => t.id === workflowChoice)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    Automatic: {workflowPreview.templateName ?? "none"}
+                  </SelectItem>
+                  <SelectItem value="none">None: no steps</SelectItem>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Workflows</SelectLabel>
+                    {workflowOptions.templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        <span className="truncate">{t.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {t.stepCount === 1 ? "1 step" : `${t.stepCount} steps`}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground" data-testid="workflow-help">
+                {workflowHelp()}
+              </p>
             </div>
           )}
 
