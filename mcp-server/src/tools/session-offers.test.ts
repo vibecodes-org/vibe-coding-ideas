@@ -14,16 +14,17 @@ let tasks: Row[] = [];
 let runs: Row[] = [];
 let offers: Row[] = [];
 let upsertCalls: Row[] = [];
-let deleteFilters: Array<[string, unknown]> = [];
+let updateFilters: Array<[string, unknown]> = [];
+let updateValues: Row | null = null;
 let nextTaskRows: Row[] = [];
 
 function ctx(): McpContext {
   const from = (table: string) => {
     const filters: Array<[string, unknown]> = [];
-    let op: "select" | "delete" = "select";
+    let op: "select" | "update" = "select";
     const c: Record<string, unknown> = {};
     for (const m of ["select", "order", "limit", "range", "neq", "or", "in", "not"]) c[m] = vi.fn(() => c);
-    c.delete = vi.fn(() => ((op = "delete"), c));
+    c.update = vi.fn((v: Row) => ((op = "update"), (updateValues = v), c));
     c.eq = vi.fn((k: string, v: unknown) => (filters.push([k, v]), c));
     c.upsert = vi.fn(async (row: Row) => {
       upsertCalls.push(row);
@@ -43,8 +44,8 @@ function ctx(): McpContext {
     };
     c.maybeSingle = vi.fn(async () => ({ data: rows()[0] ?? null, error: null }));
     c.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
-      if (op === "delete") deleteFilters = filters;
-      return Promise.resolve({ data: op === "delete" ? null : rows(), error: null }).then(res, rej);
+      if (op === "update") updateFilters = filters;
+      return Promise.resolve({ data: op === "update" ? null : rows(), error: null }).then(res, rej);
     };
     return c;
   };
@@ -56,7 +57,8 @@ const mine = () => buildSessionEnvValue(Buffer.from(KEY, "base64"), "sid-1");
 beforeEach(() => {
   process.env.TERMINAL_SESSION_SECRET = "test-secret";
   upsertCalls = [];
-  deleteFilters = [];
+  updateFilters = [];
+  updateValues = null;
   offers = [];
   sessions = [
     {
@@ -144,12 +146,13 @@ describe("offerNextCard", () => {
     expect(offers).toHaveLength(1);
   });
 
-  it("withdraw deletes only this session's own offer, and is safe to repeat", async () => {
+  it("withdraw marks only this session's own offer dismissed (never deletes: delete events can't reach a filtered live feed), and is safe to repeat", async () => {
     const a = await offerNextCard(ctx(), { withdraw: true, from_session: mine() });
     const b = await offerNextCard(ctx(), { withdraw: true, from_session: mine() });
     expect(a.withdrawn).toBe(true);
     expect(b.withdrawn).toBe(true);
-    expect(deleteFilters).toEqual([["sid", "sid-1"], ["user_id", ME]]);
+    expect(updateValues).toMatchObject({ status: "dismissed" });
+    expect(updateFilters).toEqual([["sid", "sid-1"], ["user_id", ME]]);
   });
 
   it("asks for finished_task_id when not withdrawing", async () => {

@@ -70,17 +70,8 @@ export function useSessionOffers(): {
           "postgres_changes",
           { event: "*", schema: "public", table: "terminal_session_offers", filter: `user_id=eq.${userId}` },
           (payload) => {
-            if (payload.eventType === "DELETE") {
-              const sid = (payload.old as { sid?: string }).sid;
-              if (sid) {
-                setOffers((prev) => {
-                  const next = new Map(prev);
-                  next.delete(sid);
-                  return next;
-                });
-              }
-              return;
-            }
+            // Rows are never deleted by the app: withdrawing or dismissing sets
+            // status "dismissed", because delete events can't pass a filtered feed.
             apply(payload.new as SessionOffer);
           }
         )

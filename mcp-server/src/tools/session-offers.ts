@@ -29,7 +29,7 @@ export const offerNextCardSchema = z.object({
   withdraw: z
     .boolean()
     .optional()
-    .describe("true removes this session's offer, for when the user says \"keep going here\". Safe to call when there is none."),
+    .describe("true hides this session's offer, for when the user says \"keep going here\". Safe to call when there is none."),
   from_session: z
     .string()
     .max(300)
@@ -47,11 +47,14 @@ export async function offerNextCard(ctx: McpContext, params: z.infer<typeof offe
   if (!caller.ok) return { shown: false, message: caller.message };
   const { owner, sender } = caller;
 
-  // 2. Withdraw: remove this session's offer (own row only; safe to repeat).
+  // 2. Withdraw: mark this session's offer dismissed (own row only; safe to
+  // repeat). It is an update, not a delete: the browser's live feed is
+  // filtered by user, and Supabase can't filter delete events, so a delete
+  // would never reach the open page.
   if (params.withdraw) {
     const { error } = await ctx.supabase
       .from("terminal_session_offers")
-      .delete()
+      .update({ status: "dismissed", updated_at: new Date().toISOString() })
       .eq("sid", sender.sid)
       .eq("user_id", owner);
     if (error) {

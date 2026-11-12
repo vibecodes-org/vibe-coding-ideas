@@ -49,4 +49,7 @@ create policy "Users can delete own terminal session offers"
   on public.terminal_session_offers for delete
   using ((select auth.uid()) = user_id);
 
+-- Full old-row detail on updates, as the other live tables here.
+alter table public.terminal_session_offers replica identity full;
+
 alter publication supabase_realtime add table public.terminal_session_offers;

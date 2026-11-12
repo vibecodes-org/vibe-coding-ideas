@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 const { toastError, state } = vi.hoisted(() => ({
   toastError: vi.fn(),
-  state: { updateError: null as { message: string } | null, rows: [] as Record<string, unknown>[] },
+  state: { handler: null as ((p: { eventType: string; new: unknown }) => void) | null, updateError: null as { message: string } | null, rows: [] as Record<string, unknown>[] },
 }));
 
 vi.mock("sonner", () => ({ toast: { error: toastError } }));
@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) },
     channel: () => {
-      const ch = { on: () => ch, subscribe: () => ch, unsubscribe: async () => {} };
+      const ch = { on: (_e: string, _f: unknown, h: (p: { eventType: string; new: unknown }) => void) => ((state.handler = h), ch), subscribe: () => ch, unsubscribe: async () => {} };
       return ch;
     },
     from: () => ({
@@ -37,6 +37,15 @@ afterEach(() => {
 });
 
 describe("useSessionOffers", () => {
+  it("clears the bar when a live update marks the offer dismissed (a withdrawn offer)", async () => {
+    state.rows = [row];
+    const { result } = renderHook(() => useSessionOffers());
+    await waitFor(() => expect(result.current.offers.has("s1")).toBe(true));
+    await waitFor(() => expect(state.handler).not.toBeNull());
+    act(() => state.handler!({ eventType: "UPDATE", new: { ...row, status: "dismissed" } }));
+    expect(result.current.offers.has("s1")).toBe(false);
+  });
+
   it("loads this person's open offers by session", async () => {
     state.rows = [row];
     const { result } = renderHook(() => useSessionOffers());
