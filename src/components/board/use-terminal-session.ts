@@ -149,6 +149,7 @@ import {
 import { matchFocusMoveChord } from "@/lib/terminal/split-view";
 import { claudeEffortForLaunch } from "@/lib/terminal/claude-effort";
 import { remoteControlForLaunch, shouldShowRemoteControlEarlyExitHint } from "@/lib/terminal/remote-control-mode";
+import { recordSessionEvent } from "@/lib/terminal/session-events-client";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -537,6 +538,12 @@ export interface TerminalSessionActions {
   launchFromBus: (payload: BrowserLaunchPayload | null) => void;
   /** Force an immediate reattach attempt (skip the backoff wait), or a fresh launch if the grace window is spent. */
   reconnectNow: () => void;
+  /**
+   * Card f4be2981 stage 2: the server says this tab's session is still
+   * running, so get back into it in THIS tab (fresh passes from the server,
+   * a new Mac connection only if the old one stays silent). Never mints.
+   */
+  reattachLiveSession: () => void;
   /** User-initiated end. */
   end: () => void;
   setReadOnly: (value: boolean | ((prev: boolean) => boolean)) => void;
@@ -902,6 +909,7 @@ export function useTerminalSession(
       clearTimeout(relaunchTimerRef.current);
       relaunchTimerRef.current = null;
       logger.info("Terminal reattach: bridge is live — relaunch not needed", { evidence });
+      recordSessionEvent(pairRef.current?.sessionId, "relaunch.cancelled", { evidence });
     }
     // A relaunch already queued behind xterm-init (the timer fired before the
     // terminal mounted) is dropped too — same evidence, same conclusion.
@@ -1997,6 +2005,17 @@ export function useTerminalSession(
   );
   fireLaunchDeepLinkRef.current = fireLaunchDeepLink;
 
+  // Card f4be2981 stage 2: every change of what this tab shows, with why.
+  useEffect(() => {
+    if (!enabled) return;
+    recordSessionEvent(state.sessionId, "state", {
+      status: state.status,
+      errorKind: state.errorKind ?? null,
+      endedReason: state.endedReason ?? null,
+      helper: helperVersionRef.current,
+    });
+  }, [enabled, state.status, state.sessionId, state.errorKind, state.endedReason]);
+
   // Card 63a60792: how a setup session ended (outcome only, once per session).
   const setupResultSentRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2106,6 +2125,7 @@ export function useTerminalSession(
       ws.onopen = () => {
         if (ws !== wsRef.current) return;
         clearConnectTimer();
+        recordSessionEvent(sessionId, "socket.open", { reconnect, helper: helperVersionRef.current });
         dispatch({ type: "relay-open" });
         // No sendResize() retry here (fix/terminal-dock-cold-launch-resize): OPEN
         // means the socket reached the relay, but the bridge/peer may not be
@@ -2176,6 +2196,7 @@ export function useTerminalSession(
             // regresses a known-good value to "unknown").
             const v = parseBridgeVersionFrame(ev.data);
             if (v) {
+              if (helperVersionRef.current !== v) recordSessionEvent(sessionId, "bridge.version", { v });
               setHelperVersion(v);
               helperVersionRef.current = v;
             }
@@ -2271,12 +2292,17 @@ export function useTerminalSession(
             // Our peer (the bridge) dropped; the relay is HOLDING the session. Keep
             // the terminal, show a subtle hint, and bound the wait to the grace window.
             setPeerDegraded(true);
+            recordSessionEvent(sessionId, "peer.degraded", {
+              helper: helperVersionRef.current,
+              longHold: supportsLongHold(helperVersionRef.current),
+            });
             // Helper 0.3.34+ keeps the agent alive and the relay holds the session with
             // no time limit, so there is no 90s countdown to wait out (card f4be2981).
             if (!supportsLongHold(helperVersionRef.current) && !degradeTimerRef.current) {
               degradeTimerRef.current = setTimeout(() => {
                 degradeTimerRef.current = null;
                 setPeerDegraded(false);
+                recordSessionEvent(sessionId, "gave-up.peer-degraded-timer", { helper: helperVersionRef.current });
                 dispatch({ type: "reconnect-exhausted" });
                 notifyRegistryEndedRef.current(pairRef.current?.sessionId);
                 try {
@@ -2291,6 +2317,7 @@ export function useTerminalSession(
             // restored even before the next byte, so drop back to connected + reset
             // the reconnect budget (a scenario-1 already-connected leg no-ops).
             cancelPendingRelaunch("peer-reattached");
+            recordSessionEvent(sessionId, "peer.reattached");
             clearDegradeTimer();
             // The pair is whole again after a gap — repaint (card e5a062a3).
             // Already "connected" → the connected-transition effect won't
@@ -2389,6 +2416,14 @@ export function useTerminalSession(
         // Card 3746b312: every close, with whether it was this tab's live
         // socket — the evidence a future "froze / taken over" report needs.
         logger.info("Terminal relay socket closed", { sessionId, code: ev.code, reason: ev.reason, current });
+        recordSessionEvent(sessionId, "socket.closed", {
+          code: ev.code,
+          reason: ev.reason,
+          current,
+          wasClean: ev.wasClean,
+          prior: statusRef.current,
+          helper: helperVersionRef.current,
+        });
         if (!current) return;
         clearConnectTimer();
         wsRef.current = null;
@@ -2414,6 +2449,13 @@ export function useTerminalSession(
         // terminal / clean-end code maps to a non-disconnected state and stops here.
         // A teardown-initiated close nulled these handlers, so it never reaches this.
         const mapped = mapCloseCode(ev.code, ev.reason, statusRef.current, sinceDisconnectMs);
+        recordSessionEvent(sessionId, "socket.closed.mapped", {
+          code: ev.code,
+          to: mapped.status,
+          errorKind: mapped.errorKind,
+          endedReason: mapped.endedReason,
+          sinceDisconnectMs,
+        });
         if (mapped.status === "disconnected") scheduleReconnectRef.current();
         // Bug fix (regression backfill): a refused reconnect read as a genuine
         // ended-while-away close (BAD_TOKEN past BAD_TOKEN_CALM_THRESHOLD_MS —
@@ -2444,6 +2486,11 @@ export function useTerminalSession(
     // freeze while the Mac sleeps, which is exactly why a deadline cannot be used.
     const longHold = supportsLongHold(helperVersionRef.current);
     if (!p || (!longHold && now >= reconnectDeadlineRef.current)) {
+      recordSessionEvent(p?.sessionId, "gave-up.reconnect-window", {
+        noPair: !p,
+        helper: helperVersionRef.current,
+        attempts: reconnectAttemptRef.current,
+      });
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       dispatch({ type: "reconnect-exhausted" });
@@ -2452,10 +2499,12 @@ export function useTerminalSession(
     }
     const attempt = reconnectAttemptRef.current++;
     const delay = reconnectBackoffMs(attempt, longHold);
+    recordSessionEvent(p.sessionId, "reconnect.scheduled", { attempt, delay, longHold, helper: helperVersionRef.current });
     clearReconnectTimer();
     reconnectTimerRef.current = setTimeout(() => {
       const pp = pairRef.current;
       if (!pp || (!supportsLongHold(helperVersionRef.current) && Date.now() >= reconnectDeadlineRef.current)) {
+        recordSessionEvent(pp?.sessionId, "gave-up.reconnect-window-timer", { noPair: !pp, helper: helperVersionRef.current });
         reconnectDeadlineRef.current = 0;
         reconnectAttemptRef.current = 0;
         dispatch({ type: "reconnect-exhausted" });
@@ -2473,30 +2522,32 @@ export function useTerminalSession(
   // computer slept), drop the wait and reattach to the SAME session right now.
   useEffect(() => {
     if (!enabled || state.status !== "disconnected") return;
-    const reattachNow = () => {
+    const reattachNow = (trigger: string) => {
       if (statusRef.current !== "disconnected") return;
       const p = pairRef.current;
       if (!p) return;
+      recordSessionEvent(p.sessionId, "reconnect.wake", { trigger });
       clearReconnectTimer();
       reconnectAttemptRef.current = 0;
       openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") reattachNow();
+      if (document.visibilityState === "visible") reattachNow("visible");
     };
     let lastTick = Date.now();
     const tick = setInterval(() => {
       const now = Date.now();
       const jumped = now - lastTick > CLOCK_JUMP_MS;
       lastTick = now;
-      if (jumped) reattachNow();
+      if (jumped) reattachNow("clock-jump");
     }, 5_000);
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", reattachNow);
+    const onOnline = () => reattachNow("online");
+    window.addEventListener("online", onOnline);
     return () => {
       clearInterval(tick);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", reattachNow);
+      window.removeEventListener("online", onOnline);
     };
   }, [enabled, state.status, openBrowserLeg, clearReconnectTimer]);
 
@@ -2932,6 +2983,7 @@ export function useTerminalSession(
   // this window is the one originating the session.
   const attachToExisting = useCallback(
     (p: AttachExistingPair) => {
+      recordSessionEvent(p.sessionId, "attach-existing", { viaReattachRoute: !!p.bridgeToken, hasBuffer: !!p.initialBuffer });
       const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
       teardownSocket();
       clearHelperTimer();
@@ -3048,11 +3100,14 @@ export function useTerminalSession(
         const { sessionId, bridgeToken, helperToken } = p;
         const hasResumeCwd = !!(p.cwd && p.cwd.trim());
         const hasClaudeSessionId = !!p.claudeSessionId;
+        recordSessionEvent(sessionId, "relaunch.armed", { hasResumeCwd, hasClaudeSessionId });
         relaunchTimerRef.current = setTimeout(() => {
           relaunchTimerRef.current = null;
           // A newer connect()/attachToExisting superseded this attempt while
           // we waited — its own timer (or evidence) governs now.
           if (isConnectSuperseded(gen, connectGenRef.current)) return;
+          // The Mac's existing connection stayed silent: start a new one.
+          recordSessionEvent(sessionId, "relaunch.fired", { hasResumeCwd, hasClaudeSessionId });
           // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up): on a
           // FRESH mount (hard refresh, or a brand-new tab with no pristine
           // slot to reuse) xterm may still be loading via the async import()
@@ -3150,6 +3205,7 @@ export function useTerminalSession(
           body: JSON.stringify({ sid: sessionId }),
         });
       } catch (err) {
+        recordSessionEvent(sessionId, "reattach.request-failed", { error: err instanceof Error ? err.message : String(err) });
         if (isConnectSuperseded(gen, connectGenRef.current)) return;
         logger.warn("Terminal reconnect: reattach request failed", {
           sessionId,
@@ -3162,6 +3218,7 @@ export function useTerminalSession(
       if (isConnectSuperseded(gen, connectGenRef.current)) return;
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+        recordSessionEvent(sessionId, "reattach.refused", { status: res.status, code: body?.code ?? null });
         if (isConnectSuperseded(gen, connectGenRef.current)) return;
         logger.warn("Terminal reconnect: reattach refused", {
           sessionId,
@@ -3200,6 +3257,7 @@ export function useTerminalSession(
         return;
       }
       logger.info("Terminal reconnect: grace window spent, reattaching the same session", { sessionId });
+      recordSessionEvent(sessionId, "reattach.ok", { hasBridgeToken: !!data.bridgeToken });
       // Keep what's already on screen: attachToExisting would otherwise clear
       // it (it restores `initialBuffer` in place of a plain clear).
       const term = termRef.current;
@@ -3224,6 +3282,7 @@ export function useTerminalSession(
     const p = pairRef.current;
     const now = Date.now();
     const decision = decideReconnectNow(statusRef.current, !!p, now, reconnectDeadlineRef.current);
+    recordSessionEvent(p?.sessionId, "reconnect-now.pressed", { decision, status: statusRef.current });
 
     if (decision === "reattach-same-session" && p) {
       void reattachSameSession(p.sessionId, p.browserToken);
@@ -3284,6 +3343,12 @@ export function useTerminalSession(
     if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
     openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
   }, [openBrowserLeg, clearReconnectTimer, connect, teardownSocket, reattachSameSession]);
+
+  const reattachLiveSession = useCallback(() => {
+    const p = pairRef.current;
+    recordSessionEvent(p?.sessionId, "reattach-live.pressed", { status: statusRef.current });
+    if (p) void reattachSameSession(p.sessionId, p.browserToken);
+  }, [reattachSameSession]);
 
   // Install-first entry gate. This is the ONE place a browser "open" is turned into
   // either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
@@ -3509,6 +3574,7 @@ export function useTerminalSession(
       beginBrowserLaunch,
       launchFromBus,
       reconnectNow,
+      reattachLiveSession,
       end: endSession,
       setReadOnly,
       setAutoAccept,

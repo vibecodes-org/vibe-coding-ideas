@@ -88,15 +88,22 @@ import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 import { buildSessionEnvValue, encodePeerAckFrame, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
 import { createPeerBridge, hookSettingsArgs, newHookSecret, startHookServer } from "./peer-bridge.js";
+import { createSessionEventLog } from "./session-events.js";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── logging (metadata only — NEVER log stream content) ────────────────────────
 const t0 = Date.now();
+// Card f4be2981 stage 2: set up once the session id and token are known (below).
+/** @type {ReturnType<typeof createSessionEventLog> | null} */
+let sessionEvents = null;
 function log(level, msg, extra) {
   const rec = { t: ((Date.now() - t0) / 1000).toFixed(2) + "s", level, comp: "bridge", msg, ...extra };
   process.stderr.write(JSON.stringify(rec) + "\n");
+  try {
+    sessionEvents?.record(level, msg, extra);
+  } catch { /* the record must never break the bridge */ }
 }
 
 // ── arg parsing ───────────────────────────────────────────────────────────────
@@ -415,6 +422,15 @@ const HOST = MACHINE.canonical ?? sanitizeMachineLabel(os.hostname());
 // src/app/api/terminal/session/key/route.ts. `TERMINAL_APP_URL` overrides
 // the default for local/dev runs; production has exactly one app origin.
 const APP_URL = (process.env.TERMINAL_APP_URL || "").trim() || "https://vibecodes.co.uk";
+
+// Card f4be2981 stage 2: the bridge's own story goes to the app's session
+// record too (session-events.js). Only from the packaged helper, or when a
+// test points TERMINAL_APP_URL somewhere on purpose, so local test runs never
+// post to the live site.
+if (process.env.VIBECODES_PACKAGED === "1" || (process.env.TERMINAL_APP_URL || "").trim()) {
+  sessionEvents = createSessionEventLog({ appUrl: APP_URL, sid: SESSION, token: TOKEN });
+  log("info", "bridge started", { helper: process.env.BRIDGE_HELPER_VERSION || null, pid: process.pid });
+}
 const E2EE_KEY_FETCH_TIMEOUT_MS = 5000;
 
 /**
@@ -1054,6 +1070,11 @@ async function main() {
     // shutdown (e.g. a command's final output) aren't lost mid-coalesce-window.
     outputBatcher.flush();
     log("info", "shutting down", { why, bytesOut, bytesIn });
+    // Send the record's last lines now; the kill steps below take long enough.
+    const eventsSent = Promise.race([
+      sessionEvents?.flush() ?? Promise.resolve(),
+      new Promise((r) => setTimeout(r, 1500).unref()),
+    ]);
     try { ws?.close(1000, why); } catch { /* ignore */ }
     // Record the code first: with NO PTY (a blocked prompt launch) the event
     // loop can drain before the unref'd hard-exit timer fires, and the process
@@ -1061,7 +1082,9 @@ async function main() {
     // status.
     process.exitCode = code;
     // give sockets a tick to flush their close frame, then exit
-    const exitSoon = () => { usageFinal.then(() => setTimeout(() => process.exit(code), 200).unref()); };
+    const exitSoon = () => {
+      Promise.all([usageFinal, eventsSent]).then(() => setTimeout(() => process.exit(code), 200).unref());
+    };
 
     // No PTY (blocked prompt launch) or Windows (conpty — no POSIX signal
     // escalation): node-pty's own kill + the short flush window is all there is.

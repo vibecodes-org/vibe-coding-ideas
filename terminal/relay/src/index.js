@@ -238,6 +238,43 @@ export default {
   },
 };
 
+// ── Session record (card f4be2981, stage 2) ──────────────────────────────────
+/** Most events one relay instance sends, so a flapping link can't flood the record. */
+const RELAY_EVENTS_CAP = 300;
+/** Log lines about the helper leg or session messages: not part of a session's story. */
+const RELAY_EVENT_SKIP = /^(helper|peer message|open-terminal|heartbeat|dropped a peer-message|session-closed callback|session events)/;
+
+/**
+ * The event name for a relay log line ("attach rejected (auth)" →
+ * "relay.attach-rejected-auth"), or null for lines that aren't recorded.
+ * @param {string} msg
+ * @returns {string|null}
+ */
+export function relayEventName(msg) {
+  if (typeof msg !== "string" || RELAY_EVENT_SKIP.test(msg)) return null;
+  const slug = msg
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+  return slug ? `relay.${slug}` : null;
+}
+
+/**
+ * The extras of a log line, kept small and plain (no nested objects, no long
+ * strings). Log extras are metadata only already; this only bounds the size.
+ * @param {object} extra
+ */
+export function relayEventDetail(extra) {
+  const out = {};
+  for (const [k, v] of Object.entries(extra ?? {}).slice(0, 15)) {
+    if (k === "session" || k === "sid") continue;
+    if (v === null || typeof v === "number" || typeof v === "boolean") out[k] = v;
+    else if (typeof v === "string") out[k] = v.slice(0, 200);
+  }
+  return out;
+}
+
 export class TerminalRelay {
   /**
    * @param {DurableObjectState} state
@@ -285,6 +322,52 @@ export class TerminalRelay {
   log(msg, extra = {}) {
     // Metadata only — never stream content.
     console.log(JSON.stringify({ comp: "relay", msg, ...extra }));
+    this.recordSessionEvent(msg, extra);
+  }
+
+  /**
+   * Card f4be2981 stage 2: the relay keeps no logs of its own, so every
+   * session-level decision it logs (a leg attaching, a reattach refused, a
+   * hold starting, a session ending) is also sent to the app's session record
+   * (/api/terminal/session/events), signed with a notify token for this sid.
+   * Helper-leg and peer-message chatter is left out. Batched; best effort.
+   * @param {string} msg @param {object} extra
+   */
+  recordSessionEvent(msg, extra) {
+    const event = relayEventName(msg);
+    if (!event) return;
+    if (this._eventsSent === undefined) this._eventsSent = 0;
+    if (this._eventsSent >= RELAY_EVENTS_CAP) return;
+    this._eventsSent += 1;
+    (this._eventQueue ??= []).push({ event, at: Date.now(), detail: relayEventDetail(extra) });
+    if (this._eventFlushTimer) return;
+    this._eventFlushTimer = setTimeout(() => {
+      this._eventFlushTimer = null;
+      const flushing = this.flushSessionEvents();
+      try {
+        this.state.waitUntil?.(flushing);
+      } catch { /* not available here */ }
+    }, 250);
+  }
+
+  async flushSessionEvents() {
+    const events = this._eventQueue ?? [];
+    this._eventQueue = [];
+    if (events.length === 0) return;
+    const appUrl = this.env.VIBECODES_APP_URL;
+    const secret = this.env.TERMINAL_SESSION_SECRET;
+    const sid = this._eventSid ?? (await this.state.storage.get("sid"));
+    if (!sid || !appUrl || !secret || String(sid).startsWith("helper-")) return;
+    try {
+      const token = await mintNotifyToken({ sid, secret });
+      await fetch(`${appUrl.replace(/\/+$/, "")}/api/terminal/session/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sid, events: events.map((e) => ({ ...e, sid })) }),
+      });
+    } catch (e) {
+      console.log(JSON.stringify({ comp: "relay", msg: "session events send failed", err: String(e) }));
+    }
   }
 
   /** Idle cap in ms (env override → default). */
@@ -878,6 +961,7 @@ export class TerminalRelay {
     const role = url.searchParams.get("role");
     const session = url.searchParams.get("session");
     const token = url.searchParams.get("token");
+    if (session && role !== "helper") this._eventSid = session;
 
     if (role === "helper") {
       return this.fetchHelperLeg(request, url, session, role, token);

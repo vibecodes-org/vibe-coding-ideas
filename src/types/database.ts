@@ -3281,6 +3281,49 @@ export type Database = {
         },
       ];
     };
+    // What each in-app terminal session went through (card f4be2981 stage 2,
+    // migration 00210). Written only by /api/terminal/session/events.
+    terminal_session_events: {
+      Row: {
+        id: number;
+        user_id: string;
+        sid: string;
+        source: "browser" | "relay" | "bridge" | "server";
+        event: string;
+        detail: Json;
+        at: string;
+        created_at: string;
+      };
+      Insert: {
+        id?: never;
+        user_id: string;
+        sid: string;
+        source: "browser" | "relay" | "bridge" | "server";
+        event: string;
+        detail?: Json;
+        at: string;
+        created_at?: string;
+      };
+      Update: {
+        id?: never;
+        user_id?: string;
+        sid?: string;
+        source?: "browser" | "relay" | "bridge" | "server";
+        event?: string;
+        detail?: Json;
+        at?: string;
+        created_at?: string;
+      };
+      Relationships: [
+        {
+          foreignKeyName: "terminal_session_events_user_id_fkey";
+          columns: ["user_id"];
+          isOneToOne: false;
+          referencedRelation: "users";
+          referencedColumns: ["id"];
+        },
+      ];
+    };
     };
     Views: {
       // P2c — self-reported tier-adherence reporting views (migration 00135).

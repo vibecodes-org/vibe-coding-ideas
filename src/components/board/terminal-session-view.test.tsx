@@ -51,6 +51,7 @@ function mockActions(): TerminalSessionActions {
     beginSetup: vi.fn(),
     launchFromBus: vi.fn(),
     reconnectNow: vi.fn(),
+    reattachLiveSession: vi.fn(),
     end: vi.fn(),
     setReadOnly: vi.fn(),
     setAutoAccept: vi.fn(),
@@ -1553,5 +1554,63 @@ describe("peer away (card f4be2981)", () => {
     expect(screen.getByText("Still waiting for your Mac.")).toBeTruthy();
     expect(screen.getByText("Reconnect now")).toBeTruthy();
     expect(screen.getAllByText("End session").length).toBeGreaterThan(0);
+  });
+});
+
+// Card f4be2981 stage 2 (12 Nov 2026): after a Wi-Fi switch the tab showed
+// "Resume" for a session the server still had as running; the server refuses
+// a Resume of a running conversation, so it could never work.
+describe("TerminalSessionView — a session still running is offered Reconnect, not Resume", () => {
+  function renderLive(sessionStillLive: boolean) {
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        onResumeEndedSession={vi.fn()}
+        sessionStillLive={sessionStillLive}
+      />,
+    );
+  }
+  const lastActions = () => {
+    const results = mockedUseTerminalSession.mock.results;
+    return (results[results.length - 1].value as UseTerminalSessionResult).actions;
+  };
+
+  it("ended panel: Reconnect into the same tab when the server says it is running", () => {
+    installMockEndedSession({ endedReason: "reconnect-failed", cwd: "/Users/nick/p", claudeSessionId: "conv-1" });
+    renderLive(true);
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByText("This session is still running on your Mac.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Reconnect$/ }));
+    expect(lastActions().reattachLiveSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("ended panel: Resume as before when the server says it has ended", () => {
+    installMockEndedSession({ endedReason: "reconnect-failed", cwd: "/Users/nick/p", claudeSessionId: "conv-1" });
+    renderLive(false);
+    expect(screen.getByRole("button", { name: /Resume this conversation/ })).toBeInTheDocument();
+    expect(screen.queryByTestId("reconnect-live")).not.toBeInTheDocument();
+  });
+
+  it("error panel: Reconnect instead of Resume when the server says it is running", () => {
+    installMockErrorSession({ errorKind: "relay-unreachable", closeCode: 1006, cwd: "/Users/nick/p", claudeSessionId: "conv-1" });
+    renderLive(true);
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Reconnect$/ }));
+    expect(lastActions().reattachLiveSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("never for a different account's session (owner mismatch)", () => {
+    installMockErrorSession({ errorKind: "owner-mismatch", closeCode: 4005, cwd: "/Users/nick/p" });
+    renderLive(true);
+    expect(screen.queryByTestId("reconnect-live")).not.toBeInTheDocument();
   });
 });

@@ -66,6 +66,7 @@ export type BoardTaskActivity = Database["public"]["Tables"]["board_task_activit
 
 // In-app terminal — multi-session registry (stage 3)
 export type TerminalSession = Database["public"]["Tables"]["terminal_sessions"]["Row"];
+export type TerminalSessionEvent = Database["public"]["Tables"]["terminal_session_events"]["Row"];
 export type BoardTaskComment = Database["public"]["Tables"]["board_task_comments"]["Row"];
 export type BoardTaskAttachment = Database["public"]["Tables"]["board_task_attachments"]["Row"];
 export type IdeaAttachment = Database["public"]["Tables"]["idea_attachments"]["Row"];
