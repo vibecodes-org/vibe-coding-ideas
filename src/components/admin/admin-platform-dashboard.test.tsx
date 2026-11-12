@@ -365,7 +365,7 @@ describe("AdminClaudeTerminalCard (task fae2ce4f)", () => {
     render(<AdminClaudeTerminalCard isSuperAdmin />);
     await screen.findByText("Claude Code terminal sessions");
     fireEvent.click(within(effortStrip()).getByRole("button", { name: "Low" }));
-    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "500k" }));
+    fireEvent.click(within(memoryStrip()).getByRole("button", { name: "150k" }));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(within(effortStrip()).getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");

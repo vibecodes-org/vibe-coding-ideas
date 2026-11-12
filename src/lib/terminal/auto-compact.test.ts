@@ -26,7 +26,7 @@ describe("isValidAutoCompactWindow", () => {
 
 describe("steps", () => {
   it("offers the approved steps per agent", () => {
-    expect(AUTO_COMPACT_STEPS.claude).toEqual([200_000, 300_000, 400_000, 500_000, 1_000_000]);
+    expect(AUTO_COMPACT_STEPS.claude).toEqual([150_000, 200_000, 300_000, 400_000, 1_000_000]);
     expect(AUTO_COMPACT_STEPS.codex).toEqual([100_000, 150_000, 200_000]);
   });
   it("accepts only that agent's steps", () => {
