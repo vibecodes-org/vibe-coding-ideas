@@ -82,7 +82,7 @@ function hmacHex(key, data) {
   return createHmac("sha256", String(key)).update(data).digest("hex");
 }
 
-/** @param {string} key the receiving session's own key */
+/** @param {string | Buffer} key the receiving session's own key */
 export function signPeerEnvelope(key, env) {
   return {
     t: "peer-message",
@@ -112,7 +112,7 @@ function safeEqualHex(a, b) {
 /**
  * The bridge's check. `seen` is a Set of ids already accepted (the caller
  * adds the id after a successful check). Order: shape, signature, age, replay.
- * @param {{ key: string | null, text: unknown, sid: string, now?: number, seen?: Set<string> }} args
+ * @param {{ key: string | Buffer | null, text: unknown, sid: string, now?: number, seen?: Set<string> }} args
  * @returns {{ ok: true, env: { id: string, from: { sid: string, name: string, agent: string }, text: string, ts: number } } | { ok: false, reason: string }}
  */
 export function verifyPeerFrame({ key, text, sid, now = Date.now(), seen }) {

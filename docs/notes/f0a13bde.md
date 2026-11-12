@@ -72,3 +72,9 @@ Codex receiving (stage 2).
 - Minimum helper version is 0.3.33 (was 0.3.32).
 - The "waiting for you" notice (idle_prompt) now only turns unknown into idle; it never overrides busy, asking or typing.
 - New "typing" phase: set the moment a message is chosen for typing; later messages wait. Enter is pressed only while the phase is still "typing" and there is no draft (was: anything but asking). Any hook event during the paste moves the phase on and cancels the Enter. If a message is pasted but not submitted, the phase goes back to unknown and the box counts as holding a draft, so nothing else is typed on top.
+
+## Rework 12 Nov: key form mismatch
+- Live test failed: the helper signs with a 32-byte Buffer decoded from the base64 key; the board server used the base64 text. peer-message.mjs keys with String(key), so nothing matched (sender proof and delivery signature).
+- Fix on the board-server side only (installed helpers keep working): session-messages.ts decodes the stored key with Buffer.from(key, "base64") for both the sender proof check and the target signature. peer-message.mjs changed in type comments only.
+- Tests now hold keys as the bridge does (Buffer) and database rows as base64 text; a regression test fails on the old code.
+- Board server code is imported by the website own /api/mcp route, so a merge to master deploys it with the website.
