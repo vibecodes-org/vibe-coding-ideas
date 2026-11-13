@@ -347,7 +347,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           hasByokKey={userHasByokKey}
           starterCredits={starterCredits}
           botProfiles={ideaAgentBotProfiles}
-          userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
           coverImageUrls={coverImageUrls}
           suggestionsByTask={suggestionsByTask}
           isReadOnly={isReadOnly}
