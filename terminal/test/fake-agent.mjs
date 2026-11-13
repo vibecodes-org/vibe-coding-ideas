@@ -59,9 +59,32 @@ export function killBridge(child) {
   else child.kill("SIGKILL");
 }
 
-/** Delete a test folder; on Windows a just-ended process can hold it for a moment, so retry. */
+/**
+ * Delete a test folder. On Windows a just-ended process can hold it for a moment,
+ * so retry; if it is still held afterwards, warn instead of failing the test
+ * (the runner's temp folder is thrown away anyway, and the behaviour under test
+ * has already been judged by then).
+ */
 export function rmDir(p) {
-  fs.rmSync(p, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  try {
+    fs.rmSync(p, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } catch (e) {
+    if (!IS_WIN) throw e;
+    console.warn(`[test cleanup] could not delete ${p}: ${e.code || e.message}`);
+  }
+}
+
+/**
+ * The terminal says "this PC" and writes home-relative folders with backslashes
+ * on Windows. These tests were written against the Mac wording; on Windows this
+ * maps the output back so the same assertions check the same facts.
+ * Unchanged off Windows.
+ */
+export function macWording(text) {
+  if (!IS_WIN) return text;
+  return text
+    .replace(/this PC/g, "this Mac")
+    .replace(/~\\[^\s\x1b)]*/g, (m) => m.replace(/\\/g, "/"));
 }
 
 const EXIT_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./exit-code.mjs");

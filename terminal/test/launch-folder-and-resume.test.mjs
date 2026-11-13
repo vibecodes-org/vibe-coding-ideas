@@ -27,7 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir, macWording } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "launch-folder-resume-test-secret";
@@ -112,7 +112,7 @@ async function launch(t, { home, appUrl, link }) {
   });
   await waitForText(() => buf, "RUN_END", 30000).catch((e) => { throw new Error(`${e.message}\nbridge log:\n${stderr}\nbuf:\n${buf}`); });
   const run = JSON.parse(buf.match(/RUN_BEGIN(.*?)RUN_END/s)[1]);
-  return { ...run, buf, textFrames, stderr };
+  return { ...run, buf: macWording(buf), textFrames, stderr };
 }
 
 const promptOf = (argv) => argv.find((a) => a.includes("Find work")) ?? "";

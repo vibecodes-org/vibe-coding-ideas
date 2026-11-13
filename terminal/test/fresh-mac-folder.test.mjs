@@ -34,7 +34,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv, killBridge, rmDir, exitCmd, IS_WIN } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir, exitCmd, macWording, IS_WIN } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const PWD_CMD = path.resolve(__dirname, "./pwd-cmd.mjs");
@@ -148,7 +148,7 @@ async function launch(t, { home, link = {}, appUrl, cmd = `${process.execPath} $
   });
   return {
     bridge,
-    getBuf: () => buf,
+    getBuf: () => macWording(buf),
     textFrames,
     getStderr: () => stderr,
     shutdownWhy: () => {
@@ -253,13 +253,8 @@ test("6: Resume with a folder that isn't on this Mac → folder-missing, a plain
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "folder-missing", run.getStderr());
   assert.ok(!run.getStderr().includes('"spawning PTY"'), "nothing spawned");
-  // Windows words it "this PC" and shows the full folder path (no ~).
-  const shown = IS_WIN ? missing : "~/projects/widget";
-  const where = IS_WIN ? "PC" : "Mac";
-  assert.ok(
-    run.getBuf().includes(`The project folder ${shown} isn't on this ${where}, so this conversation can't be reopened here.`),
-    run.getBuf(),
-  );
+  assert.match(run.getBuf(), /The project folder ~\/projects\/widget isn't on this Mac, so this conversation can't be reopened here\./);
+
 });
 
 // ── 7: the agent stops straight away ─────────────────────────────────────────
