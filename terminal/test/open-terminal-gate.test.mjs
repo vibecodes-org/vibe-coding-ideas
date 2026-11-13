@@ -6,7 +6,11 @@
 //
 // Run: cd terminal/test && node --test open-terminal-gate.test.mjs   (or: npm test)
 
-import { test } from "node:test";
+import { test, after } from "node:test";
+
+// The gate timers are unref()d on purpose (the real helper is kept alive by Electron). In a bare test process nothing else holds the loop open, so on some Node versions the run ends while a timeout test is still waiting. Hold it open here.
+const keepAlive = setInterval(() => {}, 1000);
+after(() => clearInterval(keepAlive));
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { waitForOpenTerminalAuthorization, OPEN_TERMINAL_AUTH_TIMEOUT_MS } from "../helper/open-terminal-gate.mjs";
