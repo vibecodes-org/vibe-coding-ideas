@@ -2,13 +2,13 @@ import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { oneLine, pickNextCard } from "./next-card";
-import { verifyCallingSession } from "./session-messages";
+import { verifyCallingSession } from "./session-identity";
 
 // --- "Start the next card" offer (card 7c728159) ---
 //
 // offer_next_card lets an in-browser session post an offer to its OWN terminal
 // tab once a card's whole workflow has finished. It only shows a bar; it never
-// starts anything. The session is proven the same way as send_session_message
+// starts anything. The session is proven by its own helper
 // (its VIBECODES_SESSION value). The next card is chosen here, on the server,
 // never taken from the caller. Card titles and the session value are never
 // logged.

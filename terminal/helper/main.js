@@ -52,6 +52,7 @@ const { shouldRegisterProtocolInDev } = require("./proto-reg");
 const lifecycle = require("./lifecycle");
 const stayAwake = require("./stay-awake");
 const { TRAY_ICON_PNG_BASE64 } = require("./tray-icon");
+const { createPeerRouter } = require("./peer-router");
 
 const LAUNCH_PREFIX = "vibecodes://";
 
@@ -139,6 +140,9 @@ function log(level, msg, extra) {
   const rec = { t: ((Date.now() - t0) / 1000).toFixed(2) + "s", level, comp: "helper", msg, ...extra };
   process.stderr.write(JSON.stringify(rec) + "\n");
 }
+
+// Passes messages between the Claude Code and Codex sessions this app runs.
+const peerRouter = createPeerRouter({ log });
 
 // Lazily import the shared (ESM) parser/redactor once. Reused — not duplicated.
 let _shared = null;
@@ -647,9 +651,18 @@ async function handleLaunchUrl(rawUrl) {
       else busyChildren.delete(child);
       applyStayAwake();
     }
+    // Session-to-session messages between this Mac's own sessions.
+    if (m && m.type === "peer-hello") peerRouter.hello(child, m, sendToChild);
+    if (m && m.type === "peer-request") peerRouter.request(child, m, sendToChild);
+    if (m && m.type === "peer-outcome") peerRouter.outcome(m);
   });
+  function sendToChild(msg) {
+    if (!child.connected) throw new Error("bridge not connected");
+    child.send(msg);
+  }
 
   child.on("exit", (code, signal) => {
+    peerRouter.gone(child);
     children.delete(child);
     busyChildren.delete(child);
     applyStayAwake();
@@ -665,6 +678,7 @@ async function handleLaunchUrl(rawUrl) {
     refreshTray();
   });
   child.on("error", (err) => {
+    peerRouter.gone(child);
     children.delete(child);
     busyChildren.delete(child);
     applyStayAwake();
