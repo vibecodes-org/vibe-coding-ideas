@@ -59,6 +59,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { AddTemplateDialog } from "./add-template-dialog";
+import { showPropagationToast } from "./propagation-toast";
 import { SaveTemplateDialog } from "./save-template-dialog";
 import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
 import { switchBoardTab } from "@/lib/board-tab-nav";
@@ -988,12 +989,12 @@ export function WorkflowsTab({
 
     setSaving(true);
     try {
-      await updateWorkflowTemplate(selected.id, {
+      const saved = await updateWorkflowTemplate(selected.id, {
         name: editName.trim(),
         description: editDescription.trim() || null,
         steps: editSteps,
       });
-      toast.success("Template updated");
+      showPropagationToast("Template updated", saved.propagation);
       setEditing(false);
       await fetchData();
     } catch {
@@ -1513,8 +1514,9 @@ export function WorkflowsTab({
                     const steps = selected.steps.map((s, i) =>
                       i === openStepIdx ? updated : s
                     );
-                    await updateWorkflowTemplate(selected.id, { steps });
+                    const saved = await updateWorkflowTemplate(selected.id, { steps });
                     await fetchData();
+                    return saved.propagation;
                   }}
                 />
               )}

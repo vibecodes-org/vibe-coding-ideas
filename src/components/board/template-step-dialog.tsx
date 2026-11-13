@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { showPropagationToast } from "./propagation-toast";
+import type { PropagationSummary } from "@/lib/template-propagation-message";
 import { Loader2 } from "lucide-react";
 import {
   Dialog,
@@ -34,7 +36,7 @@ interface TemplateStepDialogProps {
   isReadOnly?: boolean;
   poolRoles?: RoleSuggestion[];
   userRoles?: RoleSuggestion[];
-  onSave: (step: WorkflowTemplateStep) => Promise<void>;
+  onSave: (step: WorkflowTemplateStep) => Promise<PropagationSummary | null | void>;
 }
 
 /**
@@ -96,8 +98,8 @@ export function TemplateStepDialog({
     if (!updated.deliverables) delete updated.deliverables;
     setSaving(true);
     try {
-      await onSave(updated);
-      toast.success("Step updated");
+      const report = await onSave(updated);
+      showPropagationToast("Step updated", report ?? null);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update step");

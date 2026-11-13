@@ -2,6 +2,7 @@ import { logger } from "@/lib/logger";
 import { sameRole } from "@/lib/role-matching";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkflowTemplateStep } from "@/types/database";
+import { planReshape, type RunStepForMatch } from "@/lib/workflow-template-match";
 import {
   decideAutoRuleApplication,
   templateFromRow,
@@ -478,120 +479,189 @@ export async function checkAndCompleteRun(
   return false;
 }
 
+export interface TemplatePropagationPreviewItem {
+  taskId: string;
+  title: string;
+  adds: string[];
+  removes: string[];
+  keeps: string[];
+  renames: { from: string; to: string }[];
+  stepsRewritten: number;
+}
+
+export interface TemplatePropagationResult {
+  /** Runs reshaped (or, in a dry run, that would be). */
+  runsUpdated: number;
+  stepsUpdated: number;
+  /** Runs that had not started and were swapped to the new steps whole. */
+  runsReplaced: number;
+  /** Runs left as they were because they changed while saving, or the write failed. */
+  skippedStructuralMismatch: number;
+  affectedTaskIds: string[];
+  /** Removed template steps kept on a card because someone has worked on them. */
+  keptRemoved: { taskId: string; title: string; stepTitle: string }[];
+  /** Cards left as they were because a step changed while saving. */
+  changedWhileSaving: { taskId: string; title: string }[];
+  /** Dry run only: what would happen to each card. Nothing was written. */
+  preview?: TemplatePropagationPreviewItem[];
+  dryRun: boolean;
+}
+
 /**
- * Propagate template step edits to pending steps in active workflow runs.
- * Only updates steps with status = 'pending'. When the step count differs, the
- * run is swapped to the new steps by replace_unstarted_workflow_run (atomic) if
- * nothing has started on it; otherwise it is skipped (structural mismatch).
- * Does NOT re-match bot_id — every task whose steps were rewritten or swapped is
- * returned in affectedTaskIds so callers rematch it. A step whose role changed
- * has its agent cleared here (it was matched to the old role); a step whose
- * role is unchanged keeps its agent.
+ * Propagate template step edits to the work still to come on running cards
+ * (card bff94aed). Steps that are not pending are never touched. Each run's
+ * steps are matched to the template by title (renames by place) in
+ * planReshape, and the plan is applied atomically by reshape_workflow_run, which
+ * re-checks the run under lock. A run nobody has touched whose step count
+ * differs is swapped whole by replace_unstarted_workflow_run. Archived cards
+ * are skipped. With dryRun nothing is written and a per-card preview is returned.
+ * Does NOT re-match bot_id — every task changed is returned in affectedTaskIds
+ * so callers rematch it. A step whose role changed has its agent cleared (it was
+ * matched to the old role); a step whose role is unchanged keeps its agent.
  */
 export async function propagateTemplateEdits(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   templateId: string,
-  newSteps: WorkflowTemplateStep[]
-): Promise<{ runsUpdated: number; stepsUpdated: number; runsReplaced: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
-  // Find active runs for this template
+  newSteps: WorkflowTemplateStep[],
+  options: { dryRun?: boolean } = {}
+): Promise<TemplatePropagationResult> {
+  const dryRun = options.dryRun === true;
+  const result: TemplatePropagationResult = {
+    runsUpdated: 0,
+    stepsUpdated: 0,
+    runsReplaced: 0,
+    skippedStructuralMismatch: 0,
+    affectedTaskIds: [],
+    keptRemoved: [],
+    changedWhileSaving: [],
+    dryRun,
+  };
+  if (dryRun) result.preview = [];
+
+  // Find active runs for this template, with their card (archived cards are skipped).
   const { data: activeRuns } = await supabase
     .from("workflow_runs")
-    .select("id, task_id")
+    .select("id, task_id, board_tasks(title, archived)")
     .eq("template_id", templateId)
     .not("status", "in", '("completed","failed")');
 
-  if (!activeRuns || activeRuns.length === 0) {
-    return { runsUpdated: 0, stepsUpdated: 0, runsReplaced: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
-  }
-
-  let runsUpdated = 0;
-  let stepsUpdated = 0;
-  let runsReplaced = 0;
-  let skippedStructuralMismatch = 0;
-  const affectedTaskIds: string[] = [];
+  if (!activeRuns || activeRuns.length === 0) return result;
 
   for (const run of activeRuns) {
+    const card = Array.isArray(run.board_tasks) ? run.board_tasks[0] : run.board_tasks;
+    if (card?.archived === true) continue;
+    const cardTitle: string = card?.title ?? "Untitled card";
+
     const { data: steps } = await supabase
       .from("task_workflow_steps")
-      .select("id, status, step_order, agent_role")
+      .select(
+        "id, status, step_order, position, title, description, agent_role, human_check_required, expected_deliverables, model_tier, effort_override, started_at, claimed_by, claim_token_hash, work_token_hash, output, comment_count"
+      )
       .eq("run_id", run.id)
       .order("step_order", { ascending: true });
 
-    if (!steps || steps.length !== newSteps.length) {
-      const { data: replaced, error: replaceError } = steps
-        ? await supabase.rpc("replace_unstarted_workflow_run", {
-            p_run_id: run.id,
-            p_steps: newSteps.map((s) => ({
-              title: s.title,
-              description: s.description ?? null,
-              agent_role: s.role,
-              human_check_required: s.requires_approval ?? false,
-              expected_deliverables: s.deliverables ?? [],
-              model_tier: s.model_tier ?? null,
-              effort_override: s.effort ?? null,
-            })),
-          })
-        : { data: false, error: null };
-
-      if (replaceError) {
-        logger.error("Failed to replace unstarted workflow run", {
-          error: replaceError.message,
-          runId: run.id,
-        });
-      }
-
-      if (replaced === true) {
-        runsReplaced++;
-        affectedTaskIds.push(run.task_id);
-      } else {
-        skippedStructuralMismatch++;
-      }
+    if (!steps) {
+      result.skippedStructuralMismatch++;
       continue;
     }
 
-    let runHadUpdates = false;
+    const runSteps: RunStepForMatch[] = steps.map((st: Record<string, unknown>) => ({
+      id: st.id as string,
+      status: st.status as string,
+      step_order: (st.step_order as number | null) ?? 0,
+      position: st.position as number | null,
+      title: st.title as string,
+      description: (st.description as string | null) ?? null,
+      agent_role: (st.agent_role as string | null) ?? null,
+      human_check_required: Boolean(st.human_check_required),
+      expected_deliverables: (st.expected_deliverables as string[] | null) ?? [],
+      model_tier: (st.model_tier as string | null) ?? null,
+      effort_override: (st.effort_override as string | null) ?? null,
+      untouched:
+        st.status === "pending" &&
+        !st.started_at &&
+        !st.claimed_by &&
+        !st.claim_token_hash &&
+        !st.work_token_hash &&
+        st.output == null &&
+        !st.comment_count,
+    }));
 
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      if (step.status !== "pending") continue;
-
-      const templateStep = newSteps[i];
-      const patch: Record<string, unknown> = {
-        title: templateStep.title,
-        description: templateStep.description ?? null,
-        agent_role: templateStep.role,
-        human_check_required: templateStep.requires_approval ?? false,
-        expected_deliverables: templateStep.deliverables ?? [],
-        model_tier: templateStep.model_tier ?? null,
-        effort_override: templateStep.effort ?? null,
-      };
-      // The stored agent was matched to the OLD role. Drop it so the rematch
-      // picks one for the new role (a tied "exact" would otherwise keep it).
-      if (!sameRole(step.agent_role, templateStep.role)) {
-        patch.bot_id = null;
-        patch.match_tier = null;
+    // Nothing has started on the card and the step count differs: swap whole.
+    const wholeSwap = runSteps.length !== newSteps.length && runSteps.every((st) => st.untouched);
+    if (wholeSwap && !dryRun) {
+      const { data: replaced, error: replaceError } = await supabase.rpc("replace_unstarted_workflow_run", {
+        p_run_id: run.id,
+        p_steps: newSteps.map((s) => ({
+          title: s.title,
+          description: s.description ?? null,
+          agent_role: s.role,
+          human_check_required: s.requires_approval ?? false,
+          expected_deliverables: s.deliverables ?? [],
+          model_tier: s.model_tier ?? null,
+          effort_override: s.effort ?? null,
+        })),
+      });
+      if (replaceError) {
+        logger.error("Failed to replace unstarted workflow run", { error: replaceError.message, runId: run.id });
       }
-
-      // No count option is requested by default, so read the written rows back.
-      const { data: written } = await supabase
-        .from("task_workflow_steps")
-        .update(patch)
-        .eq("id", step.id)
-        .eq("status", "pending")
-        .select("id");
-
-      if (written && written.length > 0) {
-        stepsUpdated++;
-        runHadUpdates = true;
+      if (replaced === true) {
+        result.runsReplaced++;
+        result.affectedTaskIds.push(run.task_id);
+        continue;
       }
+      // A comment or claim appeared meanwhile: fall through to the careful path.
     }
 
-    if (runHadUpdates) {
-      runsUpdated++;
-      affectedTaskIds.push(run.task_id);
+    const plan = planReshape(runSteps, newSteps);
+    if (plan.unchanged) continue;
+
+    if (dryRun) {
+      const titleById = new Map(runSteps.map((st) => [st.id, st.title]));
+      result.runsUpdated++;
+      for (const kept of plan.keptRemoved) {
+        result.keptRemoved.push({ taskId: run.task_id, title: cardTitle, stepTitle: kept.title });
+      }
+      result.preview?.push({
+        taskId: run.task_id,
+        title: cardTitle,
+        adds: plan.inserts.map((i) => i.title),
+        removes: plan.deletes.map((id) => titleById.get(id) ?? id),
+        keeps: plan.keptRemoved.map((k) => k.title),
+        renames: plan.updates
+          .filter((u) => titleById.get(u.id) !== u.title)
+          .map((u) => ({ from: titleById.get(u.id) ?? "", to: u.title })),
+        stepsRewritten: plan.updates.length,
+      });
+      continue;
+    }
+
+    const { data: outcome, error: reshapeError } = await supabase.rpc("reshape_workflow_run", {
+      p_run_id: run.id,
+      p_expected: plan.snapshot,
+      p_deletes: plan.deletes,
+      p_updates: plan.updates,
+      p_inserts: plan.inserts,
+    });
+
+    if (reshapeError) {
+      logger.error("Failed to reshape workflow run", { error: reshapeError.message, runId: run.id });
+    }
+
+    if (!reshapeError && outcome === "applied") {
+      result.runsUpdated++;
+      result.stepsUpdated += plan.updates.length + plan.inserts.length + plan.deletes.length;
+      result.affectedTaskIds.push(run.task_id);
+      for (const kept of plan.keptRemoved) {
+        result.keptRemoved.push({ taskId: run.task_id, title: cardTitle, stepTitle: kept.title });
+      }
+    } else {
+      // Changed while saving, or the write failed: the card was left as it was.
+      result.skippedStructuralMismatch++;
+      result.changedWhileSaving.push({ taskId: run.task_id, title: cardTitle });
     }
   }
 
-  return { runsUpdated, stepsUpdated, runsReplaced, skippedStructuralMismatch, affectedTaskIds };
+  return result;
 }

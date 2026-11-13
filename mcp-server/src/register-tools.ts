@@ -1401,7 +1401,7 @@ export function registerTools(
     "update_workflow_template",
     {
       description:
-        "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs. When the step count changes, cards whose workflow has not started are moved onto the new steps; started workflows are left alone.",
+        "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs. Work already done on a card is never changed. Waiting steps are matched to the template by title (a renamed step by its place), updated in place, removed if untouched, and new steps are added after the work already done. A removed step someone has commented on or started is kept and listed in propagation.keptRemoved; a card that changed while saving is listed in propagation.changedWhileSaving (call resync_workflow_template to retry). Archived cards are skipped. A card whose workflow has not started at all is moved onto the new steps whole.",
       inputSchema: updateWorkflowTemplateSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {
@@ -1435,7 +1435,7 @@ export function registerTools(
     "resync_workflow_template",
     {
       description:
-        "Re-apply a template's current step definitions to all active workflow runs using it. Updates pending steps (title, description, role, deliverables, approval gate) and re-matches agents. Use after editing template roles or to fix stale agent assignments.",
+        "Re-apply a template's current step definitions to all active workflow runs using it. Updates waiting steps (title, description, role, deliverables, approval gate), removes untouched steps the template no longer has, adds new steps after the work already done, and re-matches agents. Done or started steps are never changed. Removed steps with work on them are kept and listed in keptRemoved. Archived cards are skipped. Pass dry_run: true to preview per card what would be added, removed, kept and renamed without changing anything. Use after editing template roles or to fix stale agent assignments.",
       inputSchema: resyncWorkflowTemplateSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {

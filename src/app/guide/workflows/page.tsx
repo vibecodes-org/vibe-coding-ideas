@@ -688,18 +688,23 @@ export default function WorkflowsPage() {
             Template Edit Propagation
           </h2>
           <p className="text-muted-foreground">
-            When you edit a template&apos;s steps, the changes automatically
-            propagate to any <strong className="text-foreground">pending</strong>{" "}
-            steps in active workflow runs that were created from that template.
-            Steps that are already in progress, completed, or failed are not
-            affected. If the number of steps has changed (structural edit), a
-            workflow that has not started yet (every step pending, nothing
-            claimed or commented on) is switched to the new steps, which also
-            drops any hand-made tweaks on it, such as a hand-picked agent or a
-            flipped approval; one that has started is left alone, so remove and re-apply it in that case.
-            When a step&apos;s role changes, its agent is re-picked for the
-            new role; a step whose role is unchanged keeps its agent,
-            including a hand-picked one.
+            When you edit a template&apos;s steps, cards already using it
+            follow the edit for the work they have not reached yet. Steps that
+            are done, being worked on, waiting for approval, failed or skipped
+            are never changed. Waiting steps get the new wording and settings;
+            a step is recognised by its name, or by its place if you renamed
+            it. Steps you add are added to the part of the card still to come,
+            and steps you remove are taken out of it, unless someone has
+            commented on that step or saved work on it. A step you add before
+            work a card has already done is not added to that card. A card that
+            has not started at all is simply switched to the new steps, which
+            also drops any hand-made tweaks on it, such as a hand-picked agent
+            or a flipped approval. Archived cards are left as they are. When a
+            step&apos;s role changes, its agent is re-picked for the new role;
+            a step whose role is unchanged keeps its agent, including a
+            hand-picked one. After you save, a message says how many cards were
+            updated, and warns you if a step was kept or a card was left as it
+            was because it changed while saving.
           </p>
         </section>
 

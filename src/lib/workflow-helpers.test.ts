@@ -534,164 +534,111 @@ describe("checkAndApplyAutoRules with userId option", () => {
 
 // --- propagateTemplateEdits ---
 
-function createPropagationMockSupabase(options: {
-  activeRuns: { id: string; task_id: string }[] | null;
-  stepsByRun: Record<string, { id: string; status: string; step_order: number; agent_role?: string | null }[]>;
-  updateCounts?: Record<string, number>; // stepId -> count returned by update
-  rpcResult?: { data: boolean | null; error: { message: string } | null };
-}) {
-  const updateResults = options.updateCounts ?? {};
+type MockRun = { id: string; task_id: string; board_tasks?: { title: string; archived: boolean } | null };
+type MockStep = Record<string, unknown> & { id: string; status: string; step_order: number };
 
-  const updatePatches: { stepId: string | null; patch: Record<string, unknown> }[] = [];
-
+function pending(id: string, order: number, title: string, role = "Dev", extra: Record<string, unknown> = {}): MockStep {
   return {
-    updatePatches,
-    rpc: vi.fn().mockResolvedValue(options.rpcResult ?? { data: false, error: null }),
-    from: vi.fn((table: string) => {
-      if (table === "workflow_runs") {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              not: vi.fn().mockResolvedValue({
-                data: options.activeRuns,
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-      if (table === "task_workflow_steps") {
-        // Need to handle both select (for fetching steps) and update (for updating steps)
-        const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-
-        chain.select = vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn((_, __) => {
-              // Return steps for the run based on run_id
-              // We track which run was requested via closure
-              return {
-                then: undefined, // not a promise yet
-              };
-            }),
-          }),
-        });
-
-        // Build a smarter mock that tracks eq() calls.
-        // Mirrors postgrest-js: an update returns a count only when the
-        // caller asked for one ({ count } option), and .select() after an
-        // update returns the written rows.
-        let currentRunId: string | null = null;
-        let currentStepId: string | null = null;
-        let isUpdateChain = false;
-
-        const eqFn = vi.fn((_col: string, val: string) => {
-          if (_col === "run_id") currentRunId = val;
-          if (_col === "id") currentStepId = val;
-          return mockChain;
-        });
-
-        const orderFn = vi.fn(() => {
-          const runId = currentRunId;
-          const steps = runId ? (options.stepsByRun[runId] ?? []) : [];
-          return Promise.resolve({ data: steps, error: null });
-        });
-
-        const updateFn = vi.fn((patch: Record<string, unknown>) => {
-          isUpdateChain = true;
-          updatePatches.push({ stepId: null, patch });
-          return mockChain;
-        });
-
-        const selectFn = vi.fn(() => {
-          if (isUpdateChain) {
-            // update(...).eq(...).select("id") -> the rows actually written
-            const count = currentStepId ? (updateResults[currentStepId] ?? 1) : 1;
-            if (updatePatches.length > 0) {
-              updatePatches[updatePatches.length - 1].stepId = currentStepId;
-            }
-            const rows = Array.from({ length: count }, () => ({ id: currentStepId }));
-            return Promise.resolve({ data: rows, count: null, error: null });
-          }
-          return mockChain;
-        });
-
-        const mockChain = {
-          select: selectFn,
-          eq: eqFn,
-          order: orderFn,
-          update: updateFn,
-        };
-
-        return mockChain;
-      }
-      return {};
-    }),
+    id,
+    status: "pending",
+    step_order: order,
+    position: (order - 1) * 1000,
+    title,
+    description: null,
+    agent_role: role,
+    human_check_required: false,
+    expected_deliverables: [],
+    model_tier: null,
+    effort_override: null,
+    started_at: null,
+    claimed_by: null,
+    claim_token_hash: null,
+    work_token_hash: null,
+    output: null,
+    comment_count: 0,
+    ...extra,
   };
 }
 
+function createPropagationMockSupabase(options: {
+  activeRuns: MockRun[] | null;
+  stepsByRun: Record<string, MockStep[]>;
+  /** What the swap function (replace_unstarted_workflow_run) answers. */
+  swapResult?: { data: unknown; error: unknown };
+  /** What the reshape function answers. */
+  reshapeResult?: { data: unknown; error: unknown };
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rpc = vi.fn((name: string, _args?: any) => {
+    if (name === "replace_unstarted_workflow_run") {
+      return Promise.resolve(options.swapResult ?? { data: true, error: null });
+    }
+    return Promise.resolve(options.reshapeResult ?? { data: "applied", error: null });
+  });
+  const from = vi.fn((table: string) => {
+    if (table === "workflow_runs") {
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            not: vi.fn().mockResolvedValue({ data: options.activeRuns, error: null }),
+          }),
+        }),
+      };
+    }
+    let runId = "";
+    const chain: Record<string, unknown> = {
+      select: vi.fn(() => chain),
+      eq: vi.fn((_col: string, val: string) => {
+        runId = val;
+        return chain;
+      }),
+      order: vi.fn(() => Promise.resolve({ data: options.stepsByRun[runId] ?? [], error: null })),
+    };
+    return chain;
+  });
+  return { from, rpc };
+}
+
+const card = (title = "Card one", archived = false) => ({ title, archived });
 const sampleTemplateSteps = [
   { title: "Step A Updated", role: "Dev", description: "New desc", requires_approval: true, deliverables: ["doc.md"] },
   { title: "Step B Updated", role: "QA", description: "QA desc", requires_approval: false, deliverables: [] },
 ];
 
 describe("propagateTemplateEdits", () => {
-  it("returns zero counts when no active runs exist", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: [],
-      stepsByRun: {},
-    });
-
+  it("returns an empty report when no active runs exist", async () => {
+    const supabase = createPropagationMockSupabase({ activeRuns: [], stepsByRun: {} });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
-
-    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, runsReplaced: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] });
+    expect(result).toEqual({
+      runsUpdated: 0,
+      stepsUpdated: 0,
+      runsReplaced: 0,
+      skippedStructuralMismatch: 0,
+      affectedTaskIds: [],
+      keptRemoved: [],
+      changedWhileSaving: [],
+      dryRun: false,
+    });
   });
 
-  it("returns zero counts when activeRuns is null", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: null,
-      stepsByRun: {},
-    });
-
+  it("returns an empty report when activeRuns is null", async () => {
+    const supabase = createPropagationMockSupabase({ activeRuns: null, stepsByRun: {} });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
-
-    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, runsReplaced: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] });
-  });
-
-  const threeStepRun = {
-    "run-1": [
-      { id: "s1", status: "pending", step_order: 1 },
-      { id: "s2", status: "pending", step_order: 2 },
-      { id: "s3", status: "pending", step_order: 3 }, // 3 steps vs 2 template steps
-    ],
-  };
-
-  it("skips a mismatched run when the swap refuses (started, claimed or commented)", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: threeStepRun,
-      rpcResult: { data: false, error: null },
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
-
-    expect(supabase.rpc).toHaveBeenCalledTimes(1);
-    expect(result.skippedStructuralMismatch).toBe(1);
-    expect(result.runsReplaced).toBe(0);
-    expect(result.stepsUpdated).toBe(0);
     expect(result.runsUpdated).toBe(0);
     expect(result.affectedTaskIds).toEqual([]);
   });
 
-  it("replaces a mismatched, never-started run and reports its task for rematching", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: threeStepRun,
-      rpcResult: { data: true, error: null },
-    });
+  const threeStepRun = {
+    "run-1": [pending("s1", 1, "Step A Updated"), pending("s2", 2, "Step B Updated", "QA"), pending("s3", 3, "Old third")],
+  };
 
+  it("swaps a never-started run with a different step count and reports its task", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
+      stepsByRun: threeStepRun,
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
@@ -703,177 +650,198 @@ describe("propagateTemplateEdits", () => {
       ],
     });
     expect(result.runsReplaced).toBe(1);
-    expect(result.skippedStructuralMismatch).toBe(0);
     expect(result.affectedTaskIds).toEqual(["task-1"]);
   });
 
-  it("treats a failed swap as a skip, not a crash", async () => {
+  it("falls back to the careful path when the swap refuses", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
       stepsByRun: threeStepRun,
-      rpcResult: { data: null, error: { message: "boom" } },
+      swapResult: { data: false, error: null },
     });
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
+    expect(supabase.rpc.mock.calls.map((c) => c[0])).toEqual(["replace_unstarted_workflow_run", "reshape_workflow_run"]);
     expect(result.runsReplaced).toBe(0);
-    expect(result.skippedStructuralMismatch).toBe(1);
+    expect(result.runsUpdated).toBe(1);
   });
 
-  it("does not call the swap when the step count matches", async () => {
+  it("reshapes a started card: removes an untouched step and adds a new one (acceptance 1)", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
       stepsByRun: {
         "run-1": [
-          { id: "s1", status: "pending", step_order: 1 },
-          { id: "s2", status: "pending", step_order: 2 },
+          pending("a", 1, "A", "Dev", { status: "completed", output: "done" }),
+          pending("b", 2, "B", "Dev", { status: "in_progress", started_at: "2026-11-01" }),
+          pending("c", 3, "C", "Dev"),
+          pending("d", 4, "D", "Dev"),
         ],
       },
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", [
+      { title: "A", role: "Dev" },
+      { title: "B", role: "Dev" },
+      { title: "X", role: "Security" },
+      { title: "D", role: "Dev" },
+    ]);
 
+    const call = supabase.rpc.mock.calls.find((c) => c[0] === "reshape_workflow_run")!;
+    expect(call[1].p_deletes).toEqual(["c"]);
+    expect(call[1].p_inserts).toHaveLength(1);
+    expect(call[1].p_inserts[0].title).toBe("X");
+    expect(call[1].p_expected).toHaveLength(4);
+    expect(result.runsUpdated).toBe(1);
+    expect(result.affectedTaskIds).toEqual(["task-1"]);
+    expect(result.keptRemoved).toEqual([]);
+  });
+
+  it("keeps a removed step that has a comment and reports it by card (acceptance 2)", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card("Fix login") }],
+      stepsByRun: {
+        "run-1": [
+          pending("a", 1, "A", "Dev", { status: "completed", output: "done" }),
+          pending("c", 2, "C", "Dev", { comment_count: 2 }),
+          pending("d", 3, "D", "Dev"),
+        ],
+      },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", [
+      { title: "A", role: "Dev" },
+      { title: "X", role: "Security" },
+      { title: "D", role: "Dev" },
+    ]);
+
+    const call = supabase.rpc.mock.calls.find((c) => c[0] === "reshape_workflow_run")!;
+    expect(call[1].p_deletes).toEqual([]);
+    expect(result.keptRemoved).toEqual([{ taskId: "task-1", title: "Fix login", stepTitle: "C" }]);
+  });
+
+  it("writes nothing when the template did not really change (acceptance 7)", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
+      stepsByRun: {
+        "run-1": [
+          pending("a", 1, "Step A Updated", "Dev", { description: "New desc", human_check_required: true, expected_deliverables: ["doc.md"] }),
+          pending("b", 2, "Step B Updated", "QA", { description: "QA desc" }),
+        ],
+      },
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
     expect(supabase.rpc).not.toHaveBeenCalled();
-    expect(result.runsReplaced).toBe(0);
-    expect(result.runsUpdated).toBe(1);
+    expect(result.runsUpdated).toBe(0);
+    expect(result.affectedTaskIds).toEqual([]);
   });
 
-  it("updates all pending steps when counts match", async () => {
+  it("skips archived cards without reading their steps (acceptance 8)", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: {
-        "run-1": [
-          { id: "s1", status: "pending", step_order: 1 },
-          { id: "s2", status: "pending", step_order: 2 },
-        ],
-      },
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card("Old", true) }],
+      stepsByRun: { "run-1": [pending("s1", 1, "Something else")] },
     });
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    expect(result.stepsUpdated).toBe(2);
-    expect(result.runsUpdated).toBe(1);
-    expect(result.skippedStructuralMismatch).toBe(0);
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(result.runsUpdated).toBe(0);
+    expect(supabase.from).toHaveBeenCalledTimes(1);
   });
 
-  it("only updates pending steps, skips completed/in_progress", async () => {
+  it("reports a card as changed while saving when the database says so (acceptance 9)", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: {
-        "run-1": [
-          { id: "s1", status: "completed", step_order: 1 },
-          { id: "s2", status: "pending", step_order: 2 },
-        ],
-      },
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card("Fix login") }],
+      stepsByRun: { "run-1": [pending("s1", 1, "Old A"), pending("s2", 2, "Old B", "QA")] },
+      reshapeResult: { data: "changed", error: null },
     });
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    expect(result.stepsUpdated).toBe(1);
-    expect(result.runsUpdated).toBe(1);
+    expect(result.runsUpdated).toBe(0);
+    expect(result.skippedStructuralMismatch).toBe(1);
+    expect(result.changedWhileSaving).toEqual([{ taskId: "task-1", title: "Fix login" }]);
+    expect(result.affectedTaskIds).toEqual([]);
   });
 
-  it("counts the run and reports its task when steps are rewritten in place (same step count)", async () => {
+  it("treats a failed write as changed while saving, not a crash", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: {
-        "run-1": [
-          { id: "s1", status: "pending", step_order: 1, agent_role: "Dev" },
-          { id: "s2", status: "pending", step_order: 2, agent_role: "QA" },
-        ],
-      },
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
+      stepsByRun: { "run-1": [pending("s1", 1, "Old A"), pending("s2", 2, "Old B", "QA")] },
+      reshapeResult: { data: null, error: { message: "boom" } },
     });
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    expect(result.runsUpdated).toBe(1);
-    expect(result.stepsUpdated).toBe(2);
-    expect(result.affectedTaskIds).toEqual(["task-1"]);
+    expect(result.changedWhileSaving).toHaveLength(1);
+    expect(result.runsUpdated).toBe(0);
   });
 
-  it("copies a template step's own effort onto the waiting step (in place), and clears it when absent", async () => {
+  it("dry run writes nothing and returns a per-card preview (acceptance 11)", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card("Fix login") }],
       stepsByRun: {
         "run-1": [
-          { id: "s1", status: "pending", step_order: 1, agent_role: "Dev" },
-          { id: "s2", status: "pending", step_order: 2, agent_role: "QA" },
+          pending("a", 1, "A", "Dev", { status: "completed", output: "done" }),
+          pending("c", 2, "C", "Dev"),
+          pending("d", 3, "D", "Dev"),
         ],
       },
     });
-    const steps = [
+    const result = await propagateTemplateEdits(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      "tmpl-1",
+      [
+        { title: "A", role: "Dev" },
+        { title: "X", role: "Security" },
+        { title: "D", role: "Dev" },
+      ],
+      { dryRun: true }
+    );
+
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(result.dryRun).toBe(true);
+    expect(result.affectedTaskIds).toEqual([]);
+    expect(result.preview).toEqual([
+      { taskId: "task-1", title: "Fix login", adds: ["X"], removes: ["C"], keeps: [], renames: [], stepsRewritten: 0 },
+    ]);
+  });
+
+  it("copies a template step's own effort and model tier onto the waiting step (in place)", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
+      stepsByRun: { "run-1": [pending("s1", 1, "Review"), pending("s2", 2, "Test", "QA")] },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", [
       { title: "Review", role: "Dev", model_tier: "frontier", effort: "high" },
       { title: "Test", role: "QA", model_tier: "standard" },
-    ];
+    ]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await propagateTemplateEdits(supabase as any, "tmpl-1", steps);
-
-    expect(supabase.updatePatches.map((u) => u.patch.effort_override)).toEqual(["high", null]);
+    const updates = supabase.rpc.mock.calls.find((c) => c[0] === "reshape_workflow_run")![1].p_updates;
+    expect(updates.map((u: { effort_override: unknown }) => u.effort_override)).toEqual(["high", null]);
+    expect(updates.map((u: { model_tier: unknown }) => u.model_tier)).toEqual(["frontier", "standard"]);
   });
 
-  it("passes the effort in the swap payload when a never-started run is replaced", async () => {
+  it("clears the agent only on a step whose role changed", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: { "run-1": [{ id: "s1", status: "pending", step_order: 1 }] },
-      rpcResult: { data: true, error: null },
-    });
-    const steps = [
-      { title: "Review", role: "Dev", model_tier: "frontier", effort: "high" },
-      { title: "Test", role: "QA" },
-    ];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await propagateTemplateEdits(supabase as any, "tmpl-1", steps);
-
-    const payload = supabase.rpc.mock.calls[0][1].p_steps;
-    expect(payload.map((p: { effort_override: unknown }) => p.effort_override)).toEqual(["high", null]);
-  });
-
-  it("clears the agent and match tier on a step whose role changed", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1", board_tasks: card() }],
       stepsByRun: {
         "run-1": [
-          { id: "s1", status: "pending", step_order: 1, agent_role: "Planner" }, // template says Dev
-          { id: "s2", status: "pending", step_order: 2, agent_role: "  qa " }, // case/space only
+          pending("s1", 1, "Step A Updated", "Planner"), // template says Dev
+          pending("s2", 2, "Step B Updated", "  qa "), // case/space only
         ],
       },
     });
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    const s1 = supabase.updatePatches.find((u) => u.stepId === "s1")!.patch;
-    const s2 = supabase.updatePatches.find((u) => u.stepId === "s2")!.patch;
-    expect(s1).toMatchObject({ agent_role: "Dev", bot_id: null, match_tier: null });
-    expect(s2).toMatchObject({ agent_role: "QA" });
-    expect(s2).not.toHaveProperty("bot_id");
-    expect(s2).not.toHaveProperty("match_tier");
-  });
-
-  it("handles concurrency guard returning count 0", async () => {
-    const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1", task_id: "task-1" }],
-      stepsByRun: {
-        "run-1": [
-          { id: "s1", status: "pending", step_order: 1 },
-          { id: "s2", status: "pending", step_order: 2 },
-        ],
-      },
-      updateCounts: { s1: 0, s2: 0 }, // both claimed between select and update
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
-
-    expect(result.stepsUpdated).toBe(0);
-    expect(result.runsUpdated).toBe(0);
+    const updates = supabase.rpc.mock.calls.find((c) => c[0] === "reshape_workflow_run")![1].p_updates;
+    expect(updates.find((u: { id: string }) => u.id === "s1").clear_agent).toBe(true);
+    expect(updates.find((u: { id: string }) => u.id === "s2").clear_agent).toBe(false);
   });
 });
 
@@ -1263,71 +1231,5 @@ describe("resolveSuggestionOnApply", () => {
     // Guarded the SECOND suggestion, not the first.
     expect(captured.updateEqs).toContainEqual(["id", "sug-B"]);
     expect(captured.updateEqs).not.toContainEqual(["id", "sug-A"]);
-  });
-});
-
-// --- propagateTemplateEdits — model_tier (P2) ---
-
-/** Capturing mock: records the update payloads sent to pending steps. */
-function createTierCaptureSupabase(step: { id: string; status: string; step_order: number }) {
-  const updates: Record<string, unknown>[] = [];
-  const supabase = {
-    from: vi.fn((table: string) => {
-      if (table === "workflow_runs") {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              not: vi.fn().mockResolvedValue({
-                data: [{ id: "run-1", task_id: "task-1" }],
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-      // task_workflow_steps
-      let isUpdate = false;
-      let payload: Record<string, unknown> | null = null;
-      const chain: Record<string, unknown> = {
-        select: vi.fn(() => {
-          if (isUpdate) {
-            if (payload) updates.push(payload);
-            return Promise.resolve({ data: [{ id: step.id }], error: null });
-          }
-          return chain;
-        }),
-        update: vi.fn((p: Record<string, unknown>) => { isUpdate = true; payload = p; return chain; }),
-        order: vi.fn(() => Promise.resolve({ data: [step], error: null })),
-        eq: vi.fn(() => chain),
-      };
-      return chain;
-    }),
-  };
-  return { supabase, updates };
-}
-
-describe("propagateTemplateEdits — model_tier", () => {
-  it("copies a template step's model_tier onto pending steps", async () => {
-    const { supabase, updates } = createTierCaptureSupabase({ id: "s1", status: "pending", step_order: 1 });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await propagateTemplateEdits(supabase as any, "tmpl-1", [
-      { title: "Build", role: "Dev", model_tier: "standard" },
-    ]);
-
-    expect(updates).toHaveLength(1);
-    expect(updates[0].model_tier).toBe("standard");
-  });
-
-  it("writes null model_tier when the template step has none (Auto)", async () => {
-    const { supabase, updates } = createTierCaptureSupabase({ id: "s1", status: "pending", step_order: 1 });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await propagateTemplateEdits(supabase as any, "tmpl-1", [
-      { title: "Build", role: "Dev" },
-    ]);
-
-    expect(updates).toHaveLength(1);
-    expect(updates[0].model_tier).toBeNull();
   });
 });
