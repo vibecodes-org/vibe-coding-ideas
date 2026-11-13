@@ -33,6 +33,7 @@ import { mintSessionTokens } from "../shared/session-token.mjs";
 import { isPeerDegradedFrame, isPeerReattachedFrame } from "../shared/control-frames.mjs";
 import { pidAlive } from "../shared/reap.mjs";
 
+import { sentinelCmd, sentinelPids, killSentinel } from "./sentinel.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "reconnect-reattach-test-secret";
@@ -259,22 +260,13 @@ function spawnBridge({ relayUrl, session, token, cmd, env = {} }) {
   return { child, getStderr: () => stderr };
 }
 
-function pgrepPids(pattern) {
-  return new Promise((resolve) => {
-    execFile("pgrep", ["-f", pattern], (_err, stdout) =>
-      resolve(String(stdout || "").trim().split("\n").filter(Boolean).map(Number)));
-  });
-}
-function killHard(pid) {
-  try { process.kill(-pid, "SIGKILL"); } catch { /* */ }
-  try { process.kill(pid, "SIGKILL"); } catch { /* */ }
-}
+const killHard = killSentinel;
 function newMark() { return String(47_000_000 + Math.floor(Math.random() * 1_000_000)); }
 /** A PTY command that ignores SIGHUP (like claude) so only a real reap escalation kills it. */
-const immuneCmd = (mark) => `bash -c "trap '' HUP; exec sleep ${mark}"`;
+const immuneCmd = (mark) => sentinelCmd(mark);
 async function findSentinel(mark) {
   return waitFor(async () => {
-    const pids = await pgrepPids(`^sleep ${mark}$`);
+    const pids = await sentinelPids(mark);
     return pids.length === 1 ? pids[0] : null;
   }, 15_000, `sentinel "sleep ${mark}"`, 100);
 }
@@ -433,7 +425,7 @@ test("(f4) card f4be2981: agent exits while the link is down, the relay returns 
 
 // ── final sweep: NOTHING may survive this suite ───────────────────────────────
 after(async () => {
-  const strays = await pgrepPids("^sleep 47");
+  const strays = await sentinelPids("47", { prefix: true });
   for (const pid of strays) killHard(pid);
   assert.deepEqual(strays, [], `stray sentinel processes leaked: ${strays.join(", ")}`);
   console.log("[ra/sweep] PASS — final ps sweep clean");

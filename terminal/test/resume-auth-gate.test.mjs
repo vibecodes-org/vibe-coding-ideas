@@ -25,6 +25,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "resume-auth-gate-test-secret";
@@ -35,11 +36,12 @@ function makeMarkerBin(marker) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-rag-bin-"));
   for (const name of ["claude", "codex"]) {
     // `--version` is the bridge's own install/version probe, not a start.
+    const script = path.join(dir, `${name}-started.mjs`);
     fs.writeFileSync(
-      path.join(dir, name),
-      `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "2.1.300 (Claude Code)"; exit 0; fi\necho started >> "${marker}"\nexec sleep 30\n`,
-      { mode: 0o755 },
+      script,
+      `import fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(marker)}, "started\\n");\nsetTimeout(() => {}, 30000);\n`,
     );
+    writeFakeAgent(dir, name, script, { version: "2.1.300 (Claude Code)" });
   }
   return dir;
 }

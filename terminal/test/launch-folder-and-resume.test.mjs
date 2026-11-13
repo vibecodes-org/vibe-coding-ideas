@@ -27,6 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "launch-folder-resume-test-secret";
@@ -81,7 +82,7 @@ async function launch(t, { home, appUrl, link }) {
   const shim = path.join(fakeBin, "shim.mjs");
   fs.writeFileSync(shim, `process.stdout.write("RUN_BEGIN"+JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()})+"RUN_END\\n");process.stdin.resume();\n`);
   for (const name of ["claude", "codex"]) {
-    fs.writeFileSync(path.join(fakeBin, name), `#!/bin/sh\nexec "${process.execPath}" "${shim}" "$@"\n`, { mode: 0o755 });
+    writeFakeAgent(fakeBin, name, shim);
   }
   const session = `lfr-${Math.random().toString(36).slice(2, 8)}`;
   const tokens = await mintSessionTokens({ sub: "user-LFR", idea: "idea-LFR", sid: session, secret: SECRET });

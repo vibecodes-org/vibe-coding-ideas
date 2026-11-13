@@ -20,7 +20,7 @@
 //
 // Run: cd terminal/test && VIBECODES_PACKAGED= node --test setup-launch.test.mjs
 
-import { test } from "node:test";
+import { test as nodeTest } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -32,6 +32,16 @@ import WebSocket from "ws";
 import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
+
+
+// Skipped on Windows, reason: these tests drive the Mac in-app setup, a POSIX shell installer using curl, chmod and sh scripts; setup on Windows is built in release 1c and gets its own tests there
+const SKIP_WIN = process.platform === "win32" && 'these tests drive the Mac in-app setup, a POSIX shell installer using curl, chmod and sh scripts; setup on Windows is built in release 1c and gets its own tests there';
+const test = (name, ...rest) => {
+  if (!SKIP_WIN) return nodeTest(name, ...rest);
+  const opts = typeof rest[0] === "function" ? {} : rest[0];
+  const fn = typeof rest[0] === "function" ? rest[0] : rest[1];
+  return nodeTest(name, { ...opts, skip: SKIP_WIN }, fn);
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");

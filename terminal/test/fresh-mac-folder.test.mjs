@@ -34,6 +34,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const PWD_CMD = path.resolve(__dirname, "./pwd-cmd.mjs");
@@ -236,7 +237,7 @@ test("5b: ~/projects/<repo> taken by something else → cloned into <repo>-2", {
 test("6: Resume with a folder that isn't on this Mac → folder-missing, a plain line, nothing spawned", { timeout: 60000 }, async (t) => {
   const home = tmpDir(t, "vc-fm-home-");
   const fakeBin = tmpDir(t, "vc-fm-bin-");
-  fs.writeFileSync(path.join(fakeBin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${PWD_CMD}" "$@"\n`, { mode: 0o755 });
+  writeFakeAgent(fakeBin, "claude", PWD_CMD);
   const app = await startFakeApp(null);
   t.after(app.close);
   const missing = path.join(home, "projects", "widget");
@@ -370,7 +371,7 @@ test("8b: SSH host alias — a checkout with git@github-work:… is found by the
 test("8c: Resume into the home folder → folder-not-allowed, nothing spawned", { timeout: 60000 }, async (t) => {
   const home = tmpDir(t, "vc-fm-home-");
   const fakeBin = tmpDir(t, "vc-fm-bin-");
-  fs.writeFileSync(path.join(fakeBin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${PWD_CMD}" "$@"\n`, { mode: 0o755 });
+  writeFakeAgent(fakeBin, "claude", PWD_CMD);
   const app = await startFakeApp(null);
   t.after(app.close);
   const run = await launch(t, {

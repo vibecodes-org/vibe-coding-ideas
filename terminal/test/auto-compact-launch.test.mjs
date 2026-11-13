@@ -29,6 +29,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -41,8 +42,7 @@ const AGENTS = { [AGENT_NAME]: { description: "probe", prompt: "You are the prob
 function makeFakeAgentBin(claudeVersion = "2.1.221 (Claude Code)") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-agents-"));
   for (const name of ["claude", "codex"]) {
-    const version = name === "claude" ? `if [ "$1" = "--version" ]; then echo "${claudeVersion}"; exit 0; fi\n` : "";
-    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\n${version}exec "${process.execPath}" "${ARGV_CMD}" "$@"\n`, { mode: 0o755 });
+    writeFakeAgent(dir, name, ARGV_CMD, name === "claude" ? { version: claudeVersion } : {});
   }
   return dir;
 }

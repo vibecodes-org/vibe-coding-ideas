@@ -34,6 +34,7 @@ import WebSocket from "ws";
 import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { pidAlive, reapPidGroupEscalated } from "../shared/reap.mjs";
+import { sentinelCmd, sentinelPids, killSentinel, IS_WIN } from "./sentinel.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
@@ -41,32 +42,15 @@ const MINI_PARENT = path.resolve(__dirname, "./mini-parent.mjs");
 const HARD_TIMEOUT_MS = 25_000;
 const SECRET = "orphan-cleanup-test-secret";
 
-// Every sentinel sleeps a unique 46xxxxxx-second mark → discoverable via
-// `pgrep -f "^sleep 46…"` and sweepable at the end. The anchor matters: the
-// bridge/mini-parent argv also CONTAINS the mark inside their --cmd string.
-const SWEEP_PREFIX = "^sleep 46";
+// Every sentinel carries a unique 46xxxxxx mark → discoverable and sweepable at
+// the end (see sentinel.mjs: POSIX `sleep <mark>` via pgrep, Windows a marked
+// node process via the process table).
+const SWEEP_PREFIX = "46";
 function newMark() {
   return String(46_000_000 + Math.floor(Math.random() * 1_000_000));
 }
 /** A PTY command that ignores SIGHUP (and optionally SIGTERM) — like claude. */
-function immuneCmd(mark, { alsoTerm = false } = {}) {
-  const traps = alsoTerm ? "trap '' HUP TERM" : "trap '' HUP";
-  return `bash -c "${traps}; exec sleep ${mark}"`;
-}
-
-function pgrepPids(pattern) {
-  return new Promise((resolve) => {
-    execFile("pgrep", ["-f", pattern], (_err, stdout) => {
-      resolve(
-        String(stdout || "")
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map(Number),
-      );
-    });
-  });
-}
+const immuneCmd = sentinelCmd;
 
 async function waitFor(pred, ms, label, pollMs = 50) {
   const started = Date.now();
@@ -82,7 +66,7 @@ async function waitFor(pred, ms, label, pollMs = 50) {
 async function findSentinel(mark) {
   return waitFor(
     async () => {
-      const pids = await pgrepPids(`^sleep ${mark}$`);
+      const pids = await sentinelPids(mark);
       return pids.length === 1 ? pids[0] : null;
     },
     15_000,
@@ -91,10 +75,7 @@ async function findSentinel(mark) {
   );
 }
 
-function killHard(pid) {
-  try { process.kill(-pid, "SIGKILL"); } catch { /* ignore */ }
-  try { process.kill(pid, "SIGKILL"); } catch { /* ignore */ }
-}
+const killHard = killSentinel;
 
 /** Spawn the bridge (env-configured, like roundtrip.test.mjs) with stderr capture. */
 function spawnBridge({ relayUrl, session, token, cmd, extraArgv = [], env = {} }) {
@@ -187,15 +168,18 @@ test("(a) ws-close: escalation reaches SIGKILL(+group) and the bridge exits only
   // the full escalation actually ran (HUP ignored → TERM ignored → KILL).
   assert.equal(pidAlive(sentinelPid), false, "sentinel must be dead when the bridge has exited");
   const logs = spawned.getStderr();
-  assert.match(logs, /"msg":"pty kill escalated".*"stage":"SIGTERM"/, "escalated to SIGTERM");
-  assert.match(logs, /"msg":"pty kill escalated".*"stage":"SIGKILL"/, "escalated to SIGKILL");
+  if (!IS_WIN) {
+    // The HUP -> TERM -> KILL stages are POSIX signals; Windows ends the tree in one step.
+    assert.match(logs, /"msg":"pty kill escalated".*"stage":"SIGTERM"/, "escalated to SIGTERM");
+    assert.match(logs, /"msg":"pty kill escalated".*"stage":"SIGKILL"/, "escalated to SIGKILL");
+  }
   assert.match(logs, /"msg":"pty child confirmed dead"/, "death was VERIFIED before exit");
   assert.equal(code, 0, "ws-close teardown exits 0");
   console.log("[oc/a] PASS — HUP+TERM-immune child reaped via SIGKILL escalation");
 });
 
 // ── (b) SIGTERM to the bridge ─────────────────────────────────────────────────
-test("(b) SIGTERM to the bridge: HUP-immune child dies at the SIGTERM stage, verified", { timeout: 40_000 }, async (t) => {
+test("(b) SIGTERM to the bridge: HUP-immune child dies at the SIGTERM stage, verified", { skip: process.platform === "win32" && "Windows has no SIGTERM handler: process.kill ends the bridge outright, so there is no SIGTERM teardown to test. Tree kill is covered by the real taskkill tests in terminal/shared", timeout: 40_000 }, async (t) => {
   const { session, tokens, relay } = await startSession(t);
   const mark = newMark();
   const spawned = spawnBridge({
@@ -319,7 +303,7 @@ test("(d1) helper death: the IPC disconnect shuts the bridge down and the child 
 // packaged helper can prove end-to-end: Electron's fork/IPC delivery of
 // {type:"pty-pid"} (asserted in d1 via the identical Node fork API) and the
 // before-quit hold — flagged for QA in the step report.
-test("(c) SIGKILL'd bridge orphans the child; the helper-side escalation reaps it (+ verified already-dead path)", { timeout: 40_000 }, async (t) => {
+test("(c) SIGKILL'd bridge orphans the child; the helper-side escalation reaps it (+ verified already-dead path)", { skip: process.platform === "win32" && "uses POSIX process groups and SIGHUP; the Windows tree kill is covered by the real taskkill tests in terminal/shared", timeout: 40_000 }, async (t) => {
   const { session, tokens, relay } = await startSession(t);
   const mark = newMark();
   const spawned = spawnBridge({
@@ -353,7 +337,7 @@ test("(c) SIGKILL'd bridge orphans the child; the helper-side escalation reaps i
 });
 
 // ── reap module happy path: an obedient child needs NO escalation ─────────────
-test("reap module: a SIGHUP-obedient child dies at the SIGHUP stage — no escalation", { timeout: 15_000 }, async (t) => {
+test("reap module: a SIGHUP-obedient child dies at the SIGHUP stage — no escalation", { skip: process.platform === "win32" && "SIGHUP does not exist on Windows; see the real taskkill tests in terminal/shared", timeout: 15_000 }, async (t) => {
   const mark = newMark();
   const child = spawn("sleep", [mark], { detached: true, stdio: "ignore" }); // own group, like spawn-helper's setsid
   child.unref();
@@ -373,7 +357,7 @@ test("reap module: a SIGHUP-obedient child dies at the SIGHUP stage — no escal
 });
 
 // ── reap module group sweep: children of the PTY child die too ────────────────
-test("reap module: the SIGKILL stage sweeps the child's OWN children via the process group", { timeout: 15_000 }, async (t) => {
+test("reap module: the SIGKILL stage sweeps the child's OWN children via the process group", { skip: process.platform === "win32" && "POSIX process-group kill; the Windows tree kill is covered by the real taskkill tests in terminal/shared", timeout: 15_000 }, async (t) => {
   const mark = newMark();
   const subMark = newMark();
   // detached:true → setsid, exactly how spawn-helper isolates the PTY child.
@@ -390,7 +374,7 @@ test("reap module: the SIGKILL stage sweeps the child's OWN children via the pro
   const leaderPid = await findSentinel(mark);
   assert.equal(leaderPid, child.pid, "the exec'd leader keeps its pid");
   const subPid = await waitFor(
-    async () => (await pgrepPids(`^sleep ${subMark}$`))[0] ?? null,
+    async () => (await sentinelPids(subMark))[0] ?? null,
     5_000,
     "background group member",
     100,
@@ -407,7 +391,7 @@ test("reap module: the SIGKILL stage sweeps the child's OWN children via the pro
 
 // ── final sweep: NOTHING may survive this suite ───────────────────────────────
 after(async () => {
-  const strays = await pgrepPids(SWEEP_PREFIX);
+  const strays = await sentinelPids(SWEEP_PREFIX, { prefix: true });
   for (const pid of strays) killHard(pid); // clean up before failing loudly
   assert.deepEqual(strays, [], `stray sentinel processes leaked: ${strays.join(", ")}`);
   console.log("[oc/sweep] PASS — final ps sweep clean");

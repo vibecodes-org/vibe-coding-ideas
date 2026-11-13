@@ -27,6 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -39,9 +40,7 @@ const PROMPT = "Reply with exactly RC-PROMPT-OK";
 function makeFakeAgentBin() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-agents-"));
   for (const name of ["claude", "codex"]) {
-    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\nexec "${process.execPath}" "${ARGV_CMD}" "$@"\n`, {
-      mode: 0o755,
-    });
+    writeFakeAgent(dir, name, ARGV_CMD);
   }
   return dir;
 }

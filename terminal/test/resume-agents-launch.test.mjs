@@ -28,6 +28,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -40,7 +41,7 @@ const AGENTS = { [AGENT_NAME]: { description: "probe", prompt: "You are the prob
 function makeFakeAgentBin() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-agents-"));
   for (const name of ["claude", "codex"]) {
-    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\nexec "${process.execPath}" "${ARGV_CMD}" "$@"\n`, { mode: 0o755 });
+    writeFakeAgent(dir, name, ARGV_CMD);
   }
   return dir;
 }
@@ -214,7 +215,7 @@ function waitFor(pred, ms, what) {
   });
 }
 
-test("SIGTERM after the Codex role files are written (during the slow PATH lookup) leaves no folder behind", { timeout: 60000 }, async (t) => {
+test("SIGTERM after the Codex role files are written (during the slow PATH lookup) leaves no folder behind", { skip: process.platform === "win32" && "the slow PATH lookup is a POSIX login shell (sh -ilc); Windows reads the registry instead and has no such shell", timeout: 60000 }, async (t) => {
   const app = await startFakeApp(); t.after(app.close);
   // A login shell that takes 2s to answer: the bridge blocks in its PATH lookup.
   const slowShell = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vc-slow-shell-")), "sh");

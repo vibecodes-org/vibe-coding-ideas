@@ -31,6 +31,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -40,8 +41,7 @@ const SECRET = "worktree-fallback-test-secret";
 /** A PATH dir holding a `claude` shim that execs the argv echo stand-in. */
 function makeFakeClaudeBin() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-claude-"));
-  const shim = path.join(dir, "claude");
-  fs.writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${ARGV_CMD}" "$@"\n`, { mode: 0o755 });
+  writeFakeAgent(dir, "claude", ARGV_CMD);
   return dir;
 }
 
