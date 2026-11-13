@@ -180,7 +180,7 @@
  *  0.3.37 (card f0a13bde, 12 Nov 2026): Codex sessions can receive session
  *  messages too. An older helper's Codex session answers "can't receive".
  *  Same soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.37";
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.38";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
