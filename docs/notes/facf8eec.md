@@ -45,4 +45,16 @@ Anthropic, "Prompting Claude Opus 5.5" (platform.claude.com/docs/en/build-with-c
 - Guide: kanban-boards page describes the new behaviour (no "up to 50"); ai-agent-teams page no longer says AI Generate takes a persona.
 - Dead `generateBoardTasks` deleted from `src/actions/ai.ts`. Unused `bots`/`userBotProfiles` props removed from the dialog, toolbar and kanban-board pass-through.
 - Large-idea nudge rewritten to the two-part description form, still no count.
-- Before-and-after comparison (A7): attempted via `claude -p --model sonnet`, but the Claude CLI in the build session returned a 403 (Cloudflare) on every call, so no samples were produced. Still owed; run it from Nick's own terminal with invented project names (e.g. a one-word "Plantpal", a paragraph "Bookshelf Swap", a long "Fleet Tracker" spec).
+
+## A7 before-and-after (via `claude -p --model sonnet`, subscription only, invented projects)
+Old = prompts on master; new = this branch. Same project text and allowed columns/labels, JSON requested.
+
+| Project | Old tasks | Old with "- [ ]" | Old with "Done when" | New tasks | New with "- [ ]" | New with "Done when" |
+|---|---|---|---|---|---|---|
+| One word ("Plantpal": "plants") | 20 | 20 | 0 | 9 | 0 | 9 |
+| One paragraph ("Bookshelf Swap") | 19 | 19 | 0 | 9 | 0 | 9 |
+| Long spec ("Fleet Tracker", ~14,000 chars) | 19 | 19 | 0 | 15 | 0 | 15 |
+
+- Every new list starts with the setup task and then has real features (e.g. "People can sign up and log in", "Users can message each other to arrange a swap").
+- One-word project got 9 tasks (not 1-2). Tasks read as whole capabilities, not too broad. New output was shorter (5.1k vs 7.3k characters on the one-word project).
+- Observation: new lists also include a design task and a launch/deploy task; fine. Long spec ran on the shared guidance only (the large-idea nudge lives in the route and was not part of this comparison).
