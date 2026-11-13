@@ -34,7 +34,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir, exitCmd, IS_WIN } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const PWD_CMD = path.resolve(__dirname, "./pwd-cmd.mjs");
@@ -43,7 +43,7 @@ const PROMPT = "Work the board task";
 
 function tmpDir(t, prefix) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmDir(dir));
   return dir;
 }
 
@@ -132,16 +132,18 @@ async function launch(t, { home, link = {}, appUrl, cmd = `${process.execPath} $
   const argv = [BRIDGE_ENTRY, "--launch-url", launchUrl];
   if (cmd) argv.push("--cmd", cmd);
   let stderr = "";
+  const bridgeEnv = { ...winEnv(), PATH: process.env.PATH, HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "120", TERMINAL_APP_URL: appUrl, ...env };
+  if (IS_WIN) bridgeEnv.USERPROFILE = home; // Windows finds the home folder through USERPROFILE, not HOME
   const bridge = spawn(process.execPath, argv, {
     cwd: home,
-    env: { PATH: process.env.PATH, HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "120", TERMINAL_APP_URL: appUrl, ...env },
+    env: bridgeEnv,
     stdio: ["ignore", "ignore", "pipe"],
   });
   bridge.stderr.setEncoding("utf8");
   bridge.stderr.on("data", (d) => (stderr += d));
   t.after(async () => {
     try { browser.terminate(); } catch { /* ignore */ }
-    if (bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     await relay.close();
   });
   return {
@@ -251,7 +253,13 @@ test("6: Resume with a folder that isn't on this Mac → folder-missing, a plain
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "folder-missing", run.getStderr());
   assert.ok(!run.getStderr().includes('"spawning PTY"'), "nothing spawned");
-  assert.match(run.getBuf(), /The project folder ~\/projects\/widget isn't on this Mac, so this conversation can't be reopened here\./);
+  // Windows words it "this PC" and shows the full folder path (no ~).
+  const shown = IS_WIN ? missing : "~/projects/widget";
+  const where = IS_WIN ? "PC" : "Mac";
+  assert.ok(
+    run.getBuf().includes(`The project folder ${shown} isn't on this ${where}, so this conversation can't be reopened here.`),
+    run.getBuf(),
+  );
 });
 
 // ── 7: the agent stops straight away ─────────────────────────────────────────
@@ -261,7 +269,7 @@ test("7: the agent exits within 10s → agent-stopped-early:<code> with a plain 
   fs.mkdirSync(dir, { recursive: true });
   const app = await startFakeApp(null);
   t.after(app.close);
-  const run = await launch(t, { home, appUrl: app.url, cmd: "sh -c 'exit 1'", link: { cwd: dir, prompt: PROMPT } });
+  const run = await launch(t, { home, appUrl: app.url, cmd: exitCmd(1), link: { cwd: dir, prompt: PROMPT } });
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "agent-stopped-early:1", run.getStderr());
   assert.match(run.getBuf(), /Claude Code stopped straight away \(exit code 1\)\./);
@@ -270,7 +278,7 @@ test("7: the agent exits within 10s → agent-stopped-early:<code> with a plain 
 // ── 7b: card 4cd8270f — how the agent ended is recorded ──────────────────────
 // BRIDGE_EARLY_EXIT_MS=0 so these quick exits count as "ran for a while"
 // (the real window is 10s) and take the ordinary pty-exit path.
-test("7b: the agent is SIGKILLed after running → pty-exit:signal-9 with a plain line", { timeout: 60000 }, async (t) => {
+test("7b: the agent is SIGKILLed after running → pty-exit:signal-9 with a plain line", { skip: IS_WIN && "a SIGKILLed shell agent is a POSIX signal exit; Windows has no signal exits (its exit codes are covered by 7c)", timeout: 60000 }, async (t) => {
   const home = tmpDir(t, "vc-fm-home-");
   const dir = path.join(home, "projects", "x");
   fs.mkdirSync(dir, { recursive: true });
@@ -294,18 +302,18 @@ test("7c: the agent quits with code 3 after running → pty-exit:code-3 with a p
   fs.mkdirSync(dir, { recursive: true });
   const app = await startFakeApp(null);
   t.after(app.close);
-  const run = await launch(t, { home, appUrl: app.url, cmd: "sh -c 'exit 3'", env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
+  const run = await launch(t, { home, appUrl: app.url, cmd: exitCmd(3), env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "pty-exit:code-3", run.getStderr());
   assert.match(run.getBuf(), /Claude Code stopped with an error \(exit code 3\)\./);
 
-  const clean = await launch(t, { home, appUrl: app.url, cmd: "sh -c 'exit 0'", env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
+  const clean = await launch(t, { home, appUrl: app.url, cmd: exitCmd(0), env: { BRIDGE_EARLY_EXIT_MS: "0" }, link: { cwd: dir, prompt: PROMPT } });
   await once(clean.bridge, "exit");
   assert.equal(clean.shutdownWhy(), "pty-exit", clean.getStderr());
   assert.doesNotMatch(clean.getBuf(), /force-stopped|stopped with an error/);
 });
 
-test("7d: the bridge itself stops the agent (bridge gets SIGTERM) → close reason stays SIGTERM, no force-stopped/suddenly line", { timeout: 60000 }, async (t) => {
+test("7d: the bridge itself stops the agent (bridge gets SIGTERM) → close reason stays SIGTERM, no force-stopped/suddenly line", { skip: IS_WIN && "needs a SIGTERM to the bridge, which Windows does not have (process.kill ends it outright); tree teardown is covered by the real taskkill tests in terminal/shared", timeout: 60000 }, async (t) => {
   const home = tmpDir(t, "vc-fm-home-");
   const dir = path.join(home, "projects", "x");
   fs.mkdirSync(dir, { recursive: true });

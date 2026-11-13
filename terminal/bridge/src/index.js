@@ -516,10 +516,16 @@ function probeClaudeVersion(env) {
   if (AGENT !== "claude" || explicitCmd) return Promise.resolve(null);
   return new Promise((resolve) => {
     try {
+      // Same launch target the real start uses: on Windows an npm install is a
+      // `claude.cmd` shim that execFile cannot run by its bare name (without
+      // this the probe always failed there and the memory-limit flag was
+      // silently never added). Unchanged on a Mac.
+      const target = ptySpawnTarget(file, ["--version"], env.PATH);
+      const verbatim = typeof target.args === "string"; // the escaped cmd.exe line
       require("node:child_process").execFile(
-        file,
-        ["--version"],
-        { encoding: "utf8", timeout: CLAUDE_VERSION_TIMEOUT_MS, env, windowsHide: true },
+        target.file,
+        verbatim ? [target.args] : target.args,
+        { encoding: "utf8", timeout: CLAUDE_VERSION_TIMEOUT_MS, env, windowsHide: true, windowsVerbatimArguments: verbatim },
         (err, stdout) => resolve(err ? null : String(stdout || "")),
       );
     } catch {

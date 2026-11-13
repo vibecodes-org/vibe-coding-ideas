@@ -29,7 +29,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -103,11 +103,11 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   let relay, bridge, browser;
   t.after(async () => {
     try { browser?.terminate(); } catch { /* ignore */ }
-    if (bridge && bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     if (relay) await relay.close();
-    fs.rmSync(fakeBin, { recursive: true, force: true });
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(tmp, { recursive: true, force: true });
+    rmDir(fakeBin);
+    rmDir(cwd);
+    rmDir(tmp);
   });
   const tokens = await mintSessionTokens({ sub: owner, idea: "idea-AC", sid: session, secret: SECRET });
   relay = await startStandinRelay({ port: 0, secret: SECRET });

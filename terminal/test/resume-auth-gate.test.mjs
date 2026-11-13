@@ -25,7 +25,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "resume-auth-gate-test-secret";
@@ -58,10 +58,10 @@ async function runResume(t, { tokenSecret, linkParams }) {
   let bridge, browser;
   t.after(async () => {
     try { browser?.terminate(); } catch { /* ignore */ }
-    if (bridge && bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     await relay.close();
-    fs.rmSync(bin, { recursive: true, force: true });
-    fs.rmSync(work, { recursive: true, force: true });
+    rmDir(bin);
+    rmDir(work);
   });
 
   // The browser leg uses a genuine token, so a genuine bridge has a peer.

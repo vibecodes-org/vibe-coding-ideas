@@ -6,7 +6,8 @@
 // "npm shim -> node script" route, so the tests exercise the shipped code.
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { killTree } from "../shared/reap-win.mjs";
 
 export const IS_WIN = process.platform === "win32";
 
@@ -37,11 +38,35 @@ export function writeFakeAgent(dir, name, script, opts = {}) {
  * deliberately small environment (node, cmd.exe and sockets all want them).
  * Empty off Windows, so Mac/Linux runs are unchanged.
  */
-export function winEnv() {
+export function winEnv(home) {
   if (!IS_WIN) return {};
   const out = {};
   for (const k of ["SystemRoot", "SYSTEMDRIVE", "ComSpec", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "windir"]) {
     if (process.env[k] !== undefined) out[k] = process.env[k];
   }
+  if (home) out.USERPROFILE = home; // Windows finds the home folder through USERPROFILE, not HOME
   return out;
+}
+
+/**
+ * End a bridge a test started, plus the agent it launched. On Windows a plain
+ * kill ends only the bridge and leaves the agent running in the test folder,
+ * which then cannot be deleted; taskkill /T ends the whole tree.
+ */
+export function killBridge(child) {
+  if (!child || child.exitCode !== null) return;
+  if (IS_WIN && child.pid) killTree(child.pid);
+  else child.kill("SIGKILL");
+}
+
+/** Delete a test folder; on Windows a just-ended process can hold it for a moment, so retry. */
+export function rmDir(p) {
+  fs.rmSync(p, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+}
+
+const EXIT_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "./exit-code.mjs");
+
+/** A `--cmd` that exits with `code`: a shell one-liner on POSIX, a node script on Windows (no sh there). */
+export function exitCmd(code) {
+  return IS_WIN ? `${process.execPath} ${EXIT_SCRIPT} ${code}` : `sh -c 'exit ${code}'`;
 }

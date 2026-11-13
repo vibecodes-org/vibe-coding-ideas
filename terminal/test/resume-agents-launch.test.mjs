@@ -28,7 +28,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -102,11 +102,11 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   let relay, bridge, browser;
   t.after(async () => {
     try { browser?.terminate(); } catch { /* ignore */ }
-    if (bridge && bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     if (relay) await relay.close();
-    fs.rmSync(fakeBin, { recursive: true, force: true });
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(tmp, { recursive: true, force: true });
+    rmDir(fakeBin);
+    rmDir(cwd);
+    rmDir(tmp);
   });
   const tokens = await mintSessionTokens({ sub: owner, idea: "idea-RA", sid: session, secret: SECRET });
   relay = await startStandinRelay({ port: 0, secret: SECRET });
@@ -175,14 +175,20 @@ test("a Codex resume-by-id gets its role files; they live for the session and ar
   const file = JSON.parse(flag.slice(flag.indexOf("=") + 1));
   const dir = path.dirname(file);
   assert.ok(fs.existsSync(file), "role file exists while the resumed session runs");
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+  if (process.platform !== "win32") {
+    // Owner-only permission bits are a POSIX idea; Windows files keep the user's own folder permissions.
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+  }
   assert.match(fs.readFileSync(file, "utf8"), /developer_instructions = "You are the probe\."/);
-  assert.ok(!dir.startsWith(os.homedir() + "/.codex"), "outside ~/.codex");
+  assert.ok(!dir.startsWith(path.join(os.homedir(), ".codex")), "outside ~/.codex");
   // End the resumed session the normal way and check the cleanup still fires.
-  handle.bridge.kill("SIGTERM");
-  await once(handle.bridge, "exit");
-  assert.ok(!fs.existsSync(dir), "role-file folder removed when the resumed session ends");
+  // Windows has no SIGTERM (process.kill ends the bridge outright, with no cleanup), so this half is POSIX only.
+  if (process.platform !== "win32") {
+    handle.bridge.kill("SIGTERM");
+    await once(handle.bridge, "exit");
+    assert.ok(!fs.existsSync(dir), "role-file folder removed when the resumed session ends");
+  }
 });
 
 test("the endpoint is asked for the right CLI's tier models on a resume", { timeout: 60000 }, async (t) => {
@@ -220,7 +226,7 @@ test("SIGTERM after the Codex role files are written (during the slow PATH looku
   // A login shell that takes 2s to answer: the bridge blocks in its PATH lookup.
   const slowShell = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vc-slow-shell-")), "sh");
   fs.writeFileSync(slowShell, "#!/bin/sh\nsleep 2\n", { mode: 0o755 });
-  t.after(() => fs.rmSync(path.dirname(slowShell), { recursive: true, force: true }));
+  t.after(() => rmDir(path.dirname(slowShell)));
   const handle = {};
   await launch(t, { agent: "codex", resumeId: RESUME_ID }, { appUrl: app.url, handle, shell: slowShell, awaitArgv: false });
   await waitFor(() => agentFolders(handle.tmp).length === 1, 15000, "the role-file folder to be written");
@@ -231,7 +237,7 @@ test("SIGTERM after the Codex role files are written (during the slow PATH looku
   assert.deepEqual(agentFolders(handle.tmp), [], "role-file folder removed");
 });
 
-test("SIGTERM while the agents fetch is still running: no child, no role files, clean exit", { timeout: 60000 }, async (t) => {
+test("SIGTERM while the agents fetch is still running: no child, no role files, clean exit", { skip: process.platform === "win32" && "Windows has no SIGTERM: process.kill ends the bridge outright, so there is no clean-exit handler to test", timeout: 60000 }, async (t) => {
   const app = await startFakeApp({ agentsDelayMs: 3000 }); t.after(app.close);
   const handle = {};
   await launch(t, { agent: "codex", resumeId: RESUME_ID }, { appUrl: app.url, handle, awaitArgv: false });

@@ -27,7 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "launch-folder-resume-test-secret";
@@ -38,7 +38,7 @@ const PROMPT = ["Set up VibeCodes and pick up board work.", "", "1. Connect the 
 
 function tmpDir(t, prefix) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmDir(dir));
   return dir;
 }
 
@@ -100,14 +100,14 @@ async function launch(t, { home, appUrl, link }) {
   let stderr = "";
   const bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
     cwd: home,
-    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { ...winEnv(home), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "pipe"],
   });
   bridge.stderr.setEncoding("utf8");
   bridge.stderr.on("data", (d) => (stderr += d));
   t.after(async () => {
     try { browser.terminate(); } catch { /* ignore */ }
-    if (bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     await relay.close();
   });
   await waitForText(() => buf, "RUN_END", 30000).catch((e) => { throw new Error(`${e.message}\nbridge log:\n${stderr}\nbuf:\n${buf}`); });
