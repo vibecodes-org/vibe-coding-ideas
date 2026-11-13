@@ -15,6 +15,8 @@
 // The group kill at the SIGKILL stage matters: the PTY child is its own group
 // leader, so `-pid` sweeps any children IT spawned (sub-shells, MCP servers, …).
 
+import { killTree } from "./reap-win.mjs";
+
 /** Is `pid` still alive? EPERM means "alive but not ours" — still alive. */
 export function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -97,4 +99,25 @@ export async function reapPidGroupEscalated(pid, opts = {}) {
   sendSignal(pid, "SIGKILL");
   const confirmedDead = await waitForPidExit(pid, 500, { pollMs, isDead });
   return { stage: "SIGKILL", confirmedDead };
+}
+
+/**
+ * Platform-aware verified kill. POSIX: the SIGHUP → SIGTERM → SIGKILL ladder
+ * above, unchanged. Windows: `taskkill /T /F` on the whole tree (the agent's
+ * children go with it), then confirm the pid is gone. The same result shape.
+ *
+ * @param {number} pid
+ * @param {Parameters<typeof reapPidGroupEscalated>[1] & { platform?: string,
+ *           killTreeImpl?: (pid: number) => boolean }} [opts]
+ */
+export async function reapProcessEscalated(pid, opts = {}) {
+  const platform = opts.platform || process.platform;
+  if (platform !== "win32") return reapPidGroupEscalated(pid, opts);
+  const { pollMs = 50, isDead, onStage } = opts;
+  const dead = () => Boolean(isDead?.()) || !pidAlive(pid);
+  if (dead()) return { stage: "already-dead", confirmedDead: true };
+  onStage?.("taskkill");
+  (opts.killTreeImpl || killTree)(pid);
+  const confirmedDead = await waitForPidExit(pid, 2000, { pollMs, isDead });
+  return { stage: "taskkill", confirmedDead };
 }

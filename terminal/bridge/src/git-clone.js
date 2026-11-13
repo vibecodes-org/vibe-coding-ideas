@@ -177,6 +177,11 @@ export async function cloneRepo(opts) {
   // dialog on its own when the tools are missing — check xcode-select first.
   const gitOk =
     (platform !== "darwin" || probeOk(run, "xcode-select", ["-p"], { env })) && probeOk(run, "git", ["--version"], { env });
+  if (!gitOk && platform === "win32") {
+    // No installer to pop up here: the ended screen links Git for Windows.
+    log("git missing — pointing the user at Git for Windows");
+    return { ok: false, reason: "git-missing", detail: null };
+  }
   if (!gitOk) {
     try {
       const child = spawn("xcode-select", ["--install"], { detached: true, stdio: "ignore", env });

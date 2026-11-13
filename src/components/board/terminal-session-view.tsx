@@ -62,6 +62,7 @@ import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
 import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
+import { homeShortPath } from "@/lib/terminal/home-short-path";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 import { HelperUpdateButton, HelperUpdateFlowNotice } from "./terminal-helper-update-button";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
@@ -1910,12 +1911,6 @@ function ComingSoonPanel() {
 }
 
 /** `/Users/<you>/x` → `~/x` for display (the mock's folder wording). */
-function homeShortPath(path: string): string {
-  const m = /^\/(?:Users|home)\/[^/]+(\/.*)?$/.exec(path.trim());
-  if (!m) return path.trim();
-  return m[1] ? `~${m[1]}` : "~";
-}
-
 function errorTitle(state: TerminalConnectionState): string {
   switch (state.errorKind) {
     case "owner-mismatch":

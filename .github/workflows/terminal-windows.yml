@@ -1,0 +1,40 @@
+name: Terminal tests (Windows + macOS)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "terminal/**"
+      - ".github/workflows/terminal-windows.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terminal-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terminal:
+    name: terminal tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install bridge and test packages (shared has no dependencies)
+        run: |
+          npm ci --prefix terminal/bridge
+          npm ci --prefix terminal/test
+      - name: Bridge tests
+        run: npm test --prefix terminal/bridge
+      - name: Shared tests
+        run: npm test --prefix terminal/shared
+      - name: Terminal integration tests
+        run: npm test --prefix terminal/test

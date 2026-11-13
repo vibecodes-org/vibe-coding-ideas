@@ -20,6 +20,11 @@ test("menu-bar label is singular and plural", () => {
   assert.equal(stayAwakeLabel(3), "Keeping this Mac awake: 3 agents working");
 });
 
+test("the label says PC on Windows", () => {
+  assert.equal(stayAwakeLabel(2, "win32"), "Keeping this PC awake: 2 agents working");
+  assert.equal(stayAwakeLabel(1, "darwin"), "Keeping this Mac awake: 1 agent working");
+});
+
 test("stay-awake.js is packed into the app (electron-builder files list)", () => {
   const yml = fs.readFileSync(new URL("../helper/electron-builder.yml", import.meta.url), "utf8");
   assert.match(yml, /^\s*- stay-awake\.js\s*$/m);

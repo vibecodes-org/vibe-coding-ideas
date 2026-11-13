@@ -84,7 +84,10 @@ import {
   isPeerReattachedFrame,
   encodeBridgeCwdFrame,
 } from "../../shared/control-frames.mjs";
-import { reapPidGroupEscalated } from "../../shared/reap.mjs";
+import { reapProcessEscalated } from "../../shared/reap.mjs";
+import { killTree } from "../../shared/reap-win.mjs";
+import { resolveWindowsPath } from "../../shared/spawn-path.mjs";
+import { toSpawnable } from "../../shared/spawnable.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 import { buildSessionEnvValue, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
 import { agentInstructions, createMailbox } from "./local-mail.js";
@@ -847,7 +850,15 @@ function runGitSync(gitArgs) {
 // bin dirs. Never fails — worst case we keep the inherited PATH + fallbacks.
 function resolveSpawnEnv() {
   const env = { ...process.env, TERM: "xterm-color" };
-  if (process.platform === "win32") return env; // PATH semantics differ; not needed
+  if (process.platform === "win32") {
+    // No login shell on Windows; re-read the registry PATHs so a tool installed
+    // after this process started (Claude's own installer) is still found.
+    const merged = resolveWindowsPath({ env, run: require("node:child_process").execFileSync });
+    // Windows names it `Path`; keep a single key so the child never sees two.
+    for (const k of Object.keys(env)) if (k.toUpperCase() === "PATH") delete env[k];
+    env.PATH = merged;
+    return env;
+  }
   let shellPath = "";
   let pathSource = "inherited+fallbacks";
   try {
@@ -878,6 +889,21 @@ function resolveSpawnEnv() {
   env.PATH = parts.join(":");
   log("debug", "resolved spawn PATH", { source: pathSource, dirs: parts.length });
   return env;
+}
+
+/**
+ * The (file, args) to give node-pty. Mac/Linux: exactly what was asked for.
+ * Windows: the resolved full path (node-pty needs one), and an npm `.cmd` shim
+ * becomes a direct `node <script>` launch (or an escaped cmd.exe line).
+ * @param {string} cmdFile @param {string[]} cmdArgv @param {string | undefined} pathEnv
+ */
+function ptySpawnTarget(cmdFile, cmdArgv, pathEnv) {
+  if (process.platform !== "win32") return { file: cmdFile, args: cmdArgv };
+  const resolved = resolveBinaryOnPath(cmdFile, pathEnv);
+  if (!resolved) return { file: cmdFile, args: cmdArgv };
+  const t = toSpawnable(resolved, cmdArgv, { findNode: () => resolveBinaryOnPath("node", pathEnv) });
+  if (t.via !== "direct") log("info", "windows launch via shim", { via: t.via, collapsedNewlines: !!t.collapsedNewlines });
+  return { file: t.file, args: t.args };
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -1103,9 +1129,8 @@ async function main() {
       Promise.all([usageFinal, eventsSent]).then(() => setTimeout(() => process.exit(code), 200).unref());
     };
 
-    // No PTY (blocked prompt launch) or Windows (conpty — no POSIX signal
-    // escalation): node-pty's own kill + the short flush window is all there is.
-    if (!term || process.platform === "win32") {
+    // No PTY (blocked prompt launch): nothing to kill, just the short flush window.
+    if (!term) {
       try { term?.kill(); } catch { /* ignore */ }
       exitSoon();
       return;
@@ -1123,7 +1148,8 @@ async function main() {
       log("warn", "shutdown hard cap reached — exiting", { ms: SHUTDOWN_CAP_MS, pid });
       process.exit(code);
     }, SHUTDOWN_CAP_MS);
-    reapPidGroupEscalated(pid, {
+    // Windows: the same "verify, then escalate" idea, as a whole-tree taskkill.
+    reapProcessEscalated(pid, {
       hupWaitMs: KILL_HUP_WAIT_MS,
       termWaitMs: KILL_TERM_WAIT_MS,
       isDead: () => ptyExited,
@@ -1140,8 +1166,12 @@ async function main() {
       })
       .catch((e) => {
         log("error", "pty kill escalation failed — sending SIGKILL", { pid, err: String(e?.message || e) });
-        try { process.kill(-pid, "SIGKILL"); } catch { /* ignore */ }
-        try { process.kill(pid, "SIGKILL"); } catch { /* ignore */ }
+        if (process.platform === "win32") {
+          killTree(pid);
+        } else {
+          try { process.kill(-pid, "SIGKILL"); } catch { /* ignore */ }
+          try { process.kill(pid, "SIGKILL"); } catch { /* ignore */ }
+        }
         clearTimeout(hardCap);
         exitSoon();
       });
@@ -1207,7 +1237,8 @@ async function main() {
     });
     let spawned;
     try {
-      spawned = pty.spawn(file, spawnArgs, {
+      const target = ptySpawnTarget(file, spawnArgs, cachedSpawnEnv.PATH);
+      spawned = pty.spawn(target.file, target.args, {
         name: "xterm-color",
         cols: SPAWN_COLS,
         rows: SPAWN_ROWS,
@@ -1569,7 +1600,7 @@ async function main() {
       const newFolder = WORKSPACE
         ? path.join(home, "projects", (WORKSPACE.repo ? WORKSPACE.repoFolderName : WORKSPACE.newFolderName) || "")
         : null;
-      writeLines(failureLines(res, { home, agent: AGENT, folder: HINT, newFolder }).join(""));
+      writeLines(failureLines(res, { home, agent: AGENT, folder: HINT, newFolder, platform: process.platform }).join(""));
       log("warn", "project folder not ready — not spawning", { reason: res.reason });
       shutdown(1, res.reason);
       return;
@@ -1655,7 +1686,8 @@ async function main() {
     log("info", "spawning setup PTY", { action: SETUP, agent: AGENT, cols: SPAWN_COLS, rows: SPAWN_ROWS });
     let spawned;
     try {
-      spawned = pty.spawn(cmd.file, cmd.args, {
+      const target = ptySpawnTarget(cmd.file, cmd.args, env.PATH);
+      spawned = pty.spawn(target.file, target.args, {
         name: "xterm-color",
         cols: SPAWN_COLS,
         rows: SPAWN_ROWS,

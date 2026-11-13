@@ -27,6 +27,15 @@ function agentName(agent) {
  */
 export function displayPath(p, home) {
   if (!home || home === "/") return p;
+  // Windows home (`C:\Users\you`): same idea with backslashes, case-insensitive.
+  if (/^[A-Za-z]:[\\/]/.test(home) || home.startsWith("\\\\")) {
+    const wh = home.replace(/[\\/]+$/, "");
+    const lower = p.toLowerCase();
+    const lowerHome = wh.toLowerCase();
+    if (lower === lowerHome) return "~";
+    if (lower.startsWith(`${lowerHome}\\`) || lower.startsWith(`${lowerHome}/`)) return `~${p.slice(wh.length)}`;
+    return p;
+  }
   const h = home.replace(/\/+$/, "");
   if (p === h) return "~";
   if (p.startsWith(`${h}/`)) return `~${p.slice(h.length)}`;
@@ -35,7 +44,17 @@ export function displayPath(p, home) {
 
 /** @param {string} text */
 function tagged(text) {
-  return `${TAG}  ${text}${NL}`;
+  return `${TAG}  ${local(text)}${NL}`;
+}
+
+/**
+ * The words for "this computer": every line here was written for a Mac, so on
+ * Windows say "this PC" (same sentence, right noun). Mac text is untouched.
+ * @param {string} text @param {string} [platform]
+ */
+export function local(text, platform = process.platform) {
+  if (platform !== "win32") return text;
+  return text.replace(/\b(this|your|the) Mac('s)?\b/g, (_m, det, poss) => `${det} PC${poss || ""}`);
 }
 
 /** @param {string[]} paths @param {string} home */
@@ -77,7 +96,7 @@ export function progressLine(event, ctx) {
       return (
         tagged(
           `It isn't on this Mac yet, so it's being downloaded from GitHub (${event.repo.owner}/${event.repo.name}) into ${displayPath(event.dest, ctx.home)}.`,
-        ) + tagged("If your Mac asks to use your GitHub sign-in from the keychain, click Always Allow.")
+        ) + (process.platform === "win32" ? "" : tagged("If your Mac asks to use your GitHub sign-in from the keychain, click Always Allow."))
       );
     case "clone-progress":
       return `\r${TAG}  Downloading… ${event.pct}%`;
@@ -92,7 +111,7 @@ export function progressLine(event, ctx) {
 
 /** @param {string} text */
 function yellow(text) {
-  return `${YELLOW}${text}${RESET}${NL}`;
+  return `${YELLOW}${local(text)}${RESET}${NL}`;
 }
 
 /**
@@ -117,6 +136,13 @@ export function failureLines(failure, ctx) {
       if (detail && detail !== "stalled") return [yellow(`GitHub said: ${detail}`)];
       return [yellow("The download from GitHub stopped before it finished.")];
     case "git-missing":
+      if ((ctx.platform || process.platform) === "win32") {
+        return [
+          yellow(
+            "Git isn't installed yet, so the project can't be downloaded. Install Git for Windows from https://git-scm.com/download/win, then start again.",
+          ),
+        ];
+      }
       return [
         yellow(
           "Git isn't installed yet, so the project can't be downloaded. Your Mac is showing Apple's installer now: click Install (it takes a few minutes), then start again.",
@@ -178,9 +204,9 @@ const HOW_WORDS = {
  * @param {{ path: string, how: string }} folder
  */
 export function promptFolderNote({ path, how }) {
-  return (
+  return local(
     `VibeCodes note: you are already in this board's project folder on this Mac: ${path} (${HOW_WORDS[how] || HOW_WORDS.saved}). ` +
-    "Work here. Ignore any other folder or clone instruction below, and don't cd elsewhere."
+      "Work here. Ignore any other folder or clone instruction below, and don't cd elsewhere.",
   );
 }
 

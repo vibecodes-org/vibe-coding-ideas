@@ -29,7 +29,7 @@ test("checks multiple PATH dirs in order, first match wins", () => {
   const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-b-"));
   const binB = makeFakeBin(dirB, "codex");
   try {
-    assert.equal(resolveBinaryOnPath("codex", `${dirA}:${dirB}`), binB);
+    assert.equal(resolveBinaryOnPath("codex", `${dirA}${path.delimiter}${dirB}`), binB);
   } finally {
     fs.rmSync(dirA, { recursive: true, force: true });
     fs.rmSync(dirB, { recursive: true, force: true });
@@ -46,7 +46,7 @@ test("missing binary -> null / false", () => {
   }
 });
 
-test("a non-executable file is not treated as installed", () => {
+test("a non-executable file is not treated as installed", { skip: process.platform === "win32" && "Windows has no executable bit (PATHEXT decides; see the win32 tests)" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-noexec-"));
   const p = path.join(dir, "codex");
   fs.writeFileSync(p, "not executable", { mode: 0o644 });
@@ -99,7 +99,7 @@ test("relative/empty PATH entries are skipped, not treated as cwd", () => {
   try {
     // "." and "" entries interleaved must not throw and must still find the
     // real dir later in the list.
-    assert.equal(resolveBinaryOnPath("codex", `.::${dir}`), path.join(dir, "codex"));
+    assert.equal(resolveBinaryOnPath("codex", `.${path.delimiter}${path.delimiter}${dir}`), path.join(dir, "codex"));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
