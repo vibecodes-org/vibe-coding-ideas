@@ -370,6 +370,9 @@ test("(f3) card f4be2981: with the default (no budget) a long outage never reaps
   const sentinelPid = await findSentinel(mark);
   t.after(() => killHard(sentinelPid));
 
+  // Only take the relay down once the bridge is really connected; on a slow
+  // machine it can still be starting, which is a different path.
+  await waitFor(() => /relay connected \(bridge leg\)/.test(spawned.getStderr()), 20_000, "bridge connected to the relay");
   await relay.close();
   // Far longer than the old tiny test budget (1.5s) used by f2.
   await new Promise((r) => setTimeout(r, 5000));

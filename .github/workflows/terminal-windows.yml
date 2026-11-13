@@ -32,6 +32,10 @@ jobs:
         run: |
           npm ci --prefix terminal/bridge
           npm ci --prefix terminal/test
+      - name: Install helper packages (some tests look up electron; no app binary needed)
+        run: npm ci --prefix terminal/helper
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - name: Bridge tests
         run: npm test --prefix terminal/bridge
       - name: Shared tests
