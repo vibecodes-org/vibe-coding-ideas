@@ -23,6 +23,7 @@ import {
   MAX_TAG_LENGTH,
   ValidationError,
 } from "@/lib/validation";
+import { NEW_BOARD_MAX_TASKS, NEW_BOARD_SYSTEM_PROMPT } from "@/lib/generate-tasks-stream";
 import { applyKit, type ApplyKitResult } from "@/actions/kits";
 import { revalidatePath } from "next/cache";
 
@@ -312,7 +313,7 @@ export async function generateBoardFromOnboarding(
   const kit = (idea as Record<string, unknown>).project_kits as { name: string; category: string | null } | null;
 
   const contextParts = [
-    "Generate a structured task board for this project. Create 15-20 tasks. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels from the available list.",
+    "Generate a structured task board for this project. Give each task a clear title, a description in the form set out in your instructions, an appropriate column placement, and relevant labels from the available list.",
     "The FIRST task should always be a project scaffolding/setup task (e.g. \"Set up project repository and development environment\") that covers initial setup, tooling, and dependencies.",
     "---",
     `**Project Title:** ${idea.title}`,
@@ -345,8 +346,7 @@ export async function generateBoardFromOnboarding(
   try {
     ({ object, usage } = await generateObject({
       model: anthropic(AI_MODEL),
-      system:
-        "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").",
+      system: NEW_BOARD_SYSTEM_PROMPT,
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
       providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
@@ -388,7 +388,15 @@ export async function generateBoardFromOnboarding(
     free: true,
   });
 
-  const tasks = object.tasks.slice(0, 50);
+  // Hidden safety cap: the AI is not told a limit, the code just stops a runaway list.
+  if (object.tasks.length > NEW_BOARD_MAX_TASKS) {
+    logger.warn("Onboarding board gen: AI exceeded task cap, trimming", {
+      ideaId,
+      returned: object.tasks.length,
+      cap: NEW_BOARD_MAX_TASKS,
+    });
+  }
+  const tasks = object.tasks.slice(0, NEW_BOARD_MAX_TASKS);
 
   if (tasks.length === 0) {
     logger.warn("Onboarding board gen: AI returned zero tasks", { ideaId });

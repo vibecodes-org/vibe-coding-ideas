@@ -17,6 +17,7 @@ import {
   GENERATE_TASKS_MAX_OUTPUT_TOKENS,
   GeneratedBoardSchema,
   GeneratedTaskSchema,
+  TASK_SIZING_GUIDANCE,
   buildContinuationTasksInstruction,
   completeTasksOnly,
   parseContinueAfter,
@@ -46,16 +47,16 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { ideaId, prompt, personaPrompt, agentRole, agentBio } = body as {
+    const { ideaId, prompt: rawPrompt } = body as {
       ideaId: string;
-      prompt: string;
-      personaPrompt?: string | null;
-      agentRole?: string | null;
-      agentBio?: string | null;
+      prompt?: string | null;
     };
 
-    if (!ideaId || !prompt) {
-      return Response.json({ error: "Missing ideaId or prompt" }, { status: 400 });
+    // The prompt is optional extra guidance: an empty box is a normal request.
+    const prompt = typeof rawPrompt === "string" ? rawPrompt : "";
+
+    if (!ideaId) {
+      return Response.json({ error: "Missing ideaId" }, { status: 400 });
     }
 
     // "Generate the rest": the tasks already in the dialog's list.
@@ -125,13 +126,7 @@ export async function POST(req: Request) {
       }))
     );
 
-    const hasAgent = !!(personaPrompt || agentRole);
-
-    // ORIGINAL prompt — unchanged behaviour for normal ideas (incl. the markdown
-    // subtask-checklist feature). This is what runs for the vast majority of ideas.
-    const systemPrompt = hasAgent
-      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
-      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. Include project scaffolding and setup tasks (e.g. repo setup, dev environment, CI/CD, deployment config) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
+    const systemPrompt = `You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. Start with one project setup task (repository, development environment, tests, CI and deployment config) if the board does not already have one, then order tasks so foundational work comes first.\n\n${TASK_SIZING_GUIDANCE}`;
 
     // Only very large, dense idea descriptions trigger the "everything in one giant
     // task" pathology (the model reproduces the idea's density into a single task
@@ -150,24 +145,18 @@ export async function POST(req: Request) {
       existingColumns,
       existingLabels,
       autoRuleMappings,
-      agentRole,
-      agentBio,
     });
 
     // Large ideas ONLY: append a short nudge as the last thing the model reads
-    // (recency). The ONLY failure this addresses is the model writing one giant
-    // task description that eats the whole token budget before it makes a second
-    // task. So the nudge targets exactly that — short descriptions, don't reproduce
-    // the spec's detail verbatim, split long descriptions. It deliberately does NOT
-    // suggest a task count: the model decomposes to the right number on its own
-    // (30+ on normal ideas, which carry no count hint either), and a number would
-    // only anchor it. Short descriptions are what let many tasks fit in the budget.
+    // (recency). It addresses the failure where the model writes one giant task
+    // description that eats the whole token budget before it makes a second task:
+    // don't copy the spec's detail into descriptions. It gives no task count.
     if (isLargeIdea) {
       contextParts.push(
         "---",
-        "This idea's description is long and detailed. Break it into separate tasks — one per discrete piece of work — rather than packing several areas into one large task, and keep each task's description short (about one sentence): summarize the work rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose from the idea in a description. If a task's description is getting long, that means it should be split into several separate tasks. Match the size and shape of these examples:\n" +
-          '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
-          '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}'
+        "This idea's description is long and detailed. Give each distinct capability its own task rather than packing several areas into one. Keep every description to the two-part form, a few lines at most: summarise the work and how to tell it is done; don't copy acceptance criteria, tables, RICE scores, user stories or long prose from the idea into a description. Match the size and shape of these examples:\n" +
+          '- {"title": "Project set up with tests and deployment", "description": "A working repository that builds, tests and deploys, so feature work can start.\\n\\nDone when:\\n- The app runs locally and the test command passes\\n- Every push runs lint, tests and build", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
+          '- {"title": "People can sign up and log in", "description": "Visitors can create an account and sign back in, so everything else can be tied to a person.\\n\\nDone when:\\n- A new visitor can sign up, log out and log in again\\n- Wrong passwords show a clear error", "columnName": "To Do", "labels": ["feature"]}'
       );
     }
 

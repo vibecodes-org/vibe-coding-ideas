@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import dynamic from "next/dynamic";
 import { getLabelColorConfig } from "@/lib/utils";
 import type { RecordedProjectPath } from "@/lib/launch-claude-code";
-import type { BoardColumnWithTasks, BoardLabel, User, BotProfile } from "@/types";
+import type { BoardColumnWithTasks, BoardLabel, User } from "@/types";
 
 const ImportDialog = dynamic(() => import("./import-dialog").then((m) => m.ImportDialog), { ssr: false });
 const AiGenerateDialog = dynamic(() => import("./ai-generate-dialog").then((m) => m.AiGenerateDialog), { ssr: false });
@@ -144,8 +144,6 @@ interface BoardToolbarProps {
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
-  botProfiles?: BotProfile[];
-  userBotProfiles?: BotProfile[];
   isReadOnly?: boolean;
   aiGenerateOpen?: boolean;
   onAiGenerateOpenChange?: (open: boolean) => void;
@@ -175,8 +173,6 @@ export function BoardToolbar({
   canUseAi = false,
   hasByokKey = false,
   starterCredits = 0,
-  botProfiles = [],
-  userBotProfiles = [],
   isReadOnly = false,
   aiGenerateOpen: aiGenerateOpenProp,
   onAiGenerateOpenChange,
@@ -385,8 +381,6 @@ export function BoardToolbar({
           columns={columns}
           boardLabels={boardLabels}
           teamMembers={teamMembers}
-          bots={botProfiles}
-          userBotProfiles={userBotProfiles}
         />
       )}
     </div>

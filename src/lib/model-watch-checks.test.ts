@@ -28,6 +28,34 @@ describe("runModelChecks", () => {
     ]);
     expect(r[0].outputTokens).toBe(7);
   });
+  it("passes a task list of 1 to 100 tasks and fails 0 or 101", async () => {
+    const board = (n: number) => ({ tasks: Array.from({ length: n }, (_, i) => ({ title: `t${i}` })) });
+    const run = async (n: number) =>
+      (await runModelChecks(provider, "m", deps({
+        stream: () => ({
+          object: Promise.resolve(board(n)),
+          usage: Promise.resolve(usage),
+          finishReason: Promise.resolve("stop"),
+        }),
+      })))[0];
+    expect((await run(1)).ok).toBe(true);
+    expect((await run(100)).ok).toBe(true);
+    expect((await run(0)).ok).toBe(false);
+    const tooMany = await run(101);
+    expect(tooMany.ok).toBe(false);
+    expect(tooMany.error).toContain("1 to 100");
+  });
+  it("asks for the tasks without giving a number", async () => {
+    const stream = vi.fn(() => ({
+      object: Promise.resolve(goodBoard),
+      usage: Promise.resolve(usage),
+      finishReason: Promise.resolve("stop"),
+    }));
+    await runModelChecks(provider, "m", deps({ stream }));
+    const arg = (stream.mock.calls[0] as unknown as [{ prompt: string; system: string }])[0];
+    expect(arg.prompt).not.toMatch(/\d/);
+    expect(arg.system).toContain("Done when:");
+  });
   it("fails when cut off by the cap", async () => {
     const r = await runModelChecks(provider, "m", deps({
       text: async () => ({ text: "x", usage, finishReason: "length" }),

@@ -468,6 +468,51 @@ describe("onboarding actions", () => {
       expect(result.tasks[0].title).toBe("Set up project");
     });
 
+    function setupGenerate() {
+      mockSingle
+        .mockResolvedValueOnce({ data: { onboarding_completed_at: null }, error: null })
+        .mockResolvedValueOnce({ data: { id: "idea-1", title: "My App", description: "A cool app" }, error: null });
+      mockGte.mockResolvedValue({ count: 0, error: null });
+      mockOrder
+        .mockResolvedValueOnce({ data: [{ title: "To Do" }, { title: "Backlog" }], error: null })
+        .mockResolvedValueOnce({ data: [{ id: "col-1", title: "To Do", position: 0 }, { id: "col-2", title: "Backlog", position: 1000 }], error: null });
+      mockSelect.mockImplementation(() => ({ ...chain, select: mockSelect }));
+      mockInsert.mockImplementation(() => ({
+        ...chain,
+        select: vi.fn().mockResolvedValue({ data: [{ id: "task-1" }], error: null }),
+      }));
+    }
+
+    it("gives the AI no task count and no how-to checklist instruction, but keeps the setup task", async () => {
+      const { generateBoardFromOnboarding } = await import("./onboarding");
+      const { generateObject } = await import("ai");
+      setupGenerate();
+      await generateBoardFromOnboarding("idea-1");
+
+      const call = vi.mocked(generateObject).mock.calls[0][0] as { system: string; prompt: string };
+      expect(call.prompt).not.toContain("15-20");
+      expect(call.prompt).not.toMatch(/Create \d/);
+      expect(call.prompt).not.toContain("markdown task list");
+      expect(call.system).not.toContain("markdown task list");
+      expect(call.system).not.toContain("- [ ]");
+      expect(call.system).not.toMatch(/\b\d+\b/);
+      expect(call.system).toContain("Done when:");
+      expect(call.prompt).toContain("The FIRST task should always be a project scaffolding/setup task");
+    });
+
+    it("keeps only the first 100 tasks if the AI returns more", async () => {
+      const { generateBoardFromOnboarding } = await import("./onboarding");
+      const { generateObject } = await import("ai");
+      setupGenerate();
+      vi.mocked(generateObject).mockResolvedValueOnce({
+        object: { tasks: Array.from({ length: 130 }, (_, i) => ({ title: `Task ${i}`, columnName: "To Do" })) },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      } as never);
+      const result = await generateBoardFromOnboarding("idea-1");
+      expect(result.tasks).toHaveLength(100);
+      expect(result.tasks[99].title).toBe("Task 99");
+    });
+
     it("revalidates the dashboard path after generating tasks", async () => {
       const { generateBoardFromOnboarding } = await import("./onboarding");
 

@@ -16,33 +16,20 @@ export interface PromptContext {
   existingColumns: string[];
   existingLabels: string[];
   autoRuleMappings: AutoRuleMapping[];
-  agentRole?: string | null;
-  agentBio?: string | null;
 }
 
 /**
  * Build the context parts array for the AI generate-tasks prompt.
  */
 export function buildPromptContextParts(ctx: PromptContext): string[] {
+  const userPrompt = ctx.prompt.trim();
   const parts = [
-    `${ctx.prompt}`,
+    "Generate a structured task board for this idea.",
+    ...(userPrompt ? [`**Extra guidance from the user:**\n${userPrompt}`] : []),
     `---`,
     `**Idea Title:** ${ctx.ideaTitle}`,
     `**Idea Description:**\n${ctx.ideaDescription}`,
   ];
-
-  const hasAgent = !!ctx.agentRole;
-
-  if (hasAgent) {
-    const agentParts: string[] = [];
-    if (ctx.agentRole) agentParts.push(`**Agent Role:** ${ctx.agentRole}`);
-    if (ctx.agentBio) agentParts.push(`**Agent Bio:** ${ctx.agentBio}`);
-    parts.push(
-      `---`,
-      `The tasks should be generated from the perspective of the following specialist agent. Emphasize tasks relevant to their role. De-prioritize or omit tasks outside their expertise.`,
-      ...agentParts
-    );
-  }
 
   if (ctx.existingColumns.length > 0) {
     parts.push(

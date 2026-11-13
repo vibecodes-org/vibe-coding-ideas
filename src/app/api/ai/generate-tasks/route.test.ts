@@ -240,6 +240,40 @@ describe("POST /api/ai/generate-tasks — error after tasks", () => {
   });
 });
 
+describe("POST /api/ai/generate-tasks — instructions", () => {
+  it("works with an empty box and with no prompt field at all", async () => {
+    streamObjectMock.mockReturnValue(streamOf([[A]]));
+    const res = await POST(request({ prompt: "" }));
+    expect(res.status).toBe(200);
+    await res.text();
+    const noField = new Request("http://localhost/api/ai/generate-tasks", {
+      method: "POST",
+      body: JSON.stringify({ ideaId: "idea-1" }),
+    });
+    streamObjectMock.mockReturnValue(streamOf([[A]]));
+    expect((await POST(noField)).status).toBe(200);
+  });
+
+  it("rejects a request with no idea id", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/ai/generate-tasks", { method: "POST", body: JSON.stringify({ prompt: "x" }) })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("always uses the default instructions: no count, no checklist, setup task, Done when; ignores any persona fields", async () => {
+    streamObjectMock.mockReturnValue(streamOf([[A]]));
+    await (await POST(request({ personaPrompt: "You are a DevOps agent", agentRole: "DevOps" }))).text();
+    const system = streamObjectMock.mock.calls[0][0].system as string;
+    expect(system).not.toContain("DevOps");
+    expect(system).not.toContain("markdown task list");
+    expect(system).not.toContain("- [ ]");
+    expect(system).not.toMatch(/\b\d+\b/);
+    expect(system).toContain("Done when:");
+    expect(system).toContain("one project setup task");
+  });
+});
+
 describe("POST /api/ai/generate-tasks — Generate the rest", () => {
   it("ends the prompt with the continuation block, after the large-idea nudge", async () => {
     ideaDescription = "x".repeat(13000);
@@ -250,9 +284,9 @@ describe("POST /api/ai/generate-tasks — Generate the rest", () => {
     expect(prompt).toContain("[To Do]");
     expect(prompt).toContain("Generate ONLY tasks");
     expect(prompt).toContain("Do NOT repeat");
-    expect(prompt.indexOf("Break it into separate tasks")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("Give each distinct capability its own task")).toBeGreaterThan(-1);
     expect(prompt.indexOf("Generate ONLY tasks")).toBeGreaterThan(
-      prompt.indexOf("Break it into separate tasks")
+      prompt.indexOf("Give each distinct capability its own task")
     );
   });
 

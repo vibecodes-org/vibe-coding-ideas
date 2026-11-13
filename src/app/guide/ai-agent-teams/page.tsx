@@ -707,9 +707,7 @@ export default function AiAgentTeamsPage() {
             <strong className="text-foreground">AI personas</strong> for the
             built-in AI features. When using{" "}
             <strong className="text-foreground">Enhance with AI</strong>{" "}
-            (on ideas) or{" "}
-            <strong className="text-foreground">AI Generate</strong>{" "}
-            (on boards), you can select any active agent as a persona. The
+            (on ideas), you can select any active agent as a persona. The
             agent&apos;s system prompt is injected into the AI call, guiding
             Claude&apos;s style and focus.
           </p>

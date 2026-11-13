@@ -21,6 +21,25 @@ export const GeneratedBoardSchema = z.object({
   tasks: z.array(GeneratedTaskSchema),
 });
 
+/**
+ * Hidden safety cap for a brand-new board's first task list. The AI is NOT told
+ * this number; the code just keeps the first this-many tasks if it ever returns more.
+ * "Generate tasks" has no such cap (the user picks tasks in a preview).
+ */
+export const NEW_BOARD_MAX_TASKS = 100;
+
+/**
+ * Shared guidance on how big a task is and how its description reads. Used by
+ * onboarding, the Generate tasks route and the daily model check. Deliberately
+ * gives no task count: the model decides how many the project needs.
+ */
+export const TASK_SIZING_GUIDANCE = `Each task is one meaningful piece of work that a single AI coding agent can carry from start to finish in the project's repository, through its own plan, build, review and test steps. Make it a whole capability a person would notice (for example "People can sign up and log in"), not one step of building it (for example "Create the login form"). Create as many tasks as this project actually needs, no more: don't pad the list or split one capability across several tasks to make it look thorough.
+
+Write each description in two parts: first one or two sentences on what the task delivers and why it matters; then a line "Done when:" followed by short "- " bullet points (plain bullets, not checkboxes) naming the observable results that prove it works, such as what a person can now do or which tests pass. Don't write step-by-step implementation instructions or checklists: the agent doing the task plans its own approach.`;
+
+/** System prompt for a brand-new board (onboarding) and the daily model check. */
+export const NEW_BOARD_SYSTEM_PROMPT = `You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform.\n\n${TASK_SIZING_GUIDANCE}`;
+
 /** Max tokens one Generate (or Generate the rest) call may write. */
 export const GENERATE_TASKS_MAX_OUTPUT_TOKENS = 32000;
 
