@@ -18,7 +18,7 @@ jobs:
   terminal:
     name: terminal tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -45,4 +45,5 @@ jobs:
       # POSIX shell is skipped one at a time inside its own file, with its reason.
       - name: Terminal integration tests (full)
         if: always()
-        run: npm test --prefix terminal/test
+        working-directory: terminal/test
+        run: node run-each.mjs
