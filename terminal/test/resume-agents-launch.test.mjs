@@ -28,7 +28,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -117,7 +117,7 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   handle.getBuf = () => buf;
   await once(browser, "open");
   bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: process.env.HOME, SHELL: shell, TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: process.env.HOME, SHELL: shell, TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "ignore"],
   });
   handle.bridge = bridge;

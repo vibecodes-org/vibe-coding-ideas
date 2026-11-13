@@ -25,7 +25,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "resume-auth-gate-test-secret";
@@ -75,7 +75,8 @@ async function runResume(t, { tokenSecret, linkParams }) {
   const launchUrl = buildLaunchDeepLink({ relay: relay.url, session, token: bridgeToken, cwd, ...linkParams });
   bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
     env: {
-      PATH: `${bin}:${process.env.PATH}`,
+      ...winEnv(),
+      PATH: [bin, process.env.PATH].join(path.delimiter),
       HOME: process.env.HOME,
       SHELL: "/usr/bin/false",
       TMPDIR: work,

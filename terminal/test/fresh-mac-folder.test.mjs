@@ -34,7 +34,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const PWD_CMD = path.resolve(__dirname, "./pwd-cmd.mjs");
@@ -246,7 +246,7 @@ test("6: Resume with a folder that isn't on this Mac → folder-missing, a plain
     appUrl: app.url,
     cmd: null,
     link: { cwd: missing, resumeId: "0b1bc584-0000-4000-8000-000000000000" },
-    env: { PATH: `${fakeBin}:${process.env.PATH}` },
+    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter) },
   });
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "folder-missing", run.getStderr());
@@ -379,7 +379,7 @@ test("8c: Resume into the home folder → folder-not-allowed, nothing spawned", 
     appUrl: app.url,
     cmd: null,
     link: { cwd: home, resumeId: "0b1bc584-0000-4000-8000-000000000000" },
-    env: { PATH: `${fakeBin}:${process.env.PATH}` },
+    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter) },
   });
   await once(run.bridge, "exit");
   assert.equal(run.shutdownWhy(), "folder-not-allowed", run.getStderr());

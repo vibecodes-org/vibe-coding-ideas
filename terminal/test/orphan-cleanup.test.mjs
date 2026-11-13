@@ -290,6 +290,8 @@ test("(d1) helper death: the IPC disconnect shuts the bridge down and the child 
   await waitFor(() => !pidAlive(sentinelPid), 5_000, "sentinel death after parent death", 100);
 
   // The bridge's stderr stayed bound to our pipe (inherited) — check the reason.
+  // The log line travels through a pipe: give it a moment to arrive (it is written before the bridge exits).
+  await waitFor(() => /helper-gone|IPC channel to parent dropped/.test(err), 5_000, "the parent-death log line", 50).catch(() => {});
   assert.match(err, /helper-gone|IPC channel to parent dropped/, "bridge logged the parent-death teardown");
   console.log("[oc/d1] PASS — parent SIGKILL ⇒ bridge disconnect teardown ⇒ child reaped");
 });

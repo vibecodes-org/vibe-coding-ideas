@@ -31,7 +31,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -59,6 +59,7 @@ function makeRepo({ withCommit }) {
 function spawnBridge(argv, env = {}) {
   const child = spawn(process.execPath, [BRIDGE_ENTRY, ...argv], {
     env: {
+      ...winEnv(),
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       BRIDGE_MAX_SECONDS: "60",
@@ -129,7 +130,7 @@ async function launchIsolated(t, cwd) {
   const leg = await connectBrowserLeg(relay.url, session, tokens.browser);
   browser = leg.ws;
   const spawned = spawnBridge(["--launch-url", launchUrl], {
-    PATH: `${fakeBin}:${process.env.PATH}`,
+    PATH: [fakeBin, process.env.PATH].join(path.delimiter),
     SHELL: "/usr/bin/false", // defeat the login-shell PATH capture so our shim wins
   });
   bridge = spawned.child;

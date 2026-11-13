@@ -31,3 +31,17 @@ export function writeFakeAgent(dir, name, script, opts = {}) {
     `@ECHO off\r\nSETLOCAL\r\nSET "_prog=node"\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${name}.mjs" %*\r\n`,
   );
 }
+
+/**
+ * The few system variables a Windows child needs when a test hands it a
+ * deliberately small environment (node, cmd.exe and sockets all want them).
+ * Empty off Windows, so Mac/Linux runs are unchanged.
+ */
+export function winEnv() {
+  if (!IS_WIN) return {};
+  const out = {};
+  for (const k of ["SystemRoot", "SYSTEMDRIVE", "ComSpec", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "windir"]) {
+    if (process.env[k] !== undefined) out[k] = process.env[k];
+  }
+  return out;
+}

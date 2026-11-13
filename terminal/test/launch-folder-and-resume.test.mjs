@@ -27,7 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "launch-folder-resume-test-secret";
@@ -100,7 +100,7 @@ async function launch(t, { home, appUrl, link }) {
   let stderr = "";
   const bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
     cwd: home,
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "pipe"],
   });
   bridge.stderr.setEncoding("utf8");
