@@ -35,3 +35,14 @@ Anthropic, "Prompting Claude Opus 5.5" (platform.claude.com/docs/en/build-with-c
 
 ## Where things are
 - Shared prompt text goes in `src/lib/generate-tasks-stream.ts` (pure, already shared with the model check).
+
+
+## Decisions (Nick, 13 Nov 2026) - these override the proposed decisions above
+- No task count or limit is given to the AI on either path. The "never more than N" sentence is gone from the shared guidance (`TASK_SIZING_GUIDANCE`).
+- New board: hidden code cap `NEW_BOARD_MAX_TASKS = 100` (keeps the first 100, `logger.warn`). Generate tasks: no cap.
+- Generate tasks window: box starts empty with a faint optional hint; empty box works end to end (the route treats `prompt` as optional extra guidance; the dialog's Generate button is no longer disabled when empty). Agent dropdown and the route's persona variant removed; `buildPromptContextParts` lost its agent parts. The route ignores any persona fields still sent.
+- Daily model check: system = `NEW_BOARD_SYSTEM_PROMPT`, prompt has no number, passes on valid shape with 1 to 100 tasks.
+- Guide: kanban-boards page describes the new behaviour (no "up to 50"); ai-agent-teams page no longer says AI Generate takes a persona.
+- Dead `generateBoardTasks` deleted from `src/actions/ai.ts`. Unused `bots`/`userBotProfiles` props removed from the dialog, toolbar and kanban-board pass-through.
+- Large-idea nudge rewritten to the two-part description form, still no count.
+- Before-and-after comparison (A7): attempted via `claude -p --model sonnet`, but the Claude CLI in the build session returned a 403 (Cloudflare) on every call, so no samples were produced. Still owed; run it from Nick's own terminal with invented project names (e.g. a one-word "Plantpal", a paragraph "Bookshelf Swap", a long "Fleet Tracker" spec).

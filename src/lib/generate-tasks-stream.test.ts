@@ -3,6 +3,9 @@ import {
   buildContinuationTasksInstruction,
   completeTasksOnly,
   mergeContinuation,
+  NEW_BOARD_MAX_TASKS,
+  NEW_BOARD_SYSTEM_PROMPT,
+  TASK_SIZING_GUIDANCE,
   parseContinueAfter,
 } from "./generate-tasks-stream";
 
@@ -91,5 +94,26 @@ describe("parseContinueAfter", () => {
     expect(res.value[0].columnName).toHaveLength(60);
     expect(res.value[0].labels).toHaveLength(10);
     expect(res.value[0].labels![0]).toHaveLength(60);
+  });
+});
+
+describe("task sizing guidance", () => {
+  it("tells the AI no task count or limit", () => {
+    for (const text of [TASK_SIZING_GUIDANCE, NEW_BOARD_SYSTEM_PROMPT]) {
+      expect(text).not.toMatch(/\b\d+\b/);
+      expect(text).not.toMatch(/never (create )?more than/i);
+      expect(text).not.toContain(String(NEW_BOARD_MAX_TASKS));
+    }
+  });
+
+  it("asks for a purpose plus a Done when list, and no how-to checklists", () => {
+    expect(TASK_SIZING_GUIDANCE).toContain("Done when:");
+    expect(TASK_SIZING_GUIDANCE).not.toContain("markdown task list");
+    expect(TASK_SIZING_GUIDANCE).not.toContain("- [ ]");
+    expect(TASK_SIZING_GUIDANCE).toContain("Don't write step-by-step implementation instructions");
+  });
+
+  it("keeps the hidden cap at 100", () => {
+    expect(NEW_BOARD_MAX_TASKS).toBe(100);
   });
 });

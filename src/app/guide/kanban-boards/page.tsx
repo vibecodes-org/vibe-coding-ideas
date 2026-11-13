@@ -242,13 +242,17 @@ export default function KanbanBoardsPage() {
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              Choose an optional <strong className="text-foreground">AI
-              persona</strong> from your active agents to guide the AI&apos;s
-              focus (e.g., a QA agent generates test-focused tasks)
+              Optionally write a <strong className="text-foreground">prompt</strong>{" "}
+              to steer the result (e.g., &quot;focus on the payment
+              features&quot;). The box starts empty and you can generate
+              without typing anything
             </li>
             <li>
-              Write a <strong className="text-foreground">prompt</strong>{" "}
-              describing what kind of tasks you want generated
+              The AI decides how many tasks your idea needs. Each task is a
+              whole piece of work with a short description of what it delivers
+              and a <strong className="text-foreground">Done when</strong>{" "}
+              list that says how you can tell it is finished, not a step-by-step
+              how-to
             </li>
             <li>
               Choose <strong className="text-foreground">Add</strong> mode
@@ -269,9 +273,9 @@ export default function KanbanBoardsPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> AI generation
               uses the same bulk import pipeline under the hood, so it handles
-              label and column creation automatically. A single run returns up
-              to <strong className="text-foreground">50 tasks</strong> — if you
-              need more, run it again.
+              label and column creation automatically. If a long list is cut
+              short, use <strong className="text-foreground">Generate the
+              rest</strong> to add the missing tasks.
             </p>
           </div>
         </section>

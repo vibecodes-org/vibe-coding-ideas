@@ -272,7 +272,6 @@ export function KanbanBoard({
   hasByokKey = false,
   starterCredits = 0,
   botProfiles = [],
-  userBotProfiles = [],
   coverImageUrls: initialCoverImageUrls = {},
   suggestionsByTask: initialSuggestionsByTask = {},
   isReadOnly = false,
@@ -1219,8 +1218,6 @@ export function KanbanBoard({
         canUseAi={canUseAi}
         hasByokKey={hasByokKey}
         starterCredits={starterCredits}
-        botProfiles={botProfiles}
-        userBotProfiles={userBotProfiles}
         isReadOnly={isReadOnly}
         aiGenerateOpen={aiGenerateOpen}
         onAiGenerateOpenChange={setAiGenerateOpen}

@@ -8,6 +8,8 @@ import {
 import {
   GENERATE_TASKS_MAX_OUTPUT_TOKENS,
   GeneratedBoardSchema,
+  NEW_BOARD_MAX_TASKS,
+  NEW_BOARD_SYSTEM_PROMPT,
 } from "@/lib/generate-tasks-stream";
 import { adjudicationSchema } from "@/lib/workflow-matching";
 import { isRetryableAiError, type CheckName, type CheckResult } from "@/lib/model-watch";
@@ -72,6 +74,17 @@ async function runCheck(
   };
 }
 
+/** Valid shape, and a sensible number of tasks (1 to the new-board cap). */
+function validateTaskList(o: Outcome): string | null {
+  const problem = validateSchema(GeneratedBoardSchema)(o);
+  if (problem) return problem;
+  const count = (o.value as { tasks: unknown[] }).tasks.length;
+  if (count < 1 || count > NEW_BOARD_MAX_TASKS) {
+    return `Expected 1 to ${NEW_BOARD_MAX_TASKS} tasks, got ${count}`;
+  }
+  return null;
+}
+
 function validateSchema(schema: z.ZodType) {
   return (o: Outcome): string | null => {
     if (o.finishReason !== "stop") {
@@ -94,8 +107,8 @@ export async function runModelChecks(
     async () => {
       const result = deps.stream({
         model,
-        system: "You generate task lists for software project boards.",
-        prompt: "Generate 5 tasks for a recipe-sharing web app.",
+        system: NEW_BOARD_SYSTEM_PROMPT,
+        prompt: "Plan the tasks for a small recipe-sharing web app where people can save and browse recipes.",
         schema: GeneratedBoardSchema,
         providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
         maxOutputTokens: GENERATE_TASKS_MAX_OUTPUT_TOKENS,
@@ -104,7 +117,7 @@ export async function runModelChecks(
       const value = await result.object;
       return { value, usage: await result.usage, finishReason: await result.finishReason };
     },
-    validateSchema(GeneratedBoardSchema)
+    validateTaskList
   );
 
   const matching = () =>

@@ -89,22 +89,16 @@ describe("buildPromptContextParts", () => {
     expect(joined).not.toContain("Workflow Triggers");
   });
 
-  it("includes agent context when provided", () => {
-    const parts = buildPromptContextParts({
-      ...baseCtx,
-      agentRole: "QA Engineer",
-      agentBio: "Expert in quality assurance",
-    });
+  it("works with an empty prompt: no extra-guidance section", () => {
+    const parts = buildPromptContextParts({ ...baseCtx, prompt: "   " });
     const joined = parts.join("\n\n");
-    expect(joined).toContain("**Agent Role:** QA Engineer");
-    expect(joined).not.toContain("Agent Skills");
-    expect(joined).toContain("**Agent Bio:** Expert in quality assurance");
+    expect(parts[0]).toContain("Generate a structured task board");
+    expect(joined).not.toContain("Extra guidance");
   });
 
-  it("omits agent section when no agent info provided", () => {
-    const parts = buildPromptContextParts(baseCtx);
-    const joined = parts.join("\n\n");
-    expect(joined).not.toContain("Agent Role");
+  it("passes a typed prompt through as extra guidance", () => {
+    const joined = buildPromptContextParts({ ...baseCtx, prompt: "focus on payments" }).join("\n\n");
+    expect(joined).toContain("**Extra guidance from the user:**\nfocus on payments");
   });
 });
 

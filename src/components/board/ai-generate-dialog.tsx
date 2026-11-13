@@ -20,15 +20,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -50,7 +41,6 @@ import type {
   BoardColumnWithTasks,
   BoardLabel,
   User,
-  BotProfile,
 } from "@/types";
 import { PromptTemplateSelector } from "@/components/ai/prompt-template-selector";
 import { createClient } from "@/lib/supabase/client";
@@ -66,9 +56,6 @@ type CutShort = CutShortReason | "connection";
 /** What a run was started with, kept so "Generate the rest" re-sends the same thing. */
 interface RunSettings {
   prompt: string;
-  personaPrompt: string | null;
-  agentRole: string | null;
-  agentBio: string | null;
 }
 
 interface FinalLine {
@@ -144,8 +131,8 @@ async function readTaskStream(
   return { latest, final };
 }
 
-const DEFAULT_PROMPT =
-  "Create a comprehensive task board for this idea. Break it into logical columns and tasks with labels, workflow steps, and due dates where appropriate. Focus on actionable, well-scoped tasks.";
+const PROMPT_PLACEHOLDER =
+  "Optional: anything specific? e.g. focus on the payment features";
 
 const LOADING_TIMEOUT_MS = 15_000;
 
@@ -172,8 +159,6 @@ interface AiGenerateDialogProps {
   columns: BoardColumnWithTasks[];
   boardLabels: BoardLabel[];
   teamMembers: User[];
-  bots: BotProfile[];
-  userBotProfiles?: BotProfile[];
 }
 
 export function AiGenerateDialog({
@@ -185,13 +170,10 @@ export function AiGenerateDialog({
   columns,
   boardLabels,
   teamMembers,
-  bots,
-  userBotProfiles = [],
 }: AiGenerateDialogProps) {
   const router = useRouter();
   const [phase, setPhase] = useState<DialogPhase>("configure");
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [selectedBotId, setSelectedBotId] = useState<string>("default");
+  const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"add" | "replace">("add");
   const [generatedTasks, setGeneratedTasks] = useState<ImportTask[] | null>(
     null
@@ -225,14 +207,6 @@ export function AiGenerateDialog({
   const wiringStartRef = useRef<number>(0);
 
   const busy = generating || phase === "inserting" || phase === "wiring-workflows" || phase === "loading-board";
-
-  // User's own active bots (already filtered to is_active at query level)
-  const myAgents = userBotProfiles;
-  const myAgentIds = new Set(myAgents.map((b) => b.id));
-  // Pool bots not owned by current user (deduplicates bots that are in both lists)
-  const ideaAgentBots = bots.filter((b) => b.is_active && !myAgentIds.has(b.id));
-  const allBots = [...myAgents, ...ideaAgentBots];
-
 
   // Auto-close when board refresh completes
   useEffect(() => {
@@ -278,19 +252,9 @@ export function AiGenerateDialog({
     setCutShort(null);
     setPhase("preview");
     try {
-      const selectedBot =
-        selectedBotId !== "default"
-          ? allBots.find((b) => b.id === selectedBotId)
-          : null;
-
       // Remembered so "Generate the rest" re-sends exactly what this run used,
       // even if the configure screen is edited in between.
-      const settings: RunSettings = {
-        prompt,
-        personaPrompt: selectedBot?.system_prompt ?? null,
-        agentRole: selectedBot?.role ?? null,
-        agentBio: selectedBot?.bio ?? null,
-      };
+      const settings: RunSettings = { prompt: prompt.trim() };
       runSettingsRef.current = settings;
 
       const res = await fetch("/api/ai/generate-tasks", {
@@ -602,8 +566,7 @@ export function AiGenerateDialog({
     setPhase("configure");
     setGeneratedTasks(null);
     setColumnMapping({});
-    setPrompt(DEFAULT_PROMPT);
-    setSelectedBotId("default");
+    setPrompt("");
     setMode("add");
     setTaskStatuses([]);
     setInsertProgress({ current: 0, total: 0 });
@@ -671,44 +634,6 @@ export function AiGenerateDialog({
           {/* ── Configure Phase ─────────────────────────────────── */}
           {phase === "configure" && (
             <div className="space-y-4">
-              {allBots.length > 0 && (
-                <div className="space-y-2">
-                  <Label>AI Persona</Label>
-                  <Select value={selectedBotId} onValueChange={setSelectedBotId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select persona" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">
-                        Default (Project Manager)
-                      </SelectItem>
-                      {myAgents.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>My Agents</SelectLabel>
-                          {myAgents.map((bot) => (
-                            <SelectItem key={bot.id} value={bot.id}>
-                              {bot.name}
-                              {bot.role ? ` (${bot.role})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                      {ideaAgentBots.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Idea Agents</SelectLabel>
-                          {ideaAgentBots.map((bot) => (
-                            <SelectItem key={bot.id} value={bot.id}>
-                              {bot.name}
-                              {bot.role ? ` (${bot.role})` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Prompt</Label>
@@ -723,7 +648,7 @@ export function AiGenerateDialog({
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={4}
-                  placeholder="Tell the AI how to structure the task board..."
+                  placeholder={PROMPT_PLACEHOLDER}
                 />
               </div>
 
@@ -997,7 +922,6 @@ export function AiGenerateDialog({
           <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
             <Button
               onClick={handleGenerate}
-              disabled={!prompt.trim()}
               className="w-full gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
             >
               <Sparkles className="h-4 w-4" />

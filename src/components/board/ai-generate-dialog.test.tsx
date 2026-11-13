@@ -80,7 +80,6 @@ function setup() {
       columns={columns}
       boardLabels={[]}
       teamMembers={[]}
-      bots={[]}
     />
   );
 }
@@ -104,6 +103,20 @@ const cutFirstRun = ndjson(
   { tasks: [A, B, { title: "Task C", columnName: "Backl" }] },
   { tasks: [A, B], final: true, cutShort: "length" }
 );
+
+describe("AiGenerateDialog — the prompt box", () => {
+  it("starts empty with an optional hint, has no persona dropdown, and generates with it empty", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse(ndjson({ tasks: [A], final: true })));
+    setup();
+    const box = screen.getByPlaceholderText(/Optional: anything specific/) as HTMLTextAreaElement;
+    expect(box.value).toBe("");
+    expect(screen.queryByText("AI Persona")).toBeNull();
+    const button = screen.getByRole("button", { name: /^Generate$/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    await generate();
+    expect(requestBody(0)).toEqual({ ideaId: "idea-1", prompt: "" });
+  });
+});
 
 describe("AiGenerateDialog — a cut-short list", () => {
   it("drops the half-written task, shows the amber bar and the button, and creates no new column", async () => {
