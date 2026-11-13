@@ -153,7 +153,6 @@ interface KanbanBoardProps {
   hasByokKey?: boolean;
   starterCredits?: number;
   botProfiles?: BotProfile[];
-  userBotProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
   suggestionsByTask?: Record<string, BoardSuggestionIndicator>;
   isReadOnly?: boolean;

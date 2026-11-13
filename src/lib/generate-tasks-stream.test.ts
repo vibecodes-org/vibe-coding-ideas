@@ -106,6 +106,13 @@ describe("task sizing guidance", () => {
     }
   });
 
+  it("asks the AI to cover the whole idea and check itself before finishing", () => {
+    expect(TASK_SIZING_GUIDANCE).toContain("Cover everything the idea asks for");
+    expect(TASK_SIZING_GUIDANCE).toContain("later phases included");
+    expect(TASK_SIZING_GUIDANCE).toContain("success metrics");
+    expect(TASK_SIZING_GUIDANCE).toContain("go back through the idea section by section");
+  });
+
   it("asks for a purpose plus a Done when list, and no how-to checklists", () => {
     expect(TASK_SIZING_GUIDANCE).toContain("Done when:");
     expect(TASK_SIZING_GUIDANCE).not.toContain("markdown task list");

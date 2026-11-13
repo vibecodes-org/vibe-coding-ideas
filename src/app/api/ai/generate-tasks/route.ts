@@ -47,10 +47,14 @@ export async function POST(req: Request) {
     const { anthropic, keyType } = resolved;
 
     const body = await req.json();
-    const { ideaId, prompt: rawPrompt } = body as {
+    const { ideaId, prompt: rawPrompt, mode } = body as {
       ideaId: string;
       prompt?: string | null;
+      mode?: "add" | "replace";
     };
+    // "Replace existing board" deletes the current tasks, so only "add" (the
+    // default) tells the AI what is already there.
+    const includeExistingTasks = mode !== "replace";
 
     // The prompt is optional extra guidance: an empty box is a normal request.
     const prompt = typeof rawPrompt === "string" ? rawPrompt : "";
@@ -98,7 +102,7 @@ export async function POST(req: Request) {
     }
 
     // Fetch existing board state for context
-    const [{ data: columns }, { data: labels }, { data: autoRules }] = await Promise.all([
+    const [{ data: columns }, { data: labels }, { data: autoRules }, { data: existingTasks }] = await Promise.all([
       supabase
         .from("board_columns")
         .select("title, is_done_column")
@@ -112,6 +116,15 @@ export async function POST(req: Request) {
         .from("workflow_auto_rules")
         .select("label_id, template:workflow_templates!workflow_auto_rules_template_id_fkey(name, description)")
         .eq("idea_id", ideaId),
+      includeExistingTasks
+        ? supabase
+            .from("board_tasks")
+            .select("title")
+            .eq("idea_id", ideaId)
+            .eq("archived", false)
+            .order("created_at")
+            .range(0, 999)
+        : Promise.resolve({ data: [] as { title: string }[] }),
     ]);
 
     const existingColumns = (columns ?? [])
@@ -131,8 +144,7 @@ export async function POST(req: Request) {
     // Only very large, dense idea descriptions trigger the "everything in one giant
     // task" pathology (the model reproduces the idea's density into a single task
     // and fills the token budget before making a second — confirmed by telemetry).
-    // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
-    // only large ideas get an added decomposition nudge. Threshold in characters:
+    // Normal ideas never hit this; only large ideas get an added decomposition nudge. Threshold in characters:
     // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below a
     // ~20,000-char programme spec.
     const LARGE_IDEA_CHARS = 12000;
@@ -145,6 +157,7 @@ export async function POST(req: Request) {
       existingColumns,
       existingLabels,
       autoRuleMappings,
+      existingTaskTitles: (existingTasks ?? []).map((t) => t.title),
     });
 
     // Large ideas ONLY: append a short nudge as the last thing the model reads

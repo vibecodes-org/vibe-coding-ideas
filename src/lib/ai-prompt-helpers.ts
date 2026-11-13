@@ -16,6 +16,8 @@ export interface PromptContext {
   existingColumns: string[];
   existingLabels: string[];
   autoRuleMappings: AutoRuleMapping[];
+  /** Titles of the tasks already on the board ("Add to existing board" only). */
+  existingTaskTitles?: string[];
 }
 
 /**
@@ -30,6 +32,14 @@ export function buildPromptContextParts(ctx: PromptContext): string[] {
     `**Idea Title:** ${ctx.ideaTitle}`,
     `**Idea Description:**\n${ctx.ideaDescription}`,
   ];
+
+  const existingTasks = (ctx.existingTaskTitles ?? []).map((t) => t.trim()).filter(Boolean);
+  if (existingTasks.length > 0) {
+    parts.push(
+      `**Tasks already on the board:**\n${existingTasks.map((t) => `- ${t}`).join("\n")}`,
+      `These tasks are already on the board. Generate only tasks for the parts of the idea they don't already cover: don't repeat, rephrase, split or merge them. If they already cover the whole idea, return an empty task list.`
+    );
+  }
 
   if (ctx.existingColumns.length > 0) {
     parts.push(
