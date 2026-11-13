@@ -1,19 +1,17 @@
 // Session-to-session messages (card f0a13bde), the bridge side: the hook
-// listener Claude reports to, the check on an arriving message, and the two
-// ways a message reaches Claude (typed when safe, otherwise handed over by the
+// listener Claude and Codex report to, and the two ways a message passed on by
+// the Mac app reaches the agent (typed when safe, otherwise handed over by the
 // Stop hook). Everything that touches the world is passed in, so the tests
 // drive it with fakes. Message text is never logged here.
 
 import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
-import {
-  encodePeerAckFrame,
-  formatPeerMessage,
-  verifyPeerFrame,
-} from "../../shared/peer-message.mjs";
+import { cleanPeerText, formatPeerMessage } from "../../shared/peer-message.mjs";
 import { createPeerState, endTyping, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
 
-export const SEND_TOOL_MATCHER = "^mcp__.+__(send_session_message|list_my_sessions|offer_next_card)$";
+// The one board tool that needs to know which session is calling: it gets the
+// session's proof filled in, so the agent never has to look it up.
+export const SEND_TOOL_MATCHER = "^mcp__.+__offer_next_card$";
 const HOOK_TIMEOUT_SECONDS = 5;
 const SUBMIT_WAIT_MS = 3000;
 const PASTE_SETTLE_MS = 150;
@@ -61,8 +59,9 @@ const CODEX_HOOK_EVENTS = /** @type {const} */ ([
   ["PermissionRequest", "permission_request", null],
   ["SessionStart", "session_start", null],
 ]);
-// No PreToolUse hook for Codex: it passes its own session value when sending
-// (the tool's instructions tell it how), and PostToolUse already says "busy".
+// No PreToolUse hook for Codex: it passes its own session value to
+// offer_next_card (the tool's instructions tell it how), and PostToolUse
+// already says "busy".
 // Where Codex files hooks passed on the command line (its "session flags").
 const CODEX_FLAG_HOOK_SOURCE = "/<session-flags>/config.toml";
 
@@ -172,48 +171,31 @@ export function newHookSecret() {
 
 /**
  * @param {{
- *   key: string | null, sid: string, agent: string, explicitCmd: boolean, envValue: string | null,
- *   writePty: (data: string) => void, sendAck: (frame: string) => void,
+ *   agent: string, explicitCmd: boolean, envValue: string | null,
+ *   writePty: (data: string) => void, replyCommand: string,
  *   log?: (level: string, msg: string, extra?: object) => void, now?: () => number,
  *   delay?: (ms: number) => Promise<void>, startsIdle?: boolean,
- * }} deps  startsIdle: launched with no prompt, so the agent is idle once it has started
+ * }} deps  startsIdle: launched with no prompt, so the agent is idle once it has started.
+ *          replyCommand: how this session's agent runs the message command (shown in the header).
  */
 export function createPeerBridge(deps) {
-  const { key, sid, agent, explicitCmd, envValue, writePty, sendAck } = deps;
+  const { agent, explicitCmd, envValue, writePty, replyCommand } = deps;
   const canReceive = (agent === "claude" || agent === "codex") && !explicitCmd;
   const startsIdle = deps.startsIdle === true;
   const log = deps.log ?? (() => {});
   const now = deps.now ?? (() => Date.now());
   const delay = deps.delay ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   let state = createPeerState();
-  const seen = new Set();
   /** @type {Array<() => void>} */
   let submitWaiters = [];
 
-  function ack(id, outcome) {
-    try {
-      sendAck(encodePeerAckFrame(id, outcome));
-    } catch (e) {
-      log("warn", "peer ack failed", { err: String(e?.message || e) });
-    }
-  }
-
-  function looseId(text) {
-    try {
-      const m = JSON.parse(text);
-      return typeof m?.id === "string" && m.id.length <= 64 ? m.id : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function typeNow(env) {
+  async function typeNow(id, formatted) {
     // Bracketed paste keeps a multi-line body as ONE message; Enter is a
     // separate write, only when it is still safe.
-    writePty(`\x1b[200~${formatPeerMessage(env.from, env.text)}\x1b[201~`);
+    writePty(`\x1b[200~${formatted}\x1b[201~`);
     await delay(PASTE_SETTLE_MS);
     if (!safeToSubmit(state)) {
-      log("warn", "peer message pasted but not submitted (state changed)", { id: env.id, phase: state.phase });
+      log("warn", "peer message pasted but not submitted (state changed)", { id, phase: state.phase });
       state = endTyping(state, { pasted: true, submitted: false });
       return "unconfirmed";
     }
@@ -227,42 +209,40 @@ export function createPeerBridge(deps) {
   }
 
   return {
+    canReceive,
+
     /** The person's keystrokes (after decryption). */
     handleInput(bytes) {
       state = onInput(state, bytes);
     },
 
-    /** An incoming peer-message text frame from the relay. */
-    async handleFrame(text) {
-      const idGuess = looseId(text);
-      const reply = (outcome) => {
-        if (idGuess) ack(idGuess, outcome);
-      };
-      if (!key) return reply("cannot-receive");
-      const v = verifyPeerFrame({ key, text, sid, now: now(), seen });
-      if (!v.ok) {
-        log("warn", "peer message refused", { reason: v.reason });
-        return reply("rejected");
-      }
-      seen.add(v.env.id);
-      if (seen.size > 500) seen.delete(seen.values().next().value);
-      if (!canReceive) return ack(v.env.id, "cannot-receive");
-
+    /**
+     * A message the Mac app passed on from another session on this Mac. The
+     * sender details come from the Mac app, never from the sending agent.
+     * @param {{ id: string, from: { sid: string, agent: string, folder?: string | null }, text: string }} msg
+     * @returns {Promise<"delivered"|"unconfirmed"|"waiting"|"rate-limited"|"cannot-receive">}
+     */
+    async deliver(msg) {
+      if (!canReceive) return "cannot-receive";
+      const cleaned = cleanPeerText(msg?.text);
+      if (!cleaned.ok) return "cannot-receive";
+      const id = String(msg.id ?? "").slice(0, 64);
       // Session record: what happened to each incoming message (never its text).
       const phase = state.phase;
-      const r = onMessage(state, { id: v.env.id, text: formatPeerMessage(v.env.from, v.env.text) }, now());
+      const formatted = formatPeerMessage(msg.from, cleaned.text, replyCommand);
+      const r = onMessage(state, { id, text: formatted }, now());
       state = r.state;
       if (r.decision === "full") {
-        log("info", "peer message refused, too many waiting", { id: v.env.id, phase });
-        return ack(v.env.id, "rate-limited");
+        log("info", "peer message refused, too many waiting", { id, phase });
+        return "rate-limited";
       }
       if (r.decision === "hold") {
-        log("info", "peer message held until the session is free", { id: v.env.id, phase, held: state.inbox.length });
-        return ack(v.env.id, "waiting");
+        log("info", "peer message held until the session is free", { id, phase, held: state.inbox.length });
+        return "waiting";
       }
-      const outcome = await typeNow(v.env);
-      log("info", "peer message typed in", { id: v.env.id, outcome });
-      ack(v.env.id, outcome);
+      const outcome = await typeNow(id, formatted);
+      log("info", "peer message typed in", { id, outcome });
+      return outcome;
     },
 
     /** A hook event from Claude or Codex; returns the JSON answer for the agent. */

@@ -167,7 +167,6 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions,
     onReportSummary,
     onPopOut,
-    onPeerMessage,
     onRegisterActions,
     paneFocused,
     grabFocus,
@@ -185,7 +184,6 @@ vi.mock("./terminal-session-view", () => ({
       sid: string | null,
     ) => void;
     onBrowseSessions?: () => void;
-    onPeerMessage?: (key: string, fromName: string) => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
     // Bug a9c37241 (Nick's field report, 2 Sep 2026): a popped-out session in
@@ -280,11 +278,6 @@ vi.mock("./terminal-session-view", () => ({
           }
         >
           Resume this conversation
-        </button>
-        {/* Card f0a13bde: stands in for the session view reporting that another
-            session messaged this tab while it was in the background. */}
-        <button data-testid={`peer-msg-${entry.key}`} onClick={() => onPeerMessage?.(entry.key, "Plan")}>
-          peer message
         </button>
         {/* Stands in for the ended panel's "View my other sessions" link —
             the real panel only renders it on the session-ended view, which
@@ -3313,50 +3306,6 @@ describe("TerminalDock — '+' after an instant-continue page load (card fb854f9
     fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
-  });
-});
-
-describe("TerminalDock — message pill on a background tab (card f0a13bde)", () => {
-  async function twoTabs() {
-    stubFetch(Promise.resolve([liveElsewhereRow()]));
-    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
-    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
-    act(() => {
-      requestBrowserLaunch();
-    });
-    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId("chooser-start-new"));
-    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
-    return screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
-  }
-
-  it("shows the pill on a tab that is not open, announces it, and clears it when that tab is opened", async () => {
-    const [first, second] = await twoTabs();
-    // The second tab was just minted, so it is the open one; the first is in the background.
-    expect(screen.queryByTestId("tab-message-pill")).not.toBeInTheDocument();
-    act(() => {
-      fireEvent.click(screen.getByTestId(`peer-msg-${first}`));
-    });
-    const pill = await screen.findByTestId("tab-message-pill");
-    expect(pill).toHaveTextContent("message");
-    expect(screen.getAllByRole("status").some((el) => /message from another session/.test(el.textContent ?? ""))).toBe(true);
-    // Opening the tab clears it.
-    const tabs = screen.getAllByRole("tab");
-    const firstTab = tabs.find((t) => t.contains(pill));
-    expect(firstTab).toBeTruthy();
-    fireEvent.click(firstTab as HTMLElement);
-    await waitFor(() => expect(screen.queryByTestId("tab-message-pill")).not.toBeInTheDocument());
-    expect(second).toBeTruthy();
-  });
-
-  it("never puts the pill on the tab that is already open", async () => {
-    const [, second] = await twoTabs();
-    act(() => {
-      fireEvent.click(screen.getByTestId(`peer-msg-${second}`));
-    });
-    expect(screen.queryByTestId("tab-message-pill")).not.toBeInTheDocument();
   });
 });
 
