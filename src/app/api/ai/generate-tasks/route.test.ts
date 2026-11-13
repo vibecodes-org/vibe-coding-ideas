@@ -5,7 +5,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { streamObjectMock } = vi.hoisted(() => ({ streamObjectMock: vi.fn() }));
+const { streamObjectMock, fromTables } = vi.hoisted(() => ({
+  streamObjectMock: vi.fn(),
+  fromTables: [] as string[],
+}));
 
 vi.mock("ai", () => ({ streamObject: (...args: unknown[]) => streamObjectMock(...args) }));
 
@@ -41,6 +44,7 @@ vi.mock("@/lib/supabase/server", () => {
     chain.select = vi.fn().mockReturnValue(chain);
     chain.eq = vi.fn().mockReturnValue(chain);
     chain.order = vi.fn().mockReturnValue(chain);
+    chain.range = vi.fn().mockReturnValue(chain);
     chain.single = vi.fn().mockImplementation(async () => ({
       data: { id: "idea-1", title: "Sample idea", description: ideaDescription, author_id: "user-1" },
     }));
@@ -50,7 +54,10 @@ vi.mock("@/lib/supabase/server", () => {
   return {
     createClient: vi.fn().mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }) },
-      from: vi.fn().mockImplementation(() => makeChain()),
+      from: vi.fn().mockImplementation((table: string) => {
+        fromTables.push(table);
+        return makeChain();
+      }),
     }),
   };
 });
@@ -89,6 +96,7 @@ const B: Task = { title: "Task B", columnName: "To Do" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fromTables.length = 0;
   ideaDescription = "A short sample idea.";
 });
 afterEach(() => {
@@ -271,6 +279,20 @@ describe("POST /api/ai/generate-tasks — instructions", () => {
     expect(system).not.toMatch(/\b\d+\b/);
     expect(system).toContain("Done when:");
     expect(system).toContain("one project setup task");
+  });
+});
+
+describe("POST /api/ai/generate-tasks — tasks already on the board", () => {
+  it("reads the board's tasks when adding (the default)", async () => {
+    streamObjectMock.mockReturnValue(streamOf([[A]]));
+    await (await POST(request())).text();
+    expect(fromTables).toContain("board_tasks");
+  });
+
+  it("doesn't read them when replacing the board", async () => {
+    streamObjectMock.mockReturnValue(streamOf([[A]]));
+    await (await POST(request({ mode: "replace" }))).text();
+    expect(fromTables).not.toContain("board_tasks");
   });
 });
 

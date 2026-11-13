@@ -114,7 +114,7 @@ describe("AiGenerateDialog — the prompt box", () => {
     const button = screen.getByRole("button", { name: /^Generate$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     await generate();
-    expect(requestBody(0)).toEqual({ ideaId: "idea-1", prompt: "" });
+    expect(requestBody(0)).toEqual({ ideaId: "idea-1", prompt: "", mode: "add" });
   });
 });
 

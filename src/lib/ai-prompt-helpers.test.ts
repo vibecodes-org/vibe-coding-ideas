@@ -32,6 +32,23 @@ describe("buildPromptContextParts", () => {
     expect(joined).toContain("**Existing Board Columns:** Backlog, In Progress, Done");
   });
 
+  it("lists the tasks already on the board and asks only for what they don't cover", () => {
+    const joined = buildPromptContextParts({
+      ...baseCtx,
+      existingTaskTitles: ["People can sign up", "  ", "Project set up"],
+    }).join("\n\n");
+    expect(joined).toContain("**Tasks already on the board:**\n- People can sign up\n- Project set up");
+    expect(joined).toContain("Generate only tasks for the parts of the idea they don't already cover");
+    expect(joined).toContain("return an empty task list");
+  });
+
+  it("omits the existing-tasks section when there are none", () => {
+    expect(buildPromptContextParts(baseCtx).join("\n\n")).not.toContain("Tasks already on the board");
+    expect(buildPromptContextParts({ ...baseCtx, existingTaskTitles: [] }).join("\n\n")).not.toContain(
+      "Tasks already on the board"
+    );
+  });
+
   it("omits columns section when empty", () => {
     const parts = buildPromptContextParts(baseCtx);
     const joined = parts.join("\n\n");

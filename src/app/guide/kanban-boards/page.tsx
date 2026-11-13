@@ -248,7 +248,8 @@ export default function KanbanBoardsPage() {
               without typing anything
             </li>
             <li>
-              The AI decides how many tasks your idea needs. Each task is a
+              The AI covers everything your idea describes, later phases
+              included, and decides how many tasks that takes. Each task is a
               whole piece of work with a short description of what it delivers
               and a <strong className="text-foreground">Done when</strong>{" "}
               list that says how you can tell it is finished, not a step-by-step
@@ -256,7 +257,8 @@ export default function KanbanBoardsPage() {
             </li>
             <li>
               Choose <strong className="text-foreground">Add</strong> mode
-              (append to existing tasks) or{" "}
+              (only adds what the tasks already on the board don&apos;t cover)
+              or{" "}
               <strong className="text-foreground">Replace</strong> mode (clear
               the board first)
             </li>

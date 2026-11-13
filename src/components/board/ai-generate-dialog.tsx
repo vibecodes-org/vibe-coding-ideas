@@ -56,6 +56,8 @@ type CutShort = CutShortReason | "connection";
 /** What a run was started with, kept so "Generate the rest" re-sends the same thing. */
 interface RunSettings {
   prompt: string;
+  /** "add" sends the board's current tasks so the AI skips what's already there. */
+  mode: "add" | "replace";
 }
 
 interface FinalLine {
@@ -254,7 +256,7 @@ export function AiGenerateDialog({
     try {
       // Remembered so "Generate the rest" re-sends exactly what this run used,
       // even if the configure screen is edited in between.
-      const settings: RunSettings = { prompt: prompt.trim() };
+      const settings: RunSettings = { prompt: prompt.trim(), mode };
       runSettingsRef.current = settings;
 
       const res = await fetch("/api/ai/generate-tasks", {
@@ -272,6 +274,13 @@ export function AiGenerateDialog({
       const tasks = final.tasks;
 
       if (!tasks.length) {
+        const boardHasTasks = columns.some((c) => c.tasks.length > 0);
+        if (mode === "add" && boardHasTasks) {
+          toast.info("Nothing to add: the tasks already on the board cover the whole idea.");
+          setPhase("configure");
+          setGeneratedTasks(null);
+          return;
+        }
         throw new Error("AI did not generate any tasks. Try a more detailed prompt.");
       }
 
