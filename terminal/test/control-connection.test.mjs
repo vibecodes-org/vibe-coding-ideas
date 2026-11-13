@@ -265,7 +265,10 @@ test("handleOpenTerminalUrl closes the dedicated socket after a TIMED-OUT handsh
 
 // ── BUG B: an ack delivered immediately must not be missed ──────────────
 
-test("an authorization ack delivered the instant the socket is available is NOT missed (no timeout)", async (t) => {
+import { isBinaryInstalled } from "../shared/binary-check.mjs";
+
+// The success path needs `codex` installed (the helper skips the launch when it is not), which a CI machine does not have.
+test("an authorization ack delivered the instant the socket is available is NOT missed (no timeout)", { skip: !isBinaryInstalled("codex") && "codex is not installed on this machine" }, async (t) => {
   const relay = "ws://127.0.0.1:9";
   const primaryToken = await freshHelperToken();
   const primary = await main.__test.connectControl(relay, primaryToken);

@@ -41,6 +41,13 @@ jobs:
       - name: Shared tests
         if: always()
         run: npm test --prefix terminal/shared
-      - name: Terminal integration tests
-        if: always()
+      # The full integration suite drives POSIX shells (bash, sleep, sh scripts);
+      # running it on Windows belongs to the Windows virtual machine stage.
+      # Windows runs only the tests that do not need a POSIX shell.
+      - name: Terminal integration tests (full, macOS)
+        if: always() && runner.os == 'macOS'
         run: npm test --prefix terminal/test
+      - name: Terminal tests that need no POSIX shell (Windows)
+        if: always() && runner.os == 'Windows'
+        working-directory: terminal/test
+        run: node --test helper-launch-argv.test.mjs helper-stay-awake.test.mjs control-url.test.mjs agent-availability.test.mjs

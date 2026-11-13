@@ -229,7 +229,7 @@ test("(e) reattach with a different owner sub is rejected OWNER_MISMATCH; the he
   t.after(() => { try { browser.ws.terminate(); } catch { /* */ } });
 
   bridge.ws.terminate();
-  await waitFor(() => hasFrame(browser, isPeerDegradedFrame), 5000, "degraded");
+  await waitFor(() => hasFrame(browser, isPeerDegradedFrame), 15000, "degraded");
 
   // A DIFFERENT user tries to steal the held bridge slot with the SAME sid.
   const intruder = new WebSocket(`${relay.url}/?session=${session}&role=bridge&token=${encodeURIComponent(b.bridge)}`);

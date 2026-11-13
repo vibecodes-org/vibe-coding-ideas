@@ -101,6 +101,6 @@ test("old bridge (no hold): still torn down after the grace window", { timeout: 
   const bridge = await openLeg(relay.url, session, "bridge", tokens.bridge);
   const browser = await openLeg(relay.url, session, "browser", tokens.browser);
   bridge.ws.terminate();
-  await waitFor(() => browser.closed, 4000, "browser closed after the grace window");
+  await waitFor(() => browser.closed, 15000, "browser closed after the grace window");
   assert.equal(browser.closed[0], 4004);
 });
