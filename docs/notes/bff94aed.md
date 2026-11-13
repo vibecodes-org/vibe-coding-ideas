@@ -63,3 +63,11 @@ Decisions A to E went in at the recommended answers (Nick: "3- yes").
 - Admin library templates (the template editor dialog) have no propagation and are unchanged.
 - Old wording replaced: the two MCP tool descriptions and the guide's "Template Edit Propagation" paragraph. The step edit dialog's help line is still accurate.
 - Not done by design (E): no automatic catch-up of the 45 stranded cards; use the `dry_run` preview on resync first.
+
+## Rework round 1 (code review)
+
+- Bug: `reshape_workflow_run` ran as the signed-in user but called `workflow_live_run_id`, which migration 00199 locked away from signed-in users. Every reshape would have failed with permission denied (the save would always show the amber "changed while saving" message). Unit tests mocked the database call, so they missed it.
+- Fix: the live-run check is now written out inside the function (same rule as the helper and `pickCurrentRunKey`). 00199's lockdown stays as is; nothing is re-granted.
+- Other helpers: the function calls no other custom function. Its triggers (`update_workflow_step_counts`) are security definer, so they are unaffected. Every earlier migration that revokes execute from signed-in users was scanned.
+- Test: `src/lib/reshape-migration.test.ts` scans all earlier migrations for functions revoked from signed-in users and fails if 00212 calls any.
+- 00212 is still not applied to production; real-schema run still owed.

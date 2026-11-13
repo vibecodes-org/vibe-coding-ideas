@@ -17,7 +17,9 @@
 -- model_tier, effort_override, position, step_order, status, bot_id, match_tier,
 -- started_at, claimed_by, claim_token_hash, work_token_hash, output,
 -- comment_count), workflow_runs (id, task_id, status), board_tasks (id,
--- idea_id), workflow_step_comments (step_id), function workflow_live_run_id.
+-- idea_id), workflow_step_comments (step_id). It calls no other custom function (the
+-- live-run rule is written out inside it because 00199 revoked the helper
+-- workflow_live_run_id from signed-in users).
 -- REAL-SCHEMA RUN STILL OWED: applying this to production needs Nick's approval.
 
 CREATE OR REPLACE FUNCTION public.reshape_workflow_run(
@@ -35,6 +37,7 @@ DECLARE
   v_task_id uuid;
   v_idea_id uuid;
   v_run_status text;
+  v_live_run_id uuid;
   v_step_ids uuid[];
   v_actual int;
   v_match int;
@@ -58,7 +61,17 @@ BEGIN
     RETURN 'changed';
   END IF;
 
-  IF workflow_live_run_id(v_task_id) IS DISTINCT FROM p_run_id THEN
+  -- Live run check, written out here on purpose: migration 00199 revoked EXECUTE
+  -- on workflow_live_run_id from signed-in users, and this function runs as the
+  -- signed-in user. Same rule as that helper and pickCurrentRunKey
+  -- (src/lib/workflow-current-run.ts); change them together.
+  SELECT run_id INTO v_live_run_id FROM task_workflow_steps
+  WHERE task_id = v_task_id
+  GROUP BY run_id
+  ORDER BY max(created_at) DESC NULLS LAST, run_id DESC NULLS LAST
+  LIMIT 1;
+
+  IF v_live_run_id IS DISTINCT FROM p_run_id THEN
     RETURN 'changed';
   END IF;
 
