@@ -34,6 +34,61 @@ export function fallbackBinDirs() {
   ];
 }
 
+const WIN_REG_KEYS = [
+  "HKCU\\Environment",
+  "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+];
+
+/** Pull the `Path` value out of `reg query <key> /v Path` output. */
+function parseRegPath(out) {
+  const m = String(out).match(/^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*?)\s*$/im);
+  return m ? m[1] : "";
+}
+
+/** Expand `%NAME%` from env (case-insensitive, as Windows does); unknown stay. */
+function expandWinVars(value, env) {
+  const upper = {};
+  for (const [k, v] of Object.entries(env)) upper[k.toUpperCase()] = v;
+  return value.replace(/%([^%]+)%/g, (whole, name) => upper[name.toUpperCase()] ?? whole);
+}
+
+/**
+ * Windows: the helper's own PATH was fixed when it started, so a tool the user
+ * installed afterwards (Claude's installer edits the user PATH in the registry)
+ * would look "not installed". Merge the current PATH with the user and machine
+ * PATH read fresh from the registry (`reg query`, 1s bound, never throws),
+ * plus Claude's own install folder `~\.local\bin`. Duplicates (case-insensitive)
+ * are dropped, the current PATH keeps first place.
+ * @param {{ env: NodeJS.ProcessEnv, run: typeof execFileSync }} deps
+ * @returns {string}
+ */
+export function resolveWindowsPath({ env, run }) {
+  const parts = [];
+  const seen = new Set();
+  const add = (dir) => {
+    const d = String(dir).trim().replace(/^"(.*)"$/, "$1");
+    if (!d || seen.has(d.toLowerCase())) return;
+    seen.add(d.toLowerCase());
+    parts.push(d);
+  };
+  for (const d of (env.PATH || env.Path || "").split(";")) add(d);
+  for (const key of WIN_REG_KEYS) {
+    try {
+      const out = run("reg", ["query", key, "/v", "Path"], {
+        encoding: "utf8",
+        timeout: 1000,
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+      });
+      for (const d of expandWinVars(parseRegPath(out), env).split(";")) add(d);
+    } catch {
+      /* no registry access: keep what we have */
+    }
+  }
+  add(path.join(env.USERPROFILE || os.homedir(), ".local", "bin"));
+  return parts.join(";");
+}
+
 /**
  * Capture the user's LOGIN shell PATH (best effort, bounded, never throws)
  * and append the fallback dirs — mirrors resolveSpawnEnv()'s algorithm
@@ -46,8 +101,8 @@ export function fallbackBinDirs() {
 export function resolveLoginShellPath(opts = {}) {
   const env = opts.env || process.env;
   const platform = opts.platform || process.platform;
-  if (platform === "win32") return env.PATH || "";
   const run = opts.run || execFileSync;
+  if (platform === "win32") return resolveWindowsPath({ env, run });
   const shell = opts.shell || env.SHELL || "/bin/zsh";
   let shellPath = "";
   try {

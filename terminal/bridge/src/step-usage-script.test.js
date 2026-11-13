@@ -45,8 +45,8 @@ test("the text must be a short sh script without NUL bytes", () => {
 });
 
 test("the folder follows CLAUDE_CONFIG_DIR, else ~/.claude, and a relative folder is refused", () => {
-  assert.equal(stepUsageScriptDir({}, "/Users/x"), "/Users/x/.claude/vibecodes");
-  assert.equal(stepUsageScriptDir({ CLAUDE_CONFIG_DIR: "/opt/cc" }, "/Users/x"), "/opt/cc/vibecodes");
+  assert.equal(stepUsageScriptDir({}, "/Users/x"), path.join("/Users/x", ".claude", "vibecodes"));
+  assert.equal(stepUsageScriptDir({ CLAUDE_CONFIG_DIR: "/opt/cc" }, "/Users/x"), path.join("/opt/cc", "vibecodes"));
   assert.equal(stepUsageScriptDir({ CLAUDE_CONFIG_DIR: "relative/dir" }, "/Users/x"), null);
 });
 

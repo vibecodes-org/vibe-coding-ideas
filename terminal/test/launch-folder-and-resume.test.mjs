@@ -27,6 +27,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent, winEnv, killBridge, rmDir, macWording } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const SECRET = "launch-folder-resume-test-secret";
@@ -37,7 +38,7 @@ const PROMPT = ["Set up VibeCodes and pick up board work.", "", "1. Connect the 
 
 function tmpDir(t, prefix) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmDir(dir));
   return dir;
 }
 
@@ -81,7 +82,7 @@ async function launch(t, { home, appUrl, link }) {
   const shim = path.join(fakeBin, "shim.mjs");
   fs.writeFileSync(shim, `process.stdout.write("RUN_BEGIN"+JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd()})+"RUN_END\\n");process.stdin.resume();\n`);
   for (const name of ["claude", "codex"]) {
-    fs.writeFileSync(path.join(fakeBin, name), `#!/bin/sh\nexec "${process.execPath}" "${shim}" "$@"\n`, { mode: 0o755 });
+    writeFakeAgent(fakeBin, name, shim);
   }
   const session = `lfr-${Math.random().toString(36).slice(2, 8)}`;
   const tokens = await mintSessionTokens({ sub: "user-LFR", idea: "idea-LFR", sid: session, secret: SECRET });
@@ -99,19 +100,19 @@ async function launch(t, { home, appUrl, link }) {
   let stderr = "";
   const bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
     cwd: home,
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { ...winEnv(home), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: home, SHELL: "/usr/bin/false", BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "pipe"],
   });
   bridge.stderr.setEncoding("utf8");
   bridge.stderr.on("data", (d) => (stderr += d));
   t.after(async () => {
     try { browser.terminate(); } catch { /* ignore */ }
-    if (bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     await relay.close();
   });
   await waitForText(() => buf, "RUN_END", 30000).catch((e) => { throw new Error(`${e.message}\nbridge log:\n${stderr}\nbuf:\n${buf}`); });
   const run = JSON.parse(buf.match(/RUN_BEGIN(.*?)RUN_END/s)[1]);
-  return { ...run, buf, textFrames, stderr };
+  return { ...run, buf: macWording(buf), textFrames, stderr };
 }
 
 const promptOf = (argv) => argv.find((a) => a.includes("Find work")) ?? "";

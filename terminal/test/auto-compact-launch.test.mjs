@@ -29,6 +29,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
+import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -41,8 +42,7 @@ const AGENTS = { [AGENT_NAME]: { description: "probe", prompt: "You are the prob
 function makeFakeAgentBin(claudeVersion = "2.1.221 (Claude Code)") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-fake-agents-"));
   for (const name of ["claude", "codex"]) {
-    const version = name === "claude" ? `if [ "$1" = "--version" ]; then echo "${claudeVersion}"; exit 0; fi\n` : "";
-    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\n${version}exec "${process.execPath}" "${ARGV_CMD}" "$@"\n`, { mode: 0o755 });
+    writeFakeAgent(dir, name, ARGV_CMD, name === "claude" ? { version: claudeVersion } : {});
   }
   return dir;
 }
@@ -103,11 +103,11 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   let relay, bridge, browser;
   t.after(async () => {
     try { browser?.terminate(); } catch { /* ignore */ }
-    if (bridge && bridge.exitCode === null) bridge.kill("SIGKILL");
+    killBridge(bridge);
     if (relay) await relay.close();
-    fs.rmSync(fakeBin, { recursive: true, force: true });
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(tmp, { recursive: true, force: true });
+    rmDir(fakeBin);
+    rmDir(cwd);
+    rmDir(tmp);
   });
   const tokens = await mintSessionTokens({ sub: owner, idea: "idea-AC", sid: session, secret: SECRET });
   relay = await startStandinRelay({ port: 0, secret: SECRET });
@@ -118,7 +118,7 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   handle.getBuf = () => buf;
   await once(browser, "open");
   bridge = spawn(process.execPath, [BRIDGE_ENTRY, "--launch-url", launchUrl], {
-    env: { PATH: `${fakeBin}:${process.env.PATH}`, HOME: process.env.HOME, SHELL: shell, TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
+    env: { ...winEnv(), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: process.env.HOME, SHELL: shell, TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: appUrl },
     stdio: ["ignore", "ignore", "ignore"],
   });
   handle.bridge = bridge;

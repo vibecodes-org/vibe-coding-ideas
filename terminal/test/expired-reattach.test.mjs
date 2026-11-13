@@ -63,12 +63,12 @@ const hasFrame = (leg, pred) => leg.texts.some(pred);
 
 /** Mint a token pair with a tiny TTL, then wait until it is PROVABLY expired. */
 async function mintAndAge({ sub, sid }) {
-  const tokens = await mintSessionTokens({ sub, idea: "idea-ER", sid, secret: SECRET, ttlSeconds: 1 });
+  const tokens = await mintSessionTokens({ sub, idea: "idea-ER", sid, secret: SECRET, ttlSeconds: 3 });
   return {
     tokens,
     ageOut: async () => {
-      // exp = floor(mint-time)+1; 1.6s later floor(now) >= exp is guaranteed.
-      await sleep(1600);
+      // exp = floor(mint-time)+3 (3s leaves a slow CI runner time to connect first); 3.6s later floor(now) >= exp is guaranteed.
+      await sleep(3600);
       assert.ok(Math.floor(Date.now() / 1000) >= tokens.exp, "tokens must be past exp before the reattach");
     },
   };

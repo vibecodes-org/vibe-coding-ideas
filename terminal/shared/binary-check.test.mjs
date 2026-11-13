@@ -8,7 +8,8 @@ import path from "node:path";
 import { resolveBinaryOnPath, isBinaryInstalled } from "./binary-check.mjs";
 
 function makeFakeBin(dir, name) {
-  const p = path.join(dir, name);
+  // Windows finds programs by extension (PATHEXT), so the fake needs .exe there.
+  const p = path.join(dir, process.platform === "win32" ? `${name}.exe` : name);
   fs.writeFileSync(p, "#!/bin/sh\necho fake\n", { mode: 0o755 });
   return p;
 }
@@ -29,7 +30,7 @@ test("checks multiple PATH dirs in order, first match wins", () => {
   const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-b-"));
   const binB = makeFakeBin(dirB, "codex");
   try {
-    assert.equal(resolveBinaryOnPath("codex", `${dirA}:${dirB}`), binB);
+    assert.equal(resolveBinaryOnPath("codex", `${dirA}${path.delimiter}${dirB}`), binB);
   } finally {
     fs.rmSync(dirA, { recursive: true, force: true });
     fs.rmSync(dirB, { recursive: true, force: true });
@@ -46,7 +47,7 @@ test("missing binary -> null / false", () => {
   }
 });
 
-test("a non-executable file is not treated as installed", () => {
+test("a non-executable file is not treated as installed", { skip: process.platform === "win32" && "Windows has no executable bit (PATHEXT decides; see the win32 tests)" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-noexec-"));
   const p = path.join(dir, "codex");
   fs.writeFileSync(p, "not executable", { mode: 0o644 });
@@ -95,11 +96,11 @@ test("an absolute path that doesn't exist is reported missing, not thrown", () =
 
 test("relative/empty PATH entries are skipped, not treated as cwd", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-rel-"));
-  makeFakeBin(dir, "codex");
+  const fake = makeFakeBin(dir, "codex");
   try {
     // "." and "" entries interleaved must not throw and must still find the
     // real dir later in the list.
-    assert.equal(resolveBinaryOnPath("codex", `.::${dir}`), path.join(dir, "codex"));
+    assert.equal(resolveBinaryOnPath("codex", `.${path.delimiter}${path.delimiter}${dir}`), fake);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

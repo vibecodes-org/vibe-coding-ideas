@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Launch link length probe</title>
+<!-- Run this on a real Windows PC with the helper installed. Each button opens a
+vibecodes://probe?len=N&pad=xxxx link of exactly N characters. The helper logs
+the length it received; the largest N that arrives intact is the browser's limit.
+If anything under 2700 gets cut, the plan's fallback (a short one-time launch id
+fetched from the server) is needed. -->
+<h1>Launch link length probe</h1>
+<div id="out"></div>
+<script>
+  const out = document.getElementById("out");
+  for (const n of [2000, 2083, 2400, 2700, 3000]) {
+    const head = `vibecodes://probe?len=${n}&pad=`;
+    const url = head + "x".repeat(n - head.length);
+    const b = document.createElement("button");
+    b.textContent = `Open ${url.length}-character link`;
+    b.onclick = () => { location.href = url; };
+    out.appendChild(b);
+    out.appendChild(document.createElement("br"));
+  }
+</script>

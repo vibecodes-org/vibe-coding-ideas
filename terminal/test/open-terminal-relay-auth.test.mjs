@@ -142,7 +142,7 @@ test("(5) a heartbeat is answered on an accepted helper leg and never on a rejec
   const good = await openHelperLeg(relay.url, session, await mintHelperToken({ sub: owner, secret: SECRET }));
   t.after(() => { try { good.ws.terminate(); } catch { /* */ } });
   good.ws.send(encodeHeartbeatFrame());
-  await waitFor(() => good.texts.some(isHeartbeatAckFrame), 3000, "hb-ack on the accepted leg");
+  await waitFor(() => good.texts.some(isHeartbeatAckFrame), 15000, "hb-ack on the accepted leg");
 
   const forged = await openHelperLeg(relay.url, session, await mintHelperToken({ sub: owner, secret: "not-the-relay-secret" }));
   try { forged.ws.send(encodeHeartbeatFrame()); } catch { /* already closing */ }

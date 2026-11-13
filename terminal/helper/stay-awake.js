@@ -17,8 +17,8 @@ function decideStayAwake(busyCount, currentlyHeld) {
 }
 
 /** The menu-bar line shown only while the lock is held. */
-function stayAwakeLabel(busyCount) {
-  return `Keeping this Mac awake: ${busyCount} ${busyCount === 1 ? "agent" : "agents"} working`;
+function stayAwakeLabel(busyCount, platform = process.platform) {
+  return `Keeping ${platform === "win32" ? "this PC" : "this Mac"} awake: ${busyCount} ${busyCount === 1 ? "agent" : "agents"} working`;
 }
 
 module.exports = { decideStayAwake, stayAwakeLabel };

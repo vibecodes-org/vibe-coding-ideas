@@ -51,7 +51,8 @@ const { pathToFileURL } = require("node:url");
 const { shouldRegisterProtocolInDev } = require("./proto-reg");
 const lifecycle = require("./lifecycle");
 const stayAwake = require("./stay-awake");
-const { TRAY_ICON_PNG_BASE64 } = require("./tray-icon");
+const { TRAY_ICON_PNG_BASE64, TRAY_ICON_WIN_PNG_BASE64 } = require("./tray-icon");
+const { urlFromArgv: urlFromArgvImpl } = require("./launch-argv");
 const { createPeerRouter } = require("./peer-router");
 
 const LAUNCH_PREFIX = "vibecodes://";
@@ -528,13 +529,13 @@ function updateLingerTimer() {
  */
 function reapGrandchild(pid, why) {
   const p = (async () => {
-    const { pidAlive, reapPidGroupEscalated } = await reapMod();
+    const { pidAlive, reapProcessEscalated } = await reapMod();
     if (!pidAlive(pid)) {
       log("debug", "grandchild already dead", { pid, why });
       return;
     }
     log("warn", "bridge gone but its PTY child is still alive — escalating", { pid, why });
-    const res = await reapPidGroupEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
+    const res = await reapProcessEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
     log(res.confirmedDead ? "info" : "error", "grandchild reap finished", {
       pid,
       stage: res.stage,
@@ -972,7 +973,7 @@ async function handleOpenTerminalUrl(rawUrl) {
 // Pull a vibecodes:// link out of an argv array (cold launch on macOS dev /
 // Windows, and the second-instance forward).
 function urlFromArgv(argv) {
-  return argv.find((a) => typeof a === "string" && a.startsWith(LAUNCH_PREFIX));
+  return urlFromArgvImpl(argv, LAUNCH_PREFIX);
 }
 
 // ── the standing control connection (design §2/§3) ────────────────────────────
@@ -1314,7 +1315,11 @@ let tray = null;
 /** Apply everything "Keep helper ready" implies: login item, tray, the linger timer. */
 function applyAlwaysOnEffects() {
   try {
-    app.setLoginItemSettings({ openAtLogin: alwaysOn });
+    // Windows: start quietly at login (the helper never opens a window anyway;
+    // `--hidden` just marks the start as automatic, not a link click).
+    app.setLoginItemSettings(
+      process.platform === "win32" ? { openAtLogin: alwaysOn, args: ["--hidden"] } : { openAtLogin: alwaysOn },
+    );
   } catch (e) {
     // Non-fatal (e.g. sandboxed/dev environments can reject this) — the
     // setting itself still governs the linger timer either way.
@@ -1413,8 +1418,16 @@ function createTray() {
     refreshTray();
     return;
   }
-  const icon = nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_PNG_BASE64, "base64"));
-  icon.setTemplateImage(true);
+  let icon;
+  if (process.platform === "win32") {
+    // Light icon by the clock; no template-image tinting exists on Windows.
+    icon = nativeImage
+      .createFromBuffer(Buffer.from(TRAY_ICON_WIN_PNG_BASE64, "base64"))
+      .resize({ width: 16, height: 16 });
+  } else {
+    icon = nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_PNG_BASE64, "base64"));
+    icon.setTemplateImage(true);
+  }
   tray = new Tray(icon);
   refreshTray();
 }
@@ -1544,11 +1557,11 @@ if (!gotLock) {
     (async () => {
       try {
         const inflight = [...activeReaps];
-        const { pidAlive, reapPidGroupEscalated } = await reapMod();
+        const { pidAlive, reapProcessEscalated } = await reapMod();
         await Promise.all(
           pids.map(async (pid) => {
             if (!pidAlive(pid)) return;
-            const res = await reapPidGroupEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
+            const res = await reapProcessEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
             log("info", "before-quit reaped grandchild", { pid, stage: res.stage, confirmedDead: res.confirmedDead });
           }),
         );
