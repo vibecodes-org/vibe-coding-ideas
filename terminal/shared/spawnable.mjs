@@ -12,7 +12,9 @@
 //   2. only if the shim is not the standard npm shape do we fall back to
 //      `cmd.exe /d /s /c "<shim> <args>"` with every argument escaped for cmd.
 //      cmd cannot carry a newline in a command line, so newlines become spaces
-//      there (reported via `collapsedNewlines`).
+//      there (reported via `collapsedNewlines`). cmd also expands `%...%`
+//      forms and nothing can escape them, so a `%` anywhere in that fallback
+//      makes toSpawnable throw (code CMD_PERCENT_REFUSED) instead of launching.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -87,6 +89,17 @@ export function toSpawnable(resolvedPath, args, opts = {}) {
     const sibling = path.win32.join(shimDir, "node.exe");
     const node = exists(sibling) ? sibling : opts.findNode?.(shimDir) || null;
     if (node) return { file: node, args: [script, ...args], via: "node-shim" };
+  }
+  // cmd expands %VAR%, %VAR:~0% and %VAR:a=b% inside a command line even when
+  // the text is quoted, and the expanded value lands unescaped (a value holding
+  // & or | would then run as a command). No escape works for % on a command
+  // line, so the fallback refuses any % (in the path or an argument).
+  if ([resolvedPath, ...args].some((a) => String(a).includes("%"))) {
+    const err = new Error(
+      "Refusing to start this program through cmd.exe: its launcher is not the standard npm shape and a '%' in the command line would be expanded by cmd.",
+    );
+    err.code = "CMD_PERCENT_REFUSED";
+    throw err;
   }
   const collapsedNewlines = args.some((a) => /[\r\n]/.test(a));
   const line = [escapeCmdCommand(resolvedPath), ...args.map((a) => escapeCmdArg(String(a).replace(/\r?\n|\r/g, " ")))].join(" ");

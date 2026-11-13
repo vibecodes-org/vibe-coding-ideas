@@ -93,3 +93,24 @@ test("cmd fallback flattens newlines (cmd cannot carry them) and says so", () =>
   const none = toSpawnable("C:\\t\\tool.bat", ["one two"], { ...WIN, readFile: () => "x" });
   assert.equal(none.collapsedNewlines, false);
 });
+
+test("cmd fallback refuses any % (cmd expands %VAR%, %VAR:~0%, %VAR:a=b%)", () => {
+  for (const bad of ["%PATH%", "%PATH:~0%", "%PATH:a=b%", "100%"]) {
+    assert.throws(
+      () => toSpawnable("C:\\t\\tool.cmd", ["x", bad], { ...WIN, readFile: () => "x" }),
+      (e) => e.code === "CMD_PERCENT_REFUSED",
+      bad,
+    );
+  }
+  assert.throws(() => toSpawnable("C:\\t%x%\\tool.cmd", ["a"], { ...WIN, readFile: () => "x" }));
+});
+
+test("a % in the prompt is fine on the node-shim route (no shell involved)", () => {
+  const r = toSpawnable("C:\\npm\\claude.cmd", ["100%", "%PATH:~0%"], {
+    ...WIN,
+    readFile: () => NPM_SHIM,
+    exists: () => true,
+  });
+  assert.equal(r.via, "node-shim");
+  assert.deepEqual(r.args.slice(1), ["100%", "%PATH:~0%"]);
+});
