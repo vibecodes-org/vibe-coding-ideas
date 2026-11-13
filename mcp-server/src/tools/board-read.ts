@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
-import { pickCurrentRunKey, pickNextOpenStep } from "../../../src/lib/workflow-current-run";
+import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
 import { fetchAllRows } from "../../../src/lib/db-helpers";
 import type { McpContext } from "../context";
-import { noWorkflowInstruction } from "../lib/no-workflow";
+import { buildWorkflowInstruction } from "../lib/workflow-instruction";
 import {
   groupStepComments,
   type StepCommentRow,
@@ -401,47 +401,14 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   const workflow_suggestions = await fetchOpenSuggestions(ctx, params.task_id);
 
   // Workflow instruction for agents (counts cover the live attempt only, the
-  // same one claim_next_step works in).
-  const liveSteps = allSteps.filter(inCurrentRun);
+  // same one claim_next_step works in). Shared with create_task / add_to_task.
   const steps = allSteps;
-  const pendingCount = liveSteps.filter((s) => s.status === "pending").length;
-  const hasApprovalGates = liveSteps.some(
-    (s) => s.human_check_required && s.status !== "completed" && s.status !== "skipped"
-  );
-
-  const nextOpen = pickNextOpenStep(
-    allSteps as unknown as Array<{
-      id: string;
-      run_id: string | null;
-      created_at: string | null;
-      status: string;
-      step_order: number | null;
-      position: number | null;
-      title: string;
-    }>
-  );
-
-  let workflow_instruction: string | null = null;
-  if (nextOpen?.status === "failed") {
-    workflow_instruction =
-      `This task's workflow has stopped: step ${nextOpen.step_order ?? ""} "${nextOpen.title}" failed. ` +
-      `Do NOT claim further steps or begin implementation. Tell the user; they can retry the failed step on the card, or send the work back.`;
-  } else if (pendingCount > 0) {
-    workflow_instruction =
-      `This task has a workflow with ${liveSteps.length} steps (${pendingCount} pending). ` +
-      `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +
-      `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
-      (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
-  } else if (liveSteps.length === 0) {
-    if (workflow_suggestions.length > 0) {
-      // Open suggestion + no steps (AC-20): suppress the self-assign instruction.
-      workflow_instruction =
-        `This task has an unresolved workflow suggestion. Do NOT begin work or assign yourself. ` +
-        `Surface it to a human to Keep / Replace / Remove. Agents cannot resolve suggestions.`;
-    } else {
-      workflow_instruction = await noWorkflowInstruction(ctx, params.task_id, params.idea_id);
-    }
-  }
+  const workflow_instruction = await buildWorkflowInstruction(ctx, {
+    taskId: params.task_id,
+    ideaId: params.idea_id,
+    allSteps,
+    suggestionCount: workflow_suggestions.length,
+  });
 
   const taskRecord = task as Record<string, unknown>;
   const assigneeRow = (taskRecord.users ?? null) as Record<string, unknown> | null;
