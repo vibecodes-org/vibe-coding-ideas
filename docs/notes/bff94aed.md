@@ -49,3 +49,17 @@ Ruled out:
 - UI save messages: `src/components/board/workflows-tab.tsx` (~1003), `src/components/board/template-step-dialog.tsx` (~100).
 - Guide: `src/app/guide/workflows/page.tsx` (~686) and check `src/app/guide/mcp-integration/page.tsx`.
 - Live-run rule: `src/lib/workflow-current-run.ts`; SQL twin `workflow_live_run_id`.
+
+## Build notes (stage 1)
+
+Decisions A to E went in at the recommended answers (Nick: "3- yes").
+
+- Migration number is 00212 (latest on master was 00211). It adds one database function, `reshape_workflow_run`, that applies a card's deletes, updates and inserts in one go and refuses (returns `changed`) if the card moved on since it was read. The real-schema run and the production apply are still owed and need Nick's approval. Column names were checked against the live schema read-only.
+- Deviation from the plan: when a gap between matched steps holds the same number of old and new steps, the plan paired them in order as renames. That contradicted acceptance check 1 (a removed step plus a new step of a different kind must be a delete plus an add). Pairing now also requires the roles to match.
+- Steps whose titles match but cross over (a reorder) are matched by title using the longest in-order run, then a leftover pass, so a reorder is not read as delete plus add.
+- A card that has not started at all and has a different step count still uses the existing whole-swap function; if it refuses, the careful path runs.
+- `updateWorkflowTemplate` now returns the template plus a `propagation` report so the screen can show the right toast.
+- Toasts use the sonner toast with the wording from the mock (section 2): green and short when all went through; amber and persistent for kept steps or cards changed while saving. They have no screenshot comparison with the mock.
+- Admin library templates (the template editor dialog) have no propagation and are unchanged.
+- Old wording replaced: the two MCP tool descriptions and the guide's "Template Edit Propagation" paragraph. The step edit dialog's help line is still accurate.
+- Not done by design (E): no automatic catch-up of the 45 stranded cards; use the `dry_run` preview on resync first.

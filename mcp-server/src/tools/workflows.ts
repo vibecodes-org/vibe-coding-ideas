@@ -590,6 +590,10 @@ export async function updateWorkflowTemplate(
 
 export const resyncWorkflowTemplateSchema = z.object({
   template_id: z.string().uuid().describe("The template ID to resync"),
+  dry_run: z
+    .boolean()
+    .optional()
+    .describe("When true, change nothing and return a per-card preview of what would be added, removed, kept and renamed"),
 });
 
 export async function resyncWorkflowTemplate(
@@ -617,7 +621,9 @@ export async function resyncWorkflowTemplate(
   }));
 
   // Propagate edits to pending steps
-  const propagation = await propagateTemplateEdits(ctx.supabase, params.template_id, templateSteps);
+  const propagation = await propagateTemplateEdits(ctx.supabase, params.template_id, templateSteps, {
+    dryRun: params.dry_run === true,
+  });
 
   // Rematch bot_id on all affected tasks
   let rematched = 0;
@@ -633,6 +639,10 @@ export async function resyncWorkflowTemplate(
     stepsUpdated: propagation.stepsUpdated,
     runsReplaced: propagation.runsReplaced,
     skippedStructuralMismatch: propagation.skippedStructuralMismatch,
+    keptRemoved: propagation.keptRemoved,
+    changedWhileSaving: propagation.changedWhileSaving,
+    dryRun: propagation.dryRun,
+    preview: propagation.preview,
     rematched,
   };
 }
