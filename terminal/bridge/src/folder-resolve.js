@@ -353,8 +353,13 @@ export function searchForCheckout({ home, repoKey, fs, now, budgetMs = SEARCH_BU
  */
 function allowed(p, home) {
   if (!p || p === "/") return false;
-  const trimmed = p.replace(/\/+$/, "");
-  if (trimmed === home.replace(/\/+$/, "")) return false;
+  const trimmed = p.replace(/[\\/]+$/, "");
+  const homeTrimmed = home.replace(/[\\/]+$/, "");
+  // Windows paths compare case-insensitively and may mix / and \.
+  const same = process.platform === "win32"
+    ? trimmed.replace(/\//g, "\\").toLowerCase() === homeTrimmed.replace(/\//g, "\\").toLowerCase()
+    : trimmed === homeTrimmed;
+  if (same) return false;
   return isPlausibleProjectPath(trimmed);
 }
 

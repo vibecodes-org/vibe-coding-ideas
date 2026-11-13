@@ -16,7 +16,7 @@ test("displayPath shortens the home folder to ~", () => {
   assert.equal(displayPath("/opt/x", HOME), "/opt/x");
 });
 
-test("progress lines match the mock (section 1)", () => {
+test("progress lines match the mock (section 1)", { skip: process.platform === "win32" && "asserts the Mac wording; the PC wording is covered in windows-paths.test.js" }, () => {
   const ctx = { home: HOME, agent: "claude", repoName: "vibe-coding-ideas" };
   assert.equal(strip(progressLine({ kind: "looking", repoName: "vibe-coding-ideas" }, ctx)), "VibeCodes  Looking for vibe-coding-ideas on this Mac…\r\n");
   assert.equal(
@@ -55,7 +55,7 @@ test("the VibeCodes tag is teal (cyan); failure lines are yellow", () => {
   }
 });
 
-test("failure lines name the cause in plain English", () => {
+test("failure lines name the cause in plain English", { skip: process.platform === "win32" && "asserts the Mac wording; the PC wording is covered in windows-paths.test.js" }, () => {
   const ctx = { home: HOME, agent: "claude", repo: REPO, folder: "/Users/you/projects/vibe-coding-ideas", newFolder: "/Users/you/projects/my-new-idea" };
   const text = (f) => failureLines(f, ctx).map(strip).join("");
   assert.equal(text({ reason: "folder-missing" }), "The project folder ~/projects/vibe-coding-ideas isn't on this Mac, so this conversation can't be reopened here.\r\n");
@@ -88,7 +88,7 @@ test("the early-exit line names the agent and the exit code", () => {
   assert.equal(strip(earlyExitLine("codex", 127)), "Codex stopped straight away (exit code 127).\r\n");
 });
 
-test("card 4cd8270f: the end line says when the agent was force-stopped or quit with an error, and nothing on a clean quit", () => {
+test("card 4cd8270f: the end line says when the agent was force-stopped or quit with an error, and nothing on a clean quit", { skip: process.platform === "win32" && "asserts the Mac wording; the PC wording is covered in windows-paths.test.js" }, () => {
   assert.equal(strip(agentEndLine("claude", { exitCode: 0, signal: 9 })), "Claude Code was force-stopped by something else on this Mac (signal 9).\r\n");
   assert.equal(strip(agentEndLine("claude", { exitCode: 0, signal: 15 })), "Claude Code was force-stopped by something else on this Mac (signal 15).\r\n");
   for (const signal of [1, 6, 11]) {
@@ -101,7 +101,7 @@ test("card 4cd8270f: the end line says when the agent was force-stopped or quit 
   assert.equal(agentEndLine("claude", {}), null);
 });
 
-test("the prompt note tells the agent it is already in the folder", () => {
+test("the prompt note tells the agent it is already in the folder", { skip: process.platform === "win32" && "asserts the Mac wording; the PC wording is covered in windows-paths.test.js" }, () => {
   assert.equal(
     promptFolderNote({ path: "/Users/you/code/x", how: "found" }),
     "VibeCodes note: you are already in this board's project folder on this Mac: /Users/you/code/x (found an existing copy). Work here. Ignore any other folder or clone instruction below, and don't cd elsewhere.",

@@ -43,7 +43,7 @@ function tmpRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "vc-mail-test-"));
 }
 
-test("end to end: the command drops a request, the app answers, the command prints it", async () => {
+test("end to end: the command drops a request, the app answers, the command prints it", { skip: process.platform === "win32" && "the same-Mac message command is a shell script; Windows messaging is release 1c" }, async () => {
   const sent = [];
   let box;
   box = createMailbox({
@@ -76,7 +76,7 @@ test("end to end: the command drops a request, the app answers, the command prin
   assert.equal(fs.existsSync(box.dir), false);
 });
 
-test("an error answer makes the command fail", async () => {
+test("an error answer makes the command fail", { skip: process.platform === "win32" && "the same-Mac message command is a shell script; Windows messaging is release 1c" }, async () => {
   let box;
   box = createMailbox({
     tmpRoot: tmpRoot(),
@@ -95,7 +95,7 @@ test("an error answer makes the command fail", async () => {
   }
 });
 
-test("bad requests and an unavailable app are answered without reaching the app", async () => {
+test("bad requests and an unavailable app are answered without reaching the app", { skip: process.platform === "win32" && "the same-Mac message command is a shell script; Windows messaging is release 1c" }, async () => {
   const sent = [];
   const box = createMailbox({ tmpRoot: tmpRoot(), pollMs: 20, send: (m) => (sent.push(m), false) });
   try {
@@ -113,7 +113,7 @@ test("bad requests and an unavailable app are answered without reaching the app"
   }
 });
 
-test("no answer from the app: the request times out with an error", async () => {
+test("no answer from the app: the request times out with an error", { skip: process.platform === "win32" && "the same-Mac message command is a shell script; Windows messaging is release 1c" }, async () => {
   const box = createMailbox({ tmpRoot: tmpRoot(), pollMs: 20, answerTimeoutMs: 50, send: () => true });
   try {
     const r = await run(box.scriptPath, ["list"]);

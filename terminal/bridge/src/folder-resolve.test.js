@@ -233,10 +233,16 @@ test("repo-less board: an existing hint is used, and mkdir failing is folder-una
   assert.equal(r.reason, "folder-unavailable");
 });
 
+// Folders that must never be a project: the root, home and a top-level folder.
+// Windows has no /tmp or /Users, so use its drive root and C:\\Users.
+function unsafeHints(home) {
+  return process.platform === "win32" ? ["/", home, path.parse(home).root, "C:\\Users"] : ["/", home, "/tmp", "/Users"];
+}
+
 test("never '/', the home folder or a top-level folder", async (t) => {
   const home = tmpHome(t);
   const { deps: d } = deps(home);
-  for (const hint of ["/", home, "/tmp", "/Users"]) {
+  for (const hint of unsafeHints(home)) {
     const r = await resolveWorkspaceFolder({ hint, workspace: null, isResume: false, deps: d });
     assert.equal(r.ok, false, hint);
     assert.equal(r.reason, "folder-not-allowed", hint);
@@ -451,7 +457,7 @@ test("resolveResumeFolder: the same guard as a fresh launch, synchronously", (t)
   fs.mkdirSync(dir, { recursive: true });
   assert.deepEqual(resolveResumeFolder({ hint: dir, fs, homedir: home }), { ok: true, path: dir, how: "saved", alsoFound: [] });
   assert.deepEqual(resolveResumeFolder({ hint: path.join(dir, ".claude", "worktrees", "x"), fs, homedir: home }).path, dir);
-  for (const hint of ["/", home, "/tmp", "/Users"]) {
+  for (const hint of unsafeHints(home)) {
     assert.equal(resolveResumeFolder({ hint, fs, homedir: home }).reason, "folder-not-allowed", hint);
   }
   assert.equal(resolveResumeFolder({ hint: path.join(home, "gone"), fs, homedir: home }).reason, "folder-missing");
