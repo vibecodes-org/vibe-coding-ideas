@@ -23,7 +23,7 @@
 
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
