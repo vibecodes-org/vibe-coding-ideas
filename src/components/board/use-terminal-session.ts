@@ -78,8 +78,6 @@ import {
   isBridgeVersionFrame,
   isBridgeCwdFrame,
   parseBridgeCwdFrame,
-  isPeerNoticeFrame,
-  parsePeerNoticeName,
   isHeartbeatAckFrame,
   isInputEnabled,
   isPeerDegradedFrame,
@@ -605,8 +603,6 @@ export interface UseTerminalSessionResult {
    * helper-version.ts) to decide whether to show the update notice.
    */
   helperVersion: string | null;
-  /** Card f0a13bde: "a message arrived" notices seen on this tab, and who from last. */
-  peerNotice?: { count: number; from: string } | null;
   /**
    * Terminal P2 (E2EE) — Phase A "not encrypted yet" signal (design doc,
    * Nick's binding decision 1: no persistent lock icon — this is the ONLY
@@ -805,10 +801,6 @@ export function useTerminalSession(
   // pre-2a helper, which never sends one at all; the dock treats that identically
   // to "known stale" (src/lib/terminal/helper-version.ts).
   const [helperVersion, setHelperVersion] = useState<string | null>(null);
-  // Session-to-session messages (card f0a13bde): how many "a message arrived"
-  // notices this tab has seen, and who from the latest. The dock turns a change
-  // into the "message" pill on a background tab.
-  const [peerNotice, setPeerNotice] = useState<{ count: number; from: string } | null>(null);
   // Terminal P2 (E2EE): true once the CURRENT attach's bridge has announced
   // `e2ee:true` on its bridge-version frame. Reset to false at the start of
   // every openBrowserLeg() attach (see that function).
@@ -2275,11 +2267,6 @@ export function useTerminalSession(
             }
             return;
           }
-          if (isPeerNoticeFrame(ev.data)) {
-            const from = parsePeerNoticeName(ev.data);
-            setPeerNotice((prev) => ({ count: (prev?.count ?? 0) + 1, from }));
-            return;
-          }
           if (isBridgeCwdFrame(ev.data)) {
             // Card 6b2cb8ac: the bridge resolved the project folder on the Mac
             // (and already recorded it server-side) — this tab's folder for
@@ -3541,7 +3528,6 @@ export function useTerminalSession(
     peerDegraded,
     longWait,
     helperVersion,
-    peerNotice,
     // Terminal P2 (E2EE) — Phase A "not encrypted yet" signal (design doc,
     // Nick's binding decision 1: NO persistent lock icon — this is true ONLY
     // while connected, this session has a key, and the bridge hasn't (yet,

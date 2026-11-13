@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { WorkflowTemplateStep } from "@/types/database";
+import type { PropagationSummary } from "@/lib/template-propagation-message";
 import {
   validateWorkflowTemplateName,
   validateWorkflowTemplateSteps,
@@ -211,8 +212,15 @@ export async function updateWorkflowTemplate(
   if (error) throw new Error(error.message);
 
   // Propagate step edits to pending steps in active workflow runs, then rematch
+  let report: PropagationSummary | null = null;
   if (updates.steps !== undefined) {
     const propagation = await propagateTemplateEdits(supabase, templateId, patch.steps as WorkflowTemplateStep[]);
+    report = {
+      runsUpdated: propagation.runsUpdated,
+      runsReplaced: propagation.runsReplaced,
+      keptRemoved: propagation.keptRemoved,
+      changedWhileSaving: propagation.changedWhileSaving,
+    };
     // Rematch bot_id on affected tasks (use internal variant — we already have auth)
     for (const taskId of propagation.affectedTaskIds) {
       try {
@@ -223,7 +231,7 @@ export async function updateWorkflowTemplate(
 
   revalidatePath(`/ideas/${data.idea_id}/board`);
 
-  return data;
+  return { ...data, propagation: report };
 }
 
 export async function deleteWorkflowTemplate(
@@ -559,7 +567,7 @@ export async function rematchWorkflowAgents(taskId: string) {
 
 // ─── Resync Template ───
 
-export async function resyncWorkflowTemplate(templateId: string) {
+export async function resyncWorkflowTemplate(templateId: string, options: { dryRun?: boolean } = {}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -579,7 +587,7 @@ export async function resyncWorkflowTemplate(templateId: string) {
   const steps = template.steps as WorkflowTemplateStep[];
 
   // Propagate edits to pending steps
-  const propagation = await propagateTemplateEdits(supabase, templateId, steps);
+  const propagation = await propagateTemplateEdits(supabase, templateId, steps, { dryRun: options.dryRun === true });
 
   // Rematch bot_id on all affected tasks (use internal variant — we already have auth)
   let rematched = 0;
@@ -597,6 +605,10 @@ export async function resyncWorkflowTemplate(templateId: string) {
     stepsUpdated: propagation.stepsUpdated,
     runsReplaced: propagation.runsReplaced,
     skippedStructuralMismatch: propagation.skippedStructuralMismatch,
+    keptRemoved: propagation.keptRemoved,
+    changedWhileSaving: propagation.changedWhileSaving,
+    preview: propagation.preview,
+    dryRun: propagation.dryRun,
     rematched,
   };
 }

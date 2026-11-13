@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Template Edits Reach Running Cards</title>
+<style>
+  :root {
+    --bg: #09090b; --surface: #18181b; --surface-2: #27272a; --border: #27272a;
+    --text: #fafafa; --muted: #a1a1aa; --dim: #71717a;
+    --green: #10b981; --amber: #f59e0b; --red: #ef4444; --blue: #3b82f6; --violet: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.55; padding: 2rem 16px; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: .4rem; }
+  h2 { font-size: 1.2rem; margin: 2.2rem 0 .8rem; color: var(--violet); border-bottom: 1px solid var(--border); padding-bottom: .4rem; }
+  h3 { font-size: 1rem; margin: 1.2rem 0 .5rem; }
+  p, li { color: var(--muted); font-size: .92rem; }
+  p { margin-bottom: .7rem; }
+  ul { padding-left: 1.3rem; margin-bottom: .8rem; }
+  strong { color: var(--text); }
+  .lede { font-size: 1rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+  .panel h4 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-bottom: .6rem; }
+  .step { display: flex; align-items: center; gap: .6rem; padding: .5rem .6rem; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: .4rem; background: #111113; font-size: .88rem; }
+  .num { width: 1.4rem; height: 1.4rem; border-radius: 999px; display: grid; place-items: center; font-size: .72rem;
+    background: var(--surface-2); color: var(--muted); flex-shrink: 0; }
+  .title { flex: 1; }
+  .role { color: var(--dim); font-size: .78rem; }
+  .pill { font-size: .7rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .done { color: var(--green); border-color: rgba(16,185,129,.35); background: rgba(16,185,129,.08); }
+  .working { color: var(--blue); border-color: rgba(59,130,246,.35); background: rgba(59,130,246,.08); }
+  .waiting { color: var(--muted); border-color: #3f3f46; }
+  .new { color: var(--violet); border-color: rgba(139,92,246,.4); background: rgba(139,92,246,.1); }
+  .gone { opacity: .45; text-decoration: line-through; }
+  .changed { color: var(--amber); border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.08); }
+  .locked { border-left: 3px solid var(--green); }
+  .note { font-size: .78rem; color: var(--dim); margin-top: .5rem; }
+  .toasts { display: flex; flex-direction: column; gap: .8rem; }
+  .toast { width: 356px; max-width: 100%; background: #0c0c0e; border: 1px solid var(--surface-2); border-radius: 8px;
+    padding: .85rem 1rem; box-shadow: 0 6px 24px rgba(0,0,0,.5); display: flex; gap: .6rem; }
+  .toast .ic { width: 1.1rem; height: 1.1rem; border-radius: 999px; flex-shrink: 0; margin-top: .15rem; }
+  .toast .t { font-size: .86rem; font-weight: 600; color: var(--text); }
+  .toast .d { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+  .ic-ok { background: var(--green); } .ic-warn { background: var(--amber); }
+  .caption { font-size: .78rem; color: var(--dim); margin: .2rem 0 .2rem; }
+  .guide { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; }
+  .guide h3 { font-size: 1.25rem; margin-top: 0; }
+  .decision { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--amber);
+    border-radius: 8px; padding: .9rem 1rem; margin: .7rem 0; }
+  .decision b { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+<h1>Template edits reach cards that are already running</h1>
+<p class="lede">Design mock for the card "Handle structural mismatches in template propagation gracefully". Today, if you add or remove a step in a template, every card already part-way through that template is left on the old steps, without telling you. After this change those cards pick up the edit for the work still to come, and the steps already done or being worked on are never touched.</p>
+
+<h2>1. What happens to a running card</h2>
+<p>Example: a template had <strong>Plan, Build, Code review, Release</strong>. You remove "Code review" and add "Security check" after Build. A card has finished Plan and Build is being worked on right now.</p>
+<div class="grid">
+  <div class="panel">
+    <h4>Card before the edit</h4>
+    <div class="step locked"><span class="num">1</span><span class="title">Plan <div class="role">Planner</div></span><span class="pill done">Done</span></div>
+    <div class="step locked"><span class="num">2</span><span class="title">Build <div class="role">Full Stack Engineer</div></span><span class="pill working">Working</span></div>
+    <div class="step"><span class="num">3</span><span class="title">Code review <div class="role">Code Reviewer</div></span><span class="pill waiting">Waiting</span></div>
+    <div class="step"><span class="num">4</span><span class="title">Release <div class="role">QA Engineer</div></span><span class="pill waiting">Waiting</span></div>
+  </div>
+  <div class="panel">
+    <h4>Same card after the edit</h4>
+    <div class="step locked"><span class="num">1</span><span class="title">Plan <div class="role">Planner</div></span><span class="pill done">Done</span></div>
+    <div class="step locked"><span class="num">2</span><span class="title">Build <div class="role">Full Stack Engineer</div></span><span class="pill working">Working</span></div>
+    <div class="step"><span class="num">3</span><span class="title">Security check <div class="role">Security Engineer</div></span><span class="pill new">Added</span></div>
+    <div class="step"><span class="num">4</span><span class="title">Release <div class="role">QA Engineer</div></span><span class="pill waiting">Waiting</span></div>
+    <div class="step gone"><span class="num">&ndash;</span><span class="title">Code review</span><span class="pill waiting">Removed</span></div>
+    <p class="note">The green-edged steps are locked: done, being worked on, waiting for your approval, failed or skipped steps are never changed, moved or removed. The "Added" and "Removed" labels are only in this mock; on the real card the steps simply look like normal waiting steps.</p>
+  </div>
+</div>
+
+<h3>The rules, in plain words</h3>
+<ul>
+  <li><strong>Locked steps never change.</strong> A step that is done, being worked on, waiting for approval, failed or skipped keeps its wording, its place and its agent.</li>
+  <li><strong>Steps still waiting follow the template.</strong> Their wording, role and settings are updated, as today. A step is recognised by its name; a renamed step is recognised by staying in the same place.</li>
+  <li><strong>New template steps are added</strong> to the part of the card still to come, in the template's order.</li>
+  <li><strong>Removed template steps are removed</strong> from the part still to come, but only if nobody has written anything on them. A waiting step with a comment or saved work stays, and the save message says so.</li>
+  <li><strong>A new step placed before work that is already done is not added</strong> (decision A below).</li>
+</ul>
+
+<h2>2. The message after you save a template</h2>
+<p>Today saving says only "Template updated". The new message says what happened to cards that use the template. Same toast as today (bottom right of the screen, disappears after a few seconds); only the wording underneath is new.</p>
+<div class="grid">
+  <div class="toasts">
+    <p class="caption">Everything applied</p>
+    <div class="toast"><span class="ic ic-ok"></span><div><div class="t">Template updated</div><div class="d">Updated 12 cards that use it.</div></div></div>
+    <p class="caption">No cards use it (unchanged from today)</p>
+    <div class="toast"><span class="ic ic-ok"></span><div><div class="t">Template updated</div></div></div>
+  </div>
+  <div class="toasts">
+    <p class="caption">Something was held back (amber, stays until closed)</p>
+    <div class="toast"><span class="ic ic-warn"></span><div><div class="t">Template updated</div><div class="d">Updated 11 cards. 1 card kept a step you removed, because it has comments on it: "Fix login redirect".</div></div></div>
+    <div class="toast"><span class="ic ic-warn"></span><div><div class="t">Template updated</div><div class="d">Updated 10 cards. 2 cards changed while saving and were left as they were; save again to retry: "Billing export", "Dark mode toggle".</div></div></div>
+  </div>
+</div>
+<p class="note">At most three card names are listed, then "and N more". The single-step editor's "Step updated" message gets the same wording underneath.</p>
+
+<h2>3. Guide page wording (Workflows guide, "Template Edit Propagation")</h2>
+<div class="guide">
+  <h3>Template Edit Propagation</h3>
+  <p>When you edit a template's steps, cards already using it follow the edit for the work they have not reached yet. Steps that are done, being worked on, waiting for approval, failed or skipped are never changed. Waiting steps get the new wording and settings; a step is recognised by its name, or by its place if you renamed it. Steps you add are added to the part of the card still to come, and steps you remove are taken out of it, unless someone has commented on that step or saved work on it. A step you add before work a card has already done is not added to that card. A card that has not started at all is simply switched to the new steps. When a step's role changes, its agent is re-picked for the new role; a step whose role is unchanged keeps its agent, including a hand-picked one.</p>
+</div>
+
+<h2>4. Decisions for Nick</h2>
+<div class="decision"><b>A. A new step placed before work the card has already done.</b> Recommended: don't add it to that card (the card is past that point). Alternative: add it as the next step to run, so it runs before the rest of the remaining work.</div>
+<div class="decision"><b>B. Removed steps.</b> Recommended: take them off the card if nobody has written on them; keep them if they have comments or saved work. Alternative: never delete, mark them "skipped" so they stay visible.</div>
+<div class="decision"><b>C. Archived cards.</b> Recommended: leave archived cards alone when a template changes. Alternative: keep updating them, as today.</div>
+<div class="decision"><b>D. The save message.</b> Recommended: show the short report above. Alternative: keep "Template updated" and report only to agents.</div>
+<div class="decision"><b>E. Cards already stranded.</b> 45 open, part-way-through cards are on an older version of their template right now. Recommended: don't touch them automatically; this change adds a preview so an agent can show you what a re-sync would do to them first.</div>
+</main>
+</body>
+</html>

@@ -86,7 +86,8 @@ import {
 } from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
-import { buildSessionEnvValue, encodePeerAckFrame, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
+import { buildSessionEnvValue, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
+import { agentInstructions, createMailbox } from "./local-mail.js";
 import {
   CODEX_HOOK_ENV,
   codexHookArgs,
@@ -734,8 +735,19 @@ let sessionAgentFlags = [];
 // placed before the agents flags, with the prompt still last.
 let autoCompactFlags = [];
 // Session-to-session messages (card f0a13bde): Claude launches carry `--settings`
-// with http hooks that report to this bridge's own loopback listener.
+// with http hooks that report to this bridge's own loopback listener, Codex
+// launches carry pre-approved command hooks; both are told how to message.
 let peerHookFlags = [];
+// The session's mailbox (see local-mail.js), removed when this bridge exits.
+/** @type {ReturnType<typeof createMailbox> | null} */
+let mailbox = null;
+function closeMailbox() {
+  mailbox?.close();
+  mailbox = null;
+}
+process.on("exit", closeMailbox);
+// Tells the Mac app who this session is (again once the folder is known).
+let sayPeerHello = () => {};
 const launchFlags = () => [...autoCompactFlags, ...sessionAgentFlags, ...peerHookFlags];
 let spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
 
@@ -1062,6 +1074,7 @@ async function main() {
 
   function finishShutdown(code, why) {
     removeAgentFiles();
+    closeMailbox();
     clearInterval(busyTimer);
     clearInterval(wakeTimer);
     busyTracker.stop();
@@ -1399,24 +1412,33 @@ async function main() {
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
     }
   }
-  // Session-to-session messages (card f0a13bde). Needs the session key: it
-  // signs what may arrive here and proves who is sending from this session.
-  // The agent gets VIBECODES_SESSION=<sid>.<proof>; Claude and Codex also get
-  // hooks that report their state (so a message is never typed into a yes/no
-  // prompt). Codex's hooks arrive pre-approved (see codexHookArgs).
+  // The session proof (VIBECODES_SESSION=<sid>.<proof>) lets offer_next_card
+  // tell which session is calling. Made from the session key.
+  const envValue = E2EE_KEY && !term ? buildSessionEnvValue(E2EE_KEY, SESSION) : null;
+  if (envValue) cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), VIBECODES_SESSION: envValue };
+  // Session-to-session messages (card f0a13bde), only inside the Mac app: it
+  // passes messages between its own sessions, never over the network. Claude
+  // and Codex get hooks that report their state (so a message is never typed
+  // into a yes/no prompt; Codex's arrive pre-approved, see codexHookArgs), a
+  // mailbox command for sending, and a launch note saying how to use it.
   /** @type {ReturnType<typeof createPeerBridge> | null} */
   let peerBridge = null;
-  if (E2EE_KEY && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
-    const envValue = buildSessionEnvValue(E2EE_KEY, SESSION);
-    cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), VIBECODES_SESSION: envValue };
+  const toApp = (m) => {
+    if (!process.send || !process.channel) return false;
+    try { process.send(m); return true; } catch { return false; }
+  };
+  if (process.send && process.channel && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
+    try {
+      mailbox = createMailbox({ send: toApp, log });
+    } catch (e) {
+      log("warn", "session mailbox unavailable — this session cannot send messages", { err: String(e?.message || e) });
+    }
     peerBridge = createPeerBridge({
-      key: E2EE_KEY,
-      sid: SESSION,
       agent: AGENT,
       explicitCmd: Boolean(explicitCmd),
       envValue,
       writePty: (d) => { if (term) term.write(d); },
-      sendAck: (frame) => outputBatcher.sendControl(frame),
+      replyCommand: mailbox ? mailbox.scriptPath : "vibecodes-msg",
       log,
       startsIdle: !PROMPT,
     });
@@ -1436,20 +1458,52 @@ async function main() {
           },
           log,
         });
+        const note = mailbox ? agentInstructions(mailbox.scriptPath, AGENT) : null;
         if (AGENT === "codex") {
           // Codex hooks are commands; the listener's address travels in the env.
-          cachedSpawnEnv = { ...cachedSpawnEnv, [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
-          peerHookFlags = codexHookArgs();
+          cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
+          peerHookFlags = [...codexHookArgs(), ...(note ? ["-c", `developer_instructions=${JSON.stringify(note)}`] : [])];
         } else {
-          peerHookFlags = hookSettingsArgs(hooks.port, secret);
+          peerHookFlags = [...hookSettingsArgs(hooks.port, secret), ...(note ? ["--append-system-prompt", note] : [])];
         }
         spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
-        log("info", "peer message hooks listening", { port: hooks.port });
+        log("info", "peer message hooks listening", { port: hooks.port, mailbox: Boolean(mailbox) });
       } catch (e) {
         log("warn", "peer message hooks unavailable — this session cannot receive messages", { err: String(e?.message || e) });
         peerBridge = null;
       }
     }
+    const receiving = peerBridge;
+    sayPeerHello = () => {
+      toApp({
+        type: "peer-hello",
+        sid: SESSION,
+        agent: AGENT,
+        folder: CWD ? path.basename(CWD) : null,
+        canReceive: Boolean(receiving?.canReceive),
+        canSend: Boolean(mailbox),
+      });
+    };
+    process.on("message", (m) => {
+      if (!m || typeof m !== "object") return;
+      if (m.type === "peer-result") {
+        mailbox?.handleResult(m);
+      } else if (m.type === "peer-deliver") {
+        const rid = typeof m.rid === "string" ? m.rid : "";
+        const done = (outcome) => toApp({ type: "peer-outcome", rid, outcome });
+        if (!receiving) {
+          done("cannot-receive");
+          return;
+        }
+        receiving
+          .deliver({ id: rid, from: m.from, text: m.text })
+          .then(done, (e) => {
+            log("warn", "peer message delivery failed", { err: String(e?.message || e) });
+            done("unconfirmed");
+          });
+      }
+    });
+    sayPeerHello();
     const peerTick = setInterval(() => peerBridge?.tick(), 60_000);
     peerTick.unref?.();
   }
@@ -1522,6 +1576,7 @@ async function main() {
     }
     if (res.how === "cloned") progress({ kind: "clone-done" });
     CWD = res.path;
+    sayPeerHello();
     log("info", "project folder ready", { how: res.how, cwd: res.path, alsoFound: res.alsoFound.length });
     const folderSaved = WORKSPACE ? await recordFolder(res.path, res.how) : false;
     if (shuttingDown) return;
@@ -1919,18 +1974,11 @@ async function main() {
         }
         return;
       }
-      // A message from another of this person's sessions (card f0a13bde). Never
-      // typed from here: the bridge checks the signature, then decides how it
-      // reaches the agent. A bridge with no peer support (no key) still answers.
+      // An old-style session message frame (card f0a13bde). Messages now pass
+      // only inside the Mac app, so one arriving from the network is dropped,
+      // never typed.
       if (isPeerBridgeFrameType(text)) {
-        if (peerBridge) {
-          peerBridge.handleFrame(text).catch((e) => log("warn", "peer message handling failed", { err: String(e?.message || e) }));
-        } else {
-          try {
-            const id = JSON.parse(text)?.id;
-            if (typeof id === "string" && id.length <= 64) outputBatcher.sendControl(encodePeerAckFrame(id, "cannot-receive"));
-          } catch { /* not a frame we can answer */ }
-        }
+        log("warn", "old-style session message frame from the network dropped");
         return;
       }
       // TEXT control frame (resize). Never written to the PTY as input.

@@ -5,20 +5,14 @@ import {
   buildPeerHeader,
   buildSessionEnvValue,
   cleanPeerText,
-  encodePeerAckFrame,
-  encodePeerFrame,
+  formatPeerMessage,
   isPeerBridgeFrameType,
-  parsePeerAckFrame,
-  signPeerEnvelope,
+  shortSessionId,
   splitSessionEnvValue,
-  verifyPeerFrame,
   verifySenderProof,
 } from "./peer-message.mjs";
 
 const KEY = "k".repeat(43);
-const NOW = 1_700_000_000_000;
-const env = (over = {}) => ({ id: "11111111-aaaa", to: "target-sid", from: { sid: "s1", name: "Fix login", agent: "codex" }, text: "hello", ts: NOW, ...over });
-const frame = (e = env(), key = KEY) => encodePeerFrame(signPeerEnvelope(key, e));
 
 test("cleanPeerText strips escapes, CR, ETX, DEL and C1 characters and keeps newlines", () => {
   const r = cleanPeerText("a\x1b[31mred\x1b[0m\r\nb\x03c\x7fd\u0085e\u009bf\nline3");
@@ -34,31 +28,18 @@ test("cleanPeerText refuses empty and over-long text", () => {
   assert.deepEqual(cleanPeerText(5), { ok: false, reason: "not-text" });
 });
 
-test("the header is built from the row only and cannot carry a newline or quote", () => {
-  const h = buildPeerHeader({ sid: "abc", name: 'Evil"\nname', agent: "codex" });
+test("the header names the sender by short id and folder, on one line, with the reply command", () => {
+  const h = buildPeerHeader({ sid: "abcdef12-3456", folder: 'Evil"\nname', agent: "codex" }, "/x/vibecodes-msg");
   assert.ok(!h.includes("\n"));
-  assert.match(h, /^\[Message from your session "Evil' name" \(Codex\)\. Not from Nick/);
-  assert.match(h, /send_session_message to "abc"\.\]$/);
+  assert.match(h, /^\[Message from session abcdef12 \(Codex, working in "Evil' name"\)\. Not from the person you work for/);
+  assert.match(h, /Reply with: \/x\/vibecodes-msg send abcdef12 "your reply"\]$/);
+  assert.equal(shortSessionId("abcdef12-3456"), "abcdef12");
 });
 
-test("a good frame verifies", () => {
-  const r = verifyPeerFrame({ key: KEY, text: frame(), sid: "target-sid", now: NOW + 1000, seen: new Set() });
-  assert.equal(r.ok, true);
-  assert.equal(r.env.text, "hello");
-});
-
-test("bad signature, wrong key, tampering, wrong session, stale, replayed and no key are refused", () => {
-  const ok = (text, extra = {}) => verifyPeerFrame({ key: KEY, text, sid: "target-sid", now: NOW, seen: new Set(), ...extra });
-  assert.equal(ok(frame(env(), "other-key")).reason, "bad-signature");
-  const tampered = JSON.parse(frame());
-  tampered.text = "rm -rf";
-  assert.equal(ok(JSON.stringify(tampered)).reason, "bad-signature");
-  assert.equal(ok(frame(env({ to: "someone-else" }))).reason, "wrong-session");
-  assert.equal(ok(frame(env({ ts: NOW - 121_000 }))).reason, "stale");
-  assert.equal(ok(frame(), { seen: new Set(["11111111-aaaa"]) }).reason, "replayed");
-  assert.equal(ok(frame(), { key: null }).reason, "no-key");
-  assert.equal(ok("not json").reason, "bad-shape");
-  assert.equal(ok(JSON.stringify({ t: "peer-message", v: 1 })).reason, "bad-shape");
+test("formatPeerMessage puts the body under the header", () => {
+  const m = formatPeerMessage({ sid: "s1", folder: "app", agent: "claude" }, "hello", "vibecodes-msg");
+  assert.equal(m.split("\n")[1], "hello");
+  assert.match(m, /\(Claude Code, working in "app"\)/);
 });
 
 test("the sender proof round-trips and a wrong proof or key fails", () => {
@@ -71,24 +52,9 @@ test("the sender proof round-trips and a wrong proof or key fails", () => {
   assert.equal(splitSessionEnvValue("nodot"), null);
 });
 
-test("ack frames round-trip and unknown outcomes are refused", () => {
-  assert.deepEqual(parsePeerAckFrame(encodePeerAckFrame("id1", "waiting")), { id: "id1", outcome: "waiting" });
-  assert.equal(parsePeerAckFrame(JSON.stringify({ t: "peer-message-ack", id: "x", outcome: "bogus" })), null);
-});
-
-test("isPeerBridgeFrameType flags message, ack and notice frames only", () => {
-  assert.equal(isPeerBridgeFrameType(frame()), true);
-  assert.equal(isPeerBridgeFrameType(encodePeerAckFrame("i", "delivered")), true);
+test("isPeerBridgeFrameType flags old message, ack and notice frames only", () => {
+  assert.equal(isPeerBridgeFrameType(JSON.stringify({ t: "peer-message", id: "x" })), true);
+  assert.equal(isPeerBridgeFrameType(JSON.stringify({ t: "peer-message-ack", id: "i", outcome: "delivered" })), true);
   assert.equal(isPeerBridgeFrameType(JSON.stringify({ type: "resize", cols: 1, rows: 1 })), false);
   assert.equal(isPeerBridgeFrameType("peer-message"), false);
-});
-
-import { helperVersionAtLeast } from "./peer-frames.mjs";
-test("helperVersionAtLeast compares numerically and refuses unknown versions", () => {
-  assert.equal(helperVersionAtLeast("0.3.33", "0.3.33"), true);
-  assert.equal(helperVersionAtLeast("0.3.100", "0.3.33"), true);
-  assert.equal(helperVersionAtLeast("0.3.31", "0.3.33"), false);
-  assert.equal(helperVersionAtLeast("1.0.0", "0.3.33"), true);
-  assert.equal(helperVersionAtLeast(undefined, "0.3.33"), false);
-  assert.equal(helperVersionAtLeast("junk", "0.3.33"), false);
 });

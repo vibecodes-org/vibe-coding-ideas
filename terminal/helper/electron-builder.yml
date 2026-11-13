@@ -25,6 +25,7 @@ files:
   - lifecycle.js
   - stay-awake.js
   - tray-icon.js
+  - peer-router.js
   # Every helper-local ESM module (agent-availability, open-terminal,
   # open-terminal-gate, control-url, …) via a GLOB — never an explicit list.
   # 0.3.13 shipped WITHOUT control-url.mjs + open-terminal-gate.mjs because

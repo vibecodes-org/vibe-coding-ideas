@@ -3432,6 +3432,10 @@ export type Database = {
         Args: { p_run_id: string; p_steps: Json };
         Returns: boolean;
       };
+      reshape_workflow_run: {
+        Args: { p_run_id: string; p_expected: Json; p_deletes: string[]; p_updates: Json; p_inserts: Json };
+        Returns: string;
+      };
       initialize_board_columns: {
         Args: { p_idea_id: string; p_columns: Json };
         Returns: undefined;

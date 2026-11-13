@@ -552,15 +552,16 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Sessions can message each other</h2>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              Any of your in-browser sessions, Claude Code or Codex, can send a
-              short message to another of{" "}
-              <strong className="text-foreground">your</strong> running
-              sessions. Ask one, for example, to &quot;get the other session to
-              review your plan&quot;. The message appears in the other terminal
-              marked with who sent it, and the reply comes back the same way.
-              Sessions can never reach anyone else&apos;s. A tab you aren&apos;t
-              looking at shows a small &quot;message&quot; label when one
-              arrives, until you open it.
+              Sessions running on the{" "}
+              <strong className="text-foreground">same Mac</strong> can send
+              each other short messages. Ask one, for example, to &quot;get the
+              other session to review your plan&quot;. The message appears in
+              the other terminal marked with who sent it, and the reply comes
+              back the same way. Two Claude Code sessions use Claude Code&apos;s
+              own built-in messaging. When a Codex session is involved, the
+              VibeCodes helper app passes the message across on your Mac: it
+              never leaves the Mac and never goes through VibeCodes&apos;
+              servers.
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
               A message from another session can ask for things, but it{" "}
@@ -572,17 +573,9 @@ export default function LaunchingClaudeCodePage() {
               plainly whether it was delivered, is waiting, or could not be
               delivered. Limits: 10 messages a minute and 60 an hour into any
               one session, 2,000 characters each, and a message still waiting
-              after 30 minutes is dropped. Claude Code and Codex sessions can
-              both send and receive messages; a Codex session needs the latest
-              VibeCodes helper to receive them.
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              <strong className="text-foreground">Privacy:</strong> what you
-              type in the terminal is scrambled so even VibeCodes&apos; own
-              relay can&apos;t read it. Session-to-session messages are not:
-              they pass through our relay readable (though the relay can&apos;t
-              fake one). Don&apos;t put passwords or keys in them. It needs the
-              latest helper app.
+              after 30 minutes is dropped. Messages involving Codex need the
+              latest VibeCodes helper app, and both sessions must have been
+              started from the in-browser terminal.
             </p>
           </div>
         </section>
