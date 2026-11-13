@@ -5,6 +5,7 @@ import type { McpContext } from "../context";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "../../../src/lib/workflow-helpers";
 import { dismissSuggestionsForLabel } from "../../../src/lib/workflow-matching";
 import { applyWorkflowTemplate } from "./workflows";
+import { loadWorkflowReply } from "../lib/workflow-reply";
 
 // --- manage_labels ---
 
@@ -99,7 +100,9 @@ export async function manageLabels(
       }
     );
 
-    return { success: true };
+    // Tell the agent at once if this label attached or suggested a workflow.
+    const workflowReply = await loadWorkflowReply(ctx, params.task_id, params.idea_id);
+    return { success: true, ...workflowReply };
   }
 
   if (params.action === "remove_from_task") {

@@ -11,6 +11,11 @@ import {
   PositionGapExhaustedError,
 } from "../../../src/lib/board-position";
 import { applyWorkflowTemplate } from "./workflows";
+import { loadWorkflowReply } from "../lib/workflow-reply";
+import { pickCurrentRunKey } from "../../../src/lib/workflow-current-run";
+import { logger } from "../../../src/lib/logger";
+import { addTaskComment } from "./comments";
+import { workTokenSchema } from "../lib/work-token-auth";
 
 /** Auto-add a user as collaborator on an idea if they aren't already (author or collaborator). */
 async function ensureCollaborator(ctx: McpContext, ideaId: string, userId: string) {
@@ -151,7 +156,10 @@ export async function createTask(ctx: McpContext, params: z.infer<typeof createT
     }
   }
 
-  return { success: true, task, labels: attachedLabels };
+  // Tell the agent at once if a workflow was attached or suggested, so it
+  // does not implement directly without ever re-fetching the card.
+  const workflowReply = await loadWorkflowReply(ctx, task.id, params.idea_id);
+  return { success: true, task, labels: attachedLabels, ...workflowReply };
 }
 
 export const updateTaskSchema = z.object({
@@ -321,7 +329,42 @@ export const moveTaskSchema = z.object({
       "Place immediately below this sibling task, which must already be in the target " +
         "column. Mutually exclusive with position and before_task_id."
     ),
+  close_reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .optional()
+    .describe(
+      "Only for closing a card early: a short reason for moving a card whose workflow steps have not all run " +
+        "into Done (or into Verify before any step started). It is posted on the card as a comment. " +
+        "Steps are left as they were. Do not pass it to skip steps you could simply run."
+    ),
+  work_token: workTokenSchema,
 });
+
+const OPEN_STEP_STATUSES = new Set(["pending", "in_progress", "awaiting_approval", "failed"]);
+
+/** Open steps of the card's current run, and whether none has ever started. */
+async function loadOpenSteps(ctx: McpContext, taskId: string) {
+  const { data, error } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("id, run_id, title, status, step_order, position, created_at")
+    .eq("task_id", taskId)
+    .order("position");
+  if (error) throw new Error(`Failed to read workflow steps: ${error.message}`);
+  const all = (data ?? []) as Array<Record<string, unknown>>;
+  const run = pickCurrentRunKey(all);
+  const live = all.filter((s) => ((s.run_id as string | null) ?? null) === run);
+  const open = live
+    .filter((s) => OPEN_STEP_STATUSES.has(s.status as string))
+    .map((s) => ({ title: s.title as string, status: s.status as string }));
+  const neverStarted = live.length > 0 && live.every((s) => s.status === "pending");
+  return { open, neverStarted };
+}
+
+const describeSteps = (open: Array<{ title: string; status: string }>) =>
+  open.map((s) => `"${s.title}" (${s.status})`).join(", ");
 
 /**
  * Reads every other task's position in a column (the task being moved
@@ -494,6 +537,42 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
   // column change — a reorder within the same column must not reset the timer.
   const taskUpdate: Record<string, unknown> = { column_id: params.column_id, position };
   const isColumnChange = currentTask.column_id !== params.column_id;
+
+  // Workflow guard (agents only reach this tool; the website's own drag and
+  // drop does not). Only a real column change is checked.
+  let workflowReminder: string | undefined;
+  let closedEarly: { open: Array<{ title: string; status: string }>; reason: string } | undefined;
+  if (isColumnChange) {
+    const isDone = column?.is_done_column === true;
+    const isVerify = (column?.title ?? "").trim().toLowerCase() === "verify";
+    const isInProgress = isInProgressColumnTitle(column?.title);
+    if (isDone || isVerify || isInProgress) {
+      const { open, neverStarted } = await loadOpenSteps(ctx, params.task_id);
+      if (open.length > 0) {
+        const mustBlock = isDone || (isVerify && neverStarted);
+        if (mustBlock && !params.close_reason) {
+          return {
+            success: false,
+            blocked: "workflow_open",
+            open_steps: open,
+            message:
+              `Not moved: this card's workflow still has ${open.length} step(s) to run: ${describeSteps(open)}. ` +
+              `Run them with claim_next_step(task_id), or ask the user. ` +
+              `Only if the card really should close early (duplicate, stale, or the user agreed), ` +
+              `call move_task again with close_reason set to a short reason; it is posted on the card.`,
+          };
+        }
+        if (mustBlock && params.close_reason) {
+          closedEarly = { open, reason: params.close_reason };
+        } else if (isVerify || (isInProgress && neverStarted)) {
+          workflowReminder =
+            `${open.length} workflow step(s) are still to run: ${describeSteps(open)}. ` +
+            `Continue with claim_next_step(task_id).`;
+        }
+      }
+    }
+  }
+
   if (isColumnChange) {
     if (isInProgressColumnTitle(column?.title)) {
       taskUpdate.working_started_at = new Date().toISOString();
@@ -520,9 +599,33 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
 
   await logActivity(ctx, params.task_id, params.idea_id, "moved", {
     to_column: column?.title ?? params.column_id,
+    ...(closedEarly ? { open_steps: closedEarly.open, close_reason: closedEarly.reason } : {}),
   });
 
-  return { success: true, column: column?.title, position };
+  const reply: Record<string, unknown> = { success: true, column: column?.title, position };
+  if (workflowReminder) reply.workflow_reminder = workflowReminder;
+  if (closedEarly) {
+    logger.warn("move_task closed a card with unrun workflow steps", {
+      taskId: params.task_id,
+      openSteps: closedEarly.open.length,
+    });
+    try {
+      await addTaskComment(ctx, {
+        task_id: params.task_id,
+        idea_id: params.idea_id,
+        content:
+          `Closed with ${closedEarly.open.length} workflow step(s) not run: ` +
+          `${closedEarly.open.map((s) => s.title).join(", ")}. Reason: ${closedEarly.reason}`,
+        work_token: params.work_token,
+      });
+    } catch (e) {
+      // The move already happened; say the comment is missing instead of hiding it.
+      reply.warning = `The card moved but the close-reason comment could not be posted: ${
+        e instanceof Error ? e.message : String(e)
+      }. Add it with add_task_comment.`;
+    }
+  }
+  return reply;
 }
 
 export const deleteTaskSchema = z.object({

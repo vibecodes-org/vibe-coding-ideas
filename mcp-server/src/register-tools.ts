@@ -435,7 +435,7 @@ export function registerTools(
     "create_task",
     {
       description:
-        "Create a new task on a board. Requires idea_id and column_id. Position auto-calculated. IMPORTANT: If you have images or files to attach (e.g. screenshots, mockups), call upload_attachment or request_upload_url after creating the task to attach them.",
+        "Create a new task on a board. Requires idea_id and column_id. Position auto-calculated. IMPORTANT: If you have images or files to attach (e.g. screenshots, mockups), call upload_attachment or request_upload_url after creating the task to attach them. If a label you pass attaches (or suggests) a workflow, the reply includes `workflow` and a `workflow_instruction`: follow it (start with claim_next_step) instead of implementing directly.",
       inputSchema: createTaskSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {
@@ -473,7 +473,11 @@ export function registerTools(
       "before_task_id/after_task_id to sit next to a specific sibling task — never pass a raw " +
       "position number, the absolute value is computed internally. Defaults to the bottom of " +
       "the column when no placement is given. The response's `position` is the actual value " +
-      "written, so success/no-op can be told apart without a second get_board call.",
+      "written, so success/no-op can be told apart without a second get_board call. " +
+      "Workflow guard: moving a card with unrun workflow steps into a done column is refused " +
+      "(success: false, blocked: \"workflow_open\") unless you pass close_reason (a short reason, posted " +
+      "on the card as a comment); moving to Verify before any step has started is refused the same " +
+      "way, and Verify part-way through succeeds with a workflow_reminder. Run the steps with claim_next_step instead.",
       inputSchema: moveTaskSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {
@@ -736,7 +740,7 @@ export function registerTools(
     "manage_labels",
     {
       description:
-        "Create labels, add labels to tasks, or remove labels from tasks. Actions: create (returns existing label if name matches case-insensitively — safe to call without checking first), add_to_task, remove_from_task.",
+        "Create labels, add labels to tasks, or remove labels from tasks. Actions: create (returns existing label if name matches case-insensitively — safe to call without checking first), add_to_task, remove_from_task. add_to_task returns `workflow` and a `workflow_instruction` when the label attaches or suggests a workflow: follow it.",
       inputSchema: manageLabelsSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {
