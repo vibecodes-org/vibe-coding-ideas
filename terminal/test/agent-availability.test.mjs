@@ -12,7 +12,7 @@ import path from "node:path";
 import { checkAgentAvailability, KNOWN_AGENT_BINARIES } from "../helper/agent-availability.mjs";
 
 function makeFakeBin(dir, name) {
-  fs.writeFileSync(path.join(dir, name), "#!/bin/sh\necho fake\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(dir, process.platform === "win32" ? `${name}.exe` : name), "#!/bin/sh\necho fake\n", { mode: 0o755 });
 }
 
 test("KNOWN_AGENT_BINARIES names exactly claude and codex", () => {

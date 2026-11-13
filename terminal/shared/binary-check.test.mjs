@@ -8,7 +8,8 @@ import path from "node:path";
 import { resolveBinaryOnPath, isBinaryInstalled } from "./binary-check.mjs";
 
 function makeFakeBin(dir, name) {
-  const p = path.join(dir, name);
+  // Windows finds programs by extension (PATHEXT), so the fake needs .exe there.
+  const p = path.join(dir, process.platform === "win32" ? `${name}.exe` : name);
   fs.writeFileSync(p, "#!/bin/sh\necho fake\n", { mode: 0o755 });
   return p;
 }
@@ -95,11 +96,11 @@ test("an absolute path that doesn't exist is reported missing, not thrown", () =
 
 test("relative/empty PATH entries are skipped, not treated as cwd", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vc-bincheck-rel-"));
-  makeFakeBin(dir, "codex");
+  const fake = makeFakeBin(dir, "codex");
   try {
     // "." and "" entries interleaved must not throw and must still find the
     // real dir later in the list.
-    assert.equal(resolveBinaryOnPath("codex", `.${path.delimiter}${path.delimiter}${dir}`), path.join(dir, "codex"));
+    assert.equal(resolveBinaryOnPath("codex", `.${path.delimiter}${path.delimiter}${dir}`), fake);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

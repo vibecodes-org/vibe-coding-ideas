@@ -16,8 +16,8 @@ test("starts when the first agent goes busy, stops when the last goes quiet", ()
 });
 
 test("menu-bar label is singular and plural", () => {
-  assert.equal(stayAwakeLabel(1), "Keeping this Mac awake: 1 agent working");
-  assert.equal(stayAwakeLabel(3), "Keeping this Mac awake: 3 agents working");
+  assert.equal(stayAwakeLabel(1, "darwin"), "Keeping this Mac awake: 1 agent working");
+  assert.equal(stayAwakeLabel(3, "darwin"), "Keeping this Mac awake: 3 agents working");
 });
 
 test("the label says PC on Windows", () => {
