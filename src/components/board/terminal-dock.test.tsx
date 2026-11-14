@@ -41,6 +41,7 @@ import type {
   ChooserSections,
   TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
+import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 
 // Shared spy (not a fresh vi.fn() per call) so cross-board resume/reconnect
 // tests can assert on WHERE the dock navigated, not just that it did.
@@ -177,7 +178,13 @@ vi.mock("./terminal-session-view", () => ({
     wakeResume,
     offerStrip,
   }: {
-    entry: { key: string; taskId?: string; ideaId?: string; agent?: string };
+    entry: {
+      key: string;
+      taskId?: string;
+      ideaId?: string;
+      agent?: string;
+      launchPayload?: BrowserLaunchPayload | null;
+    };
     agent?: string;
     onResumeEndedSession?: (
       payload: { cwd?: string; taskId?: string; ideaId?: string; resumeId?: string },
@@ -261,6 +268,10 @@ vi.mock("./terminal-session-view", () => ({
         data-popped-out={poppedOut ? "true" : "false"}
         data-wake-resume-cwd={wakeResume?.cwd ?? ""}
         data-entry-agent={entry.agent ?? ""}
+        data-launch-agent={entry.launchPayload?.agent ?? ""}
+        data-launch-instructions={
+          entry.launchPayload?.essentials ? `${entry.launchPayload.essentials.head}${entry.launchPayload.essentials.tail}` : ""
+        }
         data-agent-prop={agent ?? ""}
       >
         <button
@@ -413,6 +424,7 @@ vi.mock("./terminal-session-chooser", () => ({
     onOpenBoardAndReconnect,
     onResume,
     agent,
+    onAgentChange,
   }: {
     sections: ChooserSections;
     onStartNew: () => void;
@@ -420,10 +432,14 @@ vi.mock("./terminal-session-chooser", () => ({
     onOpenBoardAndReconnect: (row: ChooserLiveRow) => void;
     onResume: (row: ChooserRecentRow) => void;
     agent: string;
+    onAgentChange?: (agent: "claude" | "codex") => void;
   }) => (
     <div data-testid="chooser" data-agent={agent}>
       <button data-testid="chooser-start-new" onClick={onStartNew}>
         Start new
+      </button>
+      <button data-testid="chooser-pick-claude" onClick={() => onAgentChange?.("claude")}>
+        Claude Code
       </button>
       {sections.liveHere.map((row) => (
         <button key={row.sid} data-testid={`chooser-reconnect-here-${row.sid}`} onClick={() => onReconnectHere(row)}>
@@ -454,16 +470,23 @@ vi.mock("./terminal-task-launch-choice", () => ({
     match,
     onReconnect,
     onStartFresh,
+    agent,
+    onAgentChange,
   }: {
     open: boolean;
     match: TaskSessionMatch;
     onReconnect: () => void;
     onStartFresh: () => void;
+    agent?: string;
+    onAgentChange?: (agent: "claude" | "codex") => void;
   }) =>
     open ? (
-      <div data-testid="task-choice" data-match-kind={match.kind} data-match-sid={match.row.sid}>
+      <div data-testid="task-choice" data-match-kind={match.kind} data-match-sid={match.row.sid} data-agent={agent ?? ""}>
         <button data-testid="task-choice-reconnect" onClick={onReconnect}>
           Reconnect
+        </button>
+        <button data-testid="task-choice-pick-claude" onClick={() => onAgentChange?.("claude")}>
+          Claude Code
         </button>
         <button data-testid="task-choice-start-fresh" onClick={onStartFresh}>
           Start fresh anyway
@@ -474,6 +497,7 @@ vi.mock("./terminal-task-launch-choice", () => ({
 
 import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
+import { buildCompactPromptEssentials } from "@/lib/launch-claude-code";
 import { rememberLastTabSid, rememberTabSid, saveSessionSnapshot } from "@/lib/terminal/session-snapshot";
 import { toast } from "sonner";
 
@@ -751,6 +775,45 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
     });
 
     await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
+  });
+
+  // Card 89f64254 (14 Nov 2026): a board launch built for Codex waited in the
+  // chooser, the picker was switched to Claude Code, and "Start new session"
+  // started Claude Code with Codex's instructions (codex mcp add, AGENTS.md,
+  // "pass agent: codex"). The instructions must follow the picker.
+  it("starts Claude Code with Claude's instructions when a Codex launch is switched to Claude in the chooser", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+
+    const essentials = buildCompactPromptEssentials({
+      appUrl: "https://vibecodes.co.uk",
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+      existingPath: "/Users/me/projects/my-idea",
+      agent: "codex",
+      guideBootstrap: true,
+    });
+    expect(`${essentials.head}${essentials.tail}`).toContain("codex mcp add vibecodes");
+    act(() => {
+      requestBrowserLaunch({ essentials, cwd: "/Users/me/projects/my-idea", agent: "codex" });
+    });
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("codex"));
+
+    fireEvent.click(screen.getByTestId("chooser-pick-claude"));
+    await waitFor(() => expect(screen.getByTestId("chooser").dataset.agent).toBe("claude"));
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const view = screen.getByTestId("session-view");
+    expect(view.dataset.launchAgent).toBe("claude");
+    const instructions = view.dataset.launchInstructions ?? "";
+    expect(instructions).toContain("claude mcp add -s local");
+    expect(instructions).toContain("idea_id idea-1");
+    expect(instructions).not.toMatch(/codex/i);
+    expect(instructions).not.toContain("AGENTS.md");
   });
 
   it("seeds the chooser toggle from the explicit launch agent (Codex) even when the launch races the still-loading registry", async () => {
@@ -1144,6 +1207,51 @@ describe("TerminalDock — task-launch-skip-chooser (Nick's explicit product dec
     await waitFor(() => expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
     expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9");
+  });
+
+  // Card 89f64254 (14 Nov 2026), the card dialog's side of it: a card launch
+  // built for Codex, switched to Claude Code in the dialog, then "Start fresh
+  // anyway". The instructions must follow the dialog's picker, card kept.
+  it("Start fresh anyway starts Claude Code with Claude's instructions when a Codex card launch is switched to Claude in the dialog", async () => {
+    stubFetch(Promise.resolve([liveHereRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const essentials = buildCompactPromptEssentials({
+      appUrl: "https://vibecodes.co.uk",
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+      existingPath: "/Users/me/projects/my-idea",
+      taskId: "task-9",
+      agent: "codex",
+      guideBootstrap: true,
+    });
+    expect(`${essentials.head}${essentials.tail}`).toContain("codex mcp add vibecodes");
+    act(() => {
+      requestBrowserLaunch({
+        essentials,
+        cwd: "/Users/me/projects/my-idea",
+        taskId: "task-9",
+        taskTitle: "Do the thing",
+        agent: "codex",
+      });
+    });
+    await waitFor(() => expect(screen.getByTestId("task-choice").dataset.agent).toBe("codex"));
+
+    fireEvent.click(screen.getByTestId("task-choice-pick-claude"));
+    await waitFor(() => expect(screen.getByTestId("task-choice").dataset.agent).toBe("claude"));
+    fireEvent.click(screen.getByTestId("task-choice-start-fresh"));
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const view = screen.getByTestId("session-view");
+    expect(view.dataset.taskId).toBe("task-9");
+    expect(view.dataset.launchAgent).toBe("claude");
+    const instructions = view.dataset.launchInstructions ?? "";
+    expect(instructions).toContain("claude mcp add -s local");
+    expect(instructions).toContain("task_id task-9");
+    expect(instructions).not.toMatch(/codex/i);
+    expect(instructions).not.toContain("AGENTS.md");
   });
 
   it("still queues a task launch during the still-loading registry race, then resolves to the minimal task choice once the match is known", async () => {

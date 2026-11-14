@@ -1426,6 +1426,13 @@ export interface CompactPromptEssentials {
 }
 
 /**
+ * What each essentials object was built from, so the same launch can be
+ * rebuilt for the other agent (essentialsForAgent). Kept beside the object
+ * rather than on it so the essentials stay exactly the shape they always were.
+ */
+const essentialsBuiltFrom = new WeakMap<CompactPromptEssentials, CompactBootstrapArgs>();
+
+/**
  * BUG1 fix — the essentials-only counterpart to buildCompactBootstrapPromptParts
  * for launch paths with a hard URL ceiling (the claude-cli:// deep link, the
  * in-browser terminal). Keeps the protected `head` constant-size regardless of
@@ -1435,6 +1442,12 @@ export interface CompactPromptEssentials {
  */
 export function buildCompactPromptEssentials(args: CompactBootstrapArgs): CompactPromptEssentials {
   const pieces = buildCompactStepPieces(args);
+  const essentials = withPackedForm(pieces);
+  essentialsBuiltFrom.set(essentials, args);
+  return essentials;
+}
+
+function withPackedForm(pieces: CompactStepPieces): CompactPromptEssentials {
   const essentials = assembleEssentials(pieces);
   if (!pieces.guideStep) return essentials;
   const packed = assembleEssentials({
@@ -1444,6 +1457,25 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
     essentialSteps: [pieces.connectStepPacked, pieces.recordStepPacked],
   });
   return { ...essentials, packed };
+}
+
+/**
+ * The same launch's essentials, worded for `agent`. Each agent has its own
+ * connect commands and guide file, so essentials built for one must never be
+ * sent to the other: card 89f64254 (14 Nov 2026), a launch built for Codex had
+ * its agent switched to Claude Code in the dock's picker and Claude started
+ * with Codex's instructions. Returns the same object when the agent already
+ * matches, and null when these essentials did not come from
+ * buildCompactPromptEssentials (so there is nothing to rebuild them from).
+ */
+export function essentialsForAgent(
+  essentials: CompactPromptEssentials,
+  agent: "claude" | "codex"
+): CompactPromptEssentials | null {
+  const args = essentialsBuiltFrom.get(essentials);
+  if (!args) return null;
+  if ((args.agent ?? "claude") === agent) return essentials;
+  return buildCompactPromptEssentials({ ...args, agent });
 }
 
 function assembleEssentials({

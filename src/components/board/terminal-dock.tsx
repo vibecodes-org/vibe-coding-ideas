@@ -164,7 +164,7 @@ import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
 import { getMachineIdentities } from "@/lib/terminal/machine-identity";
 import { listRecordedProjectPaths } from "@/actions/launch-path";
-import { buildTaskBrowserLaunchPayload } from "@/lib/terminal/task-launch-payload";
+import { buildTaskBrowserLaunchPayload, withLaunchAgent } from "@/lib/terminal/task-launch-payload";
 import { TerminalOfferStrip } from "./terminal-offer-strip";
 import { useSessionOffers, type SessionOffer } from "./use-session-offers";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
@@ -349,7 +349,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // clicked — "Codex → In the browser" sends agent:"codex". The board-level
   // chooser's toggle (chooserAgent) must reflect THAT, not the remembered
   // pick, or the panel shows Claude after a Codex click AND
-  // handleChooserStartNew's `{ ...pendingLaunch, agent: chooserAgent }` then
+  // handleChooserStartNew's `withLaunchAgent(pendingLaunch, chooserAgent)` then
   // overwrites the explicit choice with the stale toggle (the task dialog
   // already honours this via taskDialogAgent — see the effect below). Also
   // marks the seed ref so a late-resolving rememberedAgent can't clobber it.
@@ -2489,8 +2489,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     // Resume/Reconnect, which never call this handler at all). `payload` may
     // be null (a plain "+"/chooser open with no button-built essentials —
     // see resolveLaunchPromptParts's own fallback in use-terminal-session.ts,
-    // which still reads `agent` off this minimal payload).
-    const payload: BrowserLaunchPayload = { ...pendingLaunch, agent: chooserAgent };
+    // which still reads `agent` off this minimal payload). withLaunchAgent
+    // also rewrites the carried instructions when the picker was switched
+    // away from the agent the launch was built for (card 89f64254).
+    const payload: BrowserLaunchPayload = withLaunchAgent(pendingLaunch, chooserAgent);
     const originKey = chooserOriginKey;
     setPendingLaunch(null);
     setChooserOriginKey(null);
@@ -2612,8 +2614,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   const handleTaskChoiceStartFresh = useCallback(() => {
     // Codex support (design §1c): "Start fresh anyway" carries the dialog's
-    // OWN picker value — Reconnect/Resume above never read it (AC-7).
-    const payload: BrowserLaunchPayload = { ...pendingLaunch, agent: taskDialogAgent };
+    // OWN picker value — Reconnect/Resume above never read it (AC-7). The
+    // card's instructions are rewritten for that agent too (card 89f64254).
+    const payload: BrowserLaunchPayload = withLaunchAgent(pendingLaunch, taskDialogAgent);
     setPendingLaunch(null);
     setTaskChoiceOpen(false);
     void persistViewerTerminalAgent(taskDialogAgent).catch(() => {});
