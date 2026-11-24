@@ -180,6 +180,9 @@
  *  0.3.37 (card f0a13bde, 12 Nov 2026): Codex sessions can receive session
  *  messages too. An older helper's Codex session answers "can't receive".
  *  Same soft nudge.
+ *  0.3.40 (card e6a612b8, 24 Nov 2026): fills in the session proof for the
+ *  workflow tools too, so the board shows the next-card bar itself. Same soft
+ *  nudge.
  *  0.4.0 (card 51d424f7 release 1b, 24 Nov 2026): the first release with the
  *  Windows installers (x64 and ARM) next to the Mac files, under one version;
  *  the Mac app gets the VibeCodes logo. Nothing changes how an older Mac

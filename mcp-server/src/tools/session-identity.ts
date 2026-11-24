@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import { reapExpiredSessions } from "../../../src/lib/terminal/session-reap";
 import { splitSessionEnvValue, verifySenderProof } from "../../../terminal/shared/peer-message.mjs";
@@ -74,3 +75,16 @@ export async function verifyCallingSession(ctx: McpContext, fromSession: string 
   }
   return { ok: true, owner, sender, rows };
 }
+
+/**
+ * The optional session proof on the tools that can finish a card's whole
+ * workflow (complete_step, approve_step, skip_step, claim_next_step), so the
+ * board can show the next-card bar in that session's own tab (card e6a612b8).
+ */
+export const finishingSessionParam = z
+  .string()
+  .max(300)
+  .optional()
+  .describe(
+    "Only in VibeCodes' browser terminal: your session value (the VIBECODES_SESSION environment variable), so that when this call finishes the card's whole workflow the board shows the \"Start in a new tab\" bar in your own tab. Claude Code sessions fill this in automatically: leave it out. Codex: pass it (run `printenv VIBECODES_SESSION` once). Outside the browser terminal, leave it out."
+  );

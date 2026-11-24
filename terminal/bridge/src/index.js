@@ -1450,7 +1450,7 @@ async function main() {
     }
   }
   // The session proof (VIBECODES_SESSION=<sid>.<proof>) lets offer_next_card
-  // tell which session is calling. Made from the session key.
+  // and the workflow tools tell which session is calling. Made from the session key.
   const envValue = E2EE_KEY && !term ? buildSessionEnvValue(E2EE_KEY, SESSION) : null;
   if (envValue) cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), VIBECODES_SESSION: envValue };
   // Session-to-session messages (card f0a13bde), only inside the Mac app: it

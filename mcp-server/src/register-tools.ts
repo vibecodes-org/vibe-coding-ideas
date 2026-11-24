@@ -1865,7 +1865,7 @@ export function registerTools(
     "offer_next_card",
     {
       description:
-        "Show the user a \"Start in a new tab\" bar in YOUR OWN in-browser terminal tab after a card's whole workflow has finished. It only shows the bar: it never starts anything, and you must not start the next card yourself. Call it when complete_step, approve_step or claim_next_step says the workflow is finished, passing finished_task_id (pass still_working_on if you are still looking after other cards). The next card is chosen by the server. Only works in a session started from VibeCodes' in-browser terminal; if it refuses, use the wording in the finished reply instead. If the user says \"keep going here\", call it again with withdraw: true to remove the bar.",
+        "Remove (withdraw: true) or re-show the \"Start in a new tab\" bar in YOUR OWN in-browser terminal tab. You don't need it to show the bar: when complete_step, approve_step, skip_step or claim_next_step finishes a card's whole workflow from the browser terminal, the board shows the bar itself and the reply says so. Main use: the user says \"keep going here\", so call it with withdraw: true. It never starts anything, and you must not start the next card yourself. The next card is chosen by the server. Only works in a session started from VibeCodes' in-browser terminal.",
       inputSchema: offerNextCardSchema,
     },
     async (args: Record<string, unknown>, extra: ServerExtra) => {

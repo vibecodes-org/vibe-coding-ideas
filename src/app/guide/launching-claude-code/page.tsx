@@ -360,11 +360,14 @@ export default function LaunchingClaudeCodePage() {
             conversation. It then stops and waits; say &quot;keep going
             here&quot; if you would rather stay in the same session. If you
             approve the last step on the card&apos;s web page, the session
-            gives this offer the next time it checks the card.
+            gives this offer (and, in the browser terminal, the bar) the next
+            time it checks the card.
           </p>
           <p className="mt-4 text-muted-foreground">
-            In the browser terminal the offer also appears as a bar at the
-            bottom of that session&apos;s tab: &quot;Card finished. Next up:
+            In the browser terminal the board also puts up a bar at the
+            bottom of that session&apos;s tab by itself, as soon as the
+            session finishes the card&apos;s last step (the session
+            doesn&apos;t have to ask for it): &quot;Card finished. Next up:
             &lt;card&gt;&quot; with{" "}
             <strong className="text-foreground">&quot;Not now&quot;</strong> and{" "}
             <strong className="text-foreground">&quot;Start in a new tab&quot;</strong>.

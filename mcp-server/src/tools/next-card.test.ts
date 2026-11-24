@@ -16,6 +16,7 @@ import {
 import { skipStep, approveStep, claimNextStep, completeStep } from "./workflows";
 import { mintClaimToken } from "../claim-token";
 import { pickNextCard } from "./next-card";
+import { buildSessionEnvValue } from "../../../terminal/shared/peer-message.mjs";
 
 const cols = [
   { id: "c-back", title: "Backlog" },
@@ -99,7 +100,7 @@ function fakeCtx(tables: Record<string, unknown>, opts: { failTable?: string } =
         ? { data: null, error: { message: "boom" } }
         : { data: tables[table] ?? null, error: null };
     const chain: Record<string, unknown> = {};
-    for (const m of ["select", "eq", "in", "order", "range", "update", "neq", "limit", "or", "insert", "not", "is", "gt", "lt", "gte", "lte", "match", "filter"]) {
+    for (const m of ["select", "eq", "in", "order", "range", "update", "neq", "limit", "or", "insert", "upsert", "not", "is", "gt", "lt", "gte", "lte", "match", "filter"]) {
       chain[m] = () => chain;
     }
     chain.maybeSingle = () =>
@@ -137,8 +138,11 @@ describe("workflowFinishedReply", () => {
     expect(r.instruction).toContain("then STOP");
     expect(r.instruction).toContain('"Finished one" is finished. Next up on the board: "Next one".');
     expect(r.instruction).toContain("Do NOT claim, move or start");
-    expect(r.instruction).toContain('offer_next_card with finished_task_id "T1"');
-    expect(r.instruction).toContain('Click "Start in a new tab" below');
+    // No session proof on the call: wording only, and the session is never
+    // asked to call a tool to show the bar (card e6a612b8).
+    expect(r.next_card_offer).toEqual({ shown: false });
+    expect(r.instruction).not.toContain("offer_next_card");
+    expect(r.instruction).not.toContain("Start in a new tab");
   });
   it("still finishes, with next_card null, when the lookup throws (A6)", async () => {
     const r = await workflowFinishedReply(fakeCtx({ ...board }, { failTable: "board_columns" }), "T1");
@@ -214,6 +218,50 @@ describe("tool replies when the run finishes", () => {
     expect(r.done).toBe(true);
     expect(r.workflow_finished).toBe(true);
   });
+  // Card e6a612b8: every path that reports a finished card passes the
+  // session's proof on, so the board raises the bar with no extra call.
+  describe("passes the calling session on, so the board shows the bar itself", () => {
+    const KEY = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 5 + 1) % 256)).toString("base64");
+    const proof = () => buildSessionEnvValue(Buffer.from(KEY, "base64"), "sid-9");
+    const inApp = {
+      terminal_sessions: [
+        { sid: "sid-9", user_id: "u", status: "active", idea_id: "I1", agent: "claude", task_id: null, e2ee_session_key: KEY, expires_at: new Date(Date.now() + 3_600_000).toISOString() },
+      ],
+    };
+    it("complete_step", async () => {
+      const tok = mintClaimToken();
+      const ctx = fakeCtx({
+        task_workflow_steps: { ...stepRow, status: "in_progress", claim_token_hash: tok.hash, idea_id: "I1", human_check_required: false },
+        ...board,
+        ...inApp,
+      });
+      const r = (await completeStep(ctx, { claim_token: tok.token, step_id: stepId, output: "done", from_session: proof() })) as Record<string, unknown>;
+      expect(r.next_card_offer).toEqual({ shown: true });
+    });
+    it("skip_step", async () => {
+      const ctx = fakeCtx({ task_workflow_steps: { ...stepRow, status: "pending" }, ...board, ...inApp });
+      const r = (await skipStep(ctx, { step_id: stepId, from_session: proof() })) as Record<string, unknown>;
+      expect(r.next_card_offer).toEqual({ shown: true });
+    });
+    it("approve_step", async () => {
+      const ctx = fakeCtx({
+        task_workflow_steps: { ...stepRow, status: "awaiting_approval", idea_id: "I1", human_check_required: true },
+        ...board,
+        ...inApp,
+      });
+      const r = (await approveStep(ctx, { step_id: stepId, from_session: proof() } as Parameters<typeof approveStep>[1])) as Record<string, unknown>;
+      expect(r.next_card_offer).toEqual({ shown: true });
+    });
+    it("claim_next_step on a finished card", async () => {
+      const steps = [{ id: "S1", task_id: "T1", run_id: "R1", status: "completed", created_at: "1" }];
+      const r = (await claimNextStep(fakeCtx({ task_workflow_steps: steps, ...board, ...inApp }), {
+        task_id: "T1",
+        from_session: proof(),
+      })) as Record<string, unknown>;
+      expect(r.next_card_offer).toEqual({ shown: true });
+    });
+  });
+
   it("claim_next_step with a step awaiting approval keeps the old reply (A3)", async () => {
     const steps = [
       { id: "S1", task_id: "T1", run_id: "R1", status: "completed", created_at: "1" },

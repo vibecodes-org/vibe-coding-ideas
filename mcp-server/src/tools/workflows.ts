@@ -31,6 +31,7 @@ import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
 import { noWorkflowInstruction } from "../lib/no-workflow";
 import { workflowFinishedReply } from "./next-card";
+import { finishingSessionParam } from "./session-identity";
 import {
   buildApprovalNotes,
   type ApprovalNote,
@@ -918,6 +919,7 @@ export const claimNextStepSchema = z.object({
     .describe(
       "Which CLI is claiming this step — 'claude' (default) or 'codex'. Selects the wording and model/effort resolution of the MANDATORY MODEL directive for tiered steps. Omit for Claude; existing behaviour is unchanged."
     ),
+  from_session: finishingSessionParam,
 });
 
 export async function claimNextStep(
@@ -1020,7 +1022,7 @@ export async function claimNextStep(
       return {
         done: true,
         message: "This card's workflow is finished.",
-        ...(await workflowFinishedReply(ctx, params.task_id)),
+        ...(await workflowFinishedReply(ctx, params.task_id, params.from_session)),
       };
     }
 
@@ -1626,6 +1628,7 @@ export const completeStepSchema = z.object({
     ),
   usage: stepUsageParam,
   usage_unavailable: usageUnavailableParam,
+  from_session: finishingSessionParam,
 });
 
 /**
@@ -1916,7 +1919,7 @@ export async function completeStep(
   return {
     step: savedStep(updated),
     run_complete: runComplete,
-    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id, params.from_session))),
     status: newStatus,
     output_source: outputSource,
     ...(passedOutputIgnored && { passed_output_ignored: true }),
@@ -2523,6 +2526,7 @@ export async function failStep(
 export const skipStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID (must be in pending status)"),
   reason: z.string().max(10000).optional().describe("Reason for skipping (e.g. 'Not applicable to this task')"),
+  from_session: finishingSessionParam,
 });
 
 export async function skipStep(
@@ -2565,7 +2569,7 @@ export async function skipStep(
   return {
     step: savedStep(updated),
     run_complete: runComplete,
-    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id, params.from_session))),
   };
 }
 
@@ -2667,6 +2671,7 @@ export async function updateStep(
 export const approveStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID (must be in awaiting_approval status)"),
   comment: z.string().max(5000).optional().describe("Optional approval comment"),
+  from_session: finishingSessionParam,
 });
 
 export async function approveStep(
@@ -2752,7 +2757,7 @@ export async function approveStep(
   return {
     step: savedStep(updated),
     run_complete: runComplete,
-    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id))),
+    ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id, params.from_session))),
   };
 }
 
