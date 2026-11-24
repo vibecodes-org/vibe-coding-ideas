@@ -211,6 +211,18 @@ test("an offer_next_card call gets from_session filled in; other tools are untou
   assert.deepEqual(hook(bridge, "PreToolUse", { tool_name: "mcp__vibecodes__send_session_message", tool_input: {} }), {});
 });
 
+test("the tools that can finish a card get from_session filled in too, without pre-approving them (card e6a612b8)", () => {
+  const { bridge } = make();
+  for (const tool of ["complete_step", "approve_step", "skip_step", "claim_next_step"]) {
+    const r = hook(bridge, "PreToolUse", { tool_name: `mcp__vibecodes__${tool}`, tool_input: { step_id: "s" } });
+    assert.deepEqual(r.hookSpecificOutput.updatedInput, { step_id: "s", from_session: "me.proof" }, tool);
+    assert.equal(r.hookSpecificOutput.permissionDecision, undefined, tool);
+  }
+  const offer = hook(bridge, "PreToolUse", { tool_name: "mcp__vibecodes__offer_next_card", tool_input: {} });
+  assert.equal(offer.hookSpecificOutput.permissionDecision, "allow");
+  assert.deepEqual(hook(bridge, "PreToolUse", { tool_name: "mcp__vibecodes__fail_step", tool_input: {} }), {});
+});
+
 test("hook settings use the secret path and cover every event", () => {
   const s = buildHookSettings(4321, "sec");
   assert.deepEqual(Object.keys(s.hooks).sort(), ["Notification", "PermissionRequest", "PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);

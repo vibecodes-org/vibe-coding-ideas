@@ -4,7 +4,8 @@
 // app; they never leave the Mac. This file holds the text cleaning and the
 // marked first line every delivered message carries, plus the session proof
 // a VibeCodes-started session uses to say which session it is
-// (offer_next_card).
+// (offer_next_card, and the tools that can finish a card so the board can
+// show the next-card bar in that session's tab).
 //
 // Node-only (node:crypto). Never log message text from anywhere that uses this.
 

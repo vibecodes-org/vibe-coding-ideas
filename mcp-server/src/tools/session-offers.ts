@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
-import { oneLine, pickNextCard } from "./next-card";
-import { verifyCallingSession } from "./session-identity";
+import { oneLine, pickNextCard, type NextCard } from "./next-card";
+import { verifyCallingSession, type CallingSessionRow } from "./session-identity";
 
 // --- "Start the next card" offer (card 7c728159) ---
 //
@@ -99,22 +99,7 @@ export async function offerNextCard(ctx: McpContext, params: z.infer<typeof offe
   const next = await pickNextCard(ctx, task.idea_id, task.id);
 
   // 6. One offer per session: a second replaces the first.
-  const { error: upsertError } = await ctx.supabase.from("terminal_session_offers").upsert(
-    {
-      sid: sender.sid,
-      user_id: owner,
-      idea_id: task.idea_id,
-      finished_task_id: task.id,
-      finished_task_title: oneLine(task.title),
-      next_task_id: next?.id ?? null,
-      next_task_title: next ? oneLine(next.title) : null,
-      agent: sender.agent === "codex" ? "codex" : "claude",
-      still_working_on: params.still_working_on ?? 0,
-      status: "offered",
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "sid" }
-  );
+  const { error: upsertError } = await saveOffer(ctx, owner, sender, task, next, params.still_working_on ?? 0);
   if (upsertError) {
     logger.error("Session offers: save failed", { error: upsertError.message });
     throw new Error("Couldn't show the offer.");
@@ -126,4 +111,110 @@ export async function offerNextCard(ctx: McpContext, params: z.infer<typeof offe
     next_card: next ? { id: next.id, title: next.title } : null,
     message: OFFER_SHOWN_MESSAGE,
   };
+}
+
+/** The one offer row per session (a second replaces the first). */
+function saveOffer(
+  ctx: McpContext,
+  owner: string,
+  sender: CallingSessionRow,
+  task: { id: string; title: string; idea_id: string },
+  next: NextCard | null,
+  stillWorkingOn: number
+) {
+  return ctx.supabase.from("terminal_session_offers").upsert(
+    {
+      sid: sender.sid,
+      user_id: owner,
+      idea_id: task.idea_id,
+      finished_task_id: task.id,
+      finished_task_title: oneLine(task.title),
+      next_task_id: next?.id ?? null,
+      next_task_title: next ? oneLine(next.title) : null,
+      agent: sender.agent === "codex" ? "codex" : "claude",
+      still_working_on: stillWorkingOn,
+      status: "offered",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "sid" }
+  );
+}
+
+/**
+ * How many OTHER cards this session is still looking after, worked out on the
+ * server: cards on the same board with a step running or waiting for approval,
+ * leaving out the finished card and any card another open in-browser session of
+ * the same person was launched for. Claims don't record which session made
+ * them, so this is the closest the server can tell (card e6a612b8).
+ */
+async function countStillWorkingOn(
+  ctx: McpContext,
+  ideaId: string,
+  finishedId: string,
+  sender: CallingSessionRow,
+  rows: CallingSessionRow[]
+): Promise<number> {
+  const { data, error } = await ctx.supabase
+    .from("board_tasks")
+    .select("id, workflow_step_in_progress, workflow_step_awaiting_approval")
+    .eq("idea_id", ideaId)
+    .eq("archived", false)
+    .neq("id", finishedId)
+    .or("workflow_step_in_progress.gt.0,workflow_step_awaiting_approval.gt.0")
+    .range(0, 199);
+  if (error) throw new Error(`Failed to count busy cards: ${error.message}`);
+  const otherTabs = new Set(rows.filter((r) => r.sid !== sender.sid && r.task_id).map((r) => r.task_id));
+  const busy = ((data ?? []) as Array<{ id: string; workflow_step_in_progress: number | null; workflow_step_awaiting_approval: number | null }>).filter(
+    (t) =>
+      t.id !== finishedId &&
+      !otherTabs.has(t.id) &&
+      ((t.workflow_step_in_progress ?? 0) > 0 || (t.workflow_step_awaiting_approval ?? 0) > 0)
+  );
+  return Math.min(busy.length, 20);
+}
+
+/**
+ * The board raises the "Card finished. Next up" bar itself (card e6a612b8),
+ * from the tool call that finished the card's whole workflow, so the session
+ * never has to remember to call offer_next_card. Only for an in-browser
+ * session that proved who it is on that call (from_session, which the Mac
+ * helper fills in for Claude Code). Never throws: any failure is logged and
+ * the caller falls back to the wording.
+ */
+export async function raiseNextCardOffer(
+  ctx: McpContext,
+  task: { id: string; title: string; idea_id: string },
+  next: NextCard | null,
+  fromSession: string | undefined
+): Promise<{ shown: boolean }> {
+  if (!fromSession) return { shown: false };
+  try {
+    const caller = await verifyCallingSession(ctx, fromSession);
+    if (!caller.ok) return { shown: false };
+    const { owner, sender, rows } = caller;
+    if (sender.idea_id !== task.idea_id) return { shown: false };
+
+    // Already offered for this card (claim_next_step can report the same
+    // finish again): leave it, so a dismissed bar never comes back.
+    const { data: existing, error: existingError } = await ctx.supabase
+      .from("terminal_session_offers")
+      .select("finished_task_id, status")
+      .eq("sid", sender.sid)
+      .eq("user_id", owner)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing && existing.finished_task_id === task.id) return { shown: existing.status === "offered" };
+
+    const still = await countStillWorkingOn(ctx, task.idea_id, task.id, sender, rows);
+    const { error } = await saveOffer(ctx, owner, sender, task, next, still);
+    if (error) throw new Error(error.message);
+    logger.info("Session offer raised by the board", { userId: owner, hasNext: Boolean(next) });
+    return { shown: true };
+  } catch (err) {
+    logger.error("Session offers: automatic offer failed", {
+      taskId: task.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { shown: false };
+  }
 }

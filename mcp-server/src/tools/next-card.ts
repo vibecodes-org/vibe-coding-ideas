@@ -1,6 +1,7 @@
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { UP_NEXT_COLUMNS } from "./board-read";
+import { raiseNextCardOffer } from "./session-offers";
 
 export interface NextCardColumn {
   id: string;
@@ -124,9 +125,13 @@ const STAY_PUT =
 
 /**
  * Fields added to a tool reply when a card's whole workflow is finished.
- * Never throws: a failed lookup still says the card is finished.
+ * When the finishing call came from an in-browser session that proved who it
+ * is (from_session), the board shows the "Start in a new tab" bar in that
+ * session's tab itself (card e6a612b8); otherwise the reply is wording only.
+ * Never throws: a failed lookup or a failed offer still says the card is
+ * finished.
  */
-export async function workflowFinishedReply(ctx: McpContext, taskId: string) {
+export async function workflowFinishedReply(ctx: McpContext, taskId: string, fromSession?: string) {
   try {
     const { data: card, error } = await ctx.supabase
       .from("board_tasks")
@@ -136,16 +141,19 @@ export async function workflowFinishedReply(ctx: McpContext, taskId: string) {
     if (error || !card) throw new Error(error?.message ?? "card not found");
     const finished = card as { id: string; title: string; idea_id: string };
     const next = await pickNextCard(ctx, finished.idea_id, finished.id);
+    const offer = await raiseNextCardOffer(ctx, finished, next, fromSession);
+    const say = `This card's whole workflow is finished. Say this to the user, in these words, then STOP: ${workflowFinishedText(finished.title, next)} `;
+    const others = `${STAY_PUT} If you are still looking after other cards, say so and carry on with those only.`;
     return {
       workflow_finished: true,
       finished_card: { id: finished.id, title: finished.title },
       next_card: next,
-      instruction:
-        `This card's whole workflow is finished. Say this to the user, in these words, then STOP: ${workflowFinishedText(finished.title, next)} ` +
-        `${STAY_PUT} If you are still looking after other cards, say so and carry on with those only. ` +
-        `If you are running in VibeCodes' browser terminal, first call offer_next_card with finished_task_id "${finished.id}" (and still_working_on if you are looking after other cards), ` +
-        `and if it says it is shown, end your words to the user with: Click "Start in a new tab" below, or say "keep going here" and I'll carry on in this session. ` +
-        `If it refuses, use the words above instead.`,
+      next_card_offer: { shown: offer.shown },
+      instruction: offer.shown
+        ? say +
+          `The board has already shown a "Start in a new tab" bar in your terminal tab, so end your words to the user with: Click "Start in a new tab" below, or say "keep going here" and I'll carry on in this session. ` +
+          `${others} If the user says "keep going here", call offer_next_card with withdraw: true to remove the bar, then carry on.`
+        : say + others,
     };
   } catch (err) {
     logger.warn("Next-card lookup failed", {
@@ -156,6 +164,7 @@ export async function workflowFinishedReply(ctx: McpContext, taskId: string) {
       workflow_finished: true,
       finished_card: { id: taskId, title: null as string | null },
       next_card: null,
+      next_card_offer: { shown: false },
       instruction: `This card's whole workflow is finished. Tell the user, then STOP. The next card could not be looked up. ${STAY_PUT}`,
     };
   }

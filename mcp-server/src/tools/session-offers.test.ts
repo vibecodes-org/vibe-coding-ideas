@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpContext } from "../context";
 import { offerNextCard } from "./session-offers";
+import { workflowFinishedReply } from "./next-card";
 import { buildSessionEnvValue } from "../../../terminal/shared/peer-message.mjs";
 
 const ME = "00000000-0000-4000-a000-000000000001";
@@ -17,16 +18,18 @@ let upsertCalls: Row[] = [];
 let updateFilters: Array<[string, unknown]> = [];
 let updateValues: Row | null = null;
 let nextTaskRows: Row[] = [];
+let failUpsert = false;
 
 function ctx(): McpContext {
   const from = (table: string) => {
     const filters: Array<[string, unknown]> = [];
     let op: "select" | "update" = "select";
     const c: Record<string, unknown> = {};
-    for (const m of ["select", "order", "limit", "range", "neq", "or", "in", "not"]) c[m] = vi.fn(() => c);
+    for (const m of ["select", "order", "limit", "range", "neq", "or", "in", "not", "gt"]) c[m] = vi.fn(() => c);
     c.update = vi.fn((v: Row) => ((op = "update"), (updateValues = v), c));
     c.eq = vi.fn((k: string, v: unknown) => (filters.push([k, v]), c));
     c.upsert = vi.fn(async (row: Row) => {
+      if (failUpsert) return { error: { message: "boom" } };
       upsertCalls.push(row);
       offers = [row];
       return { error: null };
@@ -40,6 +43,7 @@ function ctx(): McpContext {
       }
       if (table === "workflow_runs") return runs.filter((r) => filters.every(([k, v]) => r[k] === v));
       if (table === "board_columns") return [{ id: "c-todo", title: "To Do" }];
+      if (table === "terminal_session_offers") return offers.filter((r) => filters.every(([k, v]) => r[k] === v));
       return [];
     };
     c.maybeSingle = vi.fn(async () => ({ data: rows()[0] ?? null, error: null }));
@@ -57,6 +61,7 @@ const mine = () => buildSessionEnvValue(Buffer.from(KEY, "base64"), "sid-1");
 beforeEach(() => {
   process.env.TERMINAL_SESSION_SECRET = "test-secret";
   upsertCalls = [];
+  failUpsert = false;
   updateFilters = [];
   updateValues = null;
   offers = [];
@@ -159,5 +164,69 @@ describe("offerNextCard", () => {
     const r = await offerNextCard(ctx(), { from_session: mine() });
     expect(r.shown).toBe(false);
     expect(upsertCalls).toHaveLength(0);
+  });
+});
+
+// Card e6a612b8: the board raises the bar itself when a call from an in-app
+// session finishes a card's whole workflow. The session never has to call
+// offer_next_card.
+describe("workflowFinishedReply raises the bar for the calling session", () => {
+  it("stores the offer when the finishing call carries the session's proof, without the session calling anything else", async () => {
+    const r = await workflowFinishedReply(ctx(), TASK, mine());
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0]).toMatchObject({
+      sid: "sid-1", user_id: ME, idea_id: "idea-1", finished_task_id: TASK,
+      next_task_id: "n1", agent: "codex", still_working_on: 0, status: "offered",
+    });
+    expect(r.next_card_offer).toEqual({ shown: true });
+    expect(r.instruction).toContain("already shown");
+    expect(r.instruction).toContain('Click "Start in a new tab" below');
+    expect(r.instruction).not.toContain("first call offer_next_card");
+  });
+
+  it("works out still_working_on on the server: other busy cards on the board, not ones another open session was launched for", async () => {
+    tasks.push(
+      { id: "b1", title: "Busy here", idea_id: "idea-1", archived: false, workflow_step_in_progress: 1, workflow_step_awaiting_approval: 0 },
+      { id: "b2", title: "Waiting on approval", idea_id: "idea-1", archived: false, workflow_step_in_progress: 0, workflow_step_awaiting_approval: 1 },
+      { id: "b3", title: "Another tab's card", idea_id: "idea-1", archived: false, workflow_step_in_progress: 1, workflow_step_awaiting_approval: 0 },
+      { id: "b4", title: "Idle", idea_id: "idea-1", archived: false, workflow_step_in_progress: 0, workflow_step_awaiting_approval: 0 },
+    );
+    sessions.push({ ...sessions[0], sid: "sid-2", task_id: "b3" });
+    await workflowFinishedReply(ctx(), TASK, mine());
+    expect(upsertCalls[0].still_working_on).toBe(2);
+  });
+
+  it("with no session proof (not the browser terminal, or Codex that didn't pass it): wording only, nothing stored, no request to call a tool", async () => {
+    const r = await workflowFinishedReply(ctx(), TASK);
+    expect(upsertCalls).toHaveLength(0);
+    expect(r.next_card_offer).toEqual({ shown: false });
+    expect(r.instruction).toContain('Next up on the board: "The next one"');
+    expect(r.instruction).not.toContain("offer_next_card with finished_task_id");
+    expect(r.instruction).not.toContain("Start in a new tab");
+  });
+
+  it("a wrong proof or a session on another board stores nothing and falls back to the wording", async () => {
+    const bad = await workflowFinishedReply(ctx(), TASK, "sid-1.wrongproof");
+    sessions[0].idea_id = "idea-2";
+    const elsewhere = await workflowFinishedReply(ctx(), TASK, mine());
+    expect(upsertCalls).toHaveLength(0);
+    expect(bad.next_card_offer).toEqual({ shown: false });
+    expect(elsewhere.next_card_offer).toEqual({ shown: false });
+  });
+
+  it("a failed save never fails the finish: it logs and falls back to the wording", async () => {
+    failUpsert = true;
+    const r = await workflowFinishedReply(ctx(), TASK, mine());
+    expect(r.workflow_finished).toBe(true);
+    expect(r.next_card_offer).toEqual({ shown: false });
+    expect(r.instruction).toContain('Next up on the board: "The next one"');
+    expect(r.instruction).not.toContain("Start in a new tab");
+  });
+
+  it("doesn't bring back a bar the user already dismissed for this card (claim_next_step re-reporting the finish)", async () => {
+    offers = [{ sid: "sid-1", user_id: ME, finished_task_id: TASK, status: "dismissed" }];
+    const r = await workflowFinishedReply(ctx(), TASK, mine());
+    expect(upsertCalls).toHaveLength(0);
+    expect(r.next_card_offer).toEqual({ shown: false });
   });
 });
