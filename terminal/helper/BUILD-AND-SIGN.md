@@ -245,8 +245,10 @@ per chip). Nothing is built on the Mac.
   `.github/workflows/helper-release-check.yml` runs it on any change to that
   version.
 - **The installer.** Per-user, one click, no administrator password: it installs
-  into the user's own AppData, adds a Start-menu entry and opens VibeCodes.
-  Uninstalling removes the `vibecodes://` link handler and the start-at-login
+  into the user's own AppData, adds a Start-menu entry, registers the
+  `vibecodes://` link handler (`build/installer.nsh`, so links work even after
+  a silent install) and opens VibeCodes. The app rewrites the handler at every
+  start, which repairs it. Uninstalling removes the `vibecodes://` link handler and the start-at-login
   entry (`build/installer.nsh`) and keeps the saved sign-in.
 - **Unsigned for now.** Windows shows "Windows protected your PC" (More info,
   then Run anyway). The workflow has a marked slot for a certificate

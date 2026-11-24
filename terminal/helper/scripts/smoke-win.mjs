@@ -15,7 +15,12 @@
 //   - the app starts and is still running after 10 seconds (a missing module
 //     crashes it at once: helper 0.2.0 and 0.3.13), with "Keep helper ready"
 //     switched on so it writes its start-at-login entry;
-//   - HKCU\Software\Classes\vibecodes\shell\open\command runs the installed exe;
+//   - the installer itself registers vibecodes:// links: straight after the
+//     silent install, before the app has ever started,
+//     HKCU\Software\Classes\vibecodes is a URL handler whose
+//     shell\open\command runs the installed exe;
+//   - the same handler still runs the installed exe after the app's own start
+//     (the app rewrites it at every start);
 //   - a silent uninstall removes the exe, the vibecodes key and the
 //     start-at-login entry.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -48,7 +53,9 @@ const linkCommand = () => (regValues(LINK_COMMAND_KEY) ?? []).find((v) => v.name
 const runEntriesFor = (exe) => (regValues(RUN_KEY) ?? []).filter((v) => pointsAt(v.data, exe));
 
 // 1. Silent per-user install. The one-click installer starts the app when it
-//    finishes only when run by a person, not with /S.
+//    finishes only when run by a person, not with /S. Any handler left from
+//    an earlier run is removed first, so only this installer can pass step 2.
+spawnSync("reg", ["delete", LINK_KEY, "/f"], { stdio: "ignore" });
 execFileSync(installer, ["/S"], { stdio: "inherit" });
 const programs = join(process.env.LOCALAPPDATA ?? "", "Programs");
 const appDir = existsSync(programs)
@@ -75,7 +82,17 @@ const prebuilds = readdirSync(join(res, "bridge", "node_modules", "node-pty", "p
 const macBuilds = prebuilds.filter((d) => d.startsWith("darwin-"));
 if (macBuilds.length) fail(`the Windows app carries Mac node-pty builds: ${macBuilds.join(", ")}`);
 ok(`bridge, node-pty (win32-${arch}) and shared modules are in place; no Mac builds`);
-console.log(`  link handler straight after install: ${JSON.stringify(linkCommand()) || "(none)"}`);
+
+// The installer, not the app, registered vibecodes:// links: nothing has
+// started the app yet.
+const linkValues = regValues(LINK_KEY);
+if (linkValues === null) fail(`the installer did not register vibecodes:// links: ${LINK_KEY} is missing`);
+if (!linkValues.some((v) => v.name === "URL Protocol")) fail(`${LINK_KEY} has no "URL Protocol" value`);
+const installedCommand = linkCommand();
+if (!pointsAt(installedCommand, exe)) {
+  fail(`straight after install, ${LINK_COMMAND_KEY} does not run ${exe}: ${JSON.stringify(installedCommand)}`);
+}
+ok(`the installer registered vibecodes:// links before the app started (${installedCommand})`);
 
 // 3. The installed app's own runtime runs a real console command through the
 //    bridge's node-pty.
@@ -122,9 +139,9 @@ await sleep(10_000);
 if (exitedWith !== null) fail(`the app quit within 10 seconds of starting (exit code ${exitedWith})`);
 ok("the app started and is still running after 10 seconds");
 
-// 5. The vibecodes:// link handler and the start-at-login entry run the
-//    installed app. (The installer registers the link; the app repairs it at
-//    every start.)
+// 5. After the app's own start, the vibecodes:// link handler (which the app
+//    rewrites at every start) and the start-at-login entry run the installed
+//    app.
 const command = linkCommand();
 if (!pointsAt(command, exe)) fail(`${LINK_COMMAND_KEY} does not run ${exe}: ${JSON.stringify(command)}`);
 ok(`vibecodes:// links open the installed app (${command})`);
