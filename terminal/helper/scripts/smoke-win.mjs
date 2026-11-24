@@ -56,7 +56,21 @@ const runEntriesFor = (exe) => (regValues(RUN_KEY) ?? []).filter((v) => pointsAt
 //    finishes only when run by a person, not with /S. Any handler left from
 //    an earlier run is removed first, so only this installer can pass step 2.
 spawnSync("reg", ["delete", LINK_KEY, "/f"], { stdio: "ignore" });
-execFileSync(installer, ["/S"], { stdio: "inherit" });
+try {
+  execFileSync(installer, ["/S"], { stdio: "inherit" });
+} catch (err) {
+  // The installer itself crashed or failed. Print what Windows recorded about
+  // the crash (the program and the part of it that failed), so a failure
+  // here says why instead of only "Command failed".
+  console.error(`installer exit code: ${err.status} (0x${(err.status >>> 0).toString(16)})`);
+  const ev = spawnSync(
+    "wevtutil",
+    ["qe", "Application", "/q:*[System[(EventID=1000 or EventID=1001 or EventID=1026)]]", "/c:6", "/rd:true", "/f:text"],
+    { encoding: "utf8" },
+  );
+  console.error(ev.stdout || ev.stderr || "(no crash records found)");
+  fail(`the installer did not finish: ${err.message.split("\n")[0]}`);
+}
 const programs = join(process.env.LOCALAPPDATA ?? "", "Programs");
 const appDir = existsSync(programs)
   ? readdirSync(programs)

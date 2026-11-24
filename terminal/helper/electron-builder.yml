@@ -108,11 +108,11 @@ dmg:
 # Windows shows "Windows protected your PC" until a certificate is bought.
 win:
   icon: build/icon.ico
-  target:
-    - target: nsis
-      arch:
-        - x64
-        - arm64
+  # One installer per run: the chip comes from the command line
+  # (npm run dist:win -- --x64, or -- --arm64), so each CI job builds only its
+  # own. Listing both chips here made every job also build the other chip's
+  # installer and a combined one, all sharing one temporary uninstaller file.
+  target: nsis
   extraResources:
     - from: ../bridge
       to: bridge
