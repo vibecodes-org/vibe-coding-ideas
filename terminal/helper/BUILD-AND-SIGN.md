@@ -219,10 +219,25 @@ per chip). Nothing is built on the Mac.
 
 - **One release train.** Mac and Windows share one version and one release
   (`terminal-helper-v<version>`). When the release is published, the workflow
-  checks the tag matches `package.json`, builds both installers, installs,
-  starts and uninstalls each one as a smoke test, and uploads
+  checks the tag matches `package.json`, builds both installers, smoke-tests
+  each one, and then a separate job uploads
   `VibeCodes-Setup-<version>-x64.exe` and `-arm64.exe` to the same release.
-  Pull requests that touch the helper build and smoke-test without uploading.
+  Pull requests that touch the helper, and manual runs, build and smoke-test
+  without uploading.
+- **The smoke test** (`scripts/smoke-win.mjs`, on each chip's own machine):
+  silent install for this user; the bridge and this chip's node-pty build are
+  packed (and no Mac ones); the installed app, run as Node
+  (`ELECTRON_RUN_AS_NODE=1`), loads the bridge's `ws` and `node-pty` and runs
+  `cmd.exe /d /c echo ok` through node-pty; the app starts and keeps running;
+  `HKCU\Software\Classes\vibecodes\shell\open\command` runs the installed app
+  and the start-at-login entry is written; a silent uninstall removes the app,
+  the `vibecodes` key and the start-at-login entry.
+- **Write access.** Only the upload job, which runs only for a published
+  release and installs nothing, can write to the repo. The build job has a
+  read-only token that is not kept in git's settings.
+- **Redoing a failed Windows upload.** Re-run the release's own run
+  (`gh run list --workflow helper-windows.yml --event release`, then
+  `gh run rerun <id>`). A manual run of the workflow can't upload.
 - **The 6-file check.** Only move `MINIMUM_RECOMMENDED_HELPER_VERSION`
   (`src/lib/terminal/helper-version.ts`) to a release once all 6 files are on
   it: the 2 Mac disk images, the 2 Mac zips and the 2 Windows installers.

@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       # Node 24 runs the TypeScript file-name module directly, so the check
       # and the download route share one list of file names.
       - uses: actions/setup-node@v4

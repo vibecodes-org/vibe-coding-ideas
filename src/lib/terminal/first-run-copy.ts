@@ -55,7 +55,7 @@ export const FIRST_RUN_COPY = {
   // Windows button and its hint went with it).
   comingSoon: {
     heading: "The in-browser terminal works on Mac and Windows for now",
-    body: "In the meantime you can still run Claude Code the usual way in your own terminal.",
+    body: "It isn't available on this device yet, but you can still run Claude Code the usual way in your own terminal.",
   },
   ready: {
     title: "Ready when you are",

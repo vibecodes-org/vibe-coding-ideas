@@ -3,8 +3,13 @@ name: Helper Windows installers
 # Card 51d424f7 (release 1b). Builds the two Windows installers (x64 and ARM)
 # for the VibeCodes helper. One release train: every helper release
 # (tag terminal-helper-v<version>) gets both installers uploaded next to the
-# Mac files, under the same version. A pull request touching the helper only
-# builds and smoke-tests them (nothing is uploaded).
+# Mac files, under the same version. A pull request touching the helper, or a
+# manual run, only builds and smoke-tests them (nothing is uploaded).
+#
+# Write access: only the "upload" job, which runs only for a published release
+# and runs no project code, can write to the repo. The build job installs
+# packages (whose install scripts run) with a read-only token that is not saved
+# in git's settings.
 on:
   release:
     types: [published]
@@ -30,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
-      contents: write # gh release upload, release builds only
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +48,8 @@ jobs:
             runner: windows-11-arm
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -75,7 +82,7 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Smoke test (install, start, uninstall)
+      - name: Smoke test (install, node-pty, start, link handler, uninstall)
         working-directory: terminal/helper
         shell: bash
         run: |
@@ -88,10 +95,29 @@ jobs:
           path: terminal/helper/dist/VibeCodes-Setup-*.exe
           if-no-files-found: error
 
+  # Attaches both installers to the release once both built and passed their
+  # smoke test. The only job with write access: it checks out nothing and
+  # installs nothing. To redo a failed upload, re-run the release's own run
+  # (gh run rerun <id>); a manual run of this workflow never uploads.
+  upload:
+    name: attach the installers to the release
+    needs: build
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'terminal-helper-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VibeCodes-Setup-*
+          path: installers
+          merge-multiple: true
+
       - name: Upload to the release
-        if: github.event_name == 'release'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" terminal/helper/dist/VibeCodes-Setup-*.exe --clobber
+        run: |
+          ls -l installers
+          gh release upload "$TAG" installers/VibeCodes-Setup-*.exe --clobber --repo "$GITHUB_REPOSITORY"

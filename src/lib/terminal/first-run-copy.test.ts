@@ -41,7 +41,7 @@ describe("first-run copy — no error-speak or jargon", () => {
   it("the Linux/phone/tablet panel is a calm 'coming soon' naming Mac and Windows (decision 3, 24 Nov)", () => {
     expect(FIRST_RUN_COPY.comingSoon.heading).toBe("The in-browser terminal works on Mac and Windows for now");
     expect(FIRST_RUN_COPY.comingSoon.body).toBe(
-      "In the meantime you can still run Claude Code the usual way in your own terminal.",
+      "It isn't available on this device yet, but you can still run Claude Code the usual way in your own terminal.",
     );
     // The greyed "Download for Windows" button and its hint are gone.
     expect(Object.keys(FIRST_RUN_COPY.comingSoon)).toEqual(["heading", "body"]);
