@@ -334,7 +334,7 @@ export default function McpIntegrationPage() {
                   { name: "reorder_columns", description: "Reorder columns by providing IDs in desired order" },
                   { name: "manage_labels", description: "Create labels, add or remove them from tasks" },
                   { name: "record_project_path", description: "Save this idea's local project folder so future Claude Code launches reopen it" },
-                  { name: "offer_next_card", description: "When a card's whole workflow has finished, show a \"Start in a new tab\" bar in your own in-browser terminal tab. It only shows the bar; it never starts anything. The server chooses the next card" },
+                  { name: "offer_next_card", description: "Remove the \"Start in a new tab\" bar from your own in-browser terminal tab when you say \"keep going here\". The board shows the bar itself when a session in that tab finishes a card's whole workflow; the server chooses the next card and nothing starts until you click" },
                 ]}
               />
             </CollapsibleTools>

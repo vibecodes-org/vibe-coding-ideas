@@ -1,7 +1,8 @@
 "use client";
 
 // The "next card" offers for this user's terminal sessions (card 7c728159).
-// A session writes one row through the offer_next_card tool; this hook reads
+// The board writes one row per session when a call from that session finishes
+// a card's whole workflow (card e6a612b8); this hook reads
 // them and keeps them live. Only the person's own rows are visible (row-level
 // security), and an offer nobody answered in 48 hours is ignored.
 

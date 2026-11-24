@@ -9,9 +9,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { cleanPeerText, formatPeerMessage } from "../../shared/peer-message.mjs";
 import { createPeerState, endTyping, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
 
-// The one board tool that needs to know which session is calling: it gets the
-// session's proof filled in, so the agent never has to look it up.
-export const SEND_TOOL_MATCHER = "^mcp__.+__offer_next_card$";
+// The board tools that need to know which session is calling get the session's
+// proof filled in, so the agent never has to look it up: offer_next_card, and
+// the tools that can finish a card's whole workflow, so the board can show the
+// next-card bar in this tab itself (card e6a612b8).
+export const SEND_TOOL_MATCHER = "^mcp__.+__(offer_next_card|complete_step|approve_step|skip_step|claim_next_step)$";
+const OFFER_TOOL_MATCHER = "^mcp__.+__offer_next_card$";
 const HOOK_TIMEOUT_SECONDS = 5;
 const SUBMIT_WAIT_MS = 3000;
 const PASTE_SETTLE_MS = 150;
@@ -60,7 +63,7 @@ const CODEX_HOOK_EVENTS = /** @type {const} */ ([
   ["SessionStart", "session_start", null],
 ]);
 // No PreToolUse hook for Codex: it passes its own session value to
-// offer_next_card (the tool's instructions tell it how), and PostToolUse
+// offer_next_card and the workflow tools (their instructions tell it how), and PostToolUse
 // already says "busy".
 // Where Codex files hooks passed on the command line (its "session flags").
 const CODEX_FLAG_HOOK_SOURCE = "/<session-flags>/config.toml";
@@ -265,13 +268,13 @@ export function createPeerBridge(deps) {
         return { decision: "block", reason: joinHeld(r.block) };
       }
       if (name === "PreToolUse" && typeof json?.tool_name === "string" && new RegExp(SEND_TOOL_MATCHER).test(json.tool_name) && envValue) {
-        return {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "allow",
-            updatedInput: { ...(json.tool_input && typeof json.tool_input === "object" ? json.tool_input : {}), from_session: envValue },
-          },
-        };
+        const updatedInput = { ...(json.tool_input && typeof json.tool_input === "object" ? json.tool_input : {}), from_session: envValue };
+        // Only offer_next_card is pre-approved (as before). The workflow tools
+        // keep the user's own permission rules: with no decision, Claude Code
+        // applies the filled-in input and asks or allows as it normally would.
+        return new RegExp(OFFER_TOOL_MATCHER).test(json.tool_name)
+          ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput } }
+          : { hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput } };
       }
       return {};
     },
