@@ -12,6 +12,9 @@
 // the update never races a still-running helper (the whole point: drag-to-
 // Applications must always succeed, no Finder "in use" dialog).
 
+import { forMachine } from "./machine-words";
+import type { TerminalOs } from "./platform";
+
 export type UpdateFlowPhase =
   | "idle"
   | "confirming"
@@ -85,7 +88,10 @@ export function updateFlowReducer(state: UpdateFlowState, event: UpdateFlowEvent
 // ── exact copy strings (design §5) ────────────────────────────────────────────
 
 export const UPDATE_CONFIRM_HEADING = "Update the helper?";
-export function updateConfirmBody(sessionCount: number): string {
+export function updateConfirmBody(sessionCount: number, os: TerminalOs = "mac"): string {
+  return forMachine(macUpdateConfirmBody(sessionCount), os);
+}
+function macUpdateConfirmBody(sessionCount: number): string {
   return `Your ${sessionCount} running session${sessionCount === 1 ? "" : "s"} on this Mac will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.`;
 }
 export const UPDATE_CONFIRM_CANCEL_LABEL = "Not now";
@@ -106,8 +112,8 @@ export function isUpdateFlowSettled(phase: UpdateFlowPhase): boolean {
 
 /** The notice for a settled phase. Only "ready" is good news (sky tone); the
  *  other two are warnings (amber) because the helper may still be running. */
-export function settledNoticeCopy(phase: UpdateFlowPhase): string {
-  if (phase === "ready") return UPDATE_READY_COPY;
-  if (phase === "helper-unreachable") return UPDATE_HELPER_UNREACHABLE_COPY;
-  return UPDATE_QUIESCE_TIMEOUT_COPY;
+export function settledNoticeCopy(phase: UpdateFlowPhase, os: TerminalOs = "mac"): string {
+  if (phase === "ready") return forMachine(UPDATE_READY_COPY, os);
+  if (phase === "helper-unreachable") return forMachine(UPDATE_HELPER_UNREACHABLE_COPY, os);
+  return forMachine(UPDATE_QUIESCE_TIMEOUT_COPY, os);
 }

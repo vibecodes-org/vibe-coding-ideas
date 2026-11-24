@@ -179,8 +179,14 @@
  *  Same soft nudge.
  *  0.3.37 (card f0a13bde, 12 Nov 2026): Codex sessions can receive session
  *  messages too. An older helper's Codex session answers "can't receive".
- *  Same soft nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.39";
+ *  Same soft nudge.
+ *  0.4.0 (card 51d424f7 release 1b, 24 Nov 2026): the first release with the
+ *  Windows installers (x64 and ARM) next to the Mac files, under one version;
+ *  the Mac app gets the VibeCodes logo. Nothing changes how an older Mac
+ *  helper works: same soft nudge. The download link follows this constant,
+ *  so it must only move once all 6 files are on the release
+ *  (scripts/check-helper-release.mjs checks that). */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.0";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the

@@ -4,7 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
-import { agentInstructions, createMailbox, parseOutgoing, shellPath } from "./local-mail.js";
+import { agentInstructions, createMailbox, parseOutgoing, sameMachineMessagesSupported, shellPath } from "./local-mail.js";
+
+// Card 51d424f7: the mailbox is a shell script, so a Windows PC gets no
+// session-to-session messages until release 1c.
+test("same-machine messages: on for the Mac, off on Windows until release 1c", () => {
+  assert.equal(sameMachineMessagesSupported("darwin"), true);
+  assert.equal(sameMachineMessagesSupported("win32"), false);
+});
 
 test("parseOutgoing reads list and send requests", () => {
   assert.deepEqual(parseOutgoing("list\n\n"), { ok: true, cmd: "list" });

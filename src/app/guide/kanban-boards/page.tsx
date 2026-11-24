@@ -290,7 +290,7 @@ export default function KanbanBoardsPage() {
             button (and each task card and detail view has a launch option) that
             opens Claude Code already connected to this board via MCP, ready to
             pick up the top unstarted task — or the specific task you launched
-            from. On a Mac with the in-app terminal enabled the main button and
+            from. On a Mac or Windows PC with the in-app terminal enabled the main button and
             the task detail icon open the browser terminal docked on the board;
             elsewhere they open a Terminal window, and the chevron menu offers
             both.

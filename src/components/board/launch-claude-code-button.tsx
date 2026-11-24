@@ -780,11 +780,19 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const [platformSupported] = useState<boolean>(
     () => resolveTerminalPlatform(readPlatformSignals()).supported
   );
+  // Card 51d424f7 (Windows release 1b): the Codex desktop window opens the
+  // Mac's Terminal app; its Windows version is release 1c. Until then a
+  // Windows PC doesn't see it (Nick, 24 Nov 2026). Release 1c removes this.
+  const [codexWindowAvailable] = useState<boolean>(
+    () => resolveTerminalPlatform(readPlatformSignals()).os !== "windows"
+  );
   const launchTarget: LaunchTarget = defaultLaunchTarget({
     terminalEnabled: browserLaunchAvailable,
     platformSupported,
   });
   const orderedModes = launchModeOptions(browserLaunchAvailable, platformSupported);
+  const modesFor = (agent: LaunchAgent) =>
+    orderedModes.filter((mode) => codexWindowAvailable || agent !== "codex" || mode === "browser");
   const onLaunchedInBrowser = props.variant === "task-icon" ? props.onLaunchedInBrowser : undefined;
   const handleDefaultLaunch = useCallback(() => {
     const target = defaultLaunchTarget({
@@ -885,13 +893,15 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         {browserLaunchAvailable && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleLaunchCodexDesktop} className="py-2.5 sm:py-1.5">
-              <Terminal className="mr-2 h-4 w-4" />
-              <div className="flex flex-col">
-                <span>Launch in Codex</span>
-                <span className="text-[11px] text-muted-foreground">{CODEX_WINDOW_SUBLINE}</span>
-              </div>
-            </DropdownMenuItem>
+            {codexWindowAvailable && (
+              <DropdownMenuItem onSelect={handleLaunchCodexDesktop} className="py-2.5 sm:py-1.5">
+                <Terminal className="mr-2 h-4 w-4" />
+                <div className="flex flex-col">
+                  <span>Launch in Codex</span>
+                  <span className="text-[11px] text-muted-foreground">{CODEX_WINDOW_SUBLINE}</span>
+                </div>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => handleLaunchInBrowser("codex")} className="py-2.5 sm:py-1.5">
               <Globe className="mr-2 h-4 w-4" />
               <span className="inline-flex items-center gap-1.5">
@@ -987,7 +997,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
                         </span>
                       )}
                     </DropdownMenuLabel>
-                    {orderedModes.map((mode) =>
+                    {modesFor(agent).map((mode) =>
                       mode === "browser" ? (
                         <DropdownMenuItem key={mode} onSelect={() => handleLaunchInBrowser(agent)}>
                           <Globe className="mr-2 h-4 w-4" />

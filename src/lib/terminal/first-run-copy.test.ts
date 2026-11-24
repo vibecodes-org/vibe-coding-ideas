@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   FIRST_RUN_COPY,
+  FIRST_RUN_COPY_WINDOWS,
   FORBIDDEN_FIRST_RUN_COPY,
   collectFirstRunCopy,
+  firstRunCopyFor,
 } from "./first-run-copy";
+import { MAC_ONLY_WORDS } from "./machine-words";
 
 describe("first-run copy — no error-speak or jargon", () => {
   const strings = collectFirstRunCopy();
@@ -35,8 +38,82 @@ describe("first-run copy — no error-speak or jargon", () => {
     expect(FIRST_RUN_COPY.setup.step1Title).toContain("VibeCodes helper");
   });
 
-  it("the non-Mac panel is a calm 'coming soon', not an error (criterion #10)", () => {
-    expect(FIRST_RUN_COPY.comingSoon.heading.toLowerCase()).toContain("mac-only");
-    expect(FIRST_RUN_COPY.comingSoon.body.toLowerCase()).toContain("windows support");
+  it("the Linux/phone/tablet panel is a calm 'coming soon' naming Mac and Windows (decision 3, 24 Nov)", () => {
+    expect(FIRST_RUN_COPY.comingSoon.heading).toBe("The in-browser terminal works on Mac and Windows for now");
+    expect(FIRST_RUN_COPY.comingSoon.body).toBe(
+      "In the meantime you can still run Claude Code the usual way in your own terminal.",
+    );
+    // The greyed "Download for Windows" button and its hint are gone.
+    expect(Object.keys(FIRST_RUN_COPY.comingSoon)).toEqual(["heading", "body"]);
+  });
+});
+
+describe("first-run copy — Windows (approved mock, card 51d424f7)", () => {
+  const w = FIRST_RUN_COPY_WINDOWS;
+
+  it("picks the copy by system, with the Mac copy for anything but Windows", () => {
+    expect(firstRunCopyFor("windows")).toBe(FIRST_RUN_COPY_WINDOWS);
+    expect(firstRunCopyFor("mac")).toBe(FIRST_RUN_COPY);
+    expect(firstRunCopyFor("other")).toBe(FIRST_RUN_COPY);
+    expect(firstRunCopyFor(undefined)).toBe(FIRST_RUN_COPY);
+  });
+
+  it("matches the mock's middle panel word for word", () => {
+    expect(w.setup.heading).toBe("Run Claude Code here — one-time setup");
+    expect(w.setup.subheading).toBe("Takes about a minute. You only do this once on this PC.");
+    expect(w.setup.step1Title).toBe("Download the VibeCodes helper");
+    expect(w.setup.step1Desc).toBe(
+      "A small app that lets this page mirror Claude Code from your PC. Your code stays on your computer.",
+    );
+    expect(w.setup.step2Title).toBe("Open the file to install VibeCodes");
+    expect(w.setup.step2Desc).toBe(
+      "When the download finishes, open it. It installs in a few seconds and doesn’t ask for an administrator password.",
+    );
+    expect(w.setup.step2Note?.map((r) => r.text).join("")).toBe(
+      "Windows may show “Windows protected your PC”. Click More info, then Run anyway. That’s expected while VibeCodes is new to Windows.",
+    );
+    expect(w.setup.step2Note?.filter((r) => r.bold).map((r) => r.text)).toEqual([
+      "“Windows protected your PC”",
+      "More info",
+      "Run anyway",
+    ]);
+    expect(w.setup.step3Title).toBe("Connect this board to the helper");
+    expect(w.setup.openPrompt).toBe(
+      "When you click Connect, your browser may ask “Open VibeCodes?” — click Open. That’s expected, and it only happens the first time.",
+    );
+    expect(w.setup.connect).toBe("Connect");
+    expect(w.setup.alreadyInstalled).toBe("Already installed it? Just click Connect.");
+  });
+
+  it("carries the approved 'still coming' line until release 1c", () => {
+    expect(w.setup.previewNote).toBe("Some features are still coming to Windows.");
+    expect(FIRST_RUN_COPY.setup).not.toHaveProperty("previewNote");
+    expect(FIRST_RUN_COPY.setup).not.toHaveProperty("step2Note");
+  });
+
+  it("uses the mock table's wording on the connecting and retry screens", () => {
+    expect(w.connecting.heading).toBe("Connecting to your PC…");
+    expect(w.connecting.openNudge).toBe("If your browser asks, click Open VibeCodes.");
+    expect(w.timeoutNew.body).toBe(
+      "If you just installed it, make sure you clicked Open when your browser asked — then try again.",
+    );
+    expect(w.timeoutReturning.heading).toBe("Couldn’t reach the helper on this PC");
+    expect(w.timeoutReturning.reassure).toBe("Your work on your PC is safe.");
+    expect(w.ready.body).toBe(
+      "This PC is already set up. Start a new session, or pick up one of your other sessions.",
+    );
+  });
+
+  it.each(MAC_ONLY_WORDS)("no Windows string mentions %s", (word) => {
+    const offenders = collectFirstRunCopy(FIRST_RUN_COPY_WINDOWS).filter((s) => s.includes(word));
+    // The shared coming-soon heading names both systems on purpose; Windows never sees that panel.
+    expect(offenders.filter((s) => s !== FIRST_RUN_COPY.comingSoon.heading)).toEqual([]);
+  });
+
+  it("the Mac copy is unchanged", () => {
+    expect(FIRST_RUN_COPY.setup.subheading).toBe("Takes about a minute. You only do this once on this Mac.");
+    expect(FIRST_RUN_COPY.setup.step2Title).toBe("Open the file and drag VibeCodes to Applications");
+    expect(FIRST_RUN_COPY.connecting.heading).toBe("Connecting to your Mac…");
+    expect(FIRST_RUN_COPY.timeoutReturning.reassure).toBe("Your work on your Mac is safe.");
   });
 });

@@ -60,7 +60,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
-import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
+import type { TerminalPlatform } from "@/lib/terminal/platform";
 import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 import { homeShortPath } from "@/lib/terminal/home-short-path";
 import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
@@ -69,7 +69,7 @@ import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import type { LaunchAgent } from "@/lib/terminal/agent-launch";
 import { AGENT_LABEL } from "@/lib/terminal/agent-copy";
 import { TerminalAgentPicker } from "./terminal-agent-picker";
-import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
+import { FIRST_RUN_COPY, firstRunCopyFor, type FirstRunCopy } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
 import {
   formatAttentionAnnouncement,
@@ -85,7 +85,7 @@ import {
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 import { capRefusalMessage } from "@/lib/terminal/session-cap";
-import { E2EE_COPY, notEncryptedCopy } from "@/lib/terminal/e2ee-copy";
+import { E2EE_COPY, e2eeCopyFor, notEncryptedCopy } from "@/lib/terminal/e2ee-copy";
 import { REMOTE_CONTROL_EARLY_EXIT_HINT } from "@/lib/terminal/remote-control-mode";
 import { endedCopy, endedReasonAllowsResume, type EndedCopy } from "@/lib/terminal/ended-copy";
 import { reconnectCopy } from "@/lib/terminal/reconnect-copy";
@@ -558,7 +558,8 @@ export function TerminalSessionView({
   const showHelperNudge =
     showStream && !dismissedHelperNudge && helperUpdate.phase === "idle" && shouldShowHelperUpdateNudge(helperVersion);
   // Card f0a13bde follow-up: only blame the helper when it really is old.
-  const notEncrypted = notEncryptedCopy(helperVersion);
+  const notEncrypted = notEncryptedCopy(helperVersion, platform.os);
+  const e2eeCopy = e2eeCopyFor(platform.os);
   const canLaunch =
     state.status === "idle" ||
     state.status === "error" ||
@@ -654,6 +655,7 @@ export function TerminalSessionView({
         : boardIdentity.ideaTitle
           ? `~/projects/${slugifyIdeaTitle(boardIdentity.ideaTitle)}`
           : null,
+    os: platform.os,
   });
   // "Show what happened" (mock 3e): hide the message for THIS ended session
   // so the terminal lines underneath can be read; a one-line bar keeps
@@ -900,14 +902,14 @@ export function TerminalSessionView({
               tabIndex={0}
             >
               <LockOpen className="h-3 w-3" aria-hidden="true" />
-              <span className="hidden sm:inline">{E2EE_COPY.chip.notE2ee}</span>
+              <span className="hidden sm:inline">{e2eeCopy.chip.notE2ee}</span>
             </span>
           )}
           <span
             className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}
             // Terminal P2 (E2EE) design §5 — the positive indicator lives
             // ONLY here, one hover/focus away, never as a permanent chip.
-            title={view === "connected" && e2eeActive ? E2EE_COPY.connected.tooltip : undefined}
+            title={view === "connected" && e2eeActive ? e2eeCopy.connected.tooltip : undefined}
             tabIndex={view === "connected" && e2eeActive ? 0 : undefined}
           >
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
@@ -1185,13 +1187,13 @@ export function TerminalSessionView({
               role="status"
             >
               <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-              <b>{setupLiveStrip(launchAgent, setupAction)}</b>
+              <b>{setupLiveStrip(launchAgent, setupAction, platform.os)}</b>
             </div>
           )}
           {state.status === "disconnected" && (
             <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
               <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-              <b>{reconnectCopy(false).title}</b> {reconnectCopy(false).text}
+              <b>{reconnectCopy(false, platform.os).title}</b> {reconnectCopy(false, platform.os).text}
               <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
                 Reconnect now
               </button>
@@ -1200,11 +1202,11 @@ export function TerminalSessionView({
           {state.status === "connected" && peerDegraded && (
             <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
               <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-              <b>{reconnectCopy(!!longWait).title}</b> {reconnectCopy(!!longWait).text}
+              <b>{reconnectCopy(!!longWait, platform.os).title}</b> {reconnectCopy(!!longWait, platform.os).text}
               <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
                 Reconnect now
               </button>
-              {reconnectCopy(!!longWait).showEndSession && (
+              {reconnectCopy(!!longWait, platform.os).showEndSession && (
                 <button className="ml-2 underline hover:text-amber-200" onClick={actions.end}>
                   End session
                 </button>
@@ -1399,6 +1401,9 @@ function StateOverlay({
    *  The caller passes false while popped out. */
   remoteControlEarlyExit?: boolean;
 }) {
+  // Card 51d424f7: "PC" wording on Windows, the Mac's own words everywhere else.
+  const copy = firstRunCopyFor(platform.os);
+  const e2ee = e2eeCopyFor(platform.os);
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       {view === "coming-soon" && <ComingSoonPanel />}
@@ -1407,6 +1412,7 @@ function StateOverlay({
 
       {view === "ready" && (
         <ReadyPanel
+          copy={copy}
           onConnect={onConnect}
           onBrowseSessions={onBrowseSessions}
           agent={agent}
@@ -1415,18 +1421,18 @@ function StateOverlay({
       )}
 
       {(view === "connecting" || view === "connecting-returning") && (
-        <ConnectingPanel returning={view === "connecting-returning"} />
+        <ConnectingPanel copy={copy} returning={view === "connecting-returning"} />
       )}
 
       {view === "timeout-new" && (
-        <TimeoutPanel variant="new" onRetry={onRetry} onDownload={onDownloadHelper} />
+        <TimeoutPanel copy={copy} variant="new" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
       {view === "timeout-returning" && (
-        <TimeoutPanel variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
+        <TimeoutPanel copy={copy} variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
 
       {view === "legacy-waiting" && pairingTimedOut && (
-        <TimeoutPanel variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
+        <TimeoutPanel copy={copy} variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
 
       {view === "legacy-waiting" && !pairingTimedOut && (
@@ -1607,8 +1613,8 @@ function StateOverlay({
       {view === "e2ee-required" && (
         <>
           <Shield className="h-7 w-7 text-sky-400" aria-hidden="true" />
-          <div className="text-base font-semibold text-zinc-100">{E2EE_COPY.required.title}</div>
-          <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.required.body}</p>
+          <div className="text-base font-semibold text-zinc-100">{e2ee.required.title}</div>
+          <p className="max-w-md text-[13px] text-zinc-400">{e2ee.required.body}</p>
           <div className="flex flex-wrap items-center justify-center gap-2.5">
             <HelperUpdateButton onClick={onDownloadHelper} className="px-4 py-2 text-sm" />
             <Button
@@ -1621,7 +1627,7 @@ function StateOverlay({
               Not now
             </Button>
           </div>
-          <p className="max-w-md text-[11px] text-zinc-500">{E2EE_COPY.required.fine}</p>
+          <p className="max-w-md text-[11px] text-zinc-500">{e2ee.required.fine}</p>
         </>
       )}
 
@@ -1639,8 +1645,8 @@ function StateOverlay({
       {view === "integrity-failed" && (
         <>
           <ShieldAlert className="h-7 w-7 text-amber-400" aria-hidden="true" />
-          <div className="text-base font-semibold text-amber-400">{E2EE_COPY.integrity.title}</div>
-          <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.integrity.body}</p>
+          <div className="text-base font-semibold text-amber-400">{e2ee.integrity.title}</div>
+          <p className="max-w-md text-[13px] text-zinc-400">{e2ee.integrity.body}</p>
           <div className="flex flex-wrap justify-center gap-2.5">
             <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onRetry}>
               <RefreshCw className="h-3.5 w-3.5" /> Reconnect
@@ -1729,11 +1735,13 @@ function StateOverlay({
 // branch fell through to the install wizard below, telling an already-set-up
 // Mac to download the helper (Nick, 2026-08-25).
 function ReadyPanel({
+  copy,
   onConnect,
   onBrowseSessions,
   agent,
   onAgentChange,
 }: {
+  copy: FirstRunCopy;
   onConnect: () => void;
   onBrowseSessions?: () => void;
   /** Codex support (design §1b) — omitted → the picker doesn't render, byte-identical to before this field existed. */
@@ -1742,8 +1750,8 @@ function ReadyPanel({
 }) {
   return (
     <div className="flex max-w-md flex-col items-center gap-3" data-testid="ready-panel">
-      <p className="text-sm font-semibold text-zinc-100">{FIRST_RUN_COPY.ready.title}</p>
-      <p className="text-xs text-zinc-400">{FIRST_RUN_COPY.ready.body}</p>
+      <p className="text-sm font-semibold text-zinc-100">{copy.ready.title}</p>
+      <p className="text-xs text-zinc-400">{copy.ready.body}</p>
       {agent && onAgentChange && (
         <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Run it with" className="w-full" />
       )}
@@ -1752,11 +1760,11 @@ function ReadyPanel({
         onClick={onConnect}
         className="mt-1 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
       >
-        {FIRST_RUN_COPY.ready.cta}
+        {copy.ready.cta}
       </button>
       {onBrowseSessions && (
         <button type="button" onClick={onBrowseSessions} className="text-xs text-zinc-400 underline hover:text-zinc-200">
-          {FIRST_RUN_COPY.ready.browse}
+          {copy.ready.browse}
         </button>
       )}
     </div>
@@ -1773,13 +1781,16 @@ function SetupPanel({
   onConnect: () => void;
   onDownload: () => void;
 }) {
-  const copy = FIRST_RUN_COPY.setup;
+  const copy = firstRunCopyFor(platform.os).setup;
+  const alt = platform.altDownload;
   return (
     <div className="flex w-full max-w-lg flex-col text-left">
       <div className="mb-3 text-center">
         <TerminalIcon className="mx-auto h-6 w-6 text-emerald-400" />
         <h4 className="mt-2 text-[17px] font-bold text-zinc-100">{copy.heading}</h4>
         <p className="mt-1 text-[13px] text-zinc-400">{copy.subheading}</p>
+        {/* Windows release 1b: some features arrive in 1c (approved plan). */}
+        {copy.previewNote && <p className="mt-1 text-[12px] text-zinc-500">{copy.previewNote}</p>}
       </div>
 
       <SetupStep n={1} title={copy.step1Title}>
@@ -1791,25 +1802,40 @@ function SetupPanel({
         >
           <Download className="h-4 w-4" /> {platform.downloadLabel}
         </button>
-        {/* We can't reliably tell Apple Silicon from Intel client-side (see
-            platform.ts), so the primary button always targets arm64 and Intel
-            users self-identify via this opt-in link rather than being silently
-            auto-detected onto a DMG that might be wrong. */}
-        <p className="mt-2 text-[12px] text-zinc-500">
-          Intel Mac?{" "}
-          <a
-            href={`${TERMINAL_HELPER_DOWNLOAD_URL}?arch=x64`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-100"
-          >
-            Download the x64 version
-          </a>
-        </p>
+        {/* We can't reliably tell the chip client-side (see platform.ts), so
+            the primary button targets the common one (Apple Silicon on a Mac,
+            x64 on Windows) and the rest self-identify via this opt-in link
+            rather than being silently auto-detected onto the wrong download. */}
+        {alt && (
+          <p className="mt-2 text-[12px] text-zinc-500">
+            {alt.prompt}{" "}
+            <a
+              href={alt.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-100"
+            >
+              {alt.label}
+            </a>
+          </p>
+        )}
       </SetupStep>
 
       <SetupStep n={2} title={copy.step2Title}>
         <p className="text-[12.5px] text-zinc-400">{copy.step2Desc}</p>
+        {copy.step2Note && (
+          <div
+            className="mt-2.5 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/[0.06] px-3 py-2.5 text-[12.5px] text-amber-200/90"
+            data-testid="setup-step2-note"
+          >
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+            <span>
+              {copy.step2Note.map((run, i) =>
+                run.bold ? <b key={i} className="font-semibold text-amber-100">{run.text}</b> : <Fragment key={i}>{run.text}</Fragment>,
+              )}
+            </span>
+          </div>
+        )}
       </SetupStep>
 
       <SetupStep n={3} title={copy.step3Title}>
@@ -1844,8 +1870,8 @@ function SetupStep({ n, title, children }: { n: number; title: string; children:
 }
 
 // Screen ② — connecting (after Connect, or auto-connect for a returning user).
-function ConnectingPanel({ returning }: { returning: boolean }) {
-  const copy = FIRST_RUN_COPY.connecting;
+function ConnectingPanel({ copy: all, returning }: { copy: FirstRunCopy; returning: boolean }) {
+  const copy = all.connecting;
   return (
     <>
       <Loader2 className="h-7 w-7 animate-spin text-amber-400" />
@@ -1858,17 +1884,19 @@ function ConnectingPanel({ returning }: { returning: boolean }) {
 
 // Screen ④ — the calm ~8s fallback. `variant` picks the first-timer vs returning copy.
 function TimeoutPanel({
+  copy: all,
   variant,
   onRetry,
   onDownload,
 }: {
+  copy: FirstRunCopy;
   variant: "new" | "returning";
   onRetry: () => void;
   onDownload: () => void;
 }) {
-  const copy = variant === "new" ? FIRST_RUN_COPY.timeoutNew : FIRST_RUN_COPY.timeoutReturning;
-  const secondaryLabel = variant === "new" ? FIRST_RUN_COPY.timeoutNew.download : FIRST_RUN_COPY.timeoutReturning.reinstall;
-  const footer = variant === "new" ? FIRST_RUN_COPY.timeoutNew.hint : FIRST_RUN_COPY.timeoutReturning.reassure;
+  const copy = variant === "new" ? all.timeoutNew : all.timeoutReturning;
+  const secondaryLabel = variant === "new" ? all.timeoutNew.download : all.timeoutReturning.reinstall;
+  const footer = variant === "new" ? all.timeoutNew.hint : all.timeoutReturning.reassure;
   return (
     <>
       <CircleDashed className="h-7 w-7 text-sky-400" />
@@ -1890,7 +1918,8 @@ function TimeoutPanel({
   );
 }
 
-// Screen ⑥ — non-Mac / unsupported machine. No deep link, gated download.
+// Screen ⑥ — not a Mac or Windows PC (Linux, phones, tablets). No deep link,
+// no download (Nick, 24 Nov 2026: the greyed Windows button went in 1b).
 function ComingSoonPanel() {
   const copy = FIRST_RUN_COPY.comingSoon;
   return (
@@ -1898,14 +1927,6 @@ function ComingSoonPanel() {
       <Laptop className="h-7 w-7 text-zinc-300" />
       <div className="text-base font-semibold text-zinc-100">{copy.heading}</div>
       <p className="max-w-md text-[13px] text-zinc-400">{copy.body}</p>
-      <Button
-        disabled
-        aria-disabled="true"
-        className="min-h-[44px] cursor-not-allowed border border-zinc-800 bg-zinc-900 text-sm font-semibold text-zinc-500"
-      >
-        {copy.download}
-      </Button>
-      <p className="text-[11.5px] text-zinc-500">{copy.hint}</p>
     </>
   );
 }

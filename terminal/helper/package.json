@@ -1,8 +1,8 @@
 {
   "name": "vibecodes-terminal-helper",
-  "version": "0.3.39",
+  "version": "0.4.0",
   "private": true,
-  "description": "macOS helper app: registers the vibecodes:// URL scheme and runs the terminal bridge (node-pty PTY -> relay) on launch. A thin, installable, signable wrapper around terminal/bridge (no logic duplication).",
+  "description": "Mac and Windows helper app: registers the vibecodes:// URL scheme and runs the terminal bridge (node-pty PTY -> relay) on launch. A thin, installable, signable wrapper around terminal/bridge (no logic duplication).",
   "author": "VibeCodes",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,9 @@
     "prepack:unsigned": "node scripts/check-bridge-deps.mjs",
     "pack:unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir -c electron-builder.yml",
     "predist": "node scripts/check-bridge-deps.mjs",
-    "dist": "electron-builder -c electron-builder.yml"
+    "dist": "electron-builder -c electron-builder.yml",
+    "predist:win": "node scripts/check-bridge-deps.mjs --win",
+    "dist:win": "electron-builder --win -c electron-builder.yml --publish never"
   },
   "devDependencies": {
     "electron": "^33.2.0",

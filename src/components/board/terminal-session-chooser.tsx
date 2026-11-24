@@ -13,6 +13,8 @@
 // chooser-data.ts — this component only renders `ChooserSections` and wires
 // clicks to the callbacks the dock supplies.
 
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
+import { forMachine } from "@/lib/terminal/machine-words";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, Loader2, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
 import { toast } from "sonner";
@@ -191,6 +193,7 @@ export function TerminalSessionChooser({
   onAgentChange,
   sharesFolderWarning = false,
 }: TerminalSessionChooserProps) {
+  const os = useTerminalOs();
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
 
@@ -331,7 +334,7 @@ export function TerminalSessionChooser({
       {updateFlowPhase === "confirming" && (
         <div className="border-b border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5">
           <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
-          <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount)}</div>
+          <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount, os)}</div>
           <div className="mt-2 flex items-center justify-end gap-2">
             <Button variant="ghost" size="xs" onClick={cancelHelperUpdate}>
               {UPDATE_CONFIRM_CANCEL_LABEL}
@@ -362,7 +365,7 @@ export function TerminalSessionChooser({
               : "border-amber-500/30 bg-amber-500/5 text-amber-300",
           )}
         >
-          {settledNoticeCopy(updateFlowPhase)}
+          {settledNoticeCopy(updateFlowPhase, os)}
         </div>
       )}
 
@@ -408,7 +411,7 @@ export function TerminalSessionChooser({
           <TerminalAgentPicker value={agent} onChange={onAgentChange} label="Run it with" />
         )}
         {agent === "codex" && (
-          <p className="mt-1.5 text-[11px] text-zinc-500">{CODEX_SIGNIN_HINT}</p>
+          <p className="mt-1.5 text-[11px] text-zinc-500">{forMachine(CODEX_SIGNIN_HINT, os)}</p>
         )}
         {/* Design §6 — Codex-only: it can't isolate into a worktree the way
             Claude does, so a second session on this board genuinely shares

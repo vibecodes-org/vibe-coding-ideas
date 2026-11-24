@@ -16,6 +16,7 @@ import { logger } from "@/lib/logger";
 import { AGENT_INSTALL_COMMANDS, AGENT_INSTALL_GUIDE_URLS, type SetupAgent } from "@/lib/terminal/agent-install";
 import type { SetupScreen } from "@/lib/terminal/agent-setup";
 import { setupScreenCopy, type SetupButtonId, type SetupStep } from "@/lib/terminal/setup-copy";
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
 import { HelperUpdateButton } from "./terminal-helper-update-button";
 
 export interface TerminalAgentSetupPanelProps {
@@ -51,7 +52,7 @@ const ICONS = {
 } as const;
 
 export function TerminalAgentSetupPanel({ screen, agent, onAction, canBrowseSessions, className }: TerminalAgentSetupPanelProps) {
-  const copy = setupScreenCopy(screen, agent);
+  const copy = setupScreenCopy(screen, agent, useTerminalOs());
   const guideUrl = AGENT_INSTALL_GUIDE_URLS[agent];
   const fireStep = (id: SetupButtonId) => {
     if (id === "copy-command" || id === "guide") return;

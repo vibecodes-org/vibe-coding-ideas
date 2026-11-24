@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  helperDownloadUrlFor,
   resolveTerminalPlatform,
   TERMINAL_HELPER_DOWNLOAD_URL,
+  TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL,
   type PlatformSignals,
 } from "./platform";
 
@@ -71,15 +73,55 @@ describe("resolveTerminalPlatform — Intel Mac (supported, arm64 default downlo
   });
 });
 
-describe("resolveTerminalPlatform — non-Mac (coming soon, no deep link)", () => {
-  it("Windows is unsupported with a null download url", () => {
+describe("resolveTerminalPlatform — Windows (supported from helper 0.4.0, card 51d424f7)", () => {
+  it("Windows is supported, downloads the Windows installer and offers the ARM link", () => {
     const p = resolveTerminalPlatform(WINDOWS);
     expect(p.os).toBe("windows");
-    expect(p.supported).toBe(false);
-    expect(p.downloadUrl).toBeNull();
+    expect(p.supported).toBe(true);
+    expect(p.isAppleSilicon).toBe(false);
     expect(p.downloadLabel).toBe("Download for Windows");
+    expect(p.downloadUrl).toBe(TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL);
+    expect(p.downloadUrl).toBe("/download/terminal-helper?os=win");
+    expect(p.altDownload).toEqual({
+      prompt: "Windows on ARM?",
+      label: "Download the ARM version",
+      href: "/download/terminal-helper?os=win&arch=arm64",
+    });
   });
 
+  it("Windows detected from the UA alone (no UA-CH) is still supported", () => {
+    const p = resolveTerminalPlatform({ userAgent: WINDOWS.userAgent });
+    expect(p.os).toBe("windows");
+    expect(p.supported).toBe(true);
+  });
+});
+
+describe("resolveTerminalPlatform — Mac keeps its Intel link", () => {
+  it("the Mac's alternate link is the x64 DMG, as before", () => {
+    expect(resolveTerminalPlatform(APPLE_SILICON_MAC).altDownload).toEqual({
+      prompt: "Intel Mac?",
+      label: "Download the x64 version",
+      href: "/download/terminal-helper?arch=x64",
+    });
+  });
+});
+
+describe("helperDownloadUrlFor — the update flow's download", () => {
+  it("the Mac keeps today's address whatever the hint", () => {
+    expect(helperDownloadUrlFor({ os: "mac" })).toBe(TERMINAL_HELPER_DOWNLOAD_URL);
+    expect(helperDownloadUrlFor({ os: "mac" }, "x86")).toBe(TERMINAL_HELPER_DOWNLOAD_URL);
+  });
+
+  it("Windows gets x64 by default and ARM only when the browser says arm", () => {
+    expect(helperDownloadUrlFor({ os: "windows" })).toBe("/download/terminal-helper?os=win");
+    expect(helperDownloadUrlFor({ os: "windows" }, "x86")).toBe("/download/terminal-helper?os=win");
+    expect(helperDownloadUrlFor({ os: "windows" }, "")).toBe("/download/terminal-helper?os=win");
+    expect(helperDownloadUrlFor({ os: "windows" }, "arm")).toBe("/download/terminal-helper?os=win&arch=arm64");
+    expect(helperDownloadUrlFor({ os: "windows" }, "ARM64")).toBe("/download/terminal-helper?os=win&arch=arm64");
+  });
+});
+
+describe("resolveTerminalPlatform — Linux, phones, tablets (coming soon, no deep link)", () => {
   it("Linux resolves to 'other' and unsupported", () => {
     const p = resolveTerminalPlatform({
       userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -87,6 +129,8 @@ describe("resolveTerminalPlatform — non-Mac (coming soon, no deep link)", () =
     });
     expect(p.os).toBe("other");
     expect(p.supported).toBe(false);
+    expect(p.downloadUrl).toBeNull();
+    expect(p.altDownload).toBeNull();
   });
 
   it("iPhone is unsupported even though it is Apple hardware", () => {

@@ -20,10 +20,11 @@
 // runs the install-first gate. See use-terminal-session.ts's `attachExisting`
 // doc for why that's safe (same-owner reattach, relay's existing 4001 path).
 
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
 import { useEffect } from "react";
 import { CircleAlert, Loader2, Lock, LockOpen, Power, Shield, ShieldAlert, Square, Undo2, Zap } from "lucide-react";
 import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
-import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
+import { e2eeCopyFor } from "@/lib/terminal/e2ee-copy";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolveDockView, type DockView } from "@/lib/terminal/first-run-flow";
@@ -304,6 +305,7 @@ function PopoutOverlay({
   state: TerminalConnectionState;
   onRetry: () => void;
 }) {
+  const e2ee = e2eeCopyFor(useTerminalOs());
   if (view === "session-ended") {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -326,8 +328,8 @@ function PopoutOverlay({
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <Shield className="h-7 w-7 text-sky-400" aria-hidden="true" />
-        <div className="text-base font-semibold text-zinc-100">{E2EE_COPY.required.title}</div>
-        <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.required.body}</p>
+        <div className="text-base font-semibold text-zinc-100">{e2ee.required.title}</div>
+        <p className="max-w-md text-[13px] text-zinc-400">{e2ee.required.body}</p>
         <p className="max-w-md text-[11px] text-zinc-500">Update the helper from the board tab, then reopen this window.</p>
       </div>
     );
@@ -340,8 +342,8 @@ function PopoutOverlay({
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <ShieldAlert className="h-7 w-7 text-amber-400" aria-hidden="true" />
-        <div className="text-base font-semibold text-amber-400">{E2EE_COPY.integrity.title}</div>
-        <p className="max-w-md text-[13px] text-zinc-400">{E2EE_COPY.integrity.body}</p>
+        <div className="text-base font-semibold text-amber-400">{e2ee.integrity.title}</div>
+        <p className="max-w-md text-[13px] text-zinc-400">{e2ee.integrity.body}</p>
         <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onRetry}>
           Reconnect
         </Button>

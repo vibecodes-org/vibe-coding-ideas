@@ -1,10 +1,11 @@
 // In-app terminal — client OS / architecture detection for the install-first flow.
 //
-// The in-browser terminal only works on machines we ship a helper for. Today that
-// is any Mac — we publish both an arm64 (Apple Silicon) and an x64 (Intel) DMG per
-// release (see src/app/download/terminal-helper/route.ts); everything else lands
-// on a calm "coming soon" and NEVER fires the `vibecodes://` deep link (so a
-// non-Mac user is never ambushed by an OS dialog for a scheme nothing can handle).
+// The in-browser terminal only works on machines we ship a helper for: any Mac
+// (an arm64 and an x64 DMG per release) and, from helper 0.4.0, any Windows PC
+// (an x64 and an arm64 installer per release; card 51d424f7). See
+// src/app/download/terminal-helper/route.ts. Everything else (Linux, phones,
+// tablets) lands on a calm "coming soon" and NEVER fires the `vibecodes://` deep
+// link (so they are never ambushed by an OS dialog for a scheme nothing handles).
 //
 // resolveTerminalPlatform() is PURE — it takes explicit signals so the whole
 // OS/arch policy is unit-testable without a real navigator. readPlatformSignals()
@@ -15,6 +16,16 @@ export type TerminalOs = "mac" | "windows" | "other";
 
 /** Where the OS-aware download always points for a supported (Apple Silicon) Mac. */
 export const TERMINAL_HELPER_DOWNLOAD_URL = "/download/terminal-helper";
+
+/** The Windows download (x64 unless `arch=arm64` is added). */
+export const TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL = "/download/terminal-helper?os=win";
+
+/** The small "other version" link under the main download button. */
+export interface AltDownload {
+  prompt: string;
+  label: string;
+  href: string;
+}
 
 export interface PlatformSignals {
   /** navigator.userAgent — always present in a browser. */
@@ -37,12 +48,17 @@ export interface TerminalPlatform {
   os: TerminalOs;
   /** Best-effort: is this an Apple-Silicon Mac (the default download target)? */
   isAppleSilicon: boolean;
-  /** Do we ship a helper this machine can run? (Any Mac, today — arm64 or x64.) */
+  /** Do we ship a helper this machine can run? (Any Mac or Windows PC.) */
   supported: boolean;
   /** Download control label — information scent, never "Download" / "Submit". */
   downloadLabel: string;
   /** Where the download points, or null when we ship nothing for this machine. */
   downloadUrl: string | null;
+  /**
+   * The opt-in link for the other architecture ("Intel Mac?" / "Windows on
+   * ARM?"). Absent or null when we ship nothing for this machine.
+   */
+  altDownload?: AltDownload | null;
 }
 
 function detectOs(signals: PlatformSignals): TerminalOs {
@@ -91,15 +107,37 @@ export function resolveTerminalPlatform(signals: PlatformSignals): TerminalPlatf
   const os = detectOs(signals);
   const arch = signals.architecture?.toLowerCase();
   const isAppleSilicon = os === "mac" && arch !== "x86" && arch !== "x86_64";
-  const supported = os === "mac";
+  const supported = os === "mac" || os === "windows";
 
-  if (supported) {
+  if (os === "mac") {
     return {
       os,
       isAppleSilicon,
       supported,
       downloadLabel: "Download for Mac (Apple Silicon)",
       downloadUrl: TERMINAL_HELPER_DOWNLOAD_URL,
+      altDownload: {
+        prompt: "Intel Mac?",
+        label: "Download the x64 version",
+        href: `${TERMINAL_HELPER_DOWNLOAD_URL}?arch=x64`,
+      },
+    };
+  }
+
+  if (os === "windows") {
+    // Same shape as the Mac: the main button gets the common build (x64) and
+    // ARM users opt in with the link, as in the approved mock.
+    return {
+      os,
+      isAppleSilicon,
+      supported,
+      downloadLabel: "Download for Windows",
+      downloadUrl: TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL,
+      altDownload: {
+        prompt: "Windows on ARM?",
+        label: "Download the ARM version",
+        href: `${TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL}&arch=arm64`,
+      },
     };
   }
 
@@ -107,11 +145,45 @@ export function resolveTerminalPlatform(signals: PlatformSignals): TerminalPlatf
     os,
     isAppleSilicon,
     supported,
-    // Windows is the next platform on the roadmap; the button is gated (disabled)
-    // in the UI, so this label is informational, not an active target.
-    downloadLabel: "Download for Windows",
+    downloadLabel: "Download",
     downloadUrl: null,
+    altDownload: null,
   };
+}
+
+/**
+ * Where "Update now" downloads the helper for this machine. The Mac keeps
+ * today's address exactly. On Windows, `archHint` is the browser's reported
+ * CPU architecture (UA-CH "arm" → the ARM installer); anything else is x64.
+ */
+export function helperDownloadUrlFor(platform: Pick<TerminalPlatform, "os">, archHint?: string | null): string {
+  if (platform.os !== "windows") return TERMINAL_HELPER_DOWNLOAD_URL;
+  const arch = archHint?.toLowerCase();
+  return arch === "arm" || arch === "arm64"
+    ? `${TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL}&arch=arm64`
+    : TERMINAL_HELPER_WINDOWS_DOWNLOAD_URL;
+}
+
+/**
+ * The chip family ("arm" | "x86" | …) from the browser's high-entropy client
+ * hints (Chromium only), or null when the browser won't say within `timeoutMs`.
+ * Used only to pick the Windows installer (card 51d424f7); never throws.
+ */
+export async function readArchitectureHint(timeoutMs = 500): Promise<string | null> {
+  if (typeof navigator === "undefined") return null;
+  const uaData = (navigator as Navigator & {
+    userAgentData?: { getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string }> };
+  }).userAgentData;
+  if (!uaData?.getHighEntropyValues) return null;
+  try {
+    const values = await Promise.race([
+      uaData.getHighEntropyValues(["architecture"]),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    return values?.architecture ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Read detection signals from the live navigator. SSR-safe (empty → unsupported). */

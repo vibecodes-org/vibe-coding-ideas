@@ -29,7 +29,7 @@ import {
   type UpdateFlowPhase,
   type UpdateFlowState,
 } from "./helper-update-flow";
-import { TERMINAL_HELPER_DOWNLOAD_URL } from "./platform";
+import { helperDownloadUrlFor, readArchitectureHint, readPlatformSignals, resolveTerminalPlatform } from "./platform";
 import type { HelperStatus } from "./helper-row";
 import { thisMacMachineNames, thisMacStatusQuery } from "./machine-identity";
 
@@ -198,7 +198,14 @@ export function useHelperUpdateFlow({
   // and lets the caller refresh whatever it shows for the helper.
   useEffect(() => {
     if (!isUpdateFlowSettled(state.phase)) return;
-    window.location.assign(TERMINAL_HELPER_DOWNLOAD_URL);
+    // Card 51d424f7: a Windows PC gets the Windows installer (ARM when the
+    // browser says so); the Mac download is unchanged and immediate.
+    const platform = resolveTerminalPlatform(readPlatformSignals());
+    if (platform.os === "windows") {
+      void readArchitectureHint().then((arch) => window.location.assign(helperDownloadUrlFor(platform, arch)));
+    } else {
+      window.location.assign(helperDownloadUrlFor(platform));
+    }
     onSettled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase]);

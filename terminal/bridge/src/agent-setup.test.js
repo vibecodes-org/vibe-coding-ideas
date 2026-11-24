@@ -12,12 +12,25 @@ import {
   SETUP_ACTION_NAMES,
 } from "./agent-setup.js";
 
+// Card 51d424f7: these tests run on Windows CI too, so the Mac table is
+// pinned to the Mac; Windows refuses every action until release 1c.
+const onMac = (agent, action, binaryPath = null) => setupCommand(agent, action, binaryPath, "darwin");
+
+test("Windows refuses every setup action until release 1c", () => {
+  for (const agent of ["claude", "codex"]) {
+    assert.equal(setupCommand(agent, "install", null, "win32"), null);
+    assert.equal(setupCommand(agent, "signin", "C:\\u\\claude.exe", "win32"), null);
+  }
+  assert.equal(setupCommand("codex", "signin-code", "C:\\u\\codex.exe", "win32"), null);
+  assert.notEqual(onMac("claude", "install"), null);
+});
+
 test("install commands are the fixed strings, run through the shell the line pipes into", () => {
-  assert.deepEqual(setupCommand("claude", "install"), {
+  assert.deepEqual(onMac("claude", "install"), {
     file: "/bin/bash",
     args: ["-c", "curl -fsSL https://claude.ai/install.sh | bash"],
   });
-  assert.deepEqual(setupCommand("codex", "install"), {
+  assert.deepEqual(onMac("codex", "install"), {
     file: "/bin/sh",
     args: ["-c", "curl -fsSL https://chatgpt.com/codex/install.sh | sh"],
   });
@@ -25,27 +38,27 @@ test("install commands are the fixed strings, run through the shell the line pip
 });
 
 test("sign-in commands use the resolved binary and nothing else", () => {
-  assert.deepEqual(setupCommand("claude", "signin", "/u/.local/bin/claude"), {
+  assert.deepEqual(onMac("claude", "signin", "/u/.local/bin/claude"), {
     file: "/u/.local/bin/claude",
     args: ["auth", "login"],
   });
-  assert.deepEqual(setupCommand("codex", "signin", "/u/.local/bin/codex"), {
+  assert.deepEqual(onMac("codex", "signin", "/u/.local/bin/codex"), {
     file: "/u/.local/bin/codex",
     args: ["login"],
   });
-  assert.deepEqual(setupCommand("codex", "signin-code", "/u/.local/bin/codex"), {
+  assert.deepEqual(onMac("codex", "signin-code", "/u/.local/bin/codex"), {
     file: "/u/.local/bin/codex",
     args: ["login", "--device-auth"],
   });
 });
 
 test("refuses everything outside the table", () => {
-  assert.equal(setupCommand("claude", "signin-code", "/x/claude"), null);
-  assert.equal(setupCommand("codex", "signin", null), null);
-  assert.equal(setupCommand("codex", "signin", ""), null);
-  assert.equal(setupCommand("bash", "install"), null);
-  assert.equal(setupCommand("codex", "rm -rf ~"), null);
-  assert.equal(setupCommand("codex", "uninstall", "/x/codex"), null);
+  assert.equal(onMac("claude", "signin-code", "/x/claude"), null);
+  assert.equal(onMac("codex", "signin", null), null);
+  assert.equal(onMac("codex", "signin", ""), null);
+  assert.equal(onMac("bash", "install"), null);
+  assert.equal(onMac("codex", "rm -rf ~"), null);
+  assert.equal(onMac("codex", "uninstall", "/x/codex"), null);
 });
 
 test("the action names are exactly the three the link may carry", () => {

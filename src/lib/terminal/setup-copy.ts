@@ -8,6 +8,8 @@
 
 import { AGENT_DISPLAY_NAMES, AGENT_INSTALL_COMMANDS, type SetupAgent } from "./agent-install";
 import type { SetupAction, SetupScreen } from "./agent-setup";
+import { forMachine, forMachineDeep } from "./machine-words";
+import type { TerminalOs } from "./platform";
 
 export type SetupStepState = "done" | "now" | "later";
 
@@ -61,9 +63,9 @@ export const TERMINAL_STEPS_LEAD =
   "Open Terminal on your Mac (Applications, then Utilities, then Terminal), paste this and press Enter:";
 
 /** The bottom-strip words while a setup session is running. */
-export function setupLiveStrip(agent: SetupAgent, action: SetupAction): string {
+export function setupLiveStrip(agent: SetupAgent, action: SetupAction, os: TerminalOs = "mac"): string {
   return action === "install"
-    ? `Installing ${AGENT_DISPLAY_NAMES[agent]} on this Mac…`
+    ? forMachine(`Installing ${AGENT_DISPLAY_NAMES[agent]} on this Mac…`, os)
     : "Waiting for you to finish signing in…";
 }
 
@@ -76,7 +78,40 @@ const linkGuide = (agent: SetupAgent) => ({ id: "guide" as const, label: `How to
 const linkSessions = { id: "sessions" as const, label: "View my other sessions" };
 const linkShow = { id: "show" as const, label: "Show what happened" };
 
-export function setupScreenCopy(screen: SetupScreen, agent: SetupAgent): SetupScreenCopy {
+/**
+ * Card 51d424f7 (Windows release 1b): one-click install and sign-in use the
+ * Mac's shell, and the paste-this command is a Mac one, so a Windows PC gets
+ * one screen instead: install it the maker's way, then Start again. Nick,
+ * 24 Nov 2026. Release 1c removes this and gives Windows the full screens.
+ */
+function windowsSetupCopy(screen: SetupScreen, agent: SetupAgent): SetupScreenCopy {
+  const name = AGENT_DISPLAY_NAMES[agent];
+  const title = `Set up ${name} on this PC`;
+  return {
+    screen,
+    icon: "download",
+    title,
+    body: `${name} isn't on this PC yet. Install it using ${MAKER[agent]} own instructions, then click Start again. Some features are still coming to Windows.`,
+    steps: [],
+    copyBox: null,
+    buttons: [{ id: "start-again", label: "Start again", tone: "primary" }],
+    links: [linkGuide(agent), linkSessions],
+    barText: `${title}.`,
+  };
+}
+
+export function setupScreenCopy(screen: SetupScreen, agent: SetupAgent, os: TerminalOs = "mac"): SetupScreenCopy {
+  if (os === "windows") {
+    // Only "not installed" screens can reach a PC (its helper refuses setup
+    // actions); any other is worded for the PC all the same.
+    return screen === "start" || screen === "diy" || screen === "old-helper"
+      ? windowsSetupCopy(screen, agent)
+      : forMachineDeep(macSetupScreenCopy(screen, agent), os);
+  }
+  return macSetupScreenCopy(screen, agent);
+}
+
+function macSetupScreenCopy(screen: SetupScreen, agent: SetupAgent): SetupScreenCopy {
   const name = AGENT_DISPLAY_NAMES[agent];
   const command = AGENT_INSTALL_COMMANDS[agent];
   const make = (c: Omit<SetupScreenCopy, "screen" | "barText" | "steps" | "copyBox" | "buttons" | "links"> & Partial<SetupScreenCopy>): SetupScreenCopy => ({
@@ -237,18 +272,18 @@ const ALL_SCREENS: readonly SetupScreen[] = ["start", "diy", "old-helper", "sign
 export const FORBIDDEN_SETUP_COPY = ["Failed", "Error", "token", "relay", "pty", "cwd", "bridge", "exited", "stderr", "exit code"] as const;
 
 /** Every string the setup screens can show, for the forbidden-words test. */
-export function collectSetupCopy(): string[] {
+export function collectSetupCopy(os: TerminalOs = "mac"): string[] {
   const out: string[] = [];
   for (const agent of ["claude", "codex"] as const) {
     for (const screen of ALL_SCREENS) {
-      const c = setupScreenCopy(screen, agent);
+      const c = setupScreenCopy(screen, agent, os);
       out.push(c.title, c.barText);
       if (c.body) out.push(c.body);
       for (const s of c.steps) out.push(s.title, s.detail, ...(s.action ? [s.action.label] : []));
       if (c.copyBox) out.push(c.copyBox.lead, c.copyBox.after);
       out.push(...c.buttons.map((b) => b.label), ...c.links.map((l) => l.label));
     }
-    out.push(setupLiveStrip(agent, "install"), setupLiveStrip(agent, "signin"), setupTabLabel(agent));
+    out.push(setupLiveStrip(agent, "install", os), setupLiveStrip(agent, "signin", os), setupTabLabel(agent));
   }
   return out;
 }

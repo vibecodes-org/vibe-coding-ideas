@@ -10,6 +10,7 @@
 //
 // Fetch-on-open + refresh-after-action (no realtime, per the stage brief).
 
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePostHog } from "posthog-js/react";
 import { Loader2, Power, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
@@ -34,7 +35,7 @@ import {
 } from "@/lib/terminal/helper-version";
 import { recordHelperIdleQuitObserved } from "@/lib/terminal/helper-relaunch-signal";
 import {
-  ALWAYS_ON_CONSENT_BODY,
+  alwaysOnConsentBody,
   ALWAYS_ON_LABEL,
   HELPER_ROW_STOP_FAILED_TOAST,
   HELPER_ROW_STOP_TOAST,
@@ -139,6 +140,7 @@ export function TerminalMySessionsPanel({
   onRenameSession,
   children,
 }: TerminalMySessionsPanelProps) {
+  const os = useTerminalOs();
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [sessions, setSessions] = useState<ListedSession[]>([]);
   const [endingSid, setEndingSid] = useState<string | null>(null);
@@ -183,7 +185,7 @@ export function TerminalMySessionsPanel({
       onCountChange?.(runningCount);
 
       if (nextStatus) {
-        const nextChip = deriveHelperChip(nextStatus, runningCount);
+        const nextChip = deriveHelperChip(nextStatus, runningCount, os);
         const prevKind = prevHelperChipKindRef.current;
         if (prevKind === "winding-down" && nextChip?.kind === "not-running") {
           if (suppressIdleQuitSignalRef.current) suppressIdleQuitSignalRef.current = false;
@@ -372,7 +374,7 @@ export function TerminalMySessionsPanel({
     void setAlwaysOnRemote(true);
   }, [setAlwaysOnRemote]);
 
-  const helperChip: HelperChip | null = deriveHelperChip(helperStatus, running.length);
+  const helperChip: HelperChip | null = deriveHelperChip(helperStatus, running.length, os);
   const showHelperNudge =
     updateFlowPhase === "idle" &&
     !dismissedHelperNudge &&
@@ -646,7 +648,7 @@ export function TerminalMySessionsPanel({
         {updateFlowPhase === "confirming" && (
           <div className="border-t border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5">
             <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
-            <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount)}</div>
+            <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount, os)}</div>
             <div className="mt-2 flex items-center justify-end gap-2">
               <Button variant="ghost" size="xs" onClick={cancelHelperUpdate}>
                 {UPDATE_CONFIRM_CANCEL_LABEL}
@@ -677,7 +679,7 @@ export function TerminalMySessionsPanel({
                 : "border-amber-500/30 bg-amber-500/5 text-amber-300",
             )}
           >
-            {settledNoticeCopy(updateFlowPhase)}
+            {settledNoticeCopy(updateFlowPhase, os)}
           </div>
         )}
 
@@ -698,7 +700,7 @@ export function TerminalMySessionsPanel({
         )}
         {alwaysOnConsentOpen && (
           <div className="border-t border-l-2 border-l-emerald-500 bg-emerald-500/5 px-3.5 py-2.5">
-            <div className="text-[11px] text-zinc-400">{ALWAYS_ON_CONSENT_BODY}</div>
+            <div className="text-[11px] text-zinc-400">{alwaysOnConsentBody(os)}</div>
             <div className="mt-2 flex items-center justify-end gap-2">
               <Button variant="ghost" size="xs" onClick={() => setAlwaysOnConsentOpen(false)}>
                 Cancel

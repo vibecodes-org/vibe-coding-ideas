@@ -10,6 +10,8 @@
 // jargon out.
 
 import type { EndedReason } from "./connection";
+import { forMachine } from "./machine-words";
+import type { TerminalOs } from "./platform";
 
 export type EndedCopyAgent = "claude" | "codex";
 
@@ -30,6 +32,8 @@ export interface EndedCopyInput {
   repo: { owner: string; name: string } | null;
   /** Where a download or a new folder would go (`~/projects/<name>`), when known. */
   newFolder: string | null;
+  /** This browser's system: "PC" wording on Windows (card 51d424f7). Defaults to the Mac. */
+  os?: TerminalOs;
 }
 
 export interface EndedCopy {
@@ -96,6 +100,18 @@ function stoppedStraightAway(agent: EndedCopyAgent): string {
 }
 
 export function endedCopy(input: EndedCopyInput): EndedCopy {
+  const copy = macEndedCopy(input);
+  const os = input.os ?? "mac";
+  if (os !== "windows") return copy;
+  return {
+    ...copy,
+    title: forMachine(copy.title, os),
+    barText: forMachine(copy.barText, os),
+    body: copy.body.map((p) => (p.text !== undefined ? { ...p, text: forMachine(p.text, os) } : p)),
+  };
+}
+
+function macEndedCopy(input: EndedCopyInput): EndedCopy {
   const { reason, detail, agent, folder, repo, newFolder } = input;
   const name = AGENT_NAME[agent];
   const plain = (title: string, body: EndedCopyPart[], extra: Partial<EndedCopy> = {}): EndedCopy => ({
@@ -315,7 +331,7 @@ const ALL_REASONS: ReadonlyArray<EndedReason | null> = [
 ];
 
 /** Every string the ended panel can show, across reasons, agents and known/unknown inputs (forbidden-words test). */
-export function collectEndedCopy(): string[] {
+export function collectEndedCopy(os: TerminalOs = "mac"): string[] {
   const out: string[] = [];
   for (const reason of ALL_REASONS) {
     for (const agent of ["claude", "codex"] as const) {
@@ -332,6 +348,7 @@ export function collectEndedCopy(): string[] {
             folder: known ? "~/projects/example" : null,
             repo: known ? { owner: "you", name: "example" } : null,
             newFolder: known ? "~/projects/example" : null,
+            os,
           });
           out.push(copy.title, endedCopyText(copy.body), copy.barText);
           if (copy.installLink) out.push(copy.installLink.label);

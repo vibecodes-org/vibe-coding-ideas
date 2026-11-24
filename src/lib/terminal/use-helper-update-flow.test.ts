@@ -277,3 +277,41 @@ describe("useHelperUpdateFlow — only this Mac (card 6b2cb8ac)", () => {
     expect(result.current.phase).toBe("helper-unreachable");
   });
 });
+
+// Card 51d424f7: a Windows PC downloads the Windows installer, ARM when the
+// browser reports an ARM chip; the Mac's download is untouched (above).
+describe("useHelperUpdateFlow — Windows download", () => {
+  const WIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+
+  async function runToDownload() {
+    statusQueue = [{ connected: false }];
+    const { result } = renderHook(() => useHelperUpdateFlow({ sessionCount: 0 }));
+    await act(async () => {
+      result.current.start();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    return result;
+  }
+
+  it("x64 PC (or a browser that won't say): the x64 installer", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(WIN_UA);
+    const result = await runToDownload();
+    expect(result.current.phase).toBe("ready");
+    expect(location.assign).toHaveBeenCalledWith("/download/terminal-helper?os=win");
+    vi.restoreAllMocks();
+  });
+
+  it("ARM PC: the ARM installer", async () => {
+    vi.stubGlobal("navigator", {
+      userAgent: WIN_UA,
+      platform: "Win32",
+      maxTouchPoints: 0,
+      userAgentData: { platform: "Windows", getHighEntropyValues: async () => ({ architecture: "arm" }) },
+    });
+    await runToDownload();
+    expect(location.assign).toHaveBeenCalledWith("/download/terminal-helper?os=win&arch=arm64");
+  });
+});

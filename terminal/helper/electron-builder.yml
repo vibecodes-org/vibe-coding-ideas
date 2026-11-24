@@ -1,6 +1,9 @@
-# electron-builder config — VibeCodes macOS helper (slice 7).
-# Build:   npm run dist            (signed + notarized — needs Nick's cert + env)
+# electron-builder config — VibeCodes helper for the Mac (slice 7) and Windows
+# (card 51d424f7, release 1b).
+# Build:   npm run dist            (Mac: signed + notarized — needs Nick's cert + env)
 # Unsigned: npm run pack:unsigned  (proves the bundle/Info.plist locally, no cert)
+# Windows: npm run dist:win -- --x64 (or --arm64), on a Windows machine; the
+#          .github/workflows/helper-windows.yml job does this for every release.
 # See BUILD-AND-SIGN.md for the full runbook.
 
 appId: co.uk.vibecodes.helper
@@ -27,6 +30,7 @@ files:
   - tray-icon.js
   - launch-argv.js
   - peer-router.js
+  - helper-copy.js
   # Every helper-local ESM module (agent-availability, open-terminal,
   # open-terminal-gate, control-url, …) via a GLOB — never an explicit list.
   # 0.3.13 shipped WITHOUT control-url.mjs + open-terminal-gate.mjs because
@@ -41,17 +45,9 @@ files:
   - "!verify-helper-launch.mjs"
   - package.json
 
+# The bridge (with its node_modules) is listed per system under `mac:` and
+# `win:` below, because each keeps only its own node-pty builds.
 extraResources:
-  - from: ../bridge
-    to: bridge
-    filter:
-      - "**/*"
-      - "!**/*.test.js"
-      - "!**/*.test.mjs"
-      - "!**/package-lock.json"
-      # node-pty ships prebuilts for every platform; the mac helper only needs
-      # darwin. Dropping the win32 ones trims ~65 MB of dead weight.
-      - "!**/node-pty/prebuilds/win32-*/**"
   - from: ../shared
     to: shared
     filter:
@@ -66,6 +62,20 @@ protocols:
 
 mac:
   category: public.app-category.developer-tools
+  # The VibeCodes logo (card 51d424f7). Before 0.4.0 the Mac app showed
+  # Electron's default icon.
+  icon: build/icon.icns
+  extraResources:
+    - from: ../bridge
+      to: bridge
+      filter:
+        - "**/*"
+        - "!**/*.test.js"
+        - "!**/*.test.mjs"
+        - "!**/package-lock.json"
+        # node-pty ships prebuilts for every platform; the mac helper only needs
+        # darwin. Dropping the win32 ones trims ~65 MB of dead weight.
+        - "!**/node-pty/prebuilds/win32-*/**"
   # Notarization requires the Hardened Runtime.
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -92,6 +102,43 @@ mac:
 dmg:
   title: ${productName}
   artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Windows (card 51d424f7, release 1b): one installer per chip, x64 and ARM,
+# built on Windows by .github/workflows/helper-windows.yml. Unsigned for now:
+# Windows shows "Windows protected your PC" until a certificate is bought.
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  extraResources:
+    - from: ../bridge
+      to: bridge
+      filter:
+        - "**/*"
+        - "!**/*.test.js"
+        - "!**/*.test.mjs"
+        - "!**/package-lock.json"
+        # The Windows helper only needs the win32 node-pty builds.
+        - "!**/node-pty/prebuilds/darwin-*/**"
+
+# Per-user, one click, no administrator password (the approved mock): installs
+# into the user's own AppData, adds a Start-menu entry, then opens VibeCodes.
+# Uninstalling keeps the saved sign-in (deleteAppDataOnUninstall false) and
+# removes the vibecodes:// link handler and the start-at-login entry
+# (build/installer.nsh).
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  include: build/installer.nsh
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
 # Universal build alternative (one binary for Intel + Apple Silicon) — bigger
 # download but a single artifact. Swap the per-arch targets above for:

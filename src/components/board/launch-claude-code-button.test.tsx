@@ -35,9 +35,11 @@ vi.mock("@/lib/terminal/launch-mode", async (importOriginal) => ({
 
 // Default: not a supported Mac, so existing tests keep today's terminal-window default.
 const mockPlatformSupported = vi.fn(() => false);
+// Card 51d424f7: which system the browser is on ("mac" unless a test says otherwise).
+const mockPlatformOs = vi.fn((): "mac" | "windows" | "other" => "mac");
 vi.mock("@/lib/terminal/platform", () => ({
   readPlatformSignals: () => ({ userAgent: "test" }),
-  resolveTerminalPlatform: () => ({ supported: mockPlatformSupported() }),
+  resolveTerminalPlatform: () => ({ supported: mockPlatformSupported(), os: mockPlatformOs() }),
 }));
 
 const mockRelayBaseUrl = vi.fn(() => "ws://127.0.0.1:8787");
@@ -131,6 +133,7 @@ beforeEach(() => {
   mediaMatches.mockReturnValue(true); // desktop
   mockIsBrowserLaunchAvailable.mockReturnValue(true);
   mockPlatformSupported.mockReturnValue(false);
+  mockPlatformOs.mockReturnValue("mac");
   mockRelayBaseUrl.mockReturnValue("ws://127.0.0.1:8787");
   mockFetchHelperStatus.mockResolvedValue(null);
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ helperToken: "helper-tok" }) });
@@ -188,6 +191,17 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     expect(items[3]).toHaveTextContent("Beta");
     // Same Codex sub-line as the board menu (it used to say "Opens a Terminal window on this Mac").
     expect(items[2]).toHaveTextContent(CODEX_WINDOW_SUBLINE);
+  });
+
+  it("on a Windows PC drops only the Codex window item (release 1c brings it back)", () => {
+    mockPlatformOs.mockReturnValue("windows");
+    renderMenuItem();
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      expect.stringContaining("Launch in Claude Code"),
+      expect.stringContaining("Launch in browser terminal"),
+      expect.stringContaining("Launch Codex in browser terminal"),
+    ]);
   });
 
   it("clicking the browser item calls requestBrowserLaunch and does not navigate", async () => {
@@ -1061,6 +1075,20 @@ describe("LaunchClaudeCodeButton — board primary defaults to the in-app termin
     expect(screen.getByText(CLAUDE_WINDOW_SUBLINE)).toBeInTheDocument();
     expect(screen.queryByText(/how it works today/)).toBeNull();
     expect(screen.getAllByText("Beta")).toHaveLength(2);
+  });
+
+  // Card 51d424f7 (Nick, 24 Nov 2026): the Codex desktop window is the Mac's
+  // Terminal app; Windows gets it in release 1c, so a PC doesn't see it yet.
+  it("menu on a Windows PC: no Codex terminal-window item; Claude keeps both", () => {
+    mockPlatformSupported.mockReturnValue(true);
+    mockPlatformOs.mockReturnValue("windows");
+    renderBoardButton();
+    openBoardMenu();
+    const items = screen.getAllByRole("menuitem").map((i) => i.textContent ?? "");
+    expect(items.some((t) => /Codex, In the browser/.test(t))).toBe(true);
+    expect(items.some((t) => /Codex, In a terminal window/.test(t))).toBe(false);
+    expect(items.some((t) => /Claude Code, In a terminal window/.test(t))).toBe(true);
+    expect(screen.queryByText(CODEX_WINDOW_SUBLINE)).toBeNull();
   });
 
   it("menu on an unsupported machine: terminal window stays first in each group", () => {
