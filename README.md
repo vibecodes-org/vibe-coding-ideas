@@ -178,6 +178,19 @@ e2e/                        # Playwright E2E test specs
 | `npm run docker:reset` | Reset local Supabase |
 | `npm run docker:seed` | Seed local Supabase with sample data |
 
+## Code signing policy
+
+The VibeCodes terminal helper (`terminal/helper`) is built from this repository's source by GitHub Actions and published on the [releases page](https://github.com/vibecodes-org/vibe-coding-ideas/releases?q=terminal-helper).
+
+- **Mac:** signed with an Apple Developer ID and notarised by Apple.
+- **Windows:** Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). Our application is pending; until it is approved, Windows installers are unsigned.
+
+**Team roles**
+- Committers and reviewers: [members of vibecodes-org](https://github.com/orgs/vibecodes-org/people)
+- Approvers (every signed release is approved by hand): [owners of vibecodes-org](https://github.com/orgs/vibecodes-org/people?query=role%3Aowner)
+
+**Privacy:** the helper connects to the VibeCodes service you sign in to, to carry your terminal sessions. It contacts other systems only when you ask it to: cloning your project's repository, or installing Claude Code or Codex from their makers' sites. It sends no analytics or tracking data. See the [VibeCodes privacy policy](https://vibecodes.co.uk/privacy).
+
 ## License
 
 [MIT](./LICENSE)
