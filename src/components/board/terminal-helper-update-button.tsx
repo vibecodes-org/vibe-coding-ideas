@@ -8,6 +8,7 @@
 // and the session chooser (terminal-session-chooser.tsx) both render this,
 // so they can't drift apart again.
 
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -66,11 +67,12 @@ export function HelperUpdateFlowNotice({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const os = useTerminalOs();
   if (phase === "confirming") {
     return (
       <div className="border-b border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5" data-testid="helper-update-confirm">
         <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
-        <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount)}</div>
+        <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount, os)}</div>
         <div className="mt-2 flex items-center justify-end gap-2">
           <Button variant="ghost" size="xs" onClick={onCancel}>
             {UPDATE_CONFIRM_CANCEL_LABEL}
@@ -97,7 +99,7 @@ export function HelperUpdateFlowNotice({
           phase === "ready" ? "border-sky-500/30 bg-sky-500/5 text-sky-300" : "border-amber-500/30 bg-amber-500/5 text-amber-300",
         )}
       >
-        {settledNoticeCopy(phase)}
+        {settledNoticeCopy(phase, os)}
       </div>
     );
   }

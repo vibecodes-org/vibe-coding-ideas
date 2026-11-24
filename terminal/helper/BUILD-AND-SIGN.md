@@ -1,4 +1,4 @@
-# VibeCodes macOS helper — build, sign, notarize (slice 7)
+# VibeCodes helper (Mac and Windows) — build, sign, notarize (slice 7)
 
 The helper is the **install-once** piece. It registers the `vibecodes://` URL
 scheme and, when the app fires a `vibecodes://launch?…` deep link, runs the
@@ -210,3 +210,55 @@ The app's install button points at **`/download/terminal-helper`**
    light OS/arch detection. Until then the button 404s gracefully.
 
 Bump `version` in `package.json` for each release so artifact names don't collide.
+
+## Windows installers (card 51d424f7, release 1b)
+
+Windows gets two installers per release, x64 and ARM, built by
+`.github/workflows/helper-windows.yml` on GitHub's own Windows machines (one
+per chip). Nothing is built on the Mac.
+
+- **One release train.** Mac and Windows share one version and one release
+  (`terminal-helper-v<version>`). When the release is published, the workflow
+  checks the tag matches `package.json`, builds both installers, smoke-tests
+  each one, and then a separate job uploads
+  `VibeCodes-Setup-<version>-x64.exe` and `-arm64.exe` to the same release.
+  Pull requests that touch the helper, and manual runs, build and smoke-test
+  without uploading.
+- **The smoke test** (`scripts/smoke-win.mjs`, on each chip's own machine):
+  silent install for this user; the bridge and this chip's node-pty build are
+  packed (and no Mac ones); the installed app, run as Node
+  (`ELECTRON_RUN_AS_NODE=1`), loads the bridge's `ws` and `node-pty` and runs
+  `cmd.exe /d /c echo ok` through node-pty; the app starts and keeps running;
+  `HKCU\Software\Classes\vibecodes\shell\open\command` runs the installed app
+  and the start-at-login entry is written; a silent uninstall removes the app,
+  the `vibecodes` key and the start-at-login entry.
+- **Write access.** Only the upload job, which runs only for a published
+  release and installs nothing, can write to the repo. The build job has a
+  read-only token that is not kept in git's settings.
+- **Redoing a failed Windows upload.** Re-run the release's own run
+  (`gh run list --workflow helper-windows.yml --event release`, then
+  `gh run rerun <id>`). A manual run of the workflow can't upload.
+- **The 6-file check.** Only move `MINIMUM_RECOMMENDED_HELPER_VERSION`
+  (`src/lib/terminal/helper-version.ts`) to a release once all 6 files are on
+  it: the 2 Mac disk images, the 2 Mac zips and the 2 Windows installers.
+  `node scripts/check-helper-release.mjs [version]` checks (Node 22.18+ or 24+);
+  `.github/workflows/helper-release-check.yml` runs it on any change to that
+  version.
+- **The installer.** Per-user, one click, no administrator password: it installs
+  into the user's own AppData, adds a Start-menu entry, registers the
+  `vibecodes://` link handler (`build/installer.nsh`, so links work even after
+  a silent install) and opens VibeCodes. The app rewrites the handler at every
+  start, which repairs it. Uninstalling removes the `vibecodes://` link handler and the start-at-login
+  entry (`build/installer.nsh`) and keeps the saved sign-in.
+- **Unsigned for now.** Windows shows "Windows protected your PC" (More info,
+  then Run anyway). The workflow has a marked slot for a certificate
+  (`CSC_LINK` / `CSC_KEY_PASSWORD`) once one is bought.
+- **By hand, on a Windows PC:** `npm ci` in `terminal/bridge` and here, then
+  `npm run dist:win -- --x64` (or `--arm64`). `predist:win` checks the bridge's
+  Windows node-pty builds are installed.
+- **Not in Windows yet (release 1c):** the Codex desktop window, one-click
+  install and sign-in of Claude Code or Codex, and messages between sessions on
+  the same PC. The site and the helper hide them on Windows until then.
+
+The VibeCodes logo for both apps lives in `build/` (`icon.icns` for the Mac,
+`icon.ico` for Windows, made from `public/icons/icon-512x512.png`).

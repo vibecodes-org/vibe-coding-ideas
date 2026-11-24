@@ -29,6 +29,7 @@ import type {
 import { RELAY_CLOSE, PREEMPTED_CLOSE_REASON, type TerminalConnectionState } from "@/lib/terminal/connection";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
+import { resolveTerminalPlatform } from "@/lib/terminal/platform";
 
 vi.mock("./use-terminal-session", () => ({
   useTerminalSession: vi.fn(),
@@ -1612,5 +1613,95 @@ describe("TerminalSessionView — a session still running is offered Reconnect, 
     installMockErrorSession({ errorKind: "owner-mismatch", closeCode: 4005, cwd: "/Users/nick/p" });
     renderLive(true);
     expect(screen.queryByTestId("reconnect-live")).not.toBeInTheDocument();
+  });
+});
+
+// Card 51d424f7 (Windows release 1b): the one-time setup screen per system,
+// word for word from docs/design-windows-terminal-setup.html.
+describe("TerminalSessionView — setup screen on Mac, Windows and other systems", () => {
+  const WIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+  const MAC_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+  const LINUX_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+
+  function renderSetup(userAgent: string) {
+    const platform = resolveTerminalPlatform({ userAgent });
+    mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+      const containerRef = useRef<HTMLDivElement | null>(null);
+      lastContainerRef = containerRef;
+      return {
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null, refusalCap: null, endedDetail: null },
+        launchPhase: "idle",
+        peerDegraded: false,
+        helperVersion: null,
+        notEncryptedYet: false,
+        e2eeActive: false,
+        pair: null,
+        cwd: null,
+        claudeSessionId: null,
+        readOnly: false,
+        autoAccept: false,
+        remoteControlEarlyExit: false,
+        inputEnabled: false,
+        platform,
+        paired: false,
+        xtermReady: true,
+        containerRef,
+        pairingTimedOut: false,
+        actions: mockActions(),
+      };
+    });
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+      />,
+    );
+  }
+
+  it("Windows: PC wording, the ARM link, the 'protected your PC' note and the preview line", () => {
+    renderSetup(WIN_UA);
+    expect(screen.getByText("Takes about a minute. You only do this once on this PC.")).toBeInTheDocument();
+    expect(screen.getByText("Some features are still coming to Windows.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Download for Windows/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download the ARM version" })).toHaveAttribute(
+      "href",
+      "/download/terminal-helper?os=win&arch=arm64",
+    );
+    expect(screen.getByText("Open the file to install VibeCodes")).toBeInTheDocument();
+    const note = screen.getByTestId("setup-step2-note");
+    expect(note).toHaveTextContent(
+      "Windows may show “Windows protected your PC”. Click More info, then Run anyway. That’s expected while VibeCodes is new to Windows.",
+    );
+    expect(note.querySelectorAll("b")).toHaveLength(3);
+    expect(screen.getByText(/your browser may ask “Open VibeCodes\?”/)).toBeInTheDocument();
+    expect(screen.queryByText(/Mac/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Applications/)).not.toBeInTheDocument();
+  });
+
+  it("Mac: unchanged — Intel link, drag to Applications, no Windows note or preview line", () => {
+    renderSetup(MAC_UA);
+    expect(screen.getByText("Takes about a minute. You only do this once on this Mac.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download the x64 version" })).toHaveAttribute(
+      "href",
+      "/download/terminal-helper?arch=x64",
+    );
+    expect(screen.getByText("Open the file and drag VibeCodes to Applications")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-step2-note")).not.toBeInTheDocument();
+    expect(screen.queryByText("Some features are still coming to Windows.")).not.toBeInTheDocument();
+  });
+
+  it("other systems: the coming-soon panel says Mac and Windows, with no greyed download button", () => {
+    renderSetup(LINUX_UA);
+    expect(screen.getByText("The in-browser terminal works on Mac and Windows for now")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Windows support is coming/i)).not.toBeInTheDocument();
   });
 });

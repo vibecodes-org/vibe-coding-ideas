@@ -54,6 +54,7 @@ const stayAwake = require("./stay-awake");
 const { TRAY_ICON_PNG_BASE64, TRAY_ICON_WIN_PNG_BASE64 } = require("./tray-icon");
 const { urlFromArgv: urlFromArgvImpl } = require("./launch-argv");
 const { createPeerRouter } = require("./peer-router");
+const { signOutLabel, wrongAccountNotice } = require("./helper-copy");
 
 const LAUNCH_PREFIX = "vibecodes://";
 
@@ -377,7 +378,7 @@ function reportRefusedLink() {
     if (Notification.isSupported()) {
       new Notification({
         title: "VibeCodes",
-        body: "That link is for a different VibeCodes account than this Mac's helper. Nothing was started. To switch accounts, choose \"Sign out this Mac\" from the helper's menu-bar icon.",
+        body: wrongAccountNotice(),
       }).show();
     }
   } catch { /* a notification is a courtesy, never load-bearing */ }
@@ -1393,7 +1394,7 @@ function buildTrayMenu() {
       click: () => { void setAlwaysOn(!alwaysOn, { echo: true }); },
     },
     {
-      label: "Sign out this Mac",
+      label: signOutLabel(),
       click: () => { forgetOwner(); refreshTray(); },
     },
     {
@@ -1488,6 +1489,9 @@ if (!gotLock) {
   app.whenReady().then(() => {
     ready = true;
     app.dock?.hide(); // background helper — no dock icon
+    // Windows shows a notification only for an app with its own id; it must
+    // match electron-builder's appId (card 51d424f7, release 1b).
+    if (process.platform === "win32") app.setAppUserModelId("co.uk.vibecodes.helper");
     // Register the scheme. Packaged builds also declare it in Info.plist via
     // electron-builder `protocols`; this runtime call covers dev + (re)registration.
     if (app.isPackaged) {

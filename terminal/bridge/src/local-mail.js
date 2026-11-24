@@ -97,6 +97,17 @@ exit 1
 }
 
 /**
+ * Whether sessions on this machine can message each other. The mailbox
+ * command is a shell script, so Windows waits for release 1c (card 51d424f7,
+ * Nick, 24 Nov 2026): a PC session gets no mailbox, no hooks and no launch
+ * note about messaging. Release 1c removes this.
+ * @param {string} [platform] the operating system (process.platform)
+ */
+export function sameMachineMessagesSupported(platform = process.platform) {
+  return platform !== "win32";
+}
+
+/**
  * What the agent is told at launch about messaging.
  * @param {string} scriptPath @param {"claude"|"codex"} agent
  */

@@ -90,7 +90,7 @@ import { resolveWindowsPath } from "../../shared/spawn-path.mjs";
 import { toSpawnable } from "../../shared/spawnable.mjs";
 import { FrameEncryptor, FrameDecryptor, PtyCryptoError } from "../../shared/pty-crypto.mjs";
 import { buildSessionEnvValue, isPeerBridgeFrameType } from "../../shared/peer-message.mjs";
-import { agentInstructions, createMailbox } from "./local-mail.js";
+import { agentInstructions, createMailbox, sameMachineMessagesSupported } from "./local-mail.js";
 import {
   CODEX_HOOK_ENV,
   codexHookArgs,
@@ -1464,7 +1464,7 @@ async function main() {
     if (!process.send || !process.channel) return false;
     try { process.send(m); return true; } catch { return false; }
   };
-  if (process.send && process.channel && !term && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
+  if (process.send && process.channel && !term && sameMachineMessagesSupported() && wantsSessionAgents({ agent: AGENT, explicitCmd })) {
     try {
       mailbox = createMailbox({ send: toApp, log });
     } catch (e) {

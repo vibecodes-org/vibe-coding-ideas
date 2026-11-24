@@ -1,0 +1,123 @@
+name: Helper Windows installers
+
+# Card 51d424f7 (release 1b). Builds the two Windows installers (x64 and ARM)
+# for the VibeCodes helper. One release train: every helper release
+# (tag terminal-helper-v<version>) gets both installers uploaded next to the
+# Mac files, under the same version. A pull request touching the helper, or a
+# manual run, only builds and smoke-tests them (nothing is uploaded).
+#
+# Write access: only the "upload" job, which runs only for a published release
+# and runs no project code, can write to the repo. The build job installs
+# packages (whose install scripts run) with a read-only token that is not saved
+# in git's settings.
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - "terminal/helper/**"
+      - "terminal/bridge/**"
+      - "terminal/shared/**"
+      - ".github/workflows/helper-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helper-windows-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: windows installer (${{ matrix.arch }})
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'terminal-helper-v')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          # GitHub's own Windows ARM machine, so the ARM installer is built
+          # and smoke-tested on the chip it is for.
+          - arch: arm64
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: The release tag matches the helper's version
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          v=$(node -p "require('./terminal/helper/package.json').version")
+          if [ "$TAG" != "terminal-helper-v$v" ]; then
+            echo "Tag $TAG does not match terminal/helper/package.json version $v" >&2
+            exit 1
+          fi
+
+      - name: Install bridge and helper packages
+        run: |
+          npm ci --prefix terminal/bridge
+          npm ci --prefix terminal/helper
+
+      # Signing slot: the installers are unsigned until a code-signing
+      # certificate is bought (Windows shows "Windows protected your PC").
+      # When it is, add the certificate as secrets and set CSC_LINK and
+      # CSC_KEY_PASSWORD on the build step below; nothing else changes.
+      - name: Build the installer
+        working-directory: terminal/helper
+        run: npm run dist:win -- --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Smoke test (install, node-pty, start, link handler, uninstall)
+        working-directory: terminal/helper
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          node scripts/smoke-win.mjs "dist/VibeCodes-Setup-$v-${{ matrix.arch }}.exe" ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VibeCodes-Setup-${{ matrix.arch }}
+          path: terminal/helper/dist/VibeCodes-Setup-*.exe
+          if-no-files-found: error
+
+  # Attaches both installers to the release once both built and passed their
+  # smoke test. The only job with write access: it checks out nothing and
+  # installs nothing. To redo a failed upload, re-run the release's own run
+  # (gh run rerun <id>); a manual run of this workflow never uploads.
+  upload:
+    name: attach the installers to the release
+    needs: build
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'terminal-helper-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VibeCodes-Setup-*
+          path: installers
+          merge-multiple: true
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ls -l installers
+          gh release upload "$TAG" installers/VibeCodes-Setup-*.exe --clobber --repo "$GITHUB_REPOSITORY"

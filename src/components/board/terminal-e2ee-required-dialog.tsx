@@ -16,9 +16,10 @@
 // behind, exactly like `terminal-task-launch-choice.tsx`'s own doc comment
 // for the same rule.
 
+import { useTerminalOs } from "@/lib/terminal/use-terminal-os";
 import { Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { E2EE_COPY } from "@/lib/terminal/e2ee-copy";
+import { e2eeCopyFor } from "@/lib/terminal/e2ee-copy";
 import { HelperUpdateButton } from "./terminal-helper-update-button";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +32,7 @@ export interface TerminalE2eeRequiredDialogProps {
 }
 
 export function TerminalE2eeRequiredDialog({ open, onUpdate, onCancel }: TerminalE2eeRequiredDialogProps) {
+  const e2ee = e2eeCopyFor(useTerminalOs());
   return (
     <Dialog
       open={open}
@@ -44,10 +46,10 @@ export function TerminalE2eeRequiredDialog({ open, onUpdate, onCancel }: Termina
       >
         <div className="min-w-0 px-5 pt-5 pr-9 pb-3">
           <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold text-zinc-100">
-            <Shield className="h-4 w-4 text-sky-400" aria-hidden="true" /> {E2EE_COPY.required.title}
+            <Shield className="h-4 w-4 text-sky-400" aria-hidden="true" /> {e2ee.required.title}
           </DialogTitle>
           <DialogDescription className="mt-2 text-[12.5px] leading-relaxed text-zinc-400">
-            {E2EE_COPY.required.body}
+            {e2ee.required.body}
           </DialogDescription>
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-zinc-800 px-5 py-3">
@@ -56,7 +58,7 @@ export function TerminalE2eeRequiredDialog({ open, onUpdate, onCancel }: Termina
           </Button>
           <HelperUpdateButton onClick={onUpdate} />
         </div>
-        <p className="border-t border-zinc-800 px-5 py-2.5 text-[11px] text-zinc-500">{E2EE_COPY.required.fine}</p>
+        <p className="border-t border-zinc-800 px-5 py-2.5 text-[11px] text-zinc-500">{e2ee.required.fine}</p>
       </DialogContent>
     </Dialog>
   );

@@ -51,9 +51,14 @@ export const STATUS_CHECK_TIMEOUT_MS = 10_000;
  * @param {string} agent
  * @param {string} action
  * @param {string | null} [binaryPath] absolute path of the agent (sign-in only)
+ * @param {string} [platform] the operating system (process.platform)
  * @returns {{ file: string, args: string[] } | null}
  */
-export function setupCommand(agent, action, binaryPath = null) {
+export function setupCommand(agent, action, binaryPath = null, platform = process.platform) {
+  // Card 51d424f7 (Windows release 1b): one-click install and sign-in use the
+  // Mac's shell; the Windows version is release 1c. Until then a PC refuses
+  // every setup action (Nick, 24 Nov 2026). Release 1c removes this.
+  if (platform === "win32") return null;
   if (agent !== "claude" && agent !== "codex") return null;
   if (action === "install") {
     return { file: INSTALL_SHELL[agent], args: ["-c", AGENT_INSTALL_COMMANDS[agent]] };

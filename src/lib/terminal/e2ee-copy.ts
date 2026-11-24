@@ -11,6 +11,8 @@
 // enforces that mechanically.
 
 import { shouldShowHelperUpdateNudge } from "./helper-version";
+import { forMachineDeep } from "./machine-words";
+import type { TerminalOs } from "./platform";
 
 export const E2EE_COPY = {
   chip: {
@@ -48,24 +50,33 @@ export const E2EE_COPY = {
   },
 } as const;
 
+/** E2EE_COPY in this visitor's words ("PC" on Windows, card 51d424f7). */
+export function e2eeCopyFor(os: TerminalOs | null | undefined): typeof E2EE_COPY {
+  return forMachineDeep(E2EE_COPY, os);
+}
+
 /**
  * Which "not encrypted" wording fits: an out-of-date (or unknown) helper gets
  * the update nudge with its Update now button; an up-to-date helper means this
  * session's start-up went wrong, so it says that and offers no update.
  */
-export function notEncryptedCopy(helperVersion: string | null | undefined): {
+export function notEncryptedCopy(
+  helperVersion: string | null | undefined,
+  os: TerminalOs = "mac",
+): {
   chipTooltip: string;
   body: string;
   sub: string;
   offerUpdate: boolean;
 } {
+  const copy = e2eeCopyFor(os);
   if (shouldShowHelperUpdateNudge(helperVersion)) {
     return {
-      chipTooltip: E2EE_COPY.chip.notE2eeTooltip,
-      body: E2EE_COPY.nudge.body,
-      sub: E2EE_COPY.nudge.sub,
+      chipTooltip: copy.chip.notE2eeTooltip,
+      body: copy.nudge.body,
+      sub: copy.nudge.sub,
       offerUpdate: true,
     };
   }
-  return { ...E2EE_COPY.startupFailed, offerUpdate: false };
+  return { ...copy.startupFailed, offerUpdate: false };
 }

@@ -1,0 +1,39 @@
+name: Helper release check
+
+# Card 51d424f7 (release 1b). The site's download link and "Update now" follow
+# MINIMUM_RECOMMENDED_HELPER_VERSION. This fails when that release is missing
+# any of its 6 files (2 Mac disk images, 2 Mac zips, 2 Windows installers), so
+# the version is never moved to a release Mac or Windows users can't download.
+on:
+  pull_request:
+    paths:
+      - "src/lib/terminal/helper-version.ts"
+      - "src/lib/terminal/helper-assets.ts"
+      - "scripts/check-helper-release.mjs"
+      - "scripts/lib/helper-release-check.mjs"
+      - ".github/workflows/helper-release-check.yml"
+  push:
+    branches: [master]
+    paths:
+      - "src/lib/terminal/helper-version.ts"
+      - "src/lib/terminal/helper-assets.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: all 6 helper files are on the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Node 24 runs the TypeScript file-name module directly, so the check
+      # and the download route share one list of file names.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-helper-release.mjs

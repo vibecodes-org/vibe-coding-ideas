@@ -13,6 +13,8 @@
 // Active → Lingering transition).
 
 import { thisMacStatusQuery } from "./machine-identity";
+import { forMachine } from "./machine-words";
+import type { TerminalOs } from "./platform";
 
 /** Mirrors terminal/relay/src/helper-status.js's computeHelperStatus() output. */
 export interface HelperStatus {
@@ -74,14 +76,18 @@ export interface HelperChip {
  * how to render that (e.g. nothing, or a neutral placeholder); this function
  * only maps a SETTLED status.
  */
-export function deriveHelperChip(status: HelperStatus | null, sessionCount: number): HelperChip | null {
+export function deriveHelperChip(
+  status: HelperStatus | null,
+  sessionCount: number,
+  os: TerminalOs = "mac",
+): HelperChip | null {
   if (!status) return null;
   if (status.connected) {
     return sessionCount > 0
       ? {
           kind: "running",
           label: "Helper running",
-          subline: "The small app that connects terminals to this Mac.",
+          subline: forMachine("The small app that connects terminals to this Mac.", os),
         }
       : {
           kind: "winding-down",
@@ -174,3 +180,8 @@ export function formatHelperEventAge(atMs: number, nowMs: number = Date.now()): 
 export const ALWAYS_ON_LABEL = "Keep helper ready";
 export const ALWAYS_ON_CONSENT_BODY =
   "The helper starts when you log in to your Mac and stays running so terminals connect faster. It shows an icon in your menu bar, and you can turn this off or quit it there any time.";
+
+/** ALWAYS_ON_CONSENT_BODY in this visitor's words (the icon sits by the clock on Windows). */
+export function alwaysOnConsentBody(os: TerminalOs = "mac"): string {
+  return forMachine(ALWAYS_ON_CONSENT_BODY, os);
+}

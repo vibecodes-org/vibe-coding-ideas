@@ -39,7 +39,7 @@ export default function LaunchingClaudeCodePage() {
             <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
             or <strong className="text-foreground">&quot;Launch Codex&quot;</strong>,
             whichever you last picked (new accounts default to Claude Code). On
-            a Mac with the in-app terminal enabled it opens the{" "}
+            a Mac or Windows PC with the in-app terminal enabled it opens the{" "}
             <strong className="text-foreground">browser terminal</strong> docked
             on the board, running that agent; anywhere else it opens a Terminal
             window on your computer (Claude Code through a{" "}
@@ -78,7 +78,7 @@ export default function LaunchingClaudeCodePage() {
             </li>
             <li>
               <strong className="text-foreground">Task detail header</strong> — a
-              terminal icon. On a Mac with the in-app terminal enabled it is labelled{" "}
+              terminal icon. On a Mac or Windows PC with the in-app terminal enabled it is labelled{" "}
               <strong className="text-foreground">&quot;Launch in browser terminal&quot;</strong>{" "}
               and opens the browser terminal for that task (the task window
               closes so the terminal is visible); otherwise it is labelled{" "}
@@ -107,7 +107,9 @@ export default function LaunchingClaudeCodePage() {
             has an <strong className="text-foreground">&quot;In the browser&quot;</strong>{" "}
             item and an <strong className="text-foreground">&quot;In a terminal window&quot;</strong>{" "}
             item (the one the main button uses is listed first: the browser on
-            a Mac, the terminal window elsewhere). Each item launches exactly
+            a Mac or Windows PC, the terminal window elsewhere). On Windows,
+            Codex is offered in the browser only for now: its terminal window
+            is coming next. Each item launches exactly
             the agent and destination it names and never changes your default.
             With the in-app terminal off, only the terminal-window launch is
             offered. The rest of the menu:
@@ -165,7 +167,9 @@ export default function LaunchingClaudeCodePage() {
               runs the maker&apos;s own installer in the tab so you can watch,
               then helps you sign in, then starts it. Nothing runs until you
               click. If you&apos;d rather do it yourself, it shows the one
-              command to paste into Terminal.
+              command to paste into Terminal. On a Windows PC this is coming
+              next: for now the tab asks you to install it using the maker&apos;s
+              own instructions, then click Start again.
             </li>
           </ul>
         </section>
@@ -175,6 +179,8 @@ export default function LaunchingClaudeCodePage() {
           <p className="mb-4 text-muted-foreground">
             Codex opens in a Terminal window on your Mac through the
             VibeCodes helper — the same helper the in-browser terminal uses.
+            On a Windows PC, Codex runs in the browser terminal for now; the
+            Terminal window is coming next.
             It needs:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
@@ -198,7 +204,7 @@ export default function LaunchingClaudeCodePage() {
             Running It In The Browser — Multiple Sessions at Once
           </h2>
           <p className="mb-4 text-muted-foreground">
-            On a Mac with the in-app terminal enabled, the main{" "}
+            On a Mac or Windows PC with the in-app terminal enabled, the main{" "}
             <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
             button does this by default; you can also pick{" "}
             <strong className="text-foreground">
@@ -564,7 +570,7 @@ export default function LaunchingClaudeCodePage() {
               own built-in messaging. When a Codex session is involved, the
               VibeCodes helper app passes the message across on your Mac: it
               never leaves the Mac and never goes through VibeCodes&apos;
-              servers.
+              servers. On a Windows PC this is coming next.
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
               A message from another session can ask for things, but it{" "}
@@ -605,7 +611,7 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Desktop Only</h2>
           <div className="mb-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              The browser terminal needs a Mac, and the Terminal-window launch
+              The browser terminal needs a Mac or Windows PC, and the Terminal-window launch
               (Claude Code via the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 claude-cli://

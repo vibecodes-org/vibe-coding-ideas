@@ -3,13 +3,22 @@
 // away"; after 3 minutes of waiting it switches to the long-wait wording and adds
 // an End session link. Nothing here ever ends the session by itself.
 
+import type { TerminalOs } from "./platform";
+import { forMachine } from "./machine-words";
+
 export interface ReconnectCopy {
   title: string;
   text: string;
   showEndSession: boolean;
 }
 
-export function reconnectCopy(longWait: boolean): ReconnectCopy {
+/** `os` picks the wording: "Mac" everywhere but Windows, "PC" there (card 51d424f7). */
+export function reconnectCopy(longWait: boolean, os: TerminalOs = "mac"): ReconnectCopy {
+  const copy = macReconnectCopy(longWait);
+  return { ...copy, title: forMachine(copy.title, os), text: forMachine(copy.text, os) };
+}
+
+function macReconnectCopy(longWait: boolean): ReconnectCopy {
   if (longWait) {
     return {
       title: "Still waiting for your Mac.",

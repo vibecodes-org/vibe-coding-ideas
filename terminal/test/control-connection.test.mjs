@@ -107,6 +107,7 @@ const fakeApp = {
   setAsDefaultProtocolClient: () => {},
   getPath: (name) => path.join(SCRATCH_DIR, name),
   setLoginItemSettings: () => {},
+  setAppUserModelId: () => {},
   quit: () => {},
   exit: () => {},
 };
