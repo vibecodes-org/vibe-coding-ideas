@@ -142,8 +142,9 @@ function saveOffer(
 
 /**
  * How many OTHER cards this session is still looking after, worked out on the
- * server: cards on the same board with a step running or waiting for approval,
- * leaving out the finished card and any card another open in-browser session of
+ * server: cards on the same board with a workflow step in progress right now
+ * (not ones waiting for approval, and not ones that merely sit in the In
+ * Progress column), leaving out the finished card and any card another open in-browser session of
  * the same person was launched for. Claims don't record which session made
  * them, so this is the closest the server can tell (card e6a612b8).
  */
@@ -156,19 +157,16 @@ async function countStillWorkingOn(
 ): Promise<number> {
   const { data, error } = await ctx.supabase
     .from("board_tasks")
-    .select("id, workflow_step_in_progress, workflow_step_awaiting_approval")
+    .select("id, workflow_step_in_progress")
     .eq("idea_id", ideaId)
     .eq("archived", false)
     .neq("id", finishedId)
-    .or("workflow_step_in_progress.gt.0,workflow_step_awaiting_approval.gt.0")
+    .gt("workflow_step_in_progress", 0)
     .range(0, 199);
   if (error) throw new Error(`Failed to count busy cards: ${error.message}`);
   const otherTabs = new Set(rows.filter((r) => r.sid !== sender.sid && r.task_id).map((r) => r.task_id));
-  const busy = ((data ?? []) as Array<{ id: string; workflow_step_in_progress: number | null; workflow_step_awaiting_approval: number | null }>).filter(
-    (t) =>
-      t.id !== finishedId &&
-      !otherTabs.has(t.id) &&
-      ((t.workflow_step_in_progress ?? 0) > 0 || (t.workflow_step_awaiting_approval ?? 0) > 0)
+  const busy = ((data ?? []) as Array<{ id: string; workflow_step_in_progress: number | null }>).filter(
+    (t) => t.id !== finishedId && !otherTabs.has(t.id) && (t.workflow_step_in_progress ?? 0) > 0
   );
   return Math.min(busy.length, 20);
 }

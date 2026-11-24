@@ -184,15 +184,19 @@ describe("workflowFinishedReply raises the bar for the calling session", () => {
     expect(r.instruction).not.toContain("first call offer_next_card");
   });
 
-  it("works out still_working_on on the server: other busy cards on the board, not ones another open session was launched for", async () => {
+  it("works out still_working_on on the server: only other cards with a step in progress now; not awaiting approval, not column-only, not another tab's card", async () => {
     tasks.push(
       { id: "b1", title: "Busy here", idea_id: "idea-1", archived: false, workflow_step_in_progress: 1, workflow_step_awaiting_approval: 0 },
       { id: "b2", title: "Waiting on approval", idea_id: "idea-1", archived: false, workflow_step_in_progress: 0, workflow_step_awaiting_approval: 1 },
       { id: "b3", title: "Another tab's card", idea_id: "idea-1", archived: false, workflow_step_in_progress: 1, workflow_step_awaiting_approval: 0 },
       { id: "b4", title: "Idle", idea_id: "idea-1", archived: false, workflow_step_in_progress: 0, workflow_step_awaiting_approval: 0 },
+      { id: "b5", title: "In the In Progress column only", idea_id: "idea-1", column_id: "c-progress", archived: false, workflow_step_in_progress: 0, workflow_step_awaiting_approval: 0 },
+      { id: "b6", title: "Also busy here", idea_id: "idea-1", archived: false, workflow_step_in_progress: 1, workflow_step_awaiting_approval: 1 },
     );
     sessions.push({ ...sessions[0], sid: "sid-2", task_id: "b3" });
     await workflowFinishedReply(ctx(), TASK, mine());
+    // b1 and b6 only: b2 is waiting for approval, b3 belongs to another tab,
+    // b4 is idle and b5 merely sits in the In Progress column.
     expect(upsertCalls[0].still_working_on).toBe(2);
   });
 
