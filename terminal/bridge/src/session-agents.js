@@ -132,7 +132,51 @@ export function agentsForClaudeVersion(body, claudeVersionText) {
  */
 export function serializeSessionAgents(body, appOrigin) {
   const clean = validateSessionAgents(body, appOrigin);
-  return clean ? JSON.stringify(clean) : null;
+  return clean ? escapeJsonText(JSON.stringify(clean)) : null;
+}
+
+/** Keep the escaped value well under macOS's ~1 MB argument limit (env shares it). */
+const ESCAPED_MAX_BYTES = 700_000;
+
+/**
+ * Rewrite JSON text so the readable words inside its strings become \uXXXX
+ * escapes. JSON.parse gives back exactly the same value, but the process's
+ * command line no longer contains the text, so `pkill -f <words>` run by
+ * another agent can't match (and kill) the session (card 9b5336c1). Claude
+ * Code takes `--agents` only inline in an interactive session (a file path
+ * works only with --print), so this is the way to keep it off the line.
+ * Existing escapes are copied untouched. Every character is escaped when the
+ * result fits; a very large payload escapes every other one (still breaks
+ * any pattern of 3+ characters) so it stays under the argument limit.
+ * @param {string} json
+ * @returns {string}
+ */
+export function escapeJsonText(json) {
+  const hex = (/** @type {string} */ ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0");
+  const render = (/** @type {number} */ step) => {
+    let out = "";
+    let inString = false;
+    let n = 0;
+    for (let i = 0; i < json.length; i++) {
+      const ch = json[i];
+      if (!inString) {
+        out += ch;
+        if (ch === '"') inString = true;
+      } else if (ch === "\\") {
+        const len = json[i + 1] === "u" ? 6 : 2;
+        out += json.slice(i, i + len);
+        i += len - 1;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else if (n++ % step === 0) {
+        out += hex(ch);
+      } else out += ch;
+    }
+    return out;
+  };
+  const full = render(1);
+  return Buffer.byteLength(full, "utf8") <= ESCAPED_MAX_BYTES ? full : render(2);
 }
 
 /**
