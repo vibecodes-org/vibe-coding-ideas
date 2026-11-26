@@ -130,9 +130,60 @@ export function agentsForClaudeVersion(body, claudeVersionText) {
  * @param {unknown} body
  * @returns {string | null}
  */
-export function serializeSessionAgents(body, appOrigin) {
+export function serializeSessionAgents(body, appOrigin, platform = process.platform) {
   const clean = validateSessionAgents(body, appOrigin);
-  return clean ? JSON.stringify(clean) : null;
+  if (!clean) return null;
+  // Windows caps a command line at 32,767 characters (the escaped form is ~6x
+  // bigger) and has no `pkill -f`, so it gets the plain JSON.
+  return platform === "win32" ? JSON.stringify(clean) : escapeJsonText(JSON.stringify(clean));
+}
+
+/** Keep the escaped value well under macOS's ~1 MB argument limit (env shares it). */
+const ESCAPED_MAX_BYTES = 700_000;
+
+/**
+ * Rewrite JSON text so the readable words inside its strings become \uXXXX
+ * escapes. JSON.parse gives back exactly the same value, but the process's
+ * command line no longer contains the text, so `pkill -f <words>` run by
+ * another agent can't match (and kill) the session (card 9b5336c1). Claude
+ * Code takes `--agents` only inline in an interactive session (a file path
+ * works only with --print), so this is the way to keep it off the line.
+ * Existing escapes are copied untouched. Every character is escaped when the
+ * result fits; a very large payload escapes every other one (still breaks
+ * any pattern of 3+ characters) so it stays under the argument limit.
+ * @param {string} json
+ * @returns {string}
+ */
+export function escapeJsonText(json) {
+  // By code point: an emoji (two UTF-16 units) is escaped or kept as a whole,
+  // never split. Escaped as its two \uXXXX units, which JSON.parse rejoins.
+  const hex = (/** @type {string} */ ch) =>
+    Array.from({ length: ch.length }, (_, k) => "\\u" + ch.charCodeAt(k).toString(16).padStart(4, "0")).join("");
+  const render = (/** @type {number} */ step) => {
+    let out = "";
+    let inString = false;
+    let n = 0;
+    for (let i = 0; i < json.length; i++) {
+      const ch = String.fromCodePoint(/** @type {number} */ (json.codePointAt(i)));
+      i += ch.length - 1;
+      if (!inString) {
+        out += ch;
+        if (ch === '"') inString = true;
+      } else if (ch === "\\") {
+        const len = json[i + 1] === "u" ? 6 : 2;
+        out += json.slice(i, i + len);
+        i += len - 1;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else if (n++ % step === 0) {
+        out += hex(ch);
+      } else out += ch;
+    }
+    return out;
+  };
+  const full = render(1);
+  return Buffer.byteLength(full, "utf8") <= ESCAPED_MAX_BYTES ? full : render(2);
 }
 
 /**

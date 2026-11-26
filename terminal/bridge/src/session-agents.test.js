@@ -233,3 +233,51 @@ test("Codex role files never carry hooks", () => {
   const files = codexAgentFiles({ agents: { "vc-a": { ...ATLAS, hooks } } });
   assert.ok(!files[0].toml.includes("hook"));
 });
+
+// Card 9b5336c1: `pkill -f <text>` matches a process's WHOLE command line, so
+// any agent prompt that happened to contain a helper's kill pattern got the
+// in-app session killed (SIGTERM, exit 143). Claude Code only takes `--agents`
+// inline in an interactive session, so the JSON is written with \uXXXX escapes:
+// identical once parsed, but the readable text is no longer on the command line.
+test("the --agents value never carries readable text a pattern kill could match", () => {
+  const prompt = 'Stop the server with pkill -f "pytest -m not live" and pkill -f "http.server 8765" then tools/e2e.sh';
+  const json = serializeSessionAgents({ agents: { "vc-atlas-37e8ffb2": { description: "Runs pytest -m not live", prompt } } }, undefined, "darwin");
+  for (const pattern of ["pytest -m not live", "http.server 8765", "tools/e2e.sh", "pytest", "e2e", "8765", "server", "Stop"]) {
+    assert.ok(!json.includes(pattern), `command line must not contain "${pattern}"`);
+  }
+  assert.equal(JSON.parse(json)["vc-atlas-37e8ffb2"].prompt, prompt, "the CLI still reads the exact original text");
+});
+
+test("the escaped --agents value keeps real escapes, unicode and numbers intact", () => {
+  const def = { description: 'd "q" \\ \n tab\t é 😀', prompt: "line1\nline2   ok", autoCompactWindow: 200000 };
+  const json = serializeSessionAgents({ agents: { "vc-a": def } }, undefined, "darwin");
+  assert.deepEqual(JSON.parse(json), { "vc-a": def });
+  assert.ok(!json.includes("line1"));
+});
+
+test("Windows gets plain JSON (32,767-char command line, no pkill -f); other platforms get it escaped", () => {
+  const body = { agents: { "vc-a": { description: "d", prompt: "run pytest -m not live" } } };
+  const win = serializeSessionAgents(body, undefined, "win32");
+  assert.ok(win.includes("pytest -m not live"));
+  assert.deepEqual(JSON.parse(win), JSON.parse(serializeSessionAgents(body, undefined, "darwin")));
+  for (const platform of ["darwin", "linux"]) {
+    assert.ok(!serializeSessionAgents(body, undefined, platform).includes("pytest"));
+  }
+});
+
+test("an emoji survives the every-other-character fallback of a large payload", () => {
+  const prompt = "ok 😀 pytest ".repeat(Math.floor((SESSION_AGENTS_MAX_BYTES - 200) / 15));
+  const json = serializeSessionAgents({ agents: { "vc-a": { description: "d 😀", prompt } } }, undefined, "darwin");
+  assert.ok(json.includes(" "), "fallback path: some characters are left unescaped");
+  assert.equal(JSON.parse(json)["vc-a"].prompt, prompt);
+  assert.equal(JSON.parse(json)["vc-a"].description, "d 😀");
+});
+
+test("a payload at the size cap still fits the macOS argument limit once escaped", () => {
+  const prompt = "pytest ".repeat(Math.floor((SESSION_AGENTS_MAX_BYTES - 200) / 7));
+  const json = serializeSessionAgents({ agents: { "vc-a": { description: "d", prompt } } }, undefined, "darwin");
+  assert.ok(json, "a payload under the cap is still accepted");
+  assert.ok(Buffer.byteLength(json) < 760_000, `escaped size ${Buffer.byteLength(json)} must leave room under the 1 MB limit`);
+  assert.ok(!json.includes("pytest"));
+  assert.equal(JSON.parse(json)["vc-a"].prompt, prompt);
+});
