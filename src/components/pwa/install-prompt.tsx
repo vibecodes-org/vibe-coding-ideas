@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Download, Share, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -13,7 +14,13 @@ const DISMISSED_KEY = "pwa-install-dismissed";
 const VISIT_COUNT_KEY = "pwa-visit-count";
 const MIN_VISITS = 3;
 
+/** The signed-out front page ("/") never shows this banner: on phones it covers the hero. */
+export function isInstallPromptHiddenOn(pathname: string | null): boolean {
+  return pathname === "/";
+}
+
 export function InstallPrompt() {
+  const pathname = usePathname();
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [showIosPrompt, setShowIosPrompt] = useState(false);
@@ -72,6 +79,7 @@ export function InstallPrompt() {
     dismiss();
   };
 
+  if (isInstallPromptHiddenOn(pathname)) return null;
   if (dismissed || (!deferredPrompt && !showIosPrompt)) return null;
 
   return (

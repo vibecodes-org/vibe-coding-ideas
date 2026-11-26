@@ -1,3 +1,4 @@
+import type { ColumnCounts } from "@/lib/landing-stats";
 import styles from "./aurora.module.css";
 
 /**
@@ -18,7 +19,7 @@ type Card = {
   shipped?: boolean;
   delay?: string;
 };
-type Column = { title: string; count: number; swatch: string; cards: Card[] };
+type Column = { title: string; countKey: keyof ColumnCounts; swatch: string; cards: Card[] };
 
 const TAG_CLASS: Record<TagKind, string> = {
   bug: styles.tBug,
@@ -30,7 +31,7 @@ const TAG_CLASS: Record<TagKind, string> = {
 const COLUMNS: Column[] = [
   {
     title: "To Do",
-    count: 11,
+    countKey: "todo",
     swatch: "#6b6b80",
     cards: [
       {
@@ -57,7 +58,7 @@ const COLUMNS: Column[] = [
   },
   {
     title: "In Progress",
-    count: 5,
+    countKey: "inProgress",
     swatch: "var(--cyan)",
     cards: [
       {
@@ -89,7 +90,7 @@ const COLUMNS: Column[] = [
   },
   {
     title: "Verify",
-    count: 24,
+    countKey: "verify",
     swatch: "var(--violet)",
     cards: [
       {
@@ -109,7 +110,7 @@ const COLUMNS: Column[] = [
   },
   {
     title: "Done",
-    count: 849,
+    countKey: "done",
     swatch: "var(--lime)",
     cards: [
       {
@@ -134,10 +135,10 @@ const AVATARS = [
   { i: "AT", c: "#67e8f9" },
   { i: "LE", c: "#f9a8d4" },
   { i: "SE", c: "#bef264" },
-  { i: "PI", c: "#fcd34d" },
 ];
 
-export function AuroraBoard() {
+/** `counts` are the real column totals from the hourly live read; null (read failed) shows none. */
+export function AuroraBoard({ counts }: { counts: ColumnCounts | null }) {
   return (
     <div className={styles.stage}>
       {/* Decorative example, not a working board: hidden from screen readers. */}
@@ -167,7 +168,8 @@ export function AuroraBoard() {
             <div key={col.title} className={styles.col}>
               <h4>
                 <span className={styles.sw} style={{ background: col.swatch }} />
-                {col.title} <span className={styles.n}>{col.count}</span>
+                {col.title}
+                {counts && <> <span className={styles.n}>{counts[col.countKey]}</span></>}
               </h4>
               {col.cards.map((card) => (
                 <div
