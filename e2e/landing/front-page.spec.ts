@@ -30,7 +30,7 @@ test.describe("Front page (Aurora look)", () => {
     await page.goto("/");
     await page.getByRole("link", { name: "Watch a card ship" }).click();
     await expect(page).toHaveURL(/#how$/);
-    await expect(page.getByRole("heading", { name: /One card\. Five agents/ })).toBeInViewport();
+    await expect(page.getByRole("heading", { name: /One card\. Four agents/ })).toBeInViewport();
   });
 
   test("Copy puts the install command on the clipboard", async ({ page, context, browserName }) => {

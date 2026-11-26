@@ -5,7 +5,7 @@ const FEED = [
   { t: "07:14", text: 'Planner claimed "Rebrand the site: the Aurora look"' },
   { t: "07:11", text: 'Sentinel passed "In-app setup wizard" in a real browser' },
   { t: "07:02", text: 'Lens asked for changes on "Next-card bar"' },
-  { t: "06:48", text: 'Pipeline confirmed the deploy is live for "Board hid cards"' },
+  { t: "06:48", text: 'Atlas finished the fix for "Board hid cards"' },
 ];
 
 export function FeatureTiles() {

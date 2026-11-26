@@ -5,7 +5,7 @@
  *
  * Server only. It uses the service-role key because anonymous visitors cannot
  * read board tables. Import it only from a server component (the `server-only`
- * package is not installed). Only two numbers ever leave this file.
+ * package is not installed). Only counts ever leave this file: two totals and four column counts, no names or titles.
  */
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
@@ -17,12 +17,43 @@ export const VIBECODES_BOARD_ID = "62e57071-3645-422f-96c0-b2042e39e6dd";
 
 const PAGE_SIZE = 1000;
 
-export type LandingStats = { agents: number; cards: number };
+export type ColumnCounts = { todo: number; inProgress: number; verify: number; done: number };
+export type LandingStats = { agents: number; cards: number; columns: ColumnCounts | null };
+
+const COLUMN_KEYS: Record<string, keyof ColumnCounts> = {
+  "to do": "todo",
+  "in progress": "inProgress",
+  verify: "verify",
+  done: "done",
+};
+
+/**
+ * Real card counts for the four columns the example board shows, as the board
+ * itself shows them (archived cards are not counted). Returns null unless all
+ * four columns exist, so the page never shows a partly invented set.
+ */
+export function countColumns(
+  columns: { id: string; title: string }[],
+  tasks: { column_id: string; archived: boolean }[]
+): ColumnCounts | null {
+  const keyById = new Map<string, keyof ColumnCounts>();
+  for (const c of columns) {
+    const key = COLUMN_KEYS[c.title.trim().toLowerCase()];
+    if (key) keyById.set(c.id, key);
+  }
+  if (new Set(keyById.values()).size !== 4) return null;
+  const counts: ColumnCounts = { todo: 0, inProgress: 0, verify: 0, done: 0 };
+  for (const t of tasks) {
+    const key = keyById.get(t.column_id);
+    if (key && !t.archived) counts[key] += 1;
+  }
+  return counts;
+}
 
 export function countShippedByAgents(
   finishedSteps: { task_id: string; bot_id: string | null }[],
   doneTaskIds: Set<string>
-): LandingStats {
+): { agents: number; cards: number } {
   const agents = new Set<string>();
   const cards = new Set<string>();
   for (const step of finishedSteps) {
@@ -53,16 +84,16 @@ async function readAll<T>(
 export async function readLandingStats(db: Db): Promise<LandingStats> {
   const { data: doneCols, error: colErr } = await db
     .from("board_columns")
-    .select("id")
-    .eq("idea_id", VIBECODES_BOARD_ID)
-    .eq("is_done_column", true);
+    .select("id, title, is_done_column")
+    .eq("idea_id", VIBECODES_BOARD_ID);
   if (colErr) throw new Error(colErr.message);
-  const doneColumnIds = new Set((doneCols ?? []).map((c) => c.id));
+  const allColumns = doneCols ?? [];
+  const doneColumnIds = new Set(allColumns.filter((c) => c.is_done_column).map((c) => c.id));
 
-  const doneTasks = await readAll<{ id: string; column_id: string }>((from, to) =>
+  const doneTasks = await readAll<{ id: string; column_id: string; archived: boolean }>((from, to) =>
     db
       .from("board_tasks")
-      .select("id, column_id")
+      .select("id, column_id, archived")
       .eq("idea_id", VIBECODES_BOARD_ID)
       .order("id")
       .range(from, to)
@@ -82,7 +113,7 @@ export async function readLandingStats(db: Db): Promise<LandingStats> {
       .range(from, to)
   );
 
-  return countShippedByAgents(steps, doneTaskIds);
+  return { ...countShippedByAgents(steps, doneTaskIds), columns: countColumns(allColumns, doneTasks) };
 }
 
 const cachedStats = unstable_cache(

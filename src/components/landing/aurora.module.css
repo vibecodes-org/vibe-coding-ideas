@@ -6,7 +6,7 @@
   --bg: #06060b;
   --ink: #f4f4f8;
   --ink-2: #a3a3b8;
-  --ink-3: #6b6b80;
+  --ink-3: #8a8aa0; /* 4.5:1 or better on the page and card backgrounds */
   --surface: rgba(255, 255, 255, 0.035);
   --surface-2: rgba(255, 255, 255, 0.06);
   --line: rgba(255, 255, 255, 0.08);
@@ -616,7 +616,7 @@
 .relay {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
   margin-top: 48px;
 }

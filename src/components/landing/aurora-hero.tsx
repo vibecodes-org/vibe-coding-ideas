@@ -42,7 +42,7 @@ export function AuroraHero({ stats }: { stats: LandingStats | null }) {
           </a>
         </div>
         <CopyCommand command={INSTALL_COMMAND} />
-        <AuroraBoard />
+        <AuroraBoard counts={stats?.columns ?? null} />
       </div>
     </section>
   );
