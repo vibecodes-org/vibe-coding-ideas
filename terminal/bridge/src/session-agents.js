@@ -130,9 +130,12 @@ export function agentsForClaudeVersion(body, claudeVersionText) {
  * @param {unknown} body
  * @returns {string | null}
  */
-export function serializeSessionAgents(body, appOrigin) {
+export function serializeSessionAgents(body, appOrigin, platform = process.platform) {
   const clean = validateSessionAgents(body, appOrigin);
-  return clean ? escapeJsonText(JSON.stringify(clean)) : null;
+  if (!clean) return null;
+  // Windows caps a command line at 32,767 characters (the escaped form is ~6x
+  // bigger) and has no `pkill -f`, so it gets the plain JSON.
+  return platform === "win32" ? JSON.stringify(clean) : escapeJsonText(JSON.stringify(clean));
 }
 
 /** Keep the escaped value well under macOS's ~1 MB argument limit (env shares it). */
@@ -152,13 +155,17 @@ const ESCAPED_MAX_BYTES = 700_000;
  * @returns {string}
  */
 export function escapeJsonText(json) {
-  const hex = (/** @type {string} */ ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0");
+  // By code point: an emoji (two UTF-16 units) is escaped or kept as a whole,
+  // never split. Escaped as its two \uXXXX units, which JSON.parse rejoins.
+  const hex = (/** @type {string} */ ch) =>
+    Array.from({ length: ch.length }, (_, k) => "\\u" + ch.charCodeAt(k).toString(16).padStart(4, "0")).join("");
   const render = (/** @type {number} */ step) => {
     let out = "";
     let inString = false;
     let n = 0;
     for (let i = 0; i < json.length; i++) {
-      const ch = json[i];
+      const ch = String.fromCodePoint(/** @type {number} */ (json.codePointAt(i)));
+      i += ch.length - 1;
       if (!inString) {
         out += ch;
         if (ch === '"') inString = true;

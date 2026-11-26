@@ -255,6 +255,24 @@ test("the escaped --agents value keeps real escapes, unicode and numbers intact"
   assert.ok(!json.includes("line1"));
 });
 
+test("Windows gets plain JSON (32,767-char command line, no pkill -f); other platforms get it escaped", () => {
+  const body = { agents: { "vc-a": { description: "d", prompt: "run pytest -m not live" } } };
+  const win = serializeSessionAgents(body, undefined, "win32");
+  assert.ok(win.includes("pytest -m not live"));
+  assert.deepEqual(JSON.parse(win), JSON.parse(serializeSessionAgents(body, undefined, "darwin")));
+  for (const platform of ["darwin", "linux"]) {
+    assert.ok(!serializeSessionAgents(body, undefined, platform).includes("pytest"));
+  }
+});
+
+test("an emoji survives the every-other-character fallback of a large payload", () => {
+  const prompt = "ok 😀 pytest ".repeat(Math.floor((SESSION_AGENTS_MAX_BYTES - 200) / 15));
+  const json = serializeSessionAgents({ agents: { "vc-a": { description: "d 😀", prompt } } });
+  assert.ok(json.includes(" "), "fallback path: some characters are left unescaped");
+  assert.equal(JSON.parse(json)["vc-a"].prompt, prompt);
+  assert.equal(JSON.parse(json)["vc-a"].description, "d 😀");
+});
+
 test("a payload at the size cap still fits the macOS argument limit once escaped", () => {
   const prompt = "pytest ".repeat(Math.floor((SESSION_AGENTS_MAX_BYTES - 200) / 7));
   const json = serializeSessionAgents({ agents: { "vc-a": { description: "d", prompt } } });
