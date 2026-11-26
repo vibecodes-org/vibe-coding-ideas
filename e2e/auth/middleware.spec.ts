@@ -100,6 +100,12 @@ test.describe("Middleware — Route Protection", () => {
       await expect(page).toHaveURL(/\/dashboard/);
     });
 
+    test("signed-in visitor going to / lands on /dashboard", async ({ userAPage: page }) => {
+      await page.goto("/");
+      await page.waitForURL(/\/dashboard/, { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/dashboard/);
+    });
+
     test("should access /ideas without redirect", async ({ userAPage: page }) => {
       await page.goto("/ideas");
       await page.waitForLoadState("domcontentloaded");
