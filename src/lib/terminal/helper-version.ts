@@ -188,8 +188,12 @@
  *  the Mac app gets the VibeCodes logo. Nothing changes how an older Mac
  *  helper works: same soft nudge. The download link follows this constant,
  *  so it must only move once all 6 files are on the release
- *  (scripts/check-helper-release.mjs checks that). */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.0";
+ *  (scripts/check-helper-release.mjs checks that).
+ *  0.4.1 (card 9b5336c1, 26 Nov 2026): on Mac and Linux the board agents are
+ *  passed to Claude in coded form, so another agent's `pkill -f` can no longer
+ *  match words in them and end in-app sessions. An older helper still works but
+ *  its sessions stay exposed: a firm nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.1";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
