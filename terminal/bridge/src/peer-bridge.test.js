@@ -7,6 +7,7 @@ import {
   CODEX_HOOK_ENV,
   codexHookArgs,
   codexHookHash,
+  codexHookCurlConfig,
   codexHookUrl,
   createPeerBridge,
   hookSettingsArgs,
@@ -200,7 +201,12 @@ test("Codex launch flags: one hook per event, all pre-approved, no address baked
     assert.ok(state.includes(`"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${codexHookHash(label, null, CODEX_HOOK_COMMAND)}"}`));
   }
   assert.ok(!args.join(" ").includes("127.0.0.1"));
-  assert.ok(CODEX_HOOK_COMMAND.includes(`"$${CODEX_HOOK_ENV}"`));
+  assert.ok(CODEX_HOOK_COMMAND.includes(`curl -K "$${CODEX_HOOK_ENV}"`), "the secret address is read from a config file named by the env variable");
+  // Nothing readable on the launch line: the word curl and the content type are \u-escaped.
+  assert.ok(!args.join(" ").includes("curl"));
+  assert.ok(!args.join(" ").includes("content-type"));
+  assert.match(values.find((v) => v.startsWith("hooks.Stop=")), /command="\\u0063\\u0075\\u0072\\u006c/);
+  assert.equal(codexHookCurlConfig(4321, "abc"), 'url = "http://127.0.0.1:4321/abc/hook"\n');
   assert.equal(codexHookUrl(4321, "abc"), "http://127.0.0.1:4321/abc/hook");
 });
 

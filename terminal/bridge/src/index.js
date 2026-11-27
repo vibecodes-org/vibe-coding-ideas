@@ -95,7 +95,7 @@ import { agentInstructions, createMailbox, sameMachineMessagesSupported } from "
 import {
   CODEX_HOOK_ENV,
   codexHookArgs,
-  codexHookUrl,
+  codexHookCurlConfig,
   createPeerBridge,
   hookSettingsArgs,
   hookSettingsText,
@@ -678,7 +678,10 @@ function sessionAgentArgs(body) {
         agentNotice = `This board has more agents than Windows can start a session with: ${plan.dropped.length} left out (${plan.dropped.join(", ")}).\r\n`;
       }
     }
-    return ["--agents", plan.json];
+    // Windows agents moved into files: allow reading that folder, so the agent's first Read is not a "read outside the project" prompt.
+    // The `=` form matters: the spaced form would swallow the launch prompt that follows as a second folder.
+    const addDir = plan.files.length ? [`--add-dir=${path.dirname(privateFiles.pathFor(plan.files[0].fileName))}`] : [];
+    return ["--agents", plan.json, ...addDir];
   } catch (e) {
     log("warn", "couldn't prepare the board's agents — launching without them", { err: String(e?.message || e) });
     removeAgentFiles();
@@ -1519,8 +1522,9 @@ async function main() {
         });
         const note = mailbox ? agentInstructions(mailbox.scriptPath, AGENT) : null;
         if (AGENT === "codex") {
-          // Codex hooks are commands; the listener's address travels in the env.
-          cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
+          // Codex hooks are commands; the env holds the PATH of an owner-only curl config with the secret address, never the address.
+          const curlCfg = privateFiles.write("peer-hook.curlrc", codexHookCurlConfig(hooks.port, secret));
+          cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), [CODEX_HOOK_ENV]: curlCfg };
           // The note is written as \uXXXX escapes: Codex reads the same text, the command line holds none of it.
           peerHookFlags = [...codexHookArgs(), ...(note ? ["-c", `developer_instructions=${tomlEscapedString(note)}`] : [])];
         } else {
