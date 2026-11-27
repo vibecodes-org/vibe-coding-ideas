@@ -23,7 +23,7 @@ export const stepUsageParam = z
       "claim_next_step (AGENT_ID replaced by the agentId of each subagent that did the work, or left as it is if you " +
       "did the work yourself) and pass the one line it prints here unchanged, NO_TRANSCRIPT included: " +
       '{"models":[{"model","calls","input_tokens","output_tokens","cache_read_tokens","cache_write_5m_tokens",' +
-      '"cache_write_1h_tokens"}],"output_estimated"}. If it prints NO_TRANSCRIPT no-script, the reply gives you a full ' +
+      '"cache_write_1h_tokens","helper_output_tokens"}],"output_estimated"}. If it prints NO_TRANSCRIPT no-script, the reply gives you a full ' +
       "command to run once instead. Required on a Claude step you claimed: without it (or " +
       "usage_unavailable) the call is refused and nothing changes. If your shell refuses the command (a safety check, for example in a worktree), " +
       "run it again as one plain command on its own. If it errors because the file is missing, run usage_command_list_scripts on its own, then usage_command_newest_script on its own with NEWEST_STEP_USAGE_SCRIPT replaced by the first step-usage-*.sh name the list printed (never pipe one into the other); if the folder is missing or that errors too, run usage_command_if_script_missing. " +
