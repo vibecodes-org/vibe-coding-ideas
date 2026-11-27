@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { GUIDE_SECTIONS } from "@/components/guide/guide-sections";
 
 const { mockFrom, mockCreateClient } = vi.hoisted(() => {
   const mockFrom = vi.fn();
@@ -53,13 +54,10 @@ describe("sitemap", () => {
     const urls = result.map((entry) => entry.url);
     expect(urls).toContain(BASE);
     expect(urls).toContain(`${BASE}/guide`);
-    expect(urls).toContain(`${BASE}/guide/getting-started`);
-    expect(urls).toContain(`${BASE}/guide/ideas-and-voting`);
-    expect(urls).toContain(`${BASE}/guide/collaboration`);
-    expect(urls).toContain(`${BASE}/guide/kanban-boards`);
-    expect(urls).toContain(`${BASE}/guide/ai-agent-teams`);
-    expect(urls).toContain(`${BASE}/guide/mcp-integration`);
-    expect(urls).toContain(`${BASE}/guide/admin`);
+    for (const section of GUIDE_SECTIONS) {
+      expect(urls).toContain(`${BASE}/guide/${section.slug}`);
+    }
+    expect(urls).toContain(`${BASE}/guide/settings`);
     expect(urls).toContain(`${BASE}/changelog`);
     expect(urls).toContain(`${BASE}/terms`);
     expect(urls).toContain(`${BASE}/privacy`);

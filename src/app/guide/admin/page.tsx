@@ -4,7 +4,7 @@ import { Shield, ArrowLeft } from "lucide-react";
 export const metadata = {
   title: "Admin Guide",
   description:
-    "Admin features on VibeCodes — AI usage analytics, per-user rate limits, user management, and content moderation.",
+    "Admin features on VibeCodes — AI usage analytics, credits and cost reports, user management, and content moderation.",
 };
 
 export default function AdminPage() {
@@ -38,7 +38,7 @@ export default function AdminPage() {
             <li>View the AI usage analytics dashboard</li>
             <li>Grant AI starter credits to any user</li>
             <li>View per-user credit balances and platform AI costs</li>
-            <li>Manage Featured Agent Teams and Project Kits</li>
+            <li>Manage Featured Agent Teams</li>
             <li>View private ideas (even without being a collaborator)</li>
           </ul>
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
@@ -116,13 +116,13 @@ export default function AdminPage() {
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Daily safety cap:</strong>{" "}
-              separately from per-user credits, the platform enforces a global
-              daily limit on platform-key AI calls (the{" "}
+              separately from credits, the platform limits how many
+              platform-key AI calls each user can make per day (the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 PLATFORM_AI_DAILY_LIMIT
               </code>{" "}
               environment variable, default 50). This is an abuse backstop, not
-              a per-user allocation.
+              an allowance.
             </p>
           </div>
         </section>
@@ -221,16 +221,14 @@ export default function AdminPage() {
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            Featured Teams & Project Kits
+            Featured Teams
           </h2>
           <p className="mb-4 text-muted-foreground">
             Admins can also manage{" "}
             <strong className="text-foreground">Featured Agent Teams</strong>{" "}
             — curated collections of agents that appear in the Agents Hub for
-            all users to clone.{" "}
-            <strong className="text-foreground">Project Kits</strong>, which
-            bundle agents, workflows, labels, and triggers for specific project
-            types, are also managed by admins.
+            all users to clone. Project types have no admin screen; they
+            are set up by the VibeCodes team.
           </p>
         </section>
 

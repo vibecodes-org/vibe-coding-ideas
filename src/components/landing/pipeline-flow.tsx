@@ -15,32 +15,32 @@ import { cn } from "@/lib/utils";
 const stages = [
   {
     icon: Lightbulb,
-    title: "Ideas",
-    description: "Describe your vision. AI refines it.",
+    title: "Idea",
+    description: "Type one line. AI drafts the rest.",
     color: "amber",
   },
   {
     icon: LayoutDashboard,
     title: "Board",
-    description: "AI generates tasks, labels, milestones.",
+    description: "AI fills it with cards, columns and labels.",
     color: "blue",
   },
   {
     icon: Bot,
     title: "Agents",
-    description: "Named AI personas claim tasks.",
+    description: "From the library, or write your own.",
     color: "emerald",
   },
   {
     icon: Workflow,
     title: "Workflows",
-    description: "Multi-step pipelines with approvals.",
+    description: "Steps for each card. Pauses for your yes.",
     color: "amber",
   },
   {
     icon: LinkIcon,
-    title: "MCP",
-    description: "Claude Code orchestrates it all.",
+    title: "Launch",
+    description: "Claude Code or Codex does the work.",
     color: "cyan",
   },
 ];

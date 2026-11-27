@@ -2,9 +2,9 @@ import Link from "next/link";
 import { SquareTerminal, ArrowLeft } from "lucide-react";
 
 export const metadata = {
-  title: "Launching Claude Code Guide",
+  title: "Launching Claude Code or Codex Guide",
   description:
-    "Start Claude Code already wired to your board with one click — deep-link launch, project folder setup, copy-command fallback, and more on VibeCodes.",
+    "Start Claude Code or Codex already wired to your board with one click — deep-link launch, project folder setup, copy-command fallback, and more on VibeCodes.",
 };
 
 export default function LaunchingClaudeCodePage() {
@@ -23,7 +23,7 @@ export default function LaunchingClaudeCodePage() {
           <SquareTerminal className="h-6 w-6 text-emerald-400" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
-          Launching Claude Code
+          Launching Claude Code or Codex
         </h1>
       </div>
 
@@ -212,8 +212,9 @@ export default function LaunchingClaudeCodePage() {
             </strong>{" "}
             (Beta) from the launch menu. It opens a live terminal
             docked to the bottom of the board, mirroring Claude Code running
-            on your own machine through the VibeCodes helper — your code
-            never leaves your computer.
+            on your own machine through the VibeCodes helper. Your code and
+            files stay on your computer; the board only shows you the
+            terminal&apos;s text.
           </p>
           <p className="mb-4 text-muted-foreground">
             You&apos;re not limited to one session at a time. You can run

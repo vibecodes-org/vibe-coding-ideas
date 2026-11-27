@@ -99,7 +99,8 @@ export default function IdeasAndVotingPage() {
           <h2 className="mb-4 text-2xl font-semibold">Visibility</h2>
           <p className="mb-4 text-muted-foreground">
             Ideas can be <strong className="text-foreground">public</strong> or{" "}
-            <strong className="text-foreground">private</strong>:
+            <strong className="text-foreground">private</strong>. New ideas
+            start public; private is optional:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -123,11 +124,26 @@ export default function IdeasAndVotingPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">AI Enhancement</h2>
           <p className="mb-4 text-muted-foreground">
-            If your account has <strong className="text-foreground">AI
-            enabled</strong>, you can use AI to improve your idea descriptions.
-            On the idea detail page, click the{" "}
-            <strong className="text-foreground">&quot;Enhance with AI&quot;</strong>{" "}
-            button to open the enhancement dialog.
+            AI can write up or improve your idea description. It works with your
+            own Anthropic key (set in{" "}
+            <Link href="/guide/settings" className="text-primary hover:underline">
+              Settings
+            </Link>
+            ) or with your starter credits; each use takes one credit unless
+            you use your own key.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            On the New Idea form, the button reads{" "}
+            <strong className="text-foreground">Draft with AI</strong> while the
+            box holds just a line or two, and{" "}
+            <strong className="text-foreground">Expand with AI</strong> once
+            there is real text. <strong className="text-foreground">Undo</strong>{" "}
+            brings back what you had before.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            On an existing idea, the author can click{" "}
+            <strong className="text-foreground">Enhance with AI</strong> to open
+            the enhancement dialog:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>

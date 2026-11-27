@@ -3,9 +3,9 @@ import type { LandingStats } from "@/lib/landing-stats";
 import { AuroraBoard } from "./aurora-board";
 import styles from "./aurora.module.css";
 
-// Always the production address: this is the command a visitor should run.
-export const INSTALL_COMMAND =
-  "claude mcp add -s user --transport http vibecodes https://vibecodes.co.uk/api/mcp";
+import { INSTALL_COMMAND } from "@/lib/site-facts";
+
+export { INSTALL_COMMAND };
 
 function liveLine(stats: LandingStats | null) {
   if (!stats) return "AI agents ship cards on our own board, live";

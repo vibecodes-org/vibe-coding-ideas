@@ -39,7 +39,7 @@ export default function WorkflowsPage() {
           </p>
           <p className="text-muted-foreground">
             Workflows are ideal for processes like feature development, bug
-            triage, content review, design sprints, or any repeatable pipeline
+            triage, content review, technical spikes, or any repeatable pipeline
             where different people (or AI agents) handle different steps.
           </p>
         </section>
@@ -118,8 +118,9 @@ export default function WorkflowsPage() {
               </li>
               <li>
                 <strong className="text-foreground">Platform Templates</strong>{" "}
-                — pre-built templates like Feature Development, Bug Fix, and
-                Design Sprint
+                — ready-made templates such as Feature Development, Bug Fix
+                and Technical Spike. Every ready-made one has at least one
+                approval step
               </li>
               <li>
                 <strong className="text-foreground">Create New</strong> — build
@@ -181,8 +182,8 @@ export default function WorkflowsPage() {
           <p className="text-muted-foreground">
             Each task can have only one active workflow at a time. When applying,
             agents from the idea&apos;s agent team are automatically matched to
-            steps based on their role using fuzzy matching (exact match, then
-            substring, then word overlap).
+            steps based on their role (exact role first, then an AI match,
+            then the closest match).
           </p>
         </section>
 
@@ -397,7 +398,9 @@ export default function WorkflowsPage() {
             Steps marked with an approval gate pause for human review. When an
             agent completes such a step, it moves to{" "}
             <strong className="text-foreground">Awaiting Approval</strong>{" "}
-            instead of Completed. A human reviewer then has two options:
+            instead of Completed. Every ready-made workflow has at least one
+            approval step, but a workflow you build yourself can skip approval
+            altogether. A human reviewer then has two options:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -497,7 +500,8 @@ export default function WorkflowsPage() {
             </li>
             <li>
               <strong className="text-foreground">Output</strong>{" "}
-              — automatically created when a step is completed with output
+              — the step&apos;s write-up. It is saved on the step itself and
+              shown there when the step is done
             </li>
             <li>
               <strong className="text-foreground">Failure</strong> — details
@@ -614,29 +618,32 @@ export default function WorkflowsPage() {
             When a template is applied to a task, VibeCodes automatically
             matches agents from the idea&apos;s{" "}
             <Link href="/guide/ai-agent-teams" className="text-primary hover:underline">agent team</Link>{" "}
-            to each step based on the step&apos;s role. Matching uses three
-            tiers:
+            to each step based on the step&apos;s role. It happens by
+            itself — there is no button to press. The order is:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">Exact match</strong> — the
-              agent&apos;s role exactly matches the step&apos;s role
+              <strong className="text-foreground">Exact role</strong> — the
+              agent&apos;s role is the step&apos;s role
             </li>
             <li>
-              <strong className="text-foreground">Substring match</strong> — the
-              step role appears within the agent&apos;s role or vice versa
+              <strong className="text-foreground">AI match</strong> — when no
+              role is exact, AI picks the agent whose role fits best. The step
+              shows an <strong className="text-foreground">AI matched</strong>{" "}
+              badge
             </li>
             <li>
-              <strong className="text-foreground">Word overlap</strong> — shared
-              words between the role strings (e.g., &quot;Frontend
-              Developer&quot; matches &quot;Senior Frontend Dev&quot;)
+              <strong className="text-foreground">Closest match</strong> — if
+              AI can&apos;t decide or isn&apos;t available, the closest role by
+              name (one name inside the other, or shared words). The step shows
+              an{" "}
+              <strong className="text-foreground">Approximate</strong> badge
             </li>
           </ul>
           <p className="mb-4 text-muted-foreground">
-            If a step has no matching agent, the UI shows a warning banner. You
-            can add more agents to the idea&apos;s team and then use{" "}
-            <strong className="text-foreground">Rematch Agents</strong> to
-            re-run the matching on unmatched pending steps.
+            If a step has no matching agent, the UI shows a warning banner. Add
+            more agents to the idea&apos;s team and the unmatched pending steps
+            are matched again automatically.
           </p>
         </section>
 

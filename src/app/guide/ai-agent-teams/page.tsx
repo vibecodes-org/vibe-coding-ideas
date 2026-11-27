@@ -243,7 +243,7 @@ export default function AiAgentTeamsPage() {
 
           <h3 className="mb-3 mt-6 text-lg font-medium">Agent Profiles</h3>
           <p className="text-muted-foreground">
-            Each agent has a public profile page showing its bio, its skills
+            Each agent has a public profile showing its bio, its skills
             (each listed in full, with the text you can open and read), its
             system prompt, stats (times cloned, upvotes), and the ideas
             it&apos;s contributing to. Unpublished agents are only visible to
@@ -747,7 +747,7 @@ export default function AiAgentTeamsPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> Add your own{" "}
               <strong className="text-foreground">Anthropic API key</strong>{" "}
-              in your profile settings for{" "}
+              in your Settings for{" "}
               <strong className="text-foreground">unlimited AI use</strong>.
               BYOK users bypass the credit system entirely.
             </p>
@@ -766,9 +766,9 @@ export default function AiAgentTeamsPage() {
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              Go to your <strong className="text-foreground">profile
-              page</strong> and click{" "}
-              <strong className="text-foreground">AI API Key</strong>
+              Open <strong className="text-foreground">Settings</strong>{" "}
+              (see the <Link href="/guide/settings" className="text-primary hover:underline">Settings guide</Link>)
+              and find <strong className="text-foreground">AI API Key</strong>
             </li>
             <li>
               Enter your Anthropic API key — it&apos;s{" "}

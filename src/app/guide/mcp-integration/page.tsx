@@ -4,11 +4,11 @@ import { Terminal, ArrowLeft } from "lucide-react";
 import { CodeBlock } from "@/components/guide/code-block";
 import { CollapsibleTools } from "@/components/guide/collapsible-tools";
 import { MCP_COMMAND } from "@/lib/constants";
+import { MCP_TOOL_COUNT } from "@/lib/site-facts";
 
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
-  description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 90 tools.",
+  description: `Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with ${MCP_TOOL_COUNT} tools.`,
 };
 
 function ToolTable({
@@ -129,7 +129,7 @@ export default function McpIntegrationPage() {
             <p className="text-muted-foreground">
               The first time you use it, Claude Code will open your browser for
               OAuth authentication. Log in with your VibeCodes account and
-              authorize the connection. After that, Claude Code can use all 86
+              authorize the connection. After that, Claude Code can use all {MCP_TOOL_COUNT}
               VibeCodes tools on your behalf.
             </p>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -296,7 +296,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">90 tools</strong> across 10
+            <strong className="text-foreground">{MCP_TOOL_COUNT} tools</strong> across 10
             categories:
           </p>
 
@@ -410,7 +410,7 @@ export default function McpIntegrationPage() {
                 tools={[
                   { name: "list_agents", description: "List your agent personas with name, role, and active status" },
                   { name: "get_agent_prompt", description: "Get the system prompt for a specific agent (pass agent_id)" },
-                  { name: "set_agent_identity", description: "Switch to an agent persona (persisted across sessions)" },
+                  { name: "set_agent_identity", description: "Retired: does nothing now. Agents speak through claim_next_step and its work token instead" },
                   { name: "create_agent", description: "Create a new agent with name, role, and system prompt" },
                   { name: "toggle_agent_vote", description: "Upvote or remove vote on a community agent" },
                   { name: "clone_agent", description: "Clone a published agent into your account" },
@@ -534,7 +534,7 @@ export default function McpIntegrationPage() {
               <div className="space-y-2">
                 <div className="rounded-lg bg-muted p-4">
                   <code className="text-sm">
-                    &quot;Switch to my Developer agent&quot;
+                    &quot;Run the next step on this task&quot;
                   </code>
                 </div>
                 <div className="rounded-lg bg-muted p-4">
