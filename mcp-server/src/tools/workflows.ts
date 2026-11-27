@@ -47,7 +47,6 @@ import {
   modelSwitchNotice,
   markerWindowStart,
   shouldRescueStep,
-  inferUnavailableFromSubstitution,
   rescueSentence,
   secondFailureSentence,
 } from "./model-availability";
@@ -1831,25 +1830,10 @@ export async function completeStep(
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
   const ranInOwnAgentValue = await ranInOwnAgentFor(ctx, step, completingAgent, nativeNamed);
 
-  // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
-  // obeyed the directive's advisory line and substituted the backup has
-  // ALREADY told us the primary was unavailable — it reported model_used =
-  // the fallback. Recording that here is what lets the NEXT claim on this
-  // board skip the dead model without anyone passing a new parameter.
-  //
-  // Deliberately compared against the tier's NORMAL, UNSWITCHED resolution
-  // (Design Review note 1) — if this claim had itself been switched onto the
-  // backup, comparing against the switched pair would infer unavailability
-  // backwards and mark the backup dead instead of the primary. completeStep
-  // never calls applyModelAvailability for exactly this reason.
-  const substitutionResolution = step.model_tier
-    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override)
-    : null;
-  const substitutedUnavailable = inferUnavailableFromSubstitution(
-    step.model_tier,
-    substitutionResolution,
-    params.model_used
-  );
+  // Card 1553d11e: a reported model is never taken as proof that a model is
+  // down. A self-reported backup with no switch directed by VibeCodes is only a
+  // mismatch (judged above, flagged below). The board's "unavailable" marker is
+  // written only by fail_step with model_unavailable: true.
 
   // Token is single-use: clear both hashes as part of completion (design
   // §1.2 — work_token_hash is cleared everywhere claim_token_hash is).
@@ -1892,37 +1876,6 @@ export async function completeStep(
 
   // Card ba37039b: this attempt's token use, for the admin step report.
   await recordStepUsage(ctx, step, newStatus, params.usage, params.usage_unavailable, completingAgent);
-
-  // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
-  // write after the main completion update. On a DB where migration 00195
-  // hasn't landed yet, this must never take down completion itself — a
-  // deploy can reach production a little before or after its migration.
-  // Only ever SET the marker, never null an existing one over it — a
-  // completion that reports the normal model, or omits model_used entirely,
-  // is not evidence the primary came back (that's the marker's own midnight
-  // UTC expiry to decide, not this step).
-  if (substitutedUnavailable && substitutionResolution) {
-    try {
-      const { error: markerError } = await ctx.supabase
-        .from("task_workflow_steps")
-        .update({
-          model_unavailable_at: new Date().toISOString(),
-          model_unavailable_model: substitutionResolution.resolved,
-        })
-        .eq("id", params.step_id);
-      if (markerError) {
-        logger.warn("model-availability marker write failed on complete_step — completion unaffected", {
-          stepId: params.step_id,
-          error: markerError.message,
-        });
-      }
-    } catch (err) {
-      logger.warn("model-availability marker write threw on complete_step — completion unaffected", {
-        stepId: params.step_id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);

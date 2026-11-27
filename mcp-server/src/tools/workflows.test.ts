@@ -4383,10 +4383,10 @@ describe("failStep — auto-switch to the backup model (card 5d0665a2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// completeStep — auto-switch to the backup model, free signal (card 5d0665a2, AC-4)
+// completeStep — a reported model never marks a model unavailable (card 1553d11e)
 // ---------------------------------------------------------------------------
 
-describe("completeStep — auto-switch to the backup model, free signal (AC-4)", () => {
+describe("completeStep — never infers a model is down from the reported model (card 1553d11e)", () => {
   /**
    * run_id: null throughout so checkAndCompleteRun never fires.
    *
@@ -4471,7 +4471,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
     completed_at: "2026-01-01T00:00:00Z",
   };
 
-  it("marks the primary unavailable when the agent self-reports running the backup — no new parameter needed, and never names the columns on the main completion update (AC-4, AC-7)", async () => {
+  it("a self-reported backup does NOT mark the primary unavailable — only fail_step model_unavailable does (card 1553d11e)", async () => {
     const { ctx, getUpdate, getMarkerWrite } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
 
     // Seed frontier (claude) resolves to opus, fallback fable.
@@ -4479,11 +4479,7 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
 
     expect("model_unavailable_at" in getUpdate()).toBe(false);
     expect("model_unavailable_model" in getUpdate()).toBe(false);
-
-    const markerWrite = getMarkerWrite();
-    expect(markerWrite).toBeDefined();
-    expect(markerWrite!.model_unavailable_model).toBe("opus");
-    expect(markerWrite!.model_unavailable_at).not.toBeNull();
+    expect(getMarkerWrite()).toBeUndefined();
   });
 
   it("marks nothing when the agent ran the model it was told to", async () => {
@@ -4516,38 +4512,6 @@ describe("completeStep — auto-switch to the backup model, free signal (AC-4)",
 
     expect("model_unavailable_at" in getUpdate()).toBe(false);
     expect(getMarkerWrite()).toBeUndefined();
-  });
-
-  it("a completion succeeds even when the best-effort marker write fails — completion is unaffected (AC-7)", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
-    const { ctx, getUpdate } = ctxFor({
-      stepData: baseStep,
-      updatedStep: baseUpdatedStep,
-      markerWriteError: { message: "column \"model_unavailable_at\" does not exist" },
-    });
-
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
-
-    expect(getUpdate().status).toBe("completed");
-    expect((result as { step: { status: string } }).step.status).toBe("completed");
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  it("a completion succeeds even when the best-effort marker write throws (AC-7)", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
-    const { ctx, getUpdate } = ctxFor({
-      stepData: baseStep,
-      updatedStep: baseUpdatedStep,
-      markerWriteThrows: true,
-    });
-
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "done", claim_token: TCT.token, model_used: "fable" });
-
-    expect(getUpdate().status).toBe("completed");
-    expect((result as { step: { status: string } }).step.status).toBe("completed");
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 });
 
@@ -8024,6 +7988,7 @@ describe("remember what was asked: claim -> settings change -> complete / fail (
   /** A completion/failure context whose step row carries the saved values and whose users row is the settings AFTER the change. */
   function finishCtx(saved: Record<string, unknown> | null, liveMap: Record<string, unknown> | null, tier: "frontier" | "standard") {
     const comments: Record<string, unknown>[] = [];
+    const stepWrites: Record<string, unknown>[] = [];
     const stepData = { claim_token_hash: TCT.hash, id: STEP_ID, run_id: null, step_order: 3, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, agent_role: "developer", model_tier: tier };
     const row = { id: STEP_ID, task_id: TASK_ID, run_id: null, title: "T", agent_role: "developer", status: "completed", output: null, ...(saved ?? {}) };
     const ctx = makeContext(((table: string) => {
@@ -8031,6 +7996,11 @@ describe("remember what was asked: claim -> settings change -> complete / fail (
         const chain = createChain(null);
         chain.chain.single = vi.fn(() => Promise.resolve({ data: stepData, error: null }));
         chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: row, error: null }));
+        const origUpdate = chain.chain.update as (p: unknown) => unknown;
+        chain.chain.update = vi.fn((p: unknown) => {
+          stepWrites.push(p as Record<string, unknown>);
+          return origUpdate(p);
+        });
         return chain.chain;
       }
       if (table === "users") return createChain({ model_tier_map: liveMap }).chain;
@@ -8044,7 +8014,7 @@ describe("remember what was asked: claim -> settings change -> complete / fail (
       }
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
-    return { ctx, comments };
+    return { ctx, comments, stepWrites };
   }
 
   const args = (model: string) => ({ claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: model, reasoning_effort_used: "medium" as const, usage: usageOf(`claude-${model}-4-7`) });
@@ -8085,6 +8055,26 @@ describe("remember what was asked: claim -> settings change -> complete / fail (
     const { ctx, comments } = finishCtx(saved, { standard: "opus" }, "standard");
     await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium" });
     expect(String(comments[0]?.content)).toContain("defaults to Sonnet");
+  });
+
+  it("asked Opus, Opus's backup (Fable) reported with no switch directed: flagged as a mismatch, nothing marked unavailable, step completes", async () => {
+    const saved = (await claimAndCapture("frontier", null))[0];
+    expect(saved.directed_model).toBe("opus");
+    const { ctx, comments, stepWrites } = finishCtx(saved, null, "frontier");
+    const result = (await completeStep(ctx, args("fable"))) as Record<string, unknown>;
+    expect((result.step as { status: string }).status).toBe("completed");
+    expect(result.model_notice).toBe(modelMismatchNotice("fable", "opus"));
+    expect(comments.some((c) => c.content === modelMismatchComment("fable", "opus"))).toBe(true);
+    expect(stepWrites.some((w) => "model_unavailable_at" in w || "model_unavailable_model" in w)).toBe(false);
+  });
+
+  it("fail_step with a self-reported backup (no model_unavailable flag) marks nothing and does not rescue", async () => {
+    const saved = (await claimAndCapture("frontier", null))[0];
+    const { ctx, comments, stepWrites } = finishCtx(saved, null, "frontier");
+    const result = (await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "broken", model_used: "fable", reasoning_effort_used: "medium", usage: usageOf("claude-fable-4-7") })) as Record<string, unknown>;
+    expect(result.model_notice).toBe(modelMismatchNotice("fable", "opus"));
+    expect(comments.some((c) => c.content === modelMismatchComment("fable", "opus"))).toBe(true);
+    expect(stepWrites.some((w) => "model_unavailable_at" in w || "model_unavailable_model" in w)).toBe(false);
   });
 
   it("fail_step judges against the saved model too", async () => {

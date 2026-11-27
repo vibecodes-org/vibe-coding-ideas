@@ -5,7 +5,6 @@ import {
   applyModelAvailability,
   modelSwitchNotice,
   shouldRescueStep,
-  inferUnavailableFromSubstitution,
   rescueSentence,
   secondFailureSentence,
 } from "./model-availability";
@@ -131,37 +130,6 @@ describe("shouldRescueStep", () => {
     expect(shouldRescueStep(false, false).rescue).toBe(false);
     expect(shouldRescueStep(undefined, false).rescue).toBe(false);
     expect(shouldRescueStep(false, false).reason).toBe("not-a-model-failure");
-  });
-});
-
-describe("inferUnavailableFromSubstitution", () => {
-  const frontier = { resolved: "fable", fallback: "opus" };
-
-  it("infers unavailability when the agent self-reports running the backup (AC-4)", () => {
-    expect(inferUnavailableFromSubstitution("frontier", frontier, "opus")).toBe(true);
-  });
-
-  it("infers nothing when the directed model was used", () => {
-    expect(inferUnavailableFromSubstitution("frontier", frontier, "fable")).toBe(false);
-  });
-
-  it("infers nothing from an Auto step — it promised no model", () => {
-    expect(inferUnavailableFromSubstitution(null, frontier, "opus")).toBe(false);
-  });
-
-  it("infers nothing from unknown/other/omitted reports", () => {
-    expect(inferUnavailableFromSubstitution("frontier", frontier, "unknown")).toBe(false);
-    expect(inferUnavailableFromSubstitution("frontier", frontier, "other")).toBe(false);
-    expect(inferUnavailableFromSubstitution("frontier", frontier, undefined)).toBe(false);
-  });
-
-  it("infers nothing when the chain has no real backup", () => {
-    expect(inferUnavailableFromSubstitution("frontier", { resolved: "opus", fallback: "opus" }, "opus")).toBe(false);
-  });
-
-  it("does not fire on a model that is neither the directed one nor the backup", () => {
-    // That is an ordinary dishonored tier, already handled by tier_honored.
-    expect(inferUnavailableFromSubstitution("frontier", frontier, "haiku")).toBe(false);
   });
 });
 
