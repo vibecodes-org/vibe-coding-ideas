@@ -26,6 +26,7 @@
 //                        checks on this Mac (card 6b2cb8ac, see folder-resolve.js); the dev/test
 //                        --cmd override falls back to process.cwd()
 //   --launch-url <url>   a `vibecodes://launch?…` deep link [BRIDGE_LAUNCH_URL]
+//                        (the helper uses the env var, so the prompt and token stay off the command line)
 //                        Parsed for relay/session/token/cwd — exactly what a packaged
 //                        helper's URL-scheme handler hands us (slice 7). It takes
 //                        precedence over the individual --relay/--session/--token/--cwd
@@ -154,6 +155,9 @@ const args = parseArgs(process.argv.slice(2));
 // of relay/session/token/cwd — this is the same string a packaged helper's URL-scheme
 // handler will pass us (slice 7). Parse it ONCE; bail clearly if it's malformed.
 const LAUNCH_URL = args["launch-url"] || process.env.BRIDGE_LAUNCH_URL || "";
+// The helper hands the link over in the environment so the prompt and token never sit on a command line
+// (card e19e0788). Remove it here so the agent we start doesn't inherit a second copy of it.
+delete process.env.BRIDGE_LAUNCH_URL;
 let launched = null;
 if (LAUNCH_URL) {
   launched = parseLaunchDeepLink(LAUNCH_URL);

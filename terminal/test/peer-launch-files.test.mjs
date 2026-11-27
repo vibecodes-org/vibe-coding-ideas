@@ -63,7 +63,10 @@ function waitForText(getBuf, text, ms) {
 
 const mode = (p) => fs.statSync(p).mode & 0o777;
 
-async function launchViaHelperFork(t, agent) {
+const PROMPT_TEXT = "Work on card quokka-7731: rename the zanzibar widget.\n\nStep: investigate the marmalade bug.";
+const PROMPT_WORDS = ["quokka-7731", "zanzibar", "marmalade"];
+
+async function launchViaHelperFork(t, agent, { prompt } = {}) {
   const app = await startFakeApp();
   const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), "vc-pl-bin-"));
   writeFakeAgent(fakeBin, agent, AGENT_SCRIPT, { version: agent === "claude" ? "2.1.332 (Claude Code)" : "codex-cli 0.169.0" });
@@ -72,14 +75,15 @@ async function launchViaHelperFork(t, agent) {
   const session = `pl-${Math.random().toString(36).slice(2, 8)}`;
   const tokens = await mintSessionTokens({ sub: "user-PL", idea: "idea-PL", sid: session, secret: SECRET });
   const relay = await startStandinRelay({ port: 0, secret: SECRET });
-  const launchUrl = buildLaunchDeepLink({ relay: relay.url, session, token: tokens.bridge, cwd, agent, resumeId: "99999999-8888-7777-6666-555555555555" });
+  const launchUrl = buildLaunchDeepLink({ relay: relay.url, session, token: tokens.bridge, cwd, agent, ...(prompt ? { prompt } : { resumeId: "99999999-8888-7777-6666-555555555555" }) });
   let buf = "";
   const browser = new WebSocket(`${relay.url}/?session=${session}&role=browser&token=${encodeURIComponent(tokens.browser)}`);
   browser.on("message", (d) => (buf += Buffer.isBuffer(d) ? d.toString("utf8") : String(d)));
   await once(browser, "open");
   let parentOut = "";
-  const parent = spawn(process.execPath, [MINI_PARENT, BRIDGE_ENTRY, "--launch-url", launchUrl], {
-    env: { PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: process.env.HOME, SHELL: "/usr/bin/false", TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: app.url },
+  const parent = spawn(process.execPath, [MINI_PARENT, BRIDGE_ENTRY, ...(prompt ? [] : ["--launch-url", launchUrl])], {
+    // With a prompt the link travels in the environment, exactly as the helper hands it over.
+    env: { ...(prompt ? { BRIDGE_LAUNCH_URL: launchUrl } : {}), PATH: [fakeBin, process.env.PATH].join(path.delimiter), HOME: process.env.HOME, SHELL: "/usr/bin/false", TMPDIR: tmp, BRIDGE_MAX_SECONDS: "60", TERMINAL_APP_URL: app.url },
     stdio: ["ignore", "pipe", "ignore"],
   });
   parent.stdout.on("data", (d) => (parentOut += d));
@@ -101,7 +105,8 @@ async function launchViaHelperFork(t, agent) {
   const bridgePid = lines().find((m) => m.type === "bridge-pid").pid;
   // The launch line as `ps` shows it to every account on the Mac.
   const psLine = execFileSync("ps", ["-ww", "-o", "args=", "-p", String(agentPid)], { encoding: "utf8" });
-  return { argv, env, psLine, tmp, bridgePid, parent };
+  const bridgePsLine = execFileSync("ps", ["-ww", "-o", "args=", "-p", String(bridgePid)], { encoding: "utf8" });
+  return { argv, env, psLine, bridgePsLine, launchUrl, tmp, bridgePid, parent };
 }
 
 const agentFolders = (tmp) => fs.readdirSync(tmp).filter((n) => n.startsWith("vibecodes-agents-"));
@@ -157,4 +162,39 @@ test("Codex: launch line has no secret, note or curl; the env holds a private cu
   assert.ok(h.argv.some((a) => a.startsWith("hooks.state=")));
   assert.ok(h.argv.some((a) => a.startsWith("developer_instructions=")));
   await endAndCheckFolderGone(h);
+});
+
+// The starting prompt (card title, text, step) must be on NO command line in the chain: not the agent's, not the
+// bridge's. The bridge is started the way the helper starts it (link in the environment) and the agent is fake.
+for (const agent of ["claude", "codex"]) {
+  test(`${agent}: a link with a starting prompt keeps the prompt and token off the agent's and the bridge's command lines`, { skip, timeout: 60000 }, async (t) => {
+    const h = await launchViaHelperFork(t, agent, { prompt: PROMPT_TEXT });
+    const token = new URL(h.launchUrl).searchParams.get("token");
+    assert.ok(token && token.length > 20, "the test link carries a session token");
+    for (const [label, text] of [["agent argv", h.argv.join(" ")], ["agent ps line", h.psLine], ["bridge ps line", h.bridgePsLine]]) {
+      for (const w of PROMPT_WORDS) assert.ok(!text.includes(w), `${label} must not contain ${w}: ${text.slice(0, 300)}`);
+      assert.ok(!text.includes(token), `${label} must not contain the session token`);
+      assert.ok(!text.includes("vibecodes://"), `${label} must not contain the launch link`);
+    }
+    // The agent is not handed a second copy of the link through its environment either.
+    assert.equal(h.env.launchUrl, null, "the agent must not inherit BRIDGE_LAUNCH_URL");
+    // The prompt still arrives in full: argv points at a private file that holds it.
+    const pointer = h.argv[h.argv.length - 1];
+    const file = /file (\S+)\. Read that file in full/.exec(pointer)?.[1];
+    assert.ok(file && path.isAbsolute(file), `the last argument should point at the prompt file, got ${pointer}`);
+    assert.equal(fs.readFileSync(file, "utf8"), PROMPT_TEXT);
+    assert.equal(mode(file), 0o600);
+    assert.equal(mode(path.dirname(file)), 0o700);
+    if (agent === "claude") assert.ok(h.argv.includes(`--add-dir=${path.dirname(file)}`), "Claude may read the prompt's folder without a permission prompt");
+    await endAndCheckFolderGone(h);
+  });
+}
+
+// The helper (Electron, not startable here) must hand the link to the bridge in the environment, not on its argv.
+test("helper: forks the bridge without the launch link on its command line", () => {
+  const main = fs.readFileSync(path.resolve(__dirname, "../helper/main.js"), "utf8");
+  const forkCall = main.match(/fork\(BRIDGE_ENTRY, (\[[^\]]*\]), \{([\s\S]*?)\n  \}\);/);
+  assert.ok(forkCall, "found the bridge fork call");
+  assert.doesNotMatch(forkCall[1], /launch-url|rawUrl/, "the bridge's argv must not carry the link");
+  assert.match(forkCall[2], /BRIDGE_LAUNCH_URL: rawUrl/, "the link rides in the bridge's environment");
 });

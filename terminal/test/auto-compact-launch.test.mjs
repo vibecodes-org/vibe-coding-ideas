@@ -29,7 +29,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir, withStartPromptRead } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -124,7 +124,7 @@ async function launch(t, linkParams, { appUrl, handle = {}, shell = "/usr/bin/fa
   handle.bridge = bridge;
   if (!awaitArgv) return null;
   await waitForText(() => buf, "ARGV_END", 20000);
-  return JSON.parse(buf.match(/ARGV_BEGIN(.*?)ARGV_END/s)[1]);
+  return withStartPromptRead(JSON.parse(buf.match(/ARGV_BEGIN(.*?)ARGV_END/s)[1]));
 }
 
 const agentsJsonOf = (argv) => {

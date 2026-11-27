@@ -8,7 +8,7 @@ around the bridge; **no bridge logic is duplicated** (it `fork`s the bridge with
 Electron-as-Node; node-pty 1.x is N-API, so its prebuilt binary loads unchanged).
 
 ```
-vibecodes://launch?…  →  helper (this app)  →  fork bridge --launch-url
+vibecodes://launch?…  →  helper (this app)  →  fork bridge (link in BRIDGE_LAUNCH_URL)
                                                   │
                           node-pty PTY (claude) ──┤
                                                   └── ws → relay (bridge leg)
