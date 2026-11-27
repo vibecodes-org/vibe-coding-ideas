@@ -983,6 +983,9 @@ export type Database = {
           /** Migration 00195. The concrete model name resolved server-side at
            *  write time — paired with model_unavailable_at. */
           model_unavailable_model: string | null;
+          /** Migration 00213. What the claim directed (model, effort), saved at claim time. */
+          directed_model: string | null;
+          directed_effort: string | null;
           updated_at: string;
         };
         Insert: {
@@ -1018,6 +1021,8 @@ export type Database = {
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;
+          directed_model?: string | null;
+          directed_effort?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -1057,6 +1062,8 @@ export type Database = {
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;
+          directed_model?: string | null;
+          directed_effort?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;

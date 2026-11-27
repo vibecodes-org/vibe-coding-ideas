@@ -7,6 +7,7 @@ import { getBotPrompt } from "./bots";
 import { sessionAgentClaimHint } from "../../../src/lib/terminal/session-agents";
 import { agentPersonaBody } from "../../../src/lib/agent-tool-access";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
+import { modelMismatchComment, modelMismatchNotice } from "../lib/measured-model";
 
 // AI role matching hits the network — stub it so applyWorkflowTemplate can run
 // against pure Supabase mocks. Only applyWorkflowTemplate uses it in this file.
@@ -1509,7 +1510,7 @@ describe("claimNextStep — persona embedding", () => {
         ideaId: IDEA_ID,
         stepId: step.id,
       });
-      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag, spawn_model: "opus", spawn_effort: "medium" });
       expect(result.instruction).toContain(expected.instruction);
       // Placed straight after the spawn steps it refines, before the skills/context blocks.
       expect(result.instruction!.indexOf("NATIVE SUBAGENT:")).toBeGreaterThan(result.instruction!.indexOf("RELIABILITY:"));
@@ -1540,7 +1541,7 @@ describe("claimNextStep — persona embedding", () => {
         stepId: step.id,
       });
       expect(expected.name.endsWith("-frontier-high")).toBe(true);
-      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag });
+      expect(result.native_subagent).toEqual({ name: expected.name, tag: expected.tag, spawn_model: "opus", spawn_effort: "high" });
       expect(result.instruction).toContain('reasoning effort "high"');
       expect(result.step.effort).toBe("high");
     });
@@ -2196,6 +2197,75 @@ describe("completeStep — tier adherence (P2c)", () => {
     expect(comment.content as string).toContain("Tier not honored");
     expect(comment.content as string).toContain(TIER_ADHERENCE_DISCLOSURE);
     expect((comment.content as string).toLowerCase()).not.toContain("maps to");
+  });
+
+  // Card 1553d11e: the measured model beats the self-report, and a mismatch is said plainly.
+  describe("measured model (card 1553d11e)", () => {
+    const usageOf = (model: string, out = 5000) =>
+      JSON.stringify({
+        models: [{ model, calls: 3, input_tokens: 10, output_tokens: out, cache_read_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 }],
+        output_estimated: true,
+      });
+
+    it("records the measured model, marks the step not honoured, posts one plain note and returns the notice", async () => {
+      const { ctx, getUpdate, getComment } = ctxFor({
+        stepData: { ...baseStep, model_tier: "frontier" },
+        updatedStep: baseUpdatedStep,
+      });
+
+      // The session says opus (as asked) but the token rows say sonnet ran.
+      const result = (await completeStep(ctx, {
+        claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium",
+        usage: usageOf("claude-sonnet-4-6"),
+      })) as Record<string, unknown>;
+
+      const update = getUpdate();
+      expect(update.executed_model).toBe("sonnet");
+      expect(update.tier_honored).toBe(false);
+      const comment = getComment() as Record<string, unknown>;
+      expect(comment.type).toBe("comment");
+      expect(comment.content).toBe(modelMismatchComment("sonnet", "opus"));
+      expect(result.model_notice).toBe(modelMismatchNotice("sonnet", "opus"));
+    });
+
+    it("a match gives no note and no notice", async () => {
+      const { ctx, getUpdate, getComment } = ctxFor({
+        stepData: { ...baseStep, model_tier: "frontier" },
+        updatedStep: baseUpdatedStep,
+      });
+      const result = (await completeStep(ctx, {
+        claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium",
+        usage: usageOf("claude-opus-4-7"),
+      })) as Record<string, unknown>;
+      expect(getUpdate().executed_model).toBe("opus");
+      expect(getUpdate().tier_honored).toBe(true);
+      expect(getComment()).toBeNull();
+      expect(result).not.toHaveProperty("model_notice");
+    });
+
+    it("with no usable usage the self-report is kept, as before", async () => {
+      const { ctx, getUpdate } = ctxFor({
+        stepData: { ...baseStep, model_tier: "frontier" },
+        updatedStep: baseUpdatedStep,
+      });
+      await completeStep(ctx, {
+        claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium",
+        usage: "NO_TRANSCRIPT no-script vcu_x",
+      });
+      expect(getUpdate().executed_model).toBe("opus");
+      expect(getUpdate().tier_honored).toBe(true);
+    });
+
+    it("an Auto step records the measured model and is never marked dishonoured", async () => {
+      const { ctx, getUpdate, getComment } = ctxFor({
+        stepData: { ...baseStep, model_tier: null },
+        updatedStep: baseUpdatedStep,
+      });
+      await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", usage: usageOf("claude-haiku-4-5") });
+      expect(getUpdate().executed_model).toBe("haiku");
+      expect(getUpdate().tier_honored).toBeNull();
+      expect(getComment()).toBeNull();
+    });
   });
 
   // Nick's gate note 4: the auto-posted mismatch comment must name the LIVE
@@ -6075,6 +6145,25 @@ describe("modelTierClause — auto-switch to the backup model", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveTierAdherence", () => {
+  // Card 1553d11e: judged against what the claim directed, not the settings at completion.
+  it("directed snapshot: a step claimed on sonnet and run on sonnet is honoured even though frontier now means opus", () => {
+    const r = resolveTierAdherence("frontier", "claude", "sonnet", "medium", null, undefined, null, { model: "sonnet", effort: "medium" });
+    expect(r.tierHonored).toBe(true);
+  });
+
+  it("directed snapshot: running the live model instead of the directed one is not honoured", () => {
+    const r = resolveTierAdherence("frontier", "claude", "opus", "medium", null, undefined, null, { model: "sonnet", effort: "medium" });
+    expect(r.tierHonored).toBe(false);
+  });
+
+  it("directed snapshot: effort is judged against the directed effort", () => {
+    expect(resolveTierAdherence("frontier", "claude", "sonnet", "low", null, undefined, null, { model: "sonnet", effort: "medium" }).tierHonored).toBe(false);
+  });
+
+  it("no snapshot (older step) keeps the live comparison", () => {
+    expect(resolveTierAdherence("frontier", "claude", "opus", "medium", null, undefined, null, null).tierHonored).toBe(true);
+  });
+
   it("model_used omitted -> executed=NULL, honored=NULL (never false)", () => {
     expect(resolveTierAdherence("frontier", "claude", undefined, undefined)).toEqual({
       executedModel: null,
@@ -7109,7 +7198,7 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
     vi.stubEnv("STEP_USAGE_SHORT_COMMAND", "1");
     try {
       const r = await midRunClaim();
-      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7750); // card 730f2549 stage 2: +~130 (list-scripts and newest-script commands; was 7700); card 730f2549: +~270 (plain usage command plus the if-script-missing wrapper); card 1117ac6b stage 4: +20 (marker in the no-script line; was 7400); db4c7f7b round 2: +~400 (hash rule, restart message)
+      expect(JSON.stringify(r).length).toBeLessThanOrEqual(7900); // card 1553d11e: +~120 (always pass the claim model and effort, spawn_model/spawn_effort; was 7750); // card 730f2549 stage 2: +~130 (list-scripts and newest-script commands; was 7700); card 730f2549: +~270 (plain usage command plus the if-script-missing wrapper); card 1117ac6b stage 4: +20 (marker in the no-script line; was 7400); db4c7f7b round 2: +~400 (hash rule, restart message)
       expect(JSON.stringify(r)).not.toContain("xxxxxxxx");
     } finally {
       vi.unstubAllEnvs();
@@ -7118,12 +7207,12 @@ describe("slim hand-off (card 5e654dd1, stage 2)", () => {
 
   it("the same reply with the long usage command (the default) stays within 8,500 characters", async () => {
     const r = await midRunClaim();
-    expect(JSON.stringify(r).length).toBeLessThanOrEqual(11700); // card 1117ac6b stage 5: +~1,000 for the claim-closing and rework rules (long form only; live claims carry the short command); db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
+    expect(JSON.stringify(r).length).toBeLessThanOrEqual(11900); // card 1553d11e: +~120 (was 11700); // card 1117ac6b stage 5: +~1,000 for the claim-closing and rework rules (long form only; live claims carry the short command); db4c7f7b: +~850 for never-substitute wording; stage 3: +541 for the save line; stage 16: +581 for side-by-side steps (long form only; live claims carry the short command)
   });
 
   it("the instruction of that step is at most 4,600 characters with no rework and no notes", async () => {
     const r = (await midRunClaim()) as { instruction: string };
-    expect(r.instruction.length).toBeLessThanOrEqual(6100); // db4c7f7b: +~850; stage 3: 4,476 -> 5,013 (+537)
+    expect(r.instruction.length).toBeLessThanOrEqual(6250); // card 1553d11e: +~105 (was 6100); // db4c7f7b: +~850; stage 3: 4,476 -> 5,013 (+537)
   });
 
   it("a first-step claim (no earlier steps) has an instruction of at most 3,500 characters", async () => {

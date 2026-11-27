@@ -282,7 +282,7 @@ export function sessionAgentClaimHint(input: {
    */
   ideaId?: string;
   stepId?: string;
-}): { name: string; tag: string; instruction: string } {
+}): { name: string; tag: string; instruction: string; spawnModel: string | null; spawnEffort: string | null } {
   const name = sessionAgentName(input.bot, input.tier, input.stepEffort);
   const tag = sessionAgentTag(
     agentPersonaBody(input.bot.system_prompt, input.bot.tool_access, input.agent, input.bot.helper_agents),
@@ -310,7 +310,7 @@ export function sessionAgentClaimHint(input: {
       `to find its board tools). When ` +
       `completing, report agent "codex", persona_used "verbatim"${reportTier}. If no agent type with that exact ` +
       `name and tag is available, ignore this note and follow the steps above.`;
-    return { name, tag, instruction };
+    return { name, tag, instruction, spawnModel: input.model, spawnEffort: input.effort };
   }
   // The sync's own reply (sync_board_agents, mcp-server/src/tools/agent-sync.ts)
   // spells out the command, NEW_FOLDER, MISMATCH, NOT_LOADED and the two-sync
@@ -342,11 +342,19 @@ export function sessionAgentClaimHint(input: {
     `and why (a "too large" or "names only" agent is a VibeCodes fault: say so and ask them to report it), and ` +
     `wait. Only on their explicit yes may you spawn a general helper on get_agent_prompt ` +
     `(agent_id "${input.bot.id}", as_persona true), then report persona_used "adapted" and subagent_type "general-purpose".`;
+  // Card 1553d11e: a session keeps the helper copies it was launched with, so
+  // their model can be older than the user's settings. Always passing the
+  // claim's model and effort makes that stale copy irrelevant. An Auto step
+  // has no model to pass, so its definition (which sets none) stays as is.
+  const modelPassing = input.model
+    ? `Always pass model "${input.model}"${input.effort ? ` and effort "${input.effort}"` : ""} on the Agent tool ` +
+      `(they override the definition, which may predate the user's settings). `
+    : `Its definition sets this step's model and effort, so pass no model parameter. `;
   const instruction =
     `NATIVE SUBAGENT: the board-named agent is never optional. If your Agent tool offers the type ` +
     `"${name}" whose description ends with ${tag}, spawn it for this step: its system prompt already is this ` +
-    `step's persona and its definition sets this step's model and effort, so pass no persona text or model ` +
-    `parameter. Report persona_used "verbatim"${reportTier} and subagent_type "${name}". ` +
+    `step's persona, so pass no persona text. ${modelPassing}` +
+    `Report persona_used "verbatim"${reportTier} and subagent_type "${name}". ` +
     `${sameAgentStep}${syncStep}${stopStep}`;
-  return { name, tag, instruction };
+  return { name, tag, instruction, spawnModel: input.model, spawnEffort: input.effort };
 }

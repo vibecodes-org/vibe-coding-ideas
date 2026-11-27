@@ -26,7 +26,7 @@ const rows = [
   },
   {
     name: "Model Tiers",
-    text: "Which model, and how hard it thinks, for each kind of workflow step, for Claude and for Codex. Also how browser terminal sessions start.",
+    text: "Which model, and how hard it thinks, for each kind of workflow step, for Claude and for Codex. Also how browser terminal sessions start. A change applies from the next step any running session picks up; you don't need to restart it.",
   },
   {
     name: "MCP API Keys",
