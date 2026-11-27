@@ -9,6 +9,7 @@ import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register"
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { PostHogProvider } from "@/components/posthog/posthog-provider";
 import { ErrorReporter } from "@/components/error-reporter";
+import { StaleVersionWatcher } from "@/components/stale-version-watcher";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -87,6 +88,7 @@ export default function RootLayout({
               {children}
             </TooltipProvider>
             <Toaster />
+            <StaleVersionWatcher />
           </ThemeProvider>
         </PostHogProvider>
         <Analytics />

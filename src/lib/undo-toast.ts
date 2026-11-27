@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { toastActionError } from "./stale-version";
 
 /**
  * Show a toast with an "Undo" button that delays the actual server action.
@@ -24,9 +25,9 @@ export function undoableAction(opts: {
     if (cancelled) return;
     try {
       await execute();
-    } catch {
+    } catch (error) {
       undo();
-      toast.error(errorMessage ?? "Action failed");
+      toastActionError(error, errorMessage ?? "Action failed");
     }
   }, duration);
 
