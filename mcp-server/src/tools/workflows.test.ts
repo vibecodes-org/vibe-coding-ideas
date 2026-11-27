@@ -6160,6 +6160,15 @@ describe("resolveTierAdherence", () => {
     expect(resolveTierAdherence("frontier", "claude", "sonnet", "low", null, undefined, null, { model: "sonnet", effort: "medium" }).tierHonored).toBe(false);
   });
 
+  it("directed snapshot: the live backup never counts (asked sonnet, ran opus; asked fable, ran opus)", () => {
+    expect(resolveTierAdherence("standard", "claude", "opus", "medium", null, undefined, null, { model: "sonnet", effort: "medium" })).toMatchObject({ tierHonored: false, viaFallback: false });
+    expect(resolveTierAdherence("frontier", "claude", "opus", "medium", null, undefined, null, { model: "fable", effort: "medium" }).tierHonored).toBe(false);
+  });
+
+  it("directed snapshot: running a backup VibeCodes switched to (saved as the asked-for model) is honoured", () => {
+    expect(resolveTierAdherence("frontier", "claude", "fable", "medium", null, undefined, null, { model: "fable", effort: "medium" }).tierHonored).toBe(true);
+  });
+
   it("no snapshot (older step) keeps the live comparison", () => {
     expect(resolveTierAdherence("frontier", "claude", "opus", "medium", null, undefined, null, null).tierHonored).toBe(true);
   });
@@ -7970,5 +7979,119 @@ describe("suggestWorkflow", () => {
     await expect(
       suggestWorkflow(suggestCtx({ insertError: { code: "42501", message: "denied" } }), params)
     ).rejects.toThrow("Failed to record suggestion: denied");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card 1553d11e: remember what was asked — claim saves it, completion and
+// failure judge against it (not against settings changed in between).
+// ---------------------------------------------------------------------------
+
+describe("remember what was asked: claim -> settings change -> complete / fail (card 1553d11e)", () => {
+  const usageOf = (model: string) =>
+    JSON.stringify({
+      models: [{ model, calls: 3, input_tokens: 10, output_tokens: 5000, cache_read_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0 }],
+      output_estimated: true,
+    });
+
+  /** Runs a real claim and returns what it saved on the step. */
+  async function claimAndCapture(tier: "frontier" | "standard", claimMap: Record<string, unknown> | null, unavailableModel?: string) {
+    const step = makeStepRow({ step_order: 1 });
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep: { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: tier },
+      priorSteps: [],
+      userModelTierMap: claimMap,
+      unavailableModel,
+    });
+    const baseFrom = ctx.supabase.from as unknown as (t: string) => Record<string, unknown>;
+    const saved: Record<string, unknown>[] = [];
+    (ctx.supabase as unknown as { from: unknown }).from = (table: string) => {
+      const c = baseFrom(table);
+      if (table === "task_workflow_steps" && typeof c.update === "function") {
+        const orig = c.update as (p: Record<string, unknown>) => unknown;
+        c.update = (p: Record<string, unknown>) => {
+          if (p && "directed_model" in p) saved.push(p);
+          return orig(p);
+        };
+      }
+      return c;
+    };
+    await claimNextStep(ctx, { task_id: TASK_ID });
+    return saved;
+  }
+
+  /** A completion/failure context whose step row carries the saved values and whose users row is the settings AFTER the change. */
+  function finishCtx(saved: Record<string, unknown> | null, liveMap: Record<string, unknown> | null, tier: "frontier" | "standard") {
+    const comments: Record<string, unknown>[] = [];
+    const stepData = { claim_token_hash: TCT.hash, id: STEP_ID, run_id: null, step_order: 3, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, agent_role: "developer", model_tier: tier };
+    const row = { id: STEP_ID, task_id: TASK_ID, run_id: null, title: "T", agent_role: "developer", status: "completed", output: null, ...(saved ?? {}) };
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: row, error: null }));
+        return chain.chain;
+      }
+      if (table === "users") return createChain({ model_tier_map: liveMap }).chain;
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((d: unknown) => {
+          comments.push(d as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+    return { ctx, comments };
+  }
+
+  const args = (model: string) => ({ claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: model, reasoning_effort_used: "medium" as const, usage: usageOf(`claude-${model}-4-7`) });
+
+  it("the claim saves the model and effort it directed", async () => {
+    const saved = await claimAndCapture("standard", null);
+    expect(saved).toEqual([{ directed_model: "sonnet", directed_effort: "medium" }]);
+  });
+
+  it("asked Sonnet, tier moved to Opus mid-step, Opus ran: flagged, with note and notice", async () => {
+    const saved = (await claimAndCapture("standard", null))[0];
+    const { ctx, comments } = finishCtx(saved, { standard: "opus" }, "standard");
+    const result = (await completeStep(ctx, args("opus"))) as Record<string, unknown>;
+    expect(result.model_notice).toBe(modelMismatchNotice("opus", "sonnet"));
+    expect(comments.some((c) => c.content === modelMismatchComment("opus", "sonnet"))).toBe(true);
+  });
+
+  it("asked Fable, Opus ran (13 Nov case): flagged although Fable is Opus's backup", async () => {
+    const saved = (await claimAndCapture("frontier", { frontier: "fable" }))[0];
+    expect(saved.directed_model).toBe("fable");
+    const { ctx, comments } = finishCtx(saved, null, "frontier"); // live frontier = opus
+    const result = (await completeStep(ctx, args("opus"))) as Record<string, unknown>;
+    expect(result.model_notice).toBe(modelMismatchNotice("opus", "fable"));
+    expect(comments.some((c) => c.content === modelMismatchComment("opus", "fable"))).toBe(true);
+  });
+
+  it("VibeCodes switched the step to the backup: claim saves the backup, running it is honoured, no note", async () => {
+    const saved = (await claimAndCapture("frontier", null, "opus"))[0];
+    expect(saved.directed_model).toBe("fable");
+    const { ctx, comments } = finishCtx(saved, null, "frontier"); // live frontier is back to opus
+    const result = (await completeStep(ctx, args("fable"))) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("model_notice");
+    expect(comments.find((c) => typeof c.content === "string" && c.content.startsWith("This step ran on"))).toBeUndefined();
+  });
+
+  it("with no usage, the older note names the saved model, not the live setting", async () => {
+    const saved = (await claimAndCapture("standard", null))[0];
+    const { ctx, comments } = finishCtx(saved, { standard: "opus" }, "standard");
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done", model_used: "opus", reasoning_effort_used: "medium" });
+    expect(String(comments[0]?.content)).toContain("defaults to Sonnet");
+  });
+
+  it("fail_step judges against the saved model too", async () => {
+    const saved = (await claimAndCapture("standard", null))[0];
+    const { ctx, comments } = finishCtx(saved, { standard: "opus" }, "standard");
+    const result = (await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "broken", model_used: "opus", reasoning_effort_used: "medium", usage: usageOf("claude-opus-4-7") })) as Record<string, unknown>;
+    expect(result.model_notice).toBe(modelMismatchNotice("opus", "sonnet"));
+    expect(comments.some((c) => c.content === modelMismatchComment("opus", "sonnet"))).toBe(true);
   });
 });

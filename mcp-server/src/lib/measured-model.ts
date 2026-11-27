@@ -42,8 +42,9 @@ export function mainMeasuredModel(usage: Pick<StepUsage, "models"> | null | unde
 
 /**
  * The model the settings asked for when it differs from the measured one,
- * else null. `fallback` (the tier's backup model) is accepted too, since a
- * session told its first choice is unavailable may use it. Unrecognised
+ * else null. `fallback` (the tier's backup model) is accepted too, but pass
+ * it only when there is no saved asked-for model: a backup VibeCodes switched
+ * to is already saved as the asked-for model. Unrecognised
  * names never count as a mismatch.
  */
 export function measuredModelMismatch(

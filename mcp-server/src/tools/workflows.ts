@@ -235,7 +235,13 @@ export function modelNoticeFor(
   directed: { model: string | null } | null,
   liveResolution: { resolved: string; fallback: string } | null
 ): { comment: string; notice: string } | null {
-  const asked = measuredModelMismatch(measured, directed?.model || liveResolution?.resolved, liveResolution?.fallback);
+  const asked = measuredModelMismatch(
+    measured,
+    directed?.model || liveResolution?.resolved,
+    // The backup counts only with no saved asked-for model: a switch VibeCodes
+    // made is already saved as the asked-for model.
+    directed?.model ? null : liveResolution?.fallback
+  );
   if (!measured || !asked) return null;
   return { comment: modelMismatchComment(measured, asked), notice: modelMismatchNotice(measured, asked) };
 }
@@ -304,7 +310,9 @@ export function resolveTierAdherence(
   const { fallback } = resolution;
   const resolved = directed?.model || resolution.resolved;
   const effort = directed?.model ? directed.effort || resolution.effort : resolution.effort;
-  const viaFallback = modelUsed !== resolved && modelUsed === fallback;
+  // With a saved asked-for model the backup never counts: a switch VibeCodes
+  // made at claim is already saved as that model.
+  const viaFallback = !directed?.model && modelUsed !== resolved && modelUsed === fallback;
   const modelMatches = modelUsed === resolved || viaFallback;
 
   // QA Bug-1: a model mismatch alone is dishonored, regardless of effort.
@@ -1932,8 +1940,8 @@ export async function completeStep(
       stepId: params.step_id,
       tier: step.model_tier,
       agent: completingAgent,
-      directed: resolution?.resolved,
-      directedEffort: resolution?.effort,
+      directed: directedSnapshot?.model || resolution?.resolved,
+      directedEffort: (directedSnapshot?.model ? directedSnapshot.effort : null) || resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
       executedEffort,
@@ -1956,7 +1964,7 @@ export async function completeStep(
         : tierMismatchSentence(
             step.model_tier as string,
             executedModel as string,
-            platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[completingAgent]?.model,
+            directedSnapshot?.model || platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[completingAgent]?.model,
             completingAgent
           ),
     });
@@ -2482,8 +2490,8 @@ export async function failStep(
       stepId: params.step_id,
       tier: step.model_tier,
       agent: failingAgent,
-      directed: resolution?.resolved,
-      directedEffort: resolution?.effort,
+      directed: directedSnapshot?.model || resolution?.resolved,
+      directedEffort: (directedSnapshot?.model ? directedSnapshot.effort : null) || resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
       executedEffort,
@@ -2502,7 +2510,7 @@ export async function failStep(
         : tierMismatchSentence(
             step.model_tier as string,
             executedModel as string,
-            platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[failingAgent]?.model,
+            directedSnapshot?.model || platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[failingAgent]?.model,
             failingAgent
           ),
     });

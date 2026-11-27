@@ -53,8 +53,14 @@ describe("mainMeasuredModel", () => {
 
 describe("measuredModelMismatch", () => {
   it("returns the asked family on a mismatch", () => {
-    expect(measuredModelMismatch("opus", "sonnet", "opus")).toBeNull(); // fallback accepted
     expect(measuredModelMismatch("opus", "sonnet", "haiku")).toBe("sonnet");
+    // Callers pass the backup only when no asked-for model was saved, so with
+    // a saved one these are flagged.
+    expect(measuredModelMismatch("opus", "sonnet")).toBe("sonnet");
+    expect(measuredModelMismatch("opus", "fable")).toBe("fable");
+  });
+  it("accepts the backup only when one is passed (no saved asked-for model)", () => {
+    expect(measuredModelMismatch("opus", "sonnet", "opus")).toBeNull();
   });
   it("is null on a match, or when either side is unrecognised or missing", () => {
     expect(measuredModelMismatch("sonnet", "claude-sonnet-4-6")).toBeNull();
