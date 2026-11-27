@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Front page: new sections</title>
+<!-- Mock for card 38298484 (content rework round 4, 27 Nov 2026). The Aurora styles are copied unchanged from the live front page; new pieces are at the end of the style block. Every existing sentence is kept word for word except the three marked as false. "Show what changed" outlines each difference; "Other headlines" swaps in the B headline for each new section; "Install line" toggles where the install command sits. Numbers are the live ones from 27 Nov (the real page reads them hourly). -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--font-geist-sans:"Geist";--font-geist-mono:"Geist Mono"}
+body{background:#06060b}
+/* Aurora look for the public front page (card 38298484, stage 1).
+   Ported from the approved mock-up and its stage-1 add-on. Everything is
+   scoped under .aurora so nothing leaks into the app. The page is always dark:
+   it sets its own colours and does not read the theme tokens. */
+.aurora {
+  --bg: #06060b;
+  --ink: #f4f4f8;
+  --ink-2: #a3a3b8;
+  --ink-3: #8a8aa0; /* 4.5:1 or better on the page and card backgrounds */
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --violet: #8b5cf6;
+  --cyan: #22d3ee;
+  --lime: #a3e635;
+  --beam: linear-gradient(90deg, var(--violet), var(--cyan), var(--lime));
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  overflow-x: clip;
+  line-height: 1.5;
+}
+html:has(.aurora) {
+  scroll-behavior: smooth;
+}
+.aurora a {
+  color: inherit;
+  text-decoration: none;
+}
+.wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+@media (max-width: 600px) {
+  .wrap {
+    padding: 0 16px;
+  }
+}
+
+/* top bar */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  background: rgba(6, 6, 11, 0.6);
+  border-bottom: 1px solid var(--line);
+}
+.nav .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: conic-gradient(from 200deg, var(--violet), var(--cyan), var(--lime), var(--violet));
+  position: relative;
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.55);
+}
+.mark::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 4px;
+  background: var(--bg);
+}
+.mark::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 11px;
+  top: 9px;
+  width: 6px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--beam);
+}
+.links {
+  display: flex;
+  gap: 28px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.links a:hover,
+.login:hover {
+  color: var(--ink);
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.login {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.aurora .ctaSm {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #000;
+}
+@media (max-width: 700px) {
+  .links {
+    display: none;
+  }
+  .right {
+    gap: 14px;
+  }
+}
+
+/* hero */
+.hero {
+  position: relative;
+  padding: 110px 0 40px;
+  text-align: center;
+  isolation: isolate;
+  overflow-x: clip;
+}
+.glows {
+  position: absolute;
+  inset: -120px 0 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.glows span {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  animation: drift 18s ease-in-out infinite alternate;
+}
+.glows .a1 {
+  width: 620px;
+  height: 420px;
+  left: 8%;
+  top: 40px;
+  background: var(--violet);
+}
+.glows .a2 {
+  width: 520px;
+  height: 380px;
+  right: 6%;
+  top: 120px;
+  background: #0ea5e9;
+  animation-delay: -6s;
+}
+.glows .a3 {
+  width: 460px;
+  height: 300px;
+  left: 38%;
+  top: 260px;
+  background: var(--lime);
+  opacity: 0.22;
+  animation-delay: -11s;
+}
+@keyframes drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(60px, -30px) scale(1.12);
+  }
+  100% {
+    transform: translate(-40px, 40px) scale(0.95);
+  }
+}
+.floor {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: -40px;
+  height: 420px;
+  z-index: -1;
+  pointer-events: none;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(500px) rotateX(62deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, #000 10%, transparent 80%);
+  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 80%);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--ink-2);
+  max-width: 100%;
+  text-align: left;
+}
+.chip b {
+  flex: none;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--beam);
+  color: #05050a;
+}
+.h1 {
+  font-size: clamp(44px, 8.4vw, 96px);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  font-weight: 800;
+  margin: 26px auto 22px;
+  max-width: 980px;
+}
+.grad {
+  background: linear-gradient(100deg, #c4b5fd 0%, #67e8f9 45%, #bef264 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  background-size: 200% 100%;
+  animation: sheen 8s linear infinite;
+}
+@keyframes sheen {
+  to {
+    background-position: -200% 0;
+  }
+}
+.lede {
+  font-size: clamp(16px, 2vw, 20px);
+  color: var(--ink-2);
+  max-width: 640px;
+  margin: 0 auto;
+}
+.ctas {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 34px;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 22px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.aurora .primary {
+  background: var(--ink);
+  color: #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 10px 40px -10px rgba(139, 92, 246, 0.8);
+}
+.ghost {
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+}
+.cmd {
+  margin: 26px auto 0;
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 13px;
+  color: var(--ink-2);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.4);
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cmd i {
+  color: var(--lime);
+  font-style: normal;
+}
+.cmd code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: inherit;
+}
+.copy {
+  flex: none;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  border-radius: 7px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.copy:hover {
+  background: var(--surface-2);
+}
+
+/* product window */
+.stage {
+  perspective: 1600px;
+  margin-top: 70px;
+}
+.window {
+  border-radius: 18px;
+  border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, rgba(20, 20, 32, 0.92), rgba(10, 10, 18, 0.96));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 40px 120px -30px rgba(139, 92, 246, 0.55),
+    0 20px 60px -20px rgba(34, 211, 238, 0.35);
+  transform: none;
+  transform-origin: top center;
+  transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+  text-align: left;
+}
+/* tilt only where there is a mouse to flatten it; flat on phones and tablets */
+@media (hover: hover) {
+  .window {
+    transform: rotateX(14deg) scale(0.98);
+  }
+  .stage:hover .window {
+    transform: rotateX(0) scale(1);
+  }
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.bar .d {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2a2a3a;
+  flex: none;
+}
+.bar .url {
+  margin-left: 12px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar .live {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--lime);
+  white-space: nowrap;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 10px var(--lime);
+  animation: pulse 1.6s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.boardhead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px 6px;
+  flex-wrap: wrap;
+}
+.boardhead h3 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.agents {
+  display: flex;
+  margin-left: auto;
+}
+.av {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #06060b;
+  border: 2px solid #0d0d16;
+  margin-left: -6px;
+}
+.cols {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(250px, 1fr);
+  gap: 12px;
+  padding: 12px 18px 20px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.col {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  min-height: 300px;
+}
+.col h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 4px 4px 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.col h4 .n {
+  margin-left: auto;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--ink-3);
+}
+.col h4 .sw {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+.card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 11px 12px;
+  margin-bottom: 9px;
+  font-size: 13px;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-2);
+}
+.tags {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 7px;
+  flex-wrap: wrap;
+}
+.tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.tBug {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fca5a5;
+}
+.tBot {
+  background: rgba(96, 165, 250, 0.15);
+  color: #93c5fd;
+}
+.tFeat {
+  background: rgba(167, 139, 250, 0.16);
+  color: #c4b5fd;
+}
+.tFin {
+  background: rgba(52, 211, 153, 0.15);
+  color: #6ee7b7;
+}
+.tData {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+}
+.card p {
+  font-weight: 500;
+  line-height: 1.35;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.prog {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+.prog i {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: #2a2a3a;
+}
+.prog i.on {
+  background: var(--cyan);
+}
+.card.working {
+  border-color: transparent;
+  background: linear-gradient(#141422, #141422) padding-box,
+    conic-gradient(from var(--aurora-ang), transparent 0 70%, var(--cyan) 80%, var(--violet) 90%, transparent 100%)
+      border-box;
+  border: 1px solid transparent;
+  animation: spin 3s linear infinite;
+}
+@property --aurora-ang {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes spin {
+  to {
+    --aurora-ang: 360deg;
+  }
+}
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--cyan);
+  margin-top: 8px;
+}
+.whoLens {
+  color: #f9a8d4;
+}
+.who .miniAv {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  font-size: 8px;
+  border: 0;
+}
+.meta.shipped {
+  color: var(--lime);
+}
+.typing {
+  display: inline-flex;
+  gap: 3px;
+}
+.typing i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--cyan);
+  animation: pulse 1s infinite;
+}
+.typing i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* relay */
+.block {
+  padding: 110px 0 40px;
+  scroll-margin-top: 60px;
+}
+.block.blockTight {
+  padding-top: 40px;
+}
+.eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.h2 {
+  font-size: clamp(32px, 5vw, 56px);
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  font-weight: 800;
+  margin: 12px 0 16px;
+  max-width: 760px;
+}
+.sub {
+  color: var(--ink-2);
+  max-width: 560px;
+  font-size: 17px;
+}
+.relay {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 48px;
+}
+.relay::before {
+  content: "";
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  top: 38px;
+  height: 2px;
+  background: var(--line-2);
+}
+.relay::after {
+  content: "";
+  position: absolute;
+  top: 35px;
+  left: 5%;
+  width: 80px;
+  height: 8px;
+  border-radius: 8px;
+  background: var(--beam);
+  filter: blur(2px);
+  box-shadow: 0 0 22px var(--cyan);
+  animation: run 5s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+}
+@keyframes run {
+  from {
+    left: 5%;
+  }
+  to {
+    left: calc(95% - 80px);
+  }
+}
+.stop {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+.stop .av {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 14px;
+  font-size: 20px;
+  border: 1px solid var(--line-2);
+  border-radius: 22px;
+  box-shadow: 0 10px 40px -12px currentColor;
+}
+.stop b {
+  display: block;
+  font-size: 15px;
+}
+.stop span {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+@media (max-width: 760px) {
+  .relay {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .relay::before {
+    left: 37px;
+    right: auto;
+    top: 20px;
+    bottom: 20px;
+    width: 2px;
+    height: auto;
+  }
+  .relay::after {
+    display: none;
+  }
+  .stop {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    text-align: left;
+  }
+  .stop .av {
+    margin: 0;
+    width: 56px;
+    height: 56px;
+    flex: none;
+    border-radius: 16px;
+  }
+}
+
+/* feature tiles */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 14px;
+  margin-top: 48px;
+}
+.tile {
+  grid-column: span 2;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 24px;
+  background: radial-gradient(120% 120% at 0% 0%, rgba(139, 92, 246, 0.12), transparent 50%), var(--surface);
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+}
+.tile.w4 {
+  grid-column: span 4;
+}
+.tile h3 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.tile p {
+  color: var(--ink-2);
+  font-size: 14px;
+  max-width: 360px;
+}
+.big {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  background: var(--beam);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+.tile h3.bigLabel {
+  margin-top: 10px;
+}
+.feed {
+  margin-top: 16px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: grid;
+  gap: 7px;
+}
+.feed div {
+  display: flex;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed em {
+  font-style: normal;
+  color: var(--ink-3);
+  flex: none;
+}
+@media (max-width: 900px) {
+  .bento {
+    grid-template-columns: 1fr 1fr;
+  }
+  .tile,
+  .tile.w4 {
+    grid-column: span 2;
+  }
+}
+
+/* closing band */
+.closing {
+  margin: 110px auto 0;
+  text-align: center;
+  padding: 64px 24px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: radial-gradient(60% 120% at 20% 0%, rgba(139, 92, 246, 0.22), transparent 60%),
+    radial-gradient(60% 120% at 80% 100%, rgba(14, 165, 233, 0.18), transparent 60%), var(--surface);
+}
+.closing .h2 {
+  margin: 0 auto 12px;
+}
+.closing .sub {
+  margin: 0 auto;
+}
+
+.footer {
+  padding: 80px 16px 50px;
+  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  row-gap: 6px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.footer a:hover {
+  color: var(--ink);
+}
+.sep {
+  margin: 0 8px;
+  color: var(--line-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora,
+  .aurora *,
+  .aurora *::before,
+  .aurora *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .aurora .window {
+    transform: none !important;
+  }
+  html:has(.aurora) {
+    scroll-behavior: auto;
+  }
+}
+/* ===== NEW for the content rework (card 38298484, round 4) ===== */
+/* board window: real toolbar buttons + docked terminals */
+.toolbar{display:flex;gap:8px;align-items:center;padding:4px 18px 0;flex-wrap:wrap}
+.toolbar .search{font-size:12px;color:var(--ink-3);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:150px}
+.toolbar .tb{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.tbtn{font-size:12px;font-weight:600;border-radius:8px;padding:6px 10px;border:1px solid var(--line-2);display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.tbtn.launch{color:#bef264;border-color:rgba(163,230,53,.35);background:rgba(163,230,53,.08);box-shadow:0 0 18px -6px var(--lime)}
+.tbtn.launch .caret{border-left:1px solid rgba(163,230,53,.35);padding-left:6px;margin-left:2px}
+.tbtn.gen{color:#c4b5fd;border-color:rgba(139,92,246,.4);background:rgba(139,92,246,.1)}
+.dock{border-top:1px solid var(--line-2);background:rgba(5,5,10,.85)}
+.dockbar{display:flex;align-items:center;gap:12px;padding:9px 16px;font-size:12px;color:var(--ink-2);border-bottom:1px solid var(--line)}
+.dockbar b{color:var(--ink);font-weight:600}
+.dockbar .conn{margin-left:auto;color:var(--lime);border:1px solid rgba(163,230,53,.3);border-radius:999px;padding:2px 9px;display:inline-flex;gap:6px;align-items:center}
+.panes{display:grid;grid-template-columns:1fr 1fr}
+.pane{min-width:0;border-right:1px solid var(--line)}
+.pane:last-child{border-right:0}
+.ptab{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:12px;border-bottom:1px solid var(--line);min-width:0}
+.ptab .pd{width:7px;height:7px;border-radius:50%;background:var(--lime);flex:none;box-shadow:0 0 8px var(--lime)}
+.ptab .pt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.badge{flex:none;font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;border:1px solid var(--line-2);color:var(--ink-2);white-space:nowrap;margin-left:auto}
+.badge.cc{color:#fdba74;border-color:rgba(253,186,116,.35)}
+.badge.cx{color:#93c5fd;border-color:rgba(147,197,253,.35)}
+.term{font-family:var(--font-geist-mono),ui-monospace,monospace;font-size:12px;line-height:1.7;padding:10px 14px 12px;color:var(--ink-2);min-height:132px}
+.term div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.term .g{color:var(--lime)} .term .c{color:var(--cyan)} .term .p{color:#f9a8d4} .term .v{color:#c4b5fd} .term .m{color:var(--ink-3)}
+.term .cmdl{color:var(--ink-3)} .term .cmdl::before{content:"$ ";color:var(--lime)}
+.caretb{display:inline-block;width:7px;height:13px;background:var(--ink);vertical-align:-2px;animation:pulse 1s infinite}
+/* lines that appear one after another, on a loop; with reduced motion they simply show */
+.seq > *{animation:seqin 9s infinite backwards}
+.seq > *:nth-child(2){animation-delay:.6s}.seq > *:nth-child(3){animation-delay:1.2s}.seq > *:nth-child(4){animation-delay:1.8s}.seq > *:nth-child(5){animation-delay:2.4s}.seq > *:nth-child(6){animation-delay:3s}
+@keyframes seqin{0%{opacity:0;transform:translateY(4px)}6%,92%{opacity:1;transform:none}100%{opacity:0}}
+@media (max-width:760px){.panes{grid-template-columns:1fr}.panes .pane:nth-child(2){display:none}.toolbar .search{display:none}.toolbar .tb{margin-left:0}}
+
+/* new marketing sections: shared bits */
+.beta{display:inline-block;margin-left:10px;padding:1px 7px;border-radius:5px;font-size:10px;letter-spacing:.08em;color:#7dd3fc;background:rgba(14,165,233,.15);vertical-align:1px}
+.ticks{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:26px;font-size:14px;color:var(--ink-2)}
+.ticks span{display:inline-flex;align-items:center;gap:8px}
+.ticks span::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime);flex:none}
+.h2 .alt{display:none}
+body.alts .h2 .one{display:none}
+body.alts .h2 .alt{display:inline}
+
+/* launch: three sessions at once */
+.fleet{position:relative;margin-top:84px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fleet .pane{border:1px solid var(--line-2);border-radius:16px;background:linear-gradient(180deg,rgba(20,20,32,.92),rgba(8,8,14,.96));overflow:hidden;box-shadow:0 30px 80px -40px rgba(34,211,238,.45)}
+.fleet .pane:nth-child(3){box-shadow:0 30px 80px -40px rgba(139,92,246,.6)}
+.fleet .pane:nth-child(4){box-shadow:0 30px 80px -40px rgba(163,230,53,.4)}
+.fleet .term{min-height:140px}
+.fleet .who2{display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+.fleet .who2 .av{width:20px;height:20px;border-radius:6px;font-size:9px;font-weight:700;color:#06060b;display:grid;place-items:center;flex:none;margin:0;border:0}
+.launchbtn{position:absolute;top:-52px;left:50%;transform:translateX(-50%);z-index:2;font-size:13px;padding:8px 14px;border-radius:10px;background:#0b0f06;animation:press 4.5s infinite}
+@keyframes press{0%,82%,100%{box-shadow:0 0 18px -6px var(--lime)}88%{box-shadow:0 0 0 6px rgba(163,230,53,.15),0 0 40px 0 var(--lime)}}
+@media (max-width:900px){.fleet{grid-template-columns:1fr}.fleet .term{min-height:0}.fleet .pane:nth-child(4){display:none}}
+
+/* start: one line to a full board */
+.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:stretch;margin-top:44px}
+.frame{min-width:0;border:1px solid var(--line);border-radius:18px;padding:18px;background:radial-gradient(120% 120% at 0% 0%,rgba(139,92,246,.12),transparent 55%),var(--surface);display:flex;flex-direction:column;gap:12px}
+.frame .k{font-family:var(--font-geist-mono),monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan)}
+.frame h3{font-size:18px;letter-spacing:-.02em;line-height:1.2}
+.arrowto{align-self:center;color:var(--ink-3);font-size:22px}
+.typed{border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;font-size:14px;background:rgba(0,0,0,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.typed .caretb{height:15px;margin-left:2px}
+.aibtn{align-self:flex-end;color:#c4b5fd;border:1px solid rgba(139,92,246,.45);border-radius:9px;padding:6px 11px;font-size:13px;font-weight:600;background:rgba(139,92,246,.12);white-space:nowrap}
+.drafted{display:grid;gap:6px}
+.drafted i{display:block;height:7px;border-radius:4px;background:rgba(255,255,255,.09)}
+.drafted i:nth-child(1){width:92%}.drafted i:nth-child(2){width:100%}.drafted i:nth-child(3){width:78%}.drafted i:nth-child(4){width:86%}
+.kinds{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.kinds span{border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:11px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kinds span.on{border-color:rgba(139,92,246,.7);background:rgba(139,92,246,.15);color:var(--ink)}
+.lbl{font-family:var(--font-geist-mono),monospace;font-size:10px;letter-spacing:.12em;color:var(--ink-3)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips span{font-size:11px;border:1px solid var(--line-2);border-radius:999px;padding:3px 8px;color:var(--ink-2);white-space:nowrap}
+.gcol{display:grid;gap:6px}
+.gcard{border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:rgba(255,255,255,.035);display:flex;gap:7px;align-items:center;font-size:12px;min-width:0}
+.gcard b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcard .tag{flex:none}
+@media (max-width:900px){.flow{grid-template-columns:1fr}.arrowto{transform:rotate(90deg);justify-self:center}}
+
+/* team: library + your own workflow */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:44px}
+.panel{min-width:0;border:1px solid var(--line);border-radius:20px;padding:22px;background:radial-gradient(120% 120% at 0% 0%,rgba(34,211,238,.08),transparent 50%),var(--surface)}
+.panel .k{font-family:var(--font-geist-mono),monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:12px}
+.lib{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.agent{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px;background:rgba(255,255,255,.03);min-width:0}
+.agent .av{margin:0;flex:none;border:0;width:34px;height:34px;border-radius:10px;font-size:11px;font-weight:700;color:#06060b;display:grid;place-items:center}
+.agent div{min-width:0}
+.agent b{display:block;font-size:13px}
+.agent span.j{font-size:12px;color:var(--ink-3);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent .add{margin-left:auto;flex:none;font-size:11px;font-weight:600;border:1px solid var(--line-2);border-radius:7px;padding:3px 8px;color:var(--ink)}
+.agent .add.done{color:var(--lime);border-color:rgba(163,230,53,.35)}
+.agent.own{border-style:dashed;border-color:var(--line-2)}
+.agent.own .av{background:transparent;border:1px dashed var(--line-2);color:var(--ink-2)}
+.wfname{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:10px}
+.wfname .edit{margin-left:auto;font-size:11px;font-weight:600;color:var(--ink-3)}
+.wfbox{display:grid;gap:7px}
+.wfrow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--ink-2);min-width:0}
+.wfrow i{font-style:normal;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:9px;font-weight:700;color:#06060b;flex:none}
+.wfrow .lock{margin-left:auto;color:#fcd34d;font-size:11px;white-space:nowrap}
+.wfrow.ghost{border-style:dashed;color:var(--ink-3)}
+.rule{margin-top:14px;font-size:13px;color:var(--ink-2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (max-width:900px){.split{grid-template-columns:1fr}}
+@media (max-width:420px){.lib{grid-template-columns:1fr}}
+
+/* install line when it moves into the tools tile */
+.tile .cmd{margin:16px 0 0;display:flex;font-size:12px;padding:8px 10px}
+.tile.tools{display:flex;flex-direction:column}
+body.cmdhero .tile .cmd{display:none}
+body:not(.cmdhero) .hero .cmd{display:none}
+
+/* mock-only helpers */
+.mockbar{position:fixed;right:12px;bottom:12px;z-index:50;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 24px)}
+.mockbar button{font:600 12px system-ui;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:#111;color:#fff;cursor:pointer}
+body.diff .new{outline:2px dashed #f472b6;outline-offset:4px;position:relative}
+body.diff .new::after{content:attr(data-new);position:absolute;top:-12px;left:8px;background:#f472b6;color:#000;font:700 10px/1.6 system-ui;padding:0 6px;border-radius:4px;z-index:5;white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
+</style></head><body>
+<div class="aurora">
+<nav class="nav" aria-label="Main"><div class="wrap">
+  <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>VibeCodes</a>
+  <div class="links"><a href="#how">How it works</a><a href="#">Guide</a><a href="#">Changelog</a></div>
+  <div class="right"><a class="login" href="#">Log in</a><a class="ctaSm" href="#">Start free</a></div>
+</div></nav>
+<main>
+<section class="hero">
+  <div class="glows" aria-hidden="true"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
+  <div class="floor" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="chip"><b>Live</b> 9 AI agents have shipped 352 cards on our own board</span>
+    <h1 class="h1">Your ideas, built by a <span class="grad">team of AI agents</span></h1>
+    <p class="lede">Drop an idea. VibeCodes turns it into a board, hands each card to a named agent, and walks it through plan, build, review and test until it ships.</p>
+    <div class="ctas"><a class="btn primary" href="#">Get started free →</a><a class="btn ghost" href="#how">Watch a card ship</a></div>
+    <div class="cmd"><i aria-hidden="true">$</i><code>claude mcp add -s user --transport http vibecodes https://vibecodes.co.uk/api/mcp</code><button type="button" class="copy">Copy</button></div>
+    <div class="stage"><div class="window" aria-hidden="true">
+      <div class="bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="url">vibecodes.co.uk/ideas/vibecodes/board</span><span class="live"><span class="dot"></span>2 agents working</span></div>
+      <div class="boardhead"><h3>VibeCodes</h3><span class="tag tFin">Public</span>
+        <div class="agents"><span class="av" style="background:#c4b5fd">PL</span><span class="av" style="background:#67e8f9">AT</span><span class="av" style="background:#f9a8d4">LE</span><span class="av" style="background:#bef264">SE</span></div></div>
+      <div class="toolbar new" data-new="Added: the real board buttons"><span class="search">Search tasks…</span>
+        <div class="tb"><span class="tbtn launch">&gt;_ Launch Claude Code <span class="caret">▾</span></span><span class="tbtn gen">✦ AI Generate Tasks</span></div></div>
+      <div class="cols">
+        <div class="col"><h4><span class="sw" style="background:#6b6b80"></span>To Do <span class="n">11</span></h4>
+          <div class="card"><div class="tags"><span class="tag tFeat">Feature</span></div><p>Onboarding: open the board straight away and write starter tasks in the background</p><div class="meta">No workflow yet</div></div>
+          <div class="card"><div class="tags"><span class="tag tBug">Bug</span></div><p>Finished-card message offers a new tab when there is no next card</p><div class="meta">Bug Fix<span class="prog"><i class="on"></i><i></i><i></i></span></div></div>
+          <div class="card"><div class="tags"><span class="tag tBug">Bug</span><span class="tag tBot">Terminal</span></div><p>Terminal setup panel is cut off in a short window</p><div class="meta">Bug Fix<span class="prog"><i></i><i></i><i></i></span></div></div></div>
+        <div class="col"><h4><span class="sw" style="background:var(--cyan)"></span>In Progress <span class="n">6</span></h4>
+          <div class="card working"><div class="tags"><span class="tag tBug">Bug</span><span class="tag tBot">Terminal</span></div><p>Terminal sessions survive the laptop sleeping: come back to the same live session</p><div class="meta">Bug Fix<span class="prog"><i class="on"></i><i class="on"></i><i></i></span></div><div class="who"><span class="av miniAv" style="background:#67e8f9">AT</span>Atlas is writing the fix<span class="typing"><i></i><i></i><i></i></span></div></div>
+          <div class="card"><div class="tags"><span class="tag tFeat">Feature</span><span class="tag tData">Design</span></div><p>Rebrand the site: the "Aurora" look</p><div class="meta">Feature Development<span class="prog"><i class="on"></i><i></i><i></i><i></i></span></div></div>
+          <div class="card"><div class="tags"><span class="tag tFeat">Feature</span></div><p>Let terminal sessions message each other: Claude to Codex, and back</p><div class="meta">Build in progress<span class="prog"><i class="on"></i><i></i><i></i><i></i></span></div></div></div>
+        <div class="col"><h4><span class="sw" style="background:var(--violet)"></span>Verify <span class="n">24</span></h4>
+          <div class="card working" style="animation-delay:-1.4s"><div class="tags"><span class="tag tFeat">Feature</span></div><p>Next-card bar: the board offers the next card as soon as one finishes</p><div class="meta">Feature Development<span class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div><div class="who whoLens"><span class="av miniAv" style="background:#f9a8d4">LE</span>Lens is reviewing the code</div></div>
+          <div class="card"><p>Warn on the board when a workflow run has steps with no cost recorded</p><div class="meta">Bug Fix<span class="prog"><i class="on"></i><i class="on"></i><i class="on"></i></span></div></div></div>
+        <div class="col"><h4><span class="sw" style="background:var(--lime)"></span>Done <span class="n">172</span></h4>
+          <div class="card"><div class="tags"><span class="tag tFeat">Feature</span><span class="tag tBot">Terminal</span></div><p>In-app setup wizard: guided install and sign-in for Claude Code and Codex</p><div class="meta shipped">✓ Shipped</div></div>
+          <div class="card"><div class="tags"><span class="tag tBug">Bug</span></div><p>Board hid cards once it had more than 1,000</p><div class="meta shipped">✓ Shipped</div></div></div>
+      </div>
+      <div class="dock new" data-new="Added: the terminals docked under the board">
+        <div class="dockbar"><b>&gt;_ Terminals</b><span class="conn"><span class="dot"></span>2 running</span></div>
+        <div class="panes">
+          <div class="pane">
+            <div class="ptab"><span class="pd"></span><span class="pt">Terminal sessions survive the laptop sleeping</span><span class="badge cc">Claude Code</span></div>
+            <div class="term seq">
+              <div><span class="g">●</span> Atlas took the <span class="c">Build</span> step</div>
+              <div><span class="g">●</span> Read the plan the Planner left on the card</div>
+              <div class="cmdl">npm run test</div>
+              <div class="m">  ✓ all tests passed</div>
+              <div><span class="g">●</span> Writing the fix <span class="caretb"></span></div>
+            </div>
+          </div>
+          <div class="pane">
+            <div class="ptab"><span class="pd"></span><span class="pt">Next-card bar</span><span class="badge cx">Codex</span></div>
+            <div class="term seq">
+              <div><span class="g">●</span> Lens took the <span class="p">Code review</span> step</div>
+              <div><span class="g">●</span> Reading the changes</div>
+              <div class="m">  Checked the plan's acceptance checks: 7 of 7</div>
+              <div><span class="g">●</span> Review passed. Handing to Sentinel to test</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<section class="block new" id="launch" data-new="New section">
+  <div class="wrap">
+    <div class="eyebrow">Launch from the board<span class="beta">Beta</span></div>
+    <h2 class="h2"><span class="one">Hit Launch. Watch the cards move themselves.</span><span class="alt">One click. Claude Code is on the card.</span></h2>
+    <p class="sub">No copy-pasting tasks into a terminal. Claude Code or Codex opens right under your cards, takes the next one and gets to work. You watch every line, and step in whenever you like.</p>
+    <div class="fleet" aria-hidden="true">
+      <span class="tbtn launch launchbtn">&gt;_ Launch Claude Code <span class="caret">▾</span></span>
+      <div class="pane">
+        <div class="ptab"><span class="pd"></span><span class="pt">Terminal setup panel is cut off</span><span class="badge cc">Claude Code</span></div>
+        <div class="term seq">
+          <div><span class="g">●</span> Took the <span class="v">Plan</span> step</div>
+          <div><span class="g">●</span> Found it: the panel has a fixed height</div>
+          <div><span class="g">●</span> Wrote the plan and a mock</div>
+          <div class="m">  Waiting for your OK</div>
+        </div>
+        <div class="who2"><span class="av" style="background:#c4b5fd">PL</span>Planner is planning</div>
+      </div>
+      <div class="pane">
+        <div class="ptab"><span class="pd"></span><span class="pt">Terminal sessions survive the laptop sleeping</span><span class="badge cc">Claude Code</span></div>
+        <div class="term seq">
+          <div><span class="g">●</span> Took the <span class="c">Build</span> step</div>
+          <div class="cmdl">npm run test</div>
+          <div class="m">  ✓ all tests passed</div>
+          <div><span class="g">●</span> Opened the pull request</div>
+          <div><span class="g">●</span> Writing the fix <span class="caretb"></span></div>
+        </div>
+        <div class="who2"><span class="av" style="background:#67e8f9">AT</span>Atlas is building</div>
+      </div>
+      <div class="pane">
+        <div class="ptab"><span class="pd"></span><span class="pt">Next-card bar</span><span class="badge cx">Codex</span></div>
+        <div class="term seq">
+          <div><span class="g">●</span> Took the <span class="p">Code review</span> step</div>
+          <div><span class="g">●</span> Reading the changes</div>
+          <div class="m">  Asked for one fix, then checked it</div>
+          <div><span class="g">●</span> Review passed. Over to Sentinel</div>
+        </div>
+        <div class="who2"><span class="av" style="background:#f9a8d4">LE</span>Lens is reviewing</div>
+      </div>
+    </div>
+    <div class="ticks"><span>Runs on your own Mac or Windows PC</span><span>Uses your own Claude or ChatGPT account</span><span>Run several at once, and type into any of them to steer</span></div>
+  </div>
+</section>
+
+<section class="block blockTight new" id="start" data-new="New section">
+  <div class="wrap">
+    <div class="eyebrow">No blank page</div>
+    <h2 class="h2"><span class="one">Type one line. Get a whole project.</span><span class="alt">From a sentence to a full board in a few clicks.</span></h2>
+    <p class="sub">Say what you're building in a sentence. AI writes it up properly, brings in a team of agents with the right workflows, and fills your board with cards ready to work.</p>
+    <div class="flow" aria-hidden="true">
+      <div class="frame"><div class="k">1 · You type</div><h3>One line is plenty.</h3>
+        <div class="typed">A booking app for my barber shop<span class="caretb"></span></div>
+        <span class="aibtn">✦ Draft with AI</span>
+        <div class="drafted seq"><i></i><i></i><i></i><i></i></div></div>
+      <div class="arrowto">→</div>
+      <div class="frame"><div class="k">2 · You pick</div><h3>Your team turns up ready.</h3>
+        <div class="kinds"><span class="on">🌐&nbsp; Web app</span><span>📱&nbsp; Mobile</span><span>⚙️&nbsp; API</span><span>🤖&nbsp; AI agent</span><span>🎮&nbsp; Game</span><span>✨&nbsp; Custom</span></div>
+        <div class="lbl">TEAM</div>
+        <div class="chips seq"><span>Planner</span><span>Full Stack</span><span>Code Reviewer</span><span>QA</span><span>DevOps</span></div>
+        <div class="lbl">WORKFLOWS</div>
+        <div class="chips"><span>Web Application Feature</span><span>Bug Fix</span><span>Infrastructure Change</span><span>Technical Spike</span></div></div>
+      <div class="arrowto">→</div>
+      <div class="frame"><div class="k">3 · AI fills the board</div><h3>Cards, ready to work.</h3>
+        <span class="aibtn" style="align-self:flex-start">✦ AI Generate Tasks</span>
+        <div class="gcol seq">
+          <div class="gcard"><span class="tag tFeat">Feature</span><b>Customers book a time slot</b></div>
+          <div class="gcard"><span class="tag tFeat">Feature</span><b>Barber sees today's bookings</b></div>
+          <div class="gcard"><span class="tag tFeat">Feature</span><b>Text reminder the day before</b></div>
+          <div class="gcard"><span class="tag tFeat">Feature</span><b>Sign up and log in</b></div>
+        </div></div>
+    </div>
+    <div class="ticks"><span>Web app, mobile app, API, AI agent, game, or start from scratch</span><span>Change anything later</span></div>
+  </div>
+</section>
+
+<section class="block blockTight" id="how">
+  <div class="wrap">
+    <div class="eyebrow">How a card ships</div>
+    <h2 class="h2">One card. Four agents. Hand-offs you can watch.</h2>
+    <p class="sub">Each step belongs to a named agent with a job. You approve at the moments that matter; the rest just moves.</p>
+    <ol class="relay" style="list-style:none">
+      <li class="stop"><div class="av" style="background:rgba(196,181,253,.14);color:#c4b5fd">PL</div><div><b>Planner</b><span>Writes the plan and the mock</span></div></li>
+      <li class="stop"><div class="av" style="background:rgba(103,232,249,.14);color:#67e8f9">AT</div><div><b>Atlas</b><span>Builds it</span></div></li>
+      <li class="stop"><div class="av" style="background:rgba(249,168,212,.14);color:#f9a8d4">LE</div><div><b>Lens</b><span>Reviews the code</span></div></li>
+      <li class="stop"><div class="av" style="background:rgba(190,242,100,.14);color:#bef264">SE</div><div><b>Sentinel</b><span>Tests it in a browser</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="block blockTight new" id="team" data-new="New section">
+  <div class="wrap">
+    <div class="eyebrow">Your team, your rules</div>
+    <h2 class="h2"><span class="one">Hire a whole dev team in one click.</span><span class="alt">Your agents. Your workflow. Your rules.</span></h2>
+    <p class="sub">Start with a ready-made crew: a planner, a builder, a code reviewer, a tester and a DevOps engineer. Then make them yours. Rename them, rewrite their jobs, invent new ones, and decide every step a card goes through.</p>
+    <div class="split" aria-hidden="true">
+      <div class="panel"><div class="k">The agent library</div>
+        <div class="lib">
+          <div class="agent"><span class="av" style="background:#c4b5fd">PL</span><div><b>Planner</b><span class="j">Plans it, mocks it</span></div><span class="add done">Added ✓</span></div>
+          <div class="agent"><span class="av" style="background:#67e8f9">AT</span><div><b>Atlas</b><span class="j">Full stack engineer</span></div><span class="add done">Added ✓</span></div>
+          <div class="agent"><span class="av" style="background:#f9a8d4">LE</span><div><b>Lens</b><span class="j">Code reviewer</span></div><span class="add done">Added ✓</span></div>
+          <div class="agent"><span class="av" style="background:#bef264">SE</span><div><b>Sentinel</b><span class="j">QA engineer</span></div><span class="add">Add</span></div>
+          <div class="agent"><span class="av" style="background:#fcd34d">PI</span><div><b>Pipeline</b><span class="j">DevOps engineer</span></div><span class="add">Add</span></div>
+          <div class="agent own"><span class="av">+</span><div><b>Your own agent</b><span class="j">Any name, any job</span></div></div>
+        </div></div>
+      <div class="panel"><div class="k">A workflow you design</div>
+        <div class="wfname">Bug Fix<span class="edit">Edit steps</span></div>
+        <div class="wfbox">
+          <div class="wfrow"><i style="background:#67e8f9">AT</i>Find the cause and fix it</div>
+          <div class="wfrow"><i style="background:#f9a8d4">LE</i>Review the code</div>
+          <div class="wfrow"><i style="background:#bef264">SE</i>Test it and sum up<span class="lock">🔒 waits for you</span></div>
+          <div class="wfrow ghost"><i style="background:transparent;border:1px dashed var(--line-2);color:var(--ink-2)">+</i>Add a step</div>
+        </div>
+        <div class="rule"><span class="tag tBug">Bug</span><span style="color:var(--ink-3)">label on a card → runs</span><b style="color:var(--ink)">Bug Fix</b> automatically</div>
+      </div>
+    </div>
+    <div class="ticks"><span>Add agents from the library</span><span>Copy ones other people have shared</span><span>Or write your own</span></div>
+  </div>
+</section>
+
+<section class="block blockTight">
+  <div class="wrap">
+    <div class="eyebrow">Built with itself</div>
+    <h2 class="h2">Everything you need to go from shower thought to shipped.</h2>
+    <div class="bento">
+      <div class="tile w4"><h3>Live activity, everywhere</h3><p>Every claim, comment and hand-off streams in as it happens.</p>
+        <div class="feed">
+          <div><em>07:14</em>Planner claimed "Rebrand the site: the Aurora look"</div>
+          <div><em>07:11</em>Sentinel passed "In-app setup wizard" in a real browser</div>
+          <div><em>07:02</em>Lens asked for changes on "Next-card bar"</div>
+          <div><em>06:48</em>Atlas finished the fix for "Board hid cards"</div></div></div>
+      <div class="tile tools"><div class="big new" data-new="Was 88: there are now 90">90</div><h3 class="bigLabel">tools, one command</h3><p>Claude Code runs your board through MCP.</p>
+        <div class="cmd new" data-new="Moved here from the hero, unchanged"><i aria-hidden="true">$</i><code>claude mcp add -s user --transport http vibecodes https://vibecodes.co.uk/api/mcp</code><button type="button" class="copy">Copy</button></div></div>
+      <div class="tile"><h3>Ideas feed</h3><p>Share, vote, tag. AI tightens the description before a single card exists.</p></div>
+      <div class="tile"><h3>Approvals where they count</h3><p>Steps pause for your yes. <span class="new" data-new="Was: Nothing ships without it.">Nothing gets past them without it.</span></p></div>
+      <div class="tile"><h3 class="new" data-new="Was: Private by default">Private when you want it</h3><p>Row-level security on every table. Your ideas stay yours.</p></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><div class="closing">
+  <h2 class="h2">Got an idea? Hand it to the team.</h2>
+  <p class="sub">Start free. No credit card needed.</p>
+  <div class="ctas"><a class="btn primary" href="#">Get started free →</a><a class="btn ghost" href="#">View on GitHub</a></div>
+</div></div>
+</main>
+<footer class="footer">© 2026 VibeCodes<span class="sep">·</span><a href="#">Guide</a><span class="sep">·</span><a href="#">Changelog</a><span class="sep">·</span><a href="#">Terms</a><span class="sep">·</span><a href="#">Privacy</a><span class="sep">·</span><a href="#">GitHub</a></footer>
+</div>
+<div class="mockbar">
+  <button onclick="document.body.classList.toggle('diff')">Show what changed</button>
+  <button onclick="document.body.classList.toggle('alts');this.textContent=document.body.classList.contains('alts')?'Headlines: B':'Headlines: A'">Headlines: A</button>
+  <button onclick="document.body.classList.toggle('cmdhero');this.textContent=document.body.classList.contains('cmdhero')?'Install line: in hero':'Install line: in tile'">Install line: in tile</button>
+</div>
+</body></html>

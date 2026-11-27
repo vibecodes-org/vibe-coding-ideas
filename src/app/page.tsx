@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getLandingStats } from "@/lib/landing-stats";
 import { AuroraHeader } from "@/components/landing/aurora-header";
 import { AuroraHero } from "@/components/landing/aurora-hero";
+import { LaunchSection } from "@/components/landing/launch-section";
+import { StartSection } from "@/components/landing/start-section";
+import { TeamSection } from "@/components/landing/team-section";
 import { AgentRelay } from "@/components/landing/agent-relay";
 import { FeatureTiles } from "@/components/landing/feature-tiles";
 import { ClosingBand } from "@/components/landing/closing-band";
@@ -30,7 +33,10 @@ export default async function LandingPage() {
       <AuroraHeader />
       <main>
         <AuroraHero stats={stats} />
+        <LaunchSection />
+        <StartSection />
         <AgentRelay />
+        <TeamSection />
         <FeatureTiles />
         <ClosingBand />
       </main>

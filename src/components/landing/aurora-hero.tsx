@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { LandingStats } from "@/lib/landing-stats";
-import { CopyCommand } from "./copy-command";
 import { AuroraBoard } from "./aurora-board";
 import styles from "./aurora.module.css";
 
@@ -41,7 +40,6 @@ export function AuroraHero({ stats }: { stats: LandingStats | null }) {
             Watch a card ship
           </a>
         </div>
-        <CopyCommand command={INSTALL_COMMAND} />
         <AuroraBoard counts={stats?.columns ?? null} />
       </div>
     </section>
