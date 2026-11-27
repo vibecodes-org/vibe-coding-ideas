@@ -6,6 +6,7 @@
 
 import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
+import { tomlEscapedString } from "./session-agents.js";
 import { cleanPeerText, formatPeerMessage } from "../../shared/peer-message.mjs";
 import { createPeerState, endTyping, joinHeld, onHook, onInput, onMessage, onTick, safeToSubmit } from "./peer-delivery.js";
 
@@ -44,17 +45,29 @@ export function buildHookSettings(port, secret) {
   };
 }
 
-/** The extra launch arguments for Claude. */
-export function hookSettingsArgs(port, secret) {
-  return ["--settings", JSON.stringify(buildHookSettings(port, secret))];
+/**
+ * The settings text for Claude's `--settings` FILE. The URLs hold the secret,
+ * so the bridge writes this to an owner-only file instead of the command line,
+ * where any account could read it with `ps` (card 9b5336c1).
+ */
+export function hookSettingsText(port, secret) {
+  return JSON.stringify(buildHookSettings(port, secret));
+}
+
+/** The extra launch arguments for Claude: the settings file's path only. */
+export function hookSettingsArgs(settingsPath) {
+  return ["--settings", settingsPath];
 }
 
 // Codex: command hooks (Codex has no http hooks). The command is the same in
-// every session; the listener's address arrives in this environment variable,
-// so the command's fingerprint never changes. Hook failures print nothing and
-// never block Codex.
+// every session, so its fingerprint never changes. The listener's address holds
+// the secret, so it never appears on a command line: the environment variable
+// holds the PATH of an owner-only curl config file (`url = "..."`) and the
+// command reads it with `curl -K`. Otherwise every hook's curl would show the
+// secret to any account via `ps` (card 9b5336c1). Hook failures print nothing
+// and never block Codex.
 export const CODEX_HOOK_ENV = "VIBECODES_PEER_HOOK";
-export const CODEX_HOOK_COMMAND = `curl -s -m ${HOOK_TIMEOUT_SECONDS} -X POST -H 'content-type: application/json' --data-binary @- "$${CODEX_HOOK_ENV}" || true`;
+export const CODEX_HOOK_COMMAND = `curl -K "$${CODEX_HOOK_ENV}" -s -m ${HOOK_TIMEOUT_SECONDS} -X POST -H 'content-type: application/json' --data-binary @- || true`;
 const CODEX_HOOK_EVENTS = /** @type {const} */ ([
   ["UserPromptSubmit", "user_prompt_submit", null],
   ["Stop", "stop", null],
@@ -98,8 +111,10 @@ export function codexHookArgs() {
   const args = [];
   const state = [];
   for (const [event, label, matcher] of CODEX_HOOK_EVENTS) {
-    const m = matcher ? `matcher=${tomlString(matcher)},` : "";
-    args.push("-c", `hooks.${event}=[{${m}hooks=[{type="command",command=${tomlString(CODEX_HOOK_COMMAND)}}]}]`);
+    // Command and matcher are \uXXXX escapes (Codex reads the same text), so the
+    // word "curl" is not on the launch line, where `pkill -f curl` would match it.
+    const m = matcher ? `matcher=${tomlEscapedString(matcher)},` : "";
+    args.push("-c", `hooks.${event}=[{${m}hooks=[{type="command",command=${tomlEscapedString(CODEX_HOOK_COMMAND)}}]}]`);
     const key = `${CODEX_FLAG_HOOK_SOURCE}:${label}:0:0`;
     state.push(`${tomlString(key)}={trusted_hash=${tomlString(codexHookHash(label, matcher, CODEX_HOOK_COMMAND))}}`);
   }
@@ -111,6 +126,11 @@ export function codexHookArgs() {
 /** The listener address Codex's hook command posts to. */
 export function codexHookUrl(port, secret) {
   return `http://127.0.0.1:${port}/${secret}/hook`;
+}
+
+/** The text of the owner-only curl config file the Codex hook command reads (`curl -K`). */
+export function codexHookCurlConfig(port, secret) {
+  return `url = "${codexHookUrl(port, secret)}"\n`;
 }
 
 /**

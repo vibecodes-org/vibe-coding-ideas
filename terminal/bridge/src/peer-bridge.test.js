@@ -7,9 +7,11 @@ import {
   CODEX_HOOK_ENV,
   codexHookArgs,
   codexHookHash,
+  codexHookCurlConfig,
   codexHookUrl,
   createPeerBridge,
   hookSettingsArgs,
+  hookSettingsText,
   startHookServer,
 } from "./peer-bridge.js";
 
@@ -199,7 +201,12 @@ test("Codex launch flags: one hook per event, all pre-approved, no address baked
     assert.ok(state.includes(`"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${codexHookHash(label, null, CODEX_HOOK_COMMAND)}"}`));
   }
   assert.ok(!args.join(" ").includes("127.0.0.1"));
-  assert.ok(CODEX_HOOK_COMMAND.includes(`"$${CODEX_HOOK_ENV}"`));
+  assert.ok(CODEX_HOOK_COMMAND.includes(`curl -K "$${CODEX_HOOK_ENV}"`), "the secret address is read from a config file named by the env variable");
+  // Nothing readable on the launch line: the word curl and the content type are \u-escaped.
+  assert.ok(!args.join(" ").includes("curl"));
+  assert.ok(!args.join(" ").includes("content-type"));
+  assert.match(values.find((v) => v.startsWith("hooks.Stop=")), /command="\\u0063\\u0075\\u0072\\u006c/);
+  assert.equal(codexHookCurlConfig(4321, "abc"), 'url = "http://127.0.0.1:4321/abc/hook"\n');
   assert.equal(codexHookUrl(4321, "abc"), "http://127.0.0.1:4321/abc/hook");
 });
 
@@ -227,9 +234,12 @@ test("hook settings use the secret path and cover every event", () => {
   const s = buildHookSettings(4321, "sec");
   assert.deepEqual(Object.keys(s.hooks).sort(), ["Notification", "PermissionRequest", "PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
   assert.equal(s.hooks.Stop[0].hooks[0].url, "http://127.0.0.1:4321/sec/Stop");
-  const args = hookSettingsArgs(1, "s");
-  assert.equal(args[0], "--settings");
-  assert.doesNotThrow(() => JSON.parse(args[1]));
+  // The secret never rides on the command line: only a file path does.
+  const args = hookSettingsArgs("/tmp/x/peer-hooks.json");
+  assert.deepEqual(args, ["--settings", "/tmp/x/peer-hooks.json"]);
+  assert.ok(!args.join(" ").includes("sec"));
+  const text = hookSettingsText(4321, "sec");
+  assert.equal(JSON.parse(text).hooks.Stop[0].hooks[0].url, "http://127.0.0.1:4321/sec/Stop");
 });
 
 test("the hook server answers only its own secret path", async () => {

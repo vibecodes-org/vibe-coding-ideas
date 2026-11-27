@@ -138,6 +138,62 @@ export function serializeSessionAgents(body, appOrigin, platform = process.platf
   return platform === "win32" ? JSON.stringify(clean) : escapeJsonText(JSON.stringify(clean));
 }
 
+/**
+ * Windows takes a command line of at most 32,767 characters, and Claude Code
+ * takes `--agents` only inline, so a big board can't be passed whole (card
+ * 9b5336c1, stage 2). When the plain JSON doesn't fit `budget` characters, the
+ * biggest agents' prompts move into files (written by the caller, in a private
+ * temp folder, at `pathFor(fileName)`) and the agent keeps a short stub that
+ * tells it to read that file first. If even the stubs don't fit, the last
+ * agents are left out (reported in `dropped`, never silent). Other platforms
+ * get the coded JSON as before: no limit there, and `pkill -f` is the risk.
+ * @param {unknown} body
+ * @param {string | undefined} appOrigin
+ * @param {{ platform?: string, budget?: number, pathFor?: (fileName: string) => string }} [opts]
+ * @returns {{ json: string, files: { fileName: string, text: string }[], stubbed: string[], dropped: string[] } | null}
+ */
+export function planClaudeAgents(body, appOrigin, opts = {}) {
+  const { platform = process.platform, budget = 24_000, pathFor = (f) => f } = opts;
+  const clean = validateSessionAgents(body, appOrigin);
+  if (!clean) return null;
+  if (platform !== "win32") {
+    return { json: escapeJsonText(JSON.stringify(clean)), files: [], stubbed: [], dropped: [] };
+  }
+  /** @type {Record<string, any>} */
+  const defs = { ...clean };
+  /** @type {{ fileName: string, text: string }[]} */
+  const files = [];
+  /** @type {string[]} */
+  const stubbed = [];
+  /** @type {string[]} */
+  const dropped = [];
+  const size = () => JSON.stringify(defs).length;
+  const bySize = Object.keys(defs).sort((a, b) => defs[b].prompt.length - defs[a].prompt.length);
+  for (const name of bySize) {
+    if (size() <= budget) break;
+    const fileName = `${name}.md`;
+    files.push({ fileName, text: defs[name].prompt });
+    defs[name] = { ...defs[name], prompt: agentStubPrompt(pathFor(fileName)) };
+    stubbed.push(name);
+  }
+  for (const name of [...bySize].reverse()) {
+    if (size() <= budget) break;
+    delete defs[name];
+    dropped.push(name);
+    const i = stubbed.indexOf(name);
+    if (i >= 0) {
+      stubbed.splice(i, 1);
+      files.splice(files.findIndex((f) => f.fileName === `${name}.md`), 1);
+    }
+  }
+  return { json: JSON.stringify(defs), files, stubbed, dropped };
+}
+
+/** @param {string} filePath */
+function agentStubPrompt(filePath) {
+  return `Your full instructions are in the file ${filePath}. Before doing anything else, read that whole file with the Read tool, then follow it exactly as your instructions.`;
+}
+
 /** Keep the escaped value well under macOS's ~1 MB argument limit (env shares it). */
 const ESCAPED_MAX_BYTES = 700_000;
 
@@ -184,6 +240,22 @@ export function escapeJsonText(json) {
   };
   const full = render(1);
   return Buffer.byteLength(full, "utf8") <= ESCAPED_MAX_BYTES ? full : render(2);
+}
+
+/**
+ * A TOML basic string with every character written as a \uXXXX escape
+ * (\UXXXXXXXX beyond the first 65,536). Codex reads it back as the same text,
+ * but the command line no longer holds the words, so `pkill -f <words>` run by
+ * another agent can't match the session (card 9b5336c1).
+ * @param {string} value
+ */
+export function tomlEscapedString(value) {
+  let out = "";
+  for (const ch of value) {
+    const cp = /** @type {number} */ (ch.codePointAt(0));
+    out += cp > 0xffff ? "\\U" + cp.toString(16).padStart(8, "0") : "\\u" + cp.toString(16).padStart(4, "0");
+  }
+  return `"${out}"`;
 }
 
 /**
