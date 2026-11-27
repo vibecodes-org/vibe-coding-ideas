@@ -47,7 +47,7 @@ import type { UnmeasuredAlert } from "@/lib/step-cost/unmeasured-alert";
 import type { IdeaHealth } from "@/lib/idea-health";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toastActionError } from "@/lib/stale-version";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
 import { mergeTrustedState, TRUST_WINDOW_MS, type TrustedTaskState } from "./trusted-state";
 import { markLocalBoardMutation } from "./local-mutation-signal";
@@ -1032,8 +1032,8 @@ export function KanbanBoard({
             ideaId,
             newColumns.map((c) => c.id)
           );
-        } catch {
-          toast.error("Failed to reorder columns");
+        } catch (error) {
+          toastActionError(error, "Failed to reorder columns");
           setLastServerKey(""); // force re-sync when pendingOps reaches 0
         } finally {
           setPendingOps((n) => n - 1);
@@ -1135,8 +1135,8 @@ export function KanbanBoard({
       setPendingOps((n) => n + 1);
       try {
         await moveBoardTask(String(active.id), ideaId, activeColumnId, newPosition);
-      } catch {
-        toast.error("Failed to move task");
+      } catch (error) {
+        toastActionError(error, "Failed to move task");
         trustedTasksRef.current.delete(String(active.id)); // don't trust a rejected move
         setLastServerKey(""); // force re-sync when pendingOps reaches 0
       } finally {
