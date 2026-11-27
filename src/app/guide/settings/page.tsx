@@ -58,6 +58,7 @@ export default function SettingsGuidePage() {
           <Settings className="h-6 w-6 text-cyan-400" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">New page</span>
       </div>
 
       <div className="space-y-10">

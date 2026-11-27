@@ -22,6 +22,8 @@ export interface GuideSection {
   description: string;
   iconClass: string;
   bgClass: string;
+  /** Shows a "New page" badge on the guide home card. */
+  isNew?: boolean;
 }
 
 /** The guide's pages, in reading order. Drives the sidebar, home cards, Previous/Next and the sitemap. */
@@ -122,6 +124,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     icon: Settings,
     iconClass: "text-cyan-400",
     bgClass: "bg-cyan-500/10",
+    isNew: true,
     description:
       "Your profile, notifications, board defaults, AI key, model choices and connections, all in one place.",
   },

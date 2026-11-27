@@ -17,7 +17,7 @@ export default function GuidePage() {
 
       <div className="mb-12 rounded-xl border border-border bg-muted/30 p-8">
         <p className="mb-6 text-center text-sm font-medium text-muted-foreground">
-          The VibeCodes pipeline
+          How it fits together
         </p>
         <PipelineFlow />
       </div>
@@ -30,7 +30,14 @@ export default function GuidePage() {
                 <div className={`mb-2 flex h-10 w-10 items-center justify-center rounded-lg ${section.bgClass}`}>
                   <section.icon className={`h-5 w-5 ${section.iconClass}`} />
                 </div>
-                <CardTitle className="text-lg">{section.title}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  {section.title}
+                  {section.isNew && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+                      New page
+                    </span>
+                  )}
+                </CardTitle>
                 <CardDescription>{section.description}</CardDescription>
               </CardHeader>
             </Card>
