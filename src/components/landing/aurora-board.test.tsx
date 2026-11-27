@@ -18,4 +18,15 @@ describe("AuroraBoard counts", () => {
     const { container } = render(<AuroraBoard counts={null} />);
     expect(headings(container)).toEqual(["To Do", "In Progress", "Verify", "Done"]);
   });
+
+  it("shows the board buttons and both terminal sessions", () => {
+    const { container } = render(<AuroraBoard counts={null} />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Launch Claude Code");
+    expect(text).toContain("AI Generate Tasks");
+    expect(text).toContain("2 running");
+    expect(text).toContain("Terminal sessions survive the laptop sleeping");
+    expect(text).toContain("Next-card bar");
+    expect(text).toContain("Codex");
+  });
 });

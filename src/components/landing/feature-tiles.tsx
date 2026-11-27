@@ -1,4 +1,9 @@
+import { INSTALL_COMMAND } from "./aurora-hero";
+import { CopyCommand } from "./copy-command";
 import styles from "./aurora.module.css";
+
+/** Must equal the number of tools the MCP server registers (a unit test checks it). */
+export const MCP_TOOL_COUNT = 90;
 
 /** Feed lines come from VibeCodes' own public board. No private board text here. */
 const FEED = [
@@ -27,10 +32,11 @@ export function FeatureTiles() {
               ))}
             </div>
           </div>
-          <div className={styles.tile}>
-            <div className={styles.big}>88</div>
+          <div className={`${styles.tile} ${styles.tools}`}>
+            <div className={styles.big}>{MCP_TOOL_COUNT}</div>
             <h3 className={styles.bigLabel}>tools, one command</h3>
             <p>Claude Code runs your board through MCP.</p>
+            <CopyCommand command={INSTALL_COMMAND} />
           </div>
           <div className={styles.tile}>
             <h3>Ideas feed</h3>
@@ -38,10 +44,10 @@ export function FeatureTiles() {
           </div>
           <div className={styles.tile}>
             <h3>Approvals where they count</h3>
-            <p>Steps pause for your yes. Nothing ships without it.</p>
+            <p>Steps pause for your yes. Nothing gets past them without it.</p>
           </div>
           <div className={styles.tile}>
-            <h3>Private by default</h3>
+            <h3>Private when you want it</h3>
             <p>Row-level security on every table. Your ideas stay yours.</p>
           </div>
         </div>

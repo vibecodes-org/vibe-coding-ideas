@@ -163,6 +163,15 @@ export function AuroraBoard({ counts }: { counts: ColumnCounts | null }) {
             ))}
           </div>
         </div>
+        <div className={styles.toolbar}>
+          <span className={styles.search}>Search tasks…</span>
+          <div className={styles.tb}>
+            <span className={`${styles.tbtn} ${styles.launch}`}>
+              &gt;_ Launch Claude Code <span className={styles.caret}>▾</span>
+            </span>
+            <span className={`${styles.tbtn} ${styles.gen}`}>✦ AI Generate Tasks</span>
+          </div>
+        </div>
         <div className={styles.cols}>
           {COLUMNS.map((col) => (
             <div key={col.title} className={styles.col}>
@@ -223,6 +232,55 @@ export function AuroraBoard({ counts }: { counts: ColumnCounts | null }) {
               ))}
             </div>
           ))}
+        </div>
+        <div className={styles.dock}>
+          <div className={styles.dockbar}>
+            <b>&gt;_ Terminals</b>
+            <span className={styles.conn}>
+              <span className={styles.dot} />2 running
+            </span>
+          </div>
+          <div className={styles.panes}>
+            <div className={styles.pane}>
+              <div className={styles.ptab}>
+                <span className={styles.pd} />
+                <span className={styles.pt}>Terminal sessions survive the laptop sleeping</span>
+                <span className={`${styles.badge} ${styles.cc}`}>Claude Code</span>
+              </div>
+              <div className={`${styles.term} ${styles.seq}`}>
+                <div>
+                  <span className={styles.tg}>●</span> Atlas took the <span className={styles.tc}>Build</span> step
+                </div>
+                <div>
+                  <span className={styles.tg}>●</span> Read the plan the Planner left on the card
+                </div>
+                <div className={styles.cmdl}>npm run test</div>
+                <div className={styles.tm}>  ✓ all tests passed</div>
+                <div>
+                  <span className={styles.tg}>●</span> Writing the fix <span className={styles.caretb} />
+                </div>
+              </div>
+            </div>
+            <div className={styles.pane}>
+              <div className={styles.ptab}>
+                <span className={styles.pd} />
+                <span className={styles.pt}>Next-card bar</span>
+                <span className={`${styles.badge} ${styles.cx}`}>Codex</span>
+              </div>
+              <div className={`${styles.term} ${styles.seq}`}>
+                <div>
+                  <span className={styles.tg}>●</span> Lens took the <span className={styles.tp}>Code review</span> step
+                </div>
+                <div>
+                  <span className={styles.tg}>●</span> Reading the changes
+                </div>
+                <div className={styles.tm}>  Checked the plan&apos;s acceptance checks: 7 of 7</div>
+                <div>
+                  <span className={styles.tg}>●</span> Review passed. Handing to Sentinel to test
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
