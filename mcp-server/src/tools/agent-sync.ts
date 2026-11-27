@@ -70,7 +70,7 @@ const INSTRUCTION =
   "this run's) and waits until Claude Code has loaded them, so its completion wakes you in a new turn with them " +
   "available; don't poll or wait in the meantime, and don't run it in the foreground (Claude Code loads new agent " +
   "files on a later turn). On the wake, read the last output line. READY: every agent in `agents` is " +
-  "loaded for this session. Spawn each by name at its own step without syncing again, provided that step's claim " +
+  "loaded for this session. Spawn each by name at its own step without syncing again (always passing the claim's model and effort on the Agent tool, since the file's own model can be older than the user's settings), provided that step's claim " +
   "names the same tag as listed here, even if your Agent tool's listing still shows an older description or tag " +
   "for that name (the listing is not refreshed), but only when the name is not offered at all or its listed " +
   "description starts with \"Saved by sync_board_agents.\": a name offered without that marker is a copy the " +

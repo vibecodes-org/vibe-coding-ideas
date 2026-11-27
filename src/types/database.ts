@@ -976,13 +976,16 @@ export type Database = {
           ran_in_own_agent: "confirmed" | "other_agent" | "not_confirmed" | "cant_confirm" | null;
           skills_used: string[] | null;
           /** Migration 00195 (card 5d0665a2). Set once, by the code that observed
-           *  the model failure (fail_step's model_unavailable rescue, or
-           *  complete_step's free signal). Rescue-once guard on this row; the
+           *  the model failure (fail_step's explicit model_unavailable rescue;
+           *  a reported model name never sets it). Rescue-once guard on this row; the
            *  newest same-UTC-day row across the board is the live marker. */
           model_unavailable_at: string | null;
           /** Migration 00195. The concrete model name resolved server-side at
            *  write time — paired with model_unavailable_at. */
           model_unavailable_model: string | null;
+          /** Migration 00213. What the claim directed (model, effort), saved at claim time. */
+          directed_model: string | null;
+          directed_effort: string | null;
           updated_at: string;
         };
         Insert: {
@@ -1018,6 +1021,8 @@ export type Database = {
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;
+          directed_model?: string | null;
+          directed_effort?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -1057,6 +1062,8 @@ export type Database = {
           skills_used?: string[] | null;
           model_unavailable_at?: string | null;
           model_unavailable_model?: string | null;
+          directed_model?: string | null;
+          directed_effort?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;

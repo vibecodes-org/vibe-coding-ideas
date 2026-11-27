@@ -47,7 +47,6 @@ import {
   modelSwitchNotice,
   markerWindowStart,
   shouldRescueStep,
-  inferUnavailableFromSubstitution,
   rescueSentence,
   secondFailureSentence,
 } from "./model-availability";
@@ -59,7 +58,9 @@ import { fetchAgentSkills } from "../../../src/lib/fetch-agent-skills";
 import { newUsageMarker } from "../../../src/lib/step-cost/usage-command";
 import { buildClaimInstruction } from "../lib/claim-instruction";
 import { usageCommandFields } from "../lib/step-usage-delivery";
-import { recordStepUsage, stepUsageParam, usageUnavailableParam } from "../lib/step-usage";
+import { recordStepUsage, parseReportedUsage, stepUsageParam, usageUnavailableParam } from "../lib/step-usage";
+import { saveDirectedSnapshot, readDirectedSnapshot } from "../lib/directed-snapshot";
+import { mainMeasuredModel, measuredModelMismatch, modelMismatchComment, modelMismatchNotice } from "../lib/measured-model";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -222,6 +223,28 @@ export function modelTierClause(
   return `${lead}MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}" and reasoning effort "${effort}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" at the same effort and say so in your step output. When calling complete_step/fail_step for this step, pass model_used = the model the subagent actually ran on (the Task-tool model value, or the fallback if you substituted it), and reasoning_effort_used = the effort it actually ran with. This model is resolved live at claim time from the user's current Models configuration and overrides any tier→model mapping in CLAUDE.md, AGENTS.md or other project docs; don't edit docs to match it or record tier→model mappings in them, because they go stale whenever the user changes their settings.`;
 }
 
+/**
+ * Card 1553d11e: the comment and the session notice for a step whose measured
+ * model differs from the one the settings asked for, or null when they match
+ * (or nothing was measured). `asked` is what the claim saved, else the live
+ * resolution. Exported for tests.
+ */
+export function modelNoticeFor(
+  measured: ReturnType<typeof mainMeasuredModel>,
+  directed: { model: string | null } | null,
+  liveResolution: { resolved: string; fallback: string } | null
+): { comment: string; notice: string } | null {
+  const asked = measuredModelMismatch(
+    measured,
+    directed?.model || liveResolution?.resolved,
+    // The backup counts only with no saved asked-for model: a switch VibeCodes
+    // made is already saved as the asked-for model.
+    directed?.model ? null : liveResolution?.fallback
+  );
+  if (!measured || !asked) return null;
+  return { comment: modelMismatchComment(measured, asked), notice: modelMismatchNotice(measured, asked) };
+}
+
 // ============================================================
 // P2c — tier adherence (self-reported telemetry, never hard verification)
 // ============================================================
@@ -266,7 +289,14 @@ export function resolveTierAdherence(
   effortUsed: string | undefined,
   userModelTierMap?: unknown,
   platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS,
-  stepEffort?: string | null
+  stepEffort?: string | null,
+  /**
+   * Card 1553d11e: the model and effort the claim directed, saved on the step
+   * at claim time. Judged against instead of the live settings, so a change
+   * made while the step runs can't flip the verdict. Null/absent (an older
+   * step, or a database without the columns) keeps the live comparison.
+   */
+  directed?: { model: string | null; effort: string | null } | null
 ): TierAdherenceResult {
   const reportedEffort = effortUsed ?? null;
   if (modelUsed === undefined) return { executedModel: null, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
@@ -276,8 +306,12 @@ export function resolveTierAdherence(
   const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", agent, userModelTierMap, platformDefaults, stepEffort);
   if (!resolution) return { executedModel: modelUsed, executedEffort: reportedEffort, tierHonored: null, viaFallback: false };
 
-  const { resolved, fallback, effort } = resolution;
-  const viaFallback = modelUsed !== resolved && modelUsed === fallback;
+  const { fallback } = resolution;
+  const resolved = directed?.model || resolution.resolved;
+  const effort = directed?.model ? directed.effort || resolution.effort : resolution.effort;
+  // With a saved asked-for model the backup never counts: a switch VibeCodes
+  // made at claim is already saved as that model.
+  const viaFallback = !directed?.model && modelUsed !== resolved && modelUsed === fallback;
   const modelMatches = modelUsed === resolved || viaFallback;
 
   // QA Bug-1: a model mismatch alone is dishonored, regardless of effort.
@@ -1449,6 +1483,17 @@ export async function claimNextStep(
     ? applyModelAvailability(tierResolutionForSwitch, unavailableModel).switched
     : false;
 
+  // Card 1553d11e: remember what this claim asked for (after any switch to the
+  // backup), so completion judges against it and not the settings of that
+  // later moment. Best effort; Auto steps have nothing to remember.
+  const claimResolution = updated.model_tier
+    ? resolveModelTier(updated.model_tier as "frontier" | "standard" | "cheap", claimingAgent, userModelTierMap, platformDefaults, updated.effort_override)
+    : null;
+  if (claimResolution) {
+    const appliedForSnapshot = applyModelAvailability(claimResolution, unavailableModel);
+    await saveDirectedSnapshot(ctx, updated.id, { model: appliedForSnapshot.directed, effort: claimResolution.effort });
+  }
+
   // Tasks 59889027 / e16d69e8: an in-app terminal launch defines the board's
   // agents as real subagents (`claude --agents`, or temporary Codex agent-role
   // files — see src/lib/terminal/session-agents.ts). Name the one for this
@@ -1563,7 +1608,19 @@ export async function claimNextStep(
           persona_role: matchedBot!.role,
         }
       : {}),
-    ...(nativeSubagent ? { native_subagent: { name: nativeSubagent.name, tag: nativeSubagent.tag } } : {}),
+    ...(nativeSubagent
+      ? {
+          native_subagent: {
+            name: nativeSubagent.name,
+            tag: nativeSubagent.tag,
+            // The model and effort to pass on the Agent tool every time (the
+            // same values as the MANDATORY MODEL clause). Absent on an Auto step.
+            // Claude only: Codex's own spawn path is unchanged.
+            ...(claimingAgent === "claude" && nativeSubagent.spawnModel ? { spawn_model: nativeSubagent.spawnModel } : {}),
+            ...(claimingAgent === "claude" && nativeSubagent.spawnEffort ? { spawn_effort: nativeSubagent.spawnEffort } : {}),
+          },
+        }
+      : {}),
     instruction,
     // Sent once; the instruction only points at it.
     rework_instructions,
@@ -1739,7 +1796,13 @@ export async function completeStep(
   const completingAgent: AgentKind = params.agent ?? "claude";
   let userModelTierMap: unknown = null;
   let platformDefaults: AgentAwarePlatformModelDefaults = SEED_AGENT_AWARE_PLATFORM_MODEL_DEFAULTS;
-  if (step.model_tier && params.model_used && params.model_used !== "unknown") {
+  // Card 1553d11e: the model that really ran, measured from the reported
+  // token rows, beats what the session says it used. Claude steps only: Codex
+  // reports no measured rows.
+  const measuredModel = completingAgent === "claude" ? mainMeasuredModel(parseReportedUsage(params.usage)) : null;
+  const modelForAdherence = measuredModel ?? params.model_used;
+  const directedSnapshot = step.model_tier && modelForAdherence ? await readDirectedSnapshot(ctx, params.step_id) : null;
+  if (step.model_tier && modelForAdherence && modelForAdherence !== "unknown") {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
         .from("users")
@@ -1754,11 +1817,12 @@ export async function completeStep(
   const { executedModel, executedEffort, tierHonored } = resolveTierAdherence(
     step.model_tier,
     completingAgent,
-    params.model_used,
+    modelForAdherence,
     params.reasoning_effort_used,
     userModelTierMap,
     platformDefaults,
-    step.effort_override
+    step.effort_override,
+    directedSnapshot
   );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
@@ -1766,25 +1830,10 @@ export async function completeStep(
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used, params.subagent_type, step.bot_id, nativeNamed);
   const ranInOwnAgentValue = await ranInOwnAgentFor(ctx, step, completingAgent, nativeNamed);
 
-  // Auto-switch, free signal (card 5d0665a2, AC-4): an orchestrator that
-  // obeyed the directive's advisory line and substituted the backup has
-  // ALREADY told us the primary was unavailable — it reported model_used =
-  // the fallback. Recording that here is what lets the NEXT claim on this
-  // board skip the dead model without anyone passing a new parameter.
-  //
-  // Deliberately compared against the tier's NORMAL, UNSWITCHED resolution
-  // (Design Review note 1) — if this claim had itself been switched onto the
-  // backup, comparing against the switched pair would infer unavailability
-  // backwards and mark the backup dead instead of the primary. completeStep
-  // never calls applyModelAvailability for exactly this reason.
-  const substitutionResolution = step.model_tier
-    ? resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override)
-    : null;
-  const substitutedUnavailable = inferUnavailableFromSubstitution(
-    step.model_tier,
-    substitutionResolution,
-    params.model_used
-  );
+  // Card 1553d11e: a reported model is never taken as proof that a model is
+  // down. A self-reported backup with no switch directed by VibeCodes is only a
+  // mismatch (judged above, flagged below). The board's "unavailable" marker is
+  // written only by fail_step with model_unavailable: true.
 
   // Token is single-use: clear both hashes as part of completion (design
   // §1.2 — work_token_hash is cleared everywhere claim_token_hash is).
@@ -1828,37 +1877,6 @@ export async function completeStep(
   // Card ba37039b: this attempt's token use, for the admin step report.
   await recordStepUsage(ctx, step, newStatus, params.usage, params.usage_unavailable, completingAgent);
 
-  // Auto-switch marker (card 5d0665a2, AC-4/AC-7): a SEPARATE, best-effort
-  // write after the main completion update. On a DB where migration 00195
-  // hasn't landed yet, this must never take down completion itself — a
-  // deploy can reach production a little before or after its migration.
-  // Only ever SET the marker, never null an existing one over it — a
-  // completion that reports the normal model, or omits model_used entirely,
-  // is not evidence the primary came back (that's the marker's own midnight
-  // UTC expiry to decide, not this step).
-  if (substitutedUnavailable && substitutionResolution) {
-    try {
-      const { error: markerError } = await ctx.supabase
-        .from("task_workflow_steps")
-        .update({
-          model_unavailable_at: new Date().toISOString(),
-          model_unavailable_model: substitutionResolution.resolved,
-        })
-        .eq("id", params.step_id);
-      if (markerError) {
-        logger.warn("model-availability marker write failed on complete_step — completion unaffected", {
-          stepId: params.step_id,
-          error: markerError.message,
-        });
-      }
-    } catch (err) {
-      logger.warn("model-availability marker write threw on complete_step — completion unaffected", {
-        stepId: params.step_id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
 
@@ -1866,14 +1884,17 @@ export async function completeStep(
   // blocked — a logger.warn for ops-side aggregation, AND an auto step comment
   // (plain 'comment' type, not 'failure') so the mismatch is visible in-product.
   // Honored/unknown completions post nothing.
+  const modelNotice = tierHonored === false
+    ? modelNoticeFor(measuredModel, directedSnapshot, resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override))
+    : null;
   if (tierHonored === false) {
     const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", completingAgent, userModelTierMap, platformDefaults, step.effort_override);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
       agent: completingAgent,
-      directed: resolution?.resolved,
-      directedEffort: resolution?.effort,
+      directed: directedSnapshot?.model || resolution?.resolved,
+      directedEffort: (directedSnapshot?.model ? directedSnapshot.effort : null) || resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
       executedEffort,
@@ -1889,12 +1910,16 @@ export async function completeStep(
       // from what the admin actually configured. Codex model ids are never
       // capitalized (reviewer build condition) — tierMismatchSentence's
       // `agent` argument gates that.
-      content: tierMismatchSentence(
-        step.model_tier as string,
-        executedModel as string,
-        platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[completingAgent]?.model,
-        completingAgent
-      ),
+      // Card 1553d11e: when the measured model differs from what was asked, say
+      // so in the approved plain wording (still one comment per attempt).
+      content: modelNotice
+        ? modelNotice.comment
+        : tierMismatchSentence(
+            step.model_tier as string,
+            executedModel as string,
+            directedSnapshot?.model || platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[completingAgent]?.model,
+            completingAgent
+          ),
     });
   }
 
@@ -1922,6 +1947,7 @@ export async function completeStep(
     ...(runComplete && (await workflowFinishedReply(ctx, updated.task_id, params.from_session))),
     status: newStatus,
     output_source: outputSource,
+    ...(modelNotice && { model_notice: modelNotice.notice }),
     ...(passedOutputIgnored && { passed_output_ignored: true }),
     ...(newStatus === "awaiting_approval" && {
       message: "This step is now awaiting human approval. STOP here — do NOT call approve_step yourself. Show the user the helper's summary (the full write-up is on the board; fetch it with get_task step_ids only if they ask) and wait for them to explicitly instruct you to approve it.",
@@ -2135,7 +2161,14 @@ export async function failStep(
   // configured backup, and an orchestrator reporting an unreachable model has
   // no model_used to give (that's the whole point of the flag).
   const modelUnavailableFlagged = params.model_unavailable === true;
-  if (step.model_tier && ((params.model_used && params.model_used !== "unknown") || modelUnavailableFlagged)) {
+  // Card 1553d11e: as in complete_step, the measured model beats the report.
+  // A human rejecting an awaiting_approval step ran no helper, so no usage.
+  const measuredModel = failingAgent === "claude" && step.status === "in_progress"
+    ? mainMeasuredModel(parseReportedUsage(params.usage))
+    : null;
+  const modelForAdherence = measuredModel ?? params.model_used;
+  const directedSnapshot = step.model_tier && modelForAdherence ? await readDirectedSnapshot(ctx, params.step_id) : null;
+  if (step.model_tier && ((modelForAdherence && modelForAdherence !== "unknown") || modelUnavailableFlagged)) {
     const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
       ctx.supabase
         .from("users")
@@ -2150,11 +2183,12 @@ export async function failStep(
   const { executedModel, executedEffort, tierHonored } = resolveTierAdherence(
     step.model_tier,
     failingAgent,
-    params.model_used,
+    modelForAdherence,
     params.reasoning_effort_used,
     userModelTierMap,
     platformDefaults,
-    step.effort_override
+    step.effort_override,
+    directedSnapshot
   );
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
@@ -2400,14 +2434,17 @@ export async function failStep(
   // P2c FR-12 (Design-Review CONDITION 4): dishonored tiers are signalled, never
   // blocked — mirrors complete_step. Plain 'comment' type (not 'failure') so it
   // reads distinctly from the failure comment above. Honored/unknown post nothing.
+  const modelNotice = tierHonored === false
+    ? modelNoticeFor(measuredModel, directedSnapshot, resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults, step.effort_override))
+    : null;
   if (tierHonored === false) {
     const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", failingAgent, userModelTierMap, platformDefaults, step.effort_override);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
       agent: failingAgent,
-      directed: resolution?.resolved,
-      directedEffort: resolution?.effort,
+      directed: directedSnapshot?.model || resolution?.resolved,
+      directedEffort: (directedSnapshot?.model ? directedSnapshot.effort : null) || resolution?.effort,
       fallback: resolution?.fallback,
       executed: executedModel,
       executedEffort,
@@ -2421,12 +2458,14 @@ export async function failStep(
       // Nick's gate note 4: name the LIVE platform default, never a stale
       // hard-coded constant (mirrors complete_step above). Codex model ids
       // are never capitalized (reviewer build condition).
-      content: tierMismatchSentence(
-        step.model_tier as string,
-        executedModel as string,
-        platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[failingAgent]?.model,
-        failingAgent
-      ),
+      content: modelNotice
+        ? modelNotice.comment
+        : tierMismatchSentence(
+            step.model_tier as string,
+            executedModel as string,
+            directedSnapshot?.model || platformDefaults.defaults[step.model_tier as "frontier" | "standard" | "cheap"]?.[failingAgent]?.model,
+            failingAgent
+          ),
     });
   }
 
@@ -2518,7 +2557,7 @@ export async function failStep(
       .eq("id", step.run_id);
   }
 
-  return { step: savedStep(updated), steps_reset: stepsReset };
+  return { step: savedStep(updated), steps_reset: stepsReset, ...(modelNotice && { model_notice: modelNotice.notice }) };
 }
 
 // --- Skip Step ---

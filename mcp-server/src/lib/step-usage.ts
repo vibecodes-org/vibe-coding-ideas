@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
-import { stepUsageSchema } from "../../../src/lib/step-cost/usage-schema";
+import { stepUsageSchema, type StepUsage } from "../../../src/lib/step-cost/usage-schema";
 import { noScriptMarker, stepUsageCommand } from "../../../src/lib/step-cost/usage-command";
 import type { McpContext } from "../context";
 
@@ -120,6 +120,26 @@ export function floorNegativeTokens(value: unknown, stepId?: string): unknown {
   if (!floored) return value;
   logger.info("step usage: negative token count floored at zero", { stepId });
   return { ...(value as Record<string, unknown>), models };
+}
+
+/**
+ * Card 1553d11e: the reported usage as a checked object, or null when there is
+ * none or it can't be read. No logging or writing: recordStepUsage does that,
+ * so the two can't drift only because this one is quiet.
+ */
+export function parseReportedUsage(raw: unknown): StepUsage | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    if (value.trim().startsWith("NO_TRANSCRIPT")) return null;
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  const parsed = stepUsageSchema.safeParse(floorNegativeTokens(value));
+  return parsed.success ? parsed.data : null;
 }
 
 type Outcome = "completed" | "awaiting_approval" | "failed";

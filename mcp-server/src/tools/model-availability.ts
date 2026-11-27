@@ -15,9 +15,10 @@
 //   2. Stop aiming later steps at a model we have same-day evidence is dead
 //      (applyModelAvailability, driven by a live marker).
 //
-// Everything here keys off self-reported data and is therefore advisory in
-// the same sense the rest of the tier machinery is. That is a known ceiling,
-// not an oversight — see the card.
+// The only thing that marks a model unavailable is an explicit report: a failed
+// step passing model_unavailable: true. A model name reported on completion is
+// never taken as proof a model is down (card 1553d11e); it is only compared
+// with what was asked, and a mismatch is flagged, not acted on.
 
 /** Resolution produced by resolveModelTier: the directed model and its configured backup. */
 export interface TierResolution {
@@ -148,31 +149,6 @@ export function shouldRescueStep(
   if (!modelUnavailableReported) return { rescue: false, reason: "not-a-model-failure" };
   if (alreadyRescued) return { rescue: false, reason: "already-rescued" };
   return { rescue: true, reason: "rescued" };
-}
-
-/**
- * The free signal (AC-4). An orchestrator that obeyed the existing advisory
- * line and substituted the backup has already told us the primary was
- * unavailable — it reports `model_used` = the fallback. No new parameter, no
- * extra cooperation, and it works retroactively for any orchestrator already
- * following the directive today.
- *
- * `resolution` must be the tier's normal, UNSWITCHED resolution (Design
- * Review note 1) — comparing against an already-switched pair would infer
- * unavailability backwards and mark the backup dead instead of the primary.
- *
- * Requires a tier (an Auto step promised nothing, so a differing model there
- * is a free choice, not evidence) and a real difference between the two.
- */
-export function inferUnavailableFromSubstitution(
-  tier: string | null | undefined,
-  resolution: TierResolution | null,
-  modelUsed: string | null | undefined
-): boolean {
-  if (!tier || !resolution || !modelUsed) return false;
-  if (modelUsed === "unknown" || modelUsed === "other") return false;
-  if (resolution.fallback === resolution.resolved) return false;
-  return modelUsed === resolution.fallback;
 }
 
 /**

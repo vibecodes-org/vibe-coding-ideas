@@ -223,6 +223,32 @@ describe("sessionAgentClaimHint", () => {
     expect(instruction).toContain('subagent_type "vc-atlas-37e8ffb2-frontier"');
   });
 
+  // Card 1553d11e: a session's helper copies can predate the user's settings.
+  describe("always passes the claim's model and effort (card 1553d11e)", () => {
+    it("tells the session to pass the model and effort on an exact tag match, not to pass none", () => {
+      const { instruction, spawnModel, spawnEffort } = sessionAgentClaimHint({ bot: ATLAS, tier: "standard", model: "sonnet", effort: "medium" });
+      expect(instruction).toContain('Always pass model "sonnet" and effort "medium" on the Agent tool');
+      expect(instruction).not.toContain("pass no persona text or model");
+      expect(instruction).not.toContain("pass no model parameter");
+      expect(spawnModel).toBe("sonnet");
+      expect(spawnEffort).toBe("medium");
+    });
+
+    it("an Auto step has no model to pass: wording and spawn fields stay as before", () => {
+      const h = sessionAgentClaimHint({ bot: ATLAS, tier: null, model: null, effort: null });
+      expect(h.instruction).toContain("pass no model parameter");
+      expect(h.instruction).not.toContain("Always pass model");
+      expect(h.spawnModel).toBeNull();
+      expect(h.spawnEffort).toBeNull();
+    });
+
+    it("Codex text is unchanged: no Agent-tool model passing", () => {
+      const h = sessionAgentClaimHint({ bot: ATLAS, tier: "standard", model: "gpt-5", effort: "high", agent: "codex" });
+      expect(h.instruction).not.toContain("Always pass model");
+      expect(h.instruction).toContain("its definition already sets this step's model and reasoning effort");
+    });
+  });
+
   // Card db4c7f7b: the board-named agent is never optional.
   describe("never silently swaps the named agent for a stand-in (card db4c7f7b)", () => {
     const hint = () => sessionAgentClaimHint({ bot: ATLAS, tier: "frontier", model: "opus", effort: "high" }).instruction;
@@ -267,9 +293,10 @@ describe("sessionAgentClaimHint", () => {
     });
   });
 
-  it("stays compact: under 1,400 characters without the sync clause, under 2,200 with it", () => {
+  // Card 1553d11e: always passing the model and effort added a sentence (limit was 1,400).
+  it("stays compact: under 1,500 characters without the sync clause, under 2,200 with it", () => {
     const base = { bot: ATLAS, tier: "frontier" as const, model: "opus", effort: "high" };
-    expect(sessionAgentClaimHint(base).instruction.length).toBeLessThan(1400);
+    expect(sessionAgentClaimHint(base).instruction.length).toBeLessThan(1500);
     const withSync = sessionAgentClaimHint({ ...base, ideaId: "i", stepId: "s" }).instruction;
     expect(withSync.length).toBeLessThan(2200);
   });
