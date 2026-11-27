@@ -273,7 +273,7 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
 // generic P1 "duplicate session" error copy for exactly this one cause.
 function BroughtBackOverlay() {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+    <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       <Undo2 className="h-7 w-7 text-sky-400" />
       <div className="text-base font-semibold text-sky-400">Brought back to the dock</div>
       <p className="max-w-md text-[13px] text-zinc-400">
@@ -308,7 +308,7 @@ function PopoutOverlay({
   const e2ee = e2eeCopyFor(useTerminalOs());
   if (view === "session-ended") {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <Square className="h-7 w-7 text-zinc-400" />
         <div className="text-base font-semibold text-zinc-300">Session ended</div>
         <p className="max-w-md text-[13px] text-zinc-400">
@@ -326,7 +326,7 @@ function PopoutOverlay({
   // dock's panel (design §3), just without the "Update now" action.
   if (view === "e2ee-required") {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <Shield className="h-7 w-7 text-sky-400" aria-hidden="true" />
         <div className="text-base font-semibold text-zinc-100">{e2ee.required.title}</div>
         <p className="max-w-md text-[13px] text-zinc-400">{e2ee.required.body}</p>
@@ -340,7 +340,7 @@ function PopoutOverlay({
   // wired to the same reattach path the dock's Reconnect button uses).
   if (view === "integrity-failed") {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <ShieldAlert className="h-7 w-7 text-amber-400" aria-hidden="true" />
         <div className="text-base font-semibold text-amber-400">{e2ee.integrity.title}</div>
         <p className="max-w-md text-[13px] text-zinc-400">{e2ee.integrity.body}</p>
@@ -353,7 +353,7 @@ function PopoutOverlay({
 
   if (view === "error") {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
         <CircleAlert className="h-7 w-7 text-rose-400" />
         <div className="text-base font-semibold text-rose-400">Couldn&apos;t reattach</div>
         <p className="max-w-md text-[13px] text-zinc-400">
@@ -380,7 +380,7 @@ function PopoutOverlay({
   // reattaching to a session that was already live a moment ago in another
   // window, so this is normally near-instant).
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 py-6 text-center">
+    <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       <Loader2 className="h-7 w-7 animate-spin text-amber-400" />
       <div className="text-base font-semibold text-amber-400">Reattaching…</div>
       <p className="max-w-md text-[13px] text-zinc-400">Connecting this window to your session.</p>
