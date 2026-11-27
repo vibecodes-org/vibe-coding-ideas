@@ -192,8 +192,14 @@
  *  0.4.1 (card 9b5336c1, 26 Nov 2026): on Mac and Linux the board agents are
  *  passed to Claude in coded form, so another agent's `pkill -f` can no longer
  *  match words in them and end in-app sessions. An older helper still works but
- *  its sessions stay exposed: a firm nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.1";
+ *  its sessions stay exposed: a firm nudge.
+ *  0.4.2 (card 9b5336c1 stage 2, 27 Nov 2026): the session's messaging note
+ *  and hook settings come off the readable launch line, the peer-hook secret
+ *  is read from an owner-only file instead of the command line, and Windows
+ *  sessions on big boards can start. An older helper still works but stays
+ *  exposed to pattern kills and can't start big-board Windows sessions: same
+ *  firm nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.2";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
