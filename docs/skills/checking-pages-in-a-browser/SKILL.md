@@ -6,7 +6,7 @@ description: How pages are opened and checked on Nick's machine: previewing loca
 # Checking pages in a browser
 
 **Local pages and mocks: Playwright** (the `browser_*` tools).
-- It refuses `file://` addresses. Serve the folder first, for example `python3 -m http.server 8123 -d <folder>`, and stop the server when you're done.
+- It refuses `file://` addresses. Serve the folder first, for example `python3 -m http.server 8123 -d <folder> >/dev/null 2>&1 & echo $!`. Note the number it prints (each command runs in a fresh shell, so a variable won't carry over), and when you're done stop it with `kill <that number>`. Never stop a server with `pkill -f` or `killall`: they also kill other sessions' processes.
 - It saves screenshots only inside `.playwright-mcp/` in the current folder. Move the ones you keep, and clear that folder before any commit.
 
 **The live site: the Claude in Chrome tools.** That's Nick's own Chrome, where he is already signed in. Playwright's browser isn't signed in, and the sign-in page has a CAPTCHA: don't try to get past it.
