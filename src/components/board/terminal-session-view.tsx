@@ -1104,7 +1104,13 @@ export function TerminalSessionView({
             fallback. The popped-out placeholder above no longer matches this
             height — it sizes to its own (much shorter) content instead, so
             popping out hands the board back its full height (card 534d2049). */}
-        <div className="relative h-[var(--vc-term-dock-h,38vh)] min-h-[160px]">
+        {/* The "next card" bar lives INSIDE this fixed-height box and the
+            terminal shrinks to make room for it (Nick, 27 Nov 2026). It used
+            to sit below the box, so its pane grew taller than the other split
+            pane, which stretched to match and showed a black gap under its
+            own input line. xterm refits through its ResizeObserver. */}
+        <div className="flex h-[var(--vc-term-dock-h,38vh)] min-h-[160px] flex-col">
+        <div className="relative min-h-0 flex-1">
           <div
             ref={containerRef}
             className={cn("h-full w-full px-3 py-2", state.status === "disconnected" && "opacity-45")}
@@ -1215,8 +1221,9 @@ export function TerminalSessionView({
           )}
         </div>
 
-        {/* "Next card" bar (card 7c728159): below the terminal, connected tabs only, never in a pop-out. */}
-        {state.status === "connected" && !poppedOut && offerStrip}
+        {/* "Next card" bar (card 7c728159): under the terminal, inside its box, connected tabs only, never in a pop-out. */}
+        {state.status === "connected" && !poppedOut && offerStrip && <div className="flex-none">{offerStrip}</div>}
+        </div>
 
         {/* Input affordance — read-write bar, or the read-only explanatory note. */}
         {state.status === "connected" && (
