@@ -1207,14 +1207,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // idle ("One-time setup"), and the next run of this effect bailed on the
   // now-empty `paneKeys` — so it never self-healed (3→2 did, by accident, on
   // the second pass). Only ever follow a pane whose session still exists.
+  //
+  // Bug (Nick's field report 2026-11-27): when the screen got too narrow for
+  // three panes the dock folded to tabs, but `paneKeys` stays filled so the
+  // split can come back. This effect then kept snapping `activeKey` back to
+  // the focused pane, so clicking any other tab did nothing until a refresh.
+  // While folded, the tab the person picks wins, and it becomes the focused
+  // pane for when the split returns.
   useEffect(() => {
     if (splitPreferred !== true || paneKeys.length === 0) return;
+    if (!splitActive) {
+      const picked = paneKeys.indexOf(activeKey);
+      if (picked !== -1 && picked !== focusedPaneIndex) setFocusedPaneIndex(picked);
+      return;
+    }
     const target = paneKeys[focusedPaneIndex] ?? paneKeys[0];
     if (!target || target === activeKey) return;
     // Closed pane — leave `removeEntry`'s neighbor pick alone.
     if (!sessions.some((s) => s.key === target)) return;
     setActiveKey(target);
-  }, [splitPreferred, paneKeys, focusedPaneIndex, activeKey, sessions]);
+  }, [splitPreferred, splitActive, paneKeys, focusedPaneIndex, activeKey, sessions]);
 
   // Width-shrink fallback WHILE already rendering at the current pane
   // count (as opposed to the count-transition effect above, which handles
