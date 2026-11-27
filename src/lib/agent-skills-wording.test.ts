@@ -36,8 +36,11 @@ describe("shipped agent skill wording", () => {
       join(SKILLS_DIR, "checking-pages-in-a-browser", "SKILL.md"),
       "utf8"
     );
-    expect(text).toContain('kill "$pid"');
-    expect(text).toContain("$!");
+    // Each agent command runs in a fresh shell, so a saved $pid variable is
+    // empty in the next command: the number must be printed and passed by hand.
+    expect(text).toContain("& echo $!");
+    expect(text).toContain("kill <that number>");
+    expect(text).not.toContain("$pid");
     expect(text).toMatch(/never[^\n]*pkill -f[^\n]*killall/i);
   });
 });
