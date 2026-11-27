@@ -2,9 +2,9 @@ import Link from "next/link";
 import { SquareTerminal, ArrowLeft } from "lucide-react";
 
 export const metadata = {
-  title: "Launching Claude Code Guide",
+  title: "Launching Claude Code or Codex Guide",
   description:
-    "Start Claude Code already wired to your board with one click — deep-link launch, project folder setup, copy-command fallback, and more on VibeCodes.",
+    "Start Claude Code or Codex already wired to your board with one click — deep-link launch, project folder setup, copy-command fallback, and more on VibeCodes.",
 };
 
 export default function LaunchingClaudeCodePage() {
@@ -23,7 +23,7 @@ export default function LaunchingClaudeCodePage() {
           <SquareTerminal className="h-6 w-6 text-emerald-400" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">
-          Launching Claude Code
+          Launching Claude Code or Codex
         </h1>
       </div>
 
@@ -61,7 +61,7 @@ export default function LaunchingClaudeCodePage() {
           <h2 className="mb-4 text-2xl font-semibold">Where You Can Launch From</h2>
           <p className="mb-4 text-muted-foreground">
             There are several entry points throughout the app — wherever you
-            are, launching Claude Code is close at hand:
+            are, launching Claude Code or Codex is close at hand:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -73,8 +73,16 @@ export default function LaunchingClaudeCodePage() {
               will open
             </li>
             <li>
-              <strong className="text-foreground">Task card menu</strong> —{" "}
-              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>
+              <strong className="text-foreground">Task card menu</strong> (the{" "}
+              <strong className="text-foreground">...</strong> on a card) —
+              four launch choices:{" "}
+              <strong className="text-foreground">&quot;Launch in Claude Code&quot;</strong>,{" "}
+              <strong className="text-foreground">&quot;Launch in browser terminal&quot;</strong>,{" "}
+              <strong className="text-foreground">&quot;Launch in Codex&quot;</strong>{" "}
+              and{" "}
+              <strong className="text-foreground">&quot;Launch Codex in browser terminal&quot;</strong>.
+              The browser ones are marked Beta, and show only where the browser
+              terminal is available
             </li>
             <li>
               <strong className="text-foreground">Task detail header</strong> — a
@@ -124,8 +132,9 @@ export default function LaunchingClaudeCodePage() {
               a session.
             </li>
             <li>
-              <strong className="text-foreground">&quot;Recorded folder for this board&quot;</strong>{" "}
-              — a line showing the saved folder path when one is set
+              <strong className="text-foreground">&quot;This machine — &lt;name&gt;&quot;</strong>{" "}
+              — a line showing this computer&apos;s name and the folder saved
+              for it, when one is set
             </li>
             <li>
               <strong className="text-foreground">&quot;Start a new project…&quot;</strong>
@@ -133,7 +142,9 @@ export default function LaunchingClaudeCodePage() {
             <li>
               <strong className="text-foreground">&quot;Copy launch command&quot;</strong>{" "}
               — copies the command for your remembered agent (shown on the
-              item&apos;s sub-line)
+              item&apos;s sub-line). Copying can fail (the browser may refuse
+              it); if so you&apos;ll see an error message, so try again or
+              select the command by hand
             </li>
             <li>
               <strong className="text-foreground">&quot;Set exact folder (advanced)…&quot;</strong>
@@ -160,18 +171,19 @@ export default function LaunchingClaudeCodePage() {
               </a>{" "}
               for Codex — whichever is your remembered agent
             </li>
-            <li>
-              <strong className="text-foreground">&quot;Set up&quot; screen</strong>{" "}
-              — when Claude Code or Codex isn&apos;t on your Mac and your
-              helper is up to date, the tab offers to install it for you. It
-              runs the maker&apos;s own installer in the tab so you can watch,
-              then helps you sign in, then starts it. Nothing runs until you
-              click. If you&apos;d rather do it yourself, it shows the one
-              command to paste into Terminal. On a Windows PC this is coming
-              next: for now the tab asks you to install it using the maker&apos;s
-              own instructions, then click Start again.
-            </li>
           </ul>
+          <p className="mt-4 text-muted-foreground">
+            <strong className="text-foreground">The &quot;Set up&quot; panel</strong>{" "}
+            is not a menu item. It appears inside the terminal itself when
+            Claude Code or Codex isn&apos;t on your Mac and your helper is up
+            to date: the tab offers to install it for you. It runs the
+            maker&apos;s own installer in the tab so you can watch, then helps
+            you sign in, then starts it. Nothing runs until you click. If
+            you&apos;d rather do it yourself, it shows the one command to paste
+            into Terminal. On a Windows PC this is coming next: for now the tab
+            asks you to install it using the maker&apos;s own instructions,
+            then click Start again.
+          </p>
         </section>
 
         <section>
@@ -211,9 +223,13 @@ export default function LaunchingClaudeCodePage() {
               &quot;In the browser&quot;
             </strong>{" "}
             (Beta) from the launch menu. It opens a live terminal
-            docked to the bottom of the board, mirroring Claude Code running
-            on your own machine through the VibeCodes helper — your code
-            never leaves your computer.
+            docked to the bottom of the board, mirroring Claude Code or Codex
+            running on your own machine through the VibeCodes helper. Your code
+            and files stay on your computer. When you use the browser terminal,
+            what it shows travels through VibeCodes to reach your browser. With
+            an up-to-date helper it&apos;s encrypted end to end, so VibeCodes
+            can&apos;t read it. If a session isn&apos;t, it shows a
+            &quot;Not encrypted end-to-end&quot; label.
           </p>
           <p className="mb-4 text-muted-foreground">
             You&apos;re not limited to one session at a time. You can run
@@ -284,6 +300,34 @@ export default function LaunchingClaudeCodePage() {
               panic button for when you just want everything stopped.
             </li>
             <li>
+              <strong className="text-foreground">Up to 10 sessions</strong>{" "}
+              can run at once. Two or three can be shown{" "}
+              <strong className="text-foreground">side by side</strong> in the
+              dock (on a screen wide enough), and in the session list you can{" "}
+              <strong className="text-foreground">rename</strong> a session or
+              end it
+            </li>
+            <li>
+              <strong className="text-foreground">Read-only</strong> — each
+              session has a Read-only switch. With it on you can watch the
+              session live while your keystrokes are ignored
+            </li>
+            <li>
+              <strong className="text-foreground">Helper row</strong> — under
+              the session list, a row shows whether the VibeCodes helper is
+              running, its version and your computer&apos;s name. From there
+              you can stop it, and when an update is available an{" "}
+              <strong className="text-foreground">Update now</strong> button
+              installs it (about a minute; your files are untouched)
+            </li>
+            <li>
+              <strong className="text-foreground">First time on a computer</strong>{" "}
+              — the dock shows a one-time install panel for the helper (about a
+              minute). On a device that can&apos;t run the browser terminal
+              (it works on desktop Mac and Windows for now), the panel says so
+              and points you to the terminal-window launch instead
+            </li>
+            <li>
               <strong className="text-foreground">Pop-out</strong> — any
               in-browser session can be popped into its own browser window
               (the tab&apos;s{" "}
@@ -299,7 +343,7 @@ export default function LaunchingClaudeCodePage() {
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              Each session runs a real Claude Code process on your computer —
+              Each session runs a real Claude Code or Codex process on your computer —
               running several at once uses more of your machine&apos;s
               resources. Close sessions you&apos;re done with rather than
               leaving them running indefinitely.
@@ -453,26 +497,30 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Privacy of Your Folder Path</h2>
+          <h2 className="mb-4 text-2xl font-semibold">Privacy</h2>
+          <p className="mb-4 text-muted-foreground">
+            Your code and files stay on your computer. When you use the
+            browser terminal, what it shows travels through VibeCodes to reach
+            your browser. With an up-to-date helper it&apos;s encrypted end to
+            end, so VibeCodes can&apos;t read it. If a session isn&apos;t, it
+            shows a &quot;Not encrypted end-to-end&quot; label.
+          </p>
+          <h3 className="mb-3 mt-6 text-lg font-medium">Your folder path</h3>
           <p className="mb-4 text-muted-foreground">
             The folder path you save is private to you. As the app states:
           </p>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">
-                &quot;Stored on this device only — never shown to other
-                collaborators.&quot;
+                &quot;Saved to your account — follows you between browsers,
+                never shown to other collaborators.&quot;
               </strong>
             </p>
           </div>
           <p className="mt-4 text-muted-foreground">
-            The path is saved in your browser&apos;s{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              localStorage
-            </code>
-            , per machine — so the{" "}
+            The path is saved to your account for each computer, so the{" "}
             <strong className="text-foreground">&quot;This machine&quot;</strong>{" "}
-            line in the dropdown only ever reflects the device you are on.
+            line in the dropdown shows the folder for the computer you are on.
           </p>
         </section>
 
@@ -494,10 +542,10 @@ export default function LaunchingClaudeCodePage() {
               <strong className="text-foreground">
                 &quot;Launch command copied — paste it in your terminal&quot;
               </strong>{" "}
-              — and you paste it straight into your terminal. The copy fallback{" "}
-              <strong className="text-foreground">always works</strong> and
-              carries the full instructions, so reach for it any time the deep
-              link doesn&apos;t open.
+              — and you paste it straight into your terminal. It carries the full instructions, so
+              reach for it any time the deep link doesn&apos;t open. If the
+              copy itself fails, you&apos;ll see a message saying the command
+              couldn&apos;t be copied.
             </p>
           </div>
         </section>
@@ -569,7 +617,7 @@ export default function LaunchingClaudeCodePage() {
               back the same way. Two Claude Code sessions use Claude Code&apos;s
               own built-in messaging. When a Codex session is involved, the
               VibeCodes helper app passes the message across on your Mac: it
-              never leaves the Mac and never goes through VibeCodes&apos;
+              stays on your Mac and is not sent through VibeCodes&apos;
               servers. On a Windows PC this is coming next.
             </p>
             <p className="mt-3 text-sm text-muted-foreground">

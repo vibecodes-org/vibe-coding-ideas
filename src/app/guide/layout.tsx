@@ -10,7 +10,7 @@ import {
 export const metadata = {
   title: "Guide",
   description:
-    "Learn how to use VibeCodes — share ideas, collaborate with developers, manage projects with kanban boards, and integrate with Claude Code via MCP.",
+    "Learn how to use VibeCodes: ideas, boards, AI agents, workflows, and launching Claude Code or Codex.",
 };
 
 export default function GuideLayout({

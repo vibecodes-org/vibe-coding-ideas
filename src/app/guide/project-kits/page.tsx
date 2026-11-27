@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Package, ArrowLeft } from "lucide-react";
 
 export const metadata = {
-  title: "Project Kits Guide",
+  title: "Project Types Guide",
   description:
-    "Apply a one-click Project Kit to set up agents, workflow templates, labels, and workflow triggers for your board — without ever touching your tasks.",
+    "Pick a project type to set up agents, workflow templates, labels, and label rules for your board in one click. No cards are added.",
 };
 
 export default function ProjectKitsPage() {
@@ -22,21 +22,24 @@ export default function ProjectKitsPage() {
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
           <Package className="h-6 w-6 text-violet-400" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Project Kits</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Project Types</h1>
       </div>
 
       <div className="space-y-10">
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">What a Project Kit Is</h2>
+          <h2 className="mb-4 text-2xl font-semibold">What a Project Type Is</h2>
           <p className="mb-4 text-muted-foreground">
-            A Project Kit is a one-click bundle that sets up your board for a
-            specific project type. Instead of manually creating agents, wiring
-            up workflows, and inventing a label scheme, you pick the kind of
-            project you&apos;re building and VibeCodes configures everything for
-            you in seconds.
+            A project type is a one-click bundle that sets up your board for a
+            specific kind of project. Instead of manually creating agents,
+            wiring up workflows, and inventing a label scheme, you pick the
+            kind of project you&apos;re building and VibeCodes configures
+            everything for you in seconds. There are six: Web Application,
+            Mobile App, API / Backend, AI App / Agent, Game, and Custom.
           </p>
           <p className="text-muted-foreground">
-            The kit dialog is titled{" "}
+            The buttons in the app still call these{" "}
+            <strong className="text-foreground">kits</strong>. The dialog is
+            titled{" "}
             <strong className="text-foreground">
               &quot;Apply a Project Kit&quot;
             </strong>{" "}
@@ -49,24 +52,25 @@ export default function ProjectKitsPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">What a Kit Bundles</h2>
+          <h2 className="mb-4 text-2xl font-semibold">What a Project Type Bundles</h2>
           <p className="mb-4 text-muted-foreground">
-            A kit sets up exactly four things — nothing more:
+            It sets up exactly four things — nothing more:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">AI Agents</strong> — a team
-              of personas matched to the project type (for example Full Stack,
-              UX, and QA agents).
+              of personas matched to the project type: Planner, Full Stack
+              Engineer, Code Reviewer, QA Engineer and DevOps Engineer. AI App
+              / Agent and Game have no DevOps Engineer.
             </li>
             <li>
               <strong className="text-foreground">Workflow Templates</strong> —
-              reusable multi-step processes such as Bug Fix or Feature
-              Development.
+              reusable multi-step processes such as Bug Fix or Technical
+              Spike.
             </li>
             <li>
               <strong className="text-foreground">Board Labels</strong> —
-              colored labels for categorization like Bug, Feature, and UX.
+              colored labels for categorization like Bug and Feature.
             </li>
             <li>
               <strong className="text-foreground">Workflow Triggers</strong> —
@@ -78,19 +82,19 @@ export default function ProjectKitsPage() {
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            Kits Never Touch Your Tasks
+            No Cards Are Added
           </h2>
           <p className="mb-4 text-muted-foreground">
-            This is the most important thing to know about Project Kits:
-            applying one is completely safe on an existing board. It only sets
+            Applying a project type is safe on an existing board. It only sets
             up the four building blocks above — it does not add, remove, move,
-            or modify any of your tasks.
+            or modify any of your cards. The one effect on existing cards: a
+            card that already carries a label matching a new label rule gets
+            that workflow attached.
           </p>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">No tasks are added.</strong>{" "}
-              This kit sets up your agents, workflows, labels and triggers only
-              — your existing board tasks stay exactly as they are.
+              <strong className="text-foreground">No cards are added.</strong>{" "}
+              Your existing cards stay exactly where they are.
             </p>
           </div>
         </section>
@@ -98,25 +102,35 @@ export default function ProjectKitsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">How to Apply a Kit</h2>
           <p className="mb-4 text-muted-foreground">
-            There are three entry points for applying a Project Kit:
+            There are several ways in:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">During onboarding</strong> —
-              you pick a project type while describing your project, and the
-              matching kit is applied automatically.
+              <strong className="text-foreground">The New Idea form</strong> —
+              pick a project type and the matching kit is applied when you
+              create the idea.
             </li>
             <li>
-              <strong className="text-foreground">From the board empty state</strong>{" "}
-              — a fresh board offers to set itself up with a kit.
+              <strong className="text-foreground">The welcome steps</strong> —
+              you pick a project type while describing your first project.
             </li>
             <li>
-              <strong className="text-foreground">From the Workflows tab</strong>{" "}
-              — use the{" "}
+              <strong className="text-foreground">The board setup banner</strong>{" "}
+              — offers <strong className="text-foreground">Apply a Kit</strong>{" "}
+              while the board has no workflows.
+            </li>
+            <li>
+              <strong className="text-foreground">The Workflows tab</strong> —
+              the{" "}
               <strong className="text-foreground">
                 &quot;Apply a Project Kit&quot;
               </strong>{" "}
-              button at any time.
+              button shows only while the board has no workflows yet.
+            </li>
+            <li>
+              <strong className="text-foreground">Claude Code or Codex</strong>{" "}
+              — using the <code className="rounded bg-muted px-1.5 py-0.5 text-xs">apply_kit</code>{" "}
+              tool.
             </li>
           </ul>
           <p className="text-muted-foreground">
@@ -190,27 +204,27 @@ export default function ProjectKitsPage() {
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>It skips agents whose role you already have.</li>
             <li>It skips labels that already exist.</li>
-            <li>It imports each workflow template once.</li>
-            <li>
+                        <li>
               A partial failure on one item doesn&apos;t block the rest — the
               kit applies everything it can.
             </li>
           </ul>
           <p className="text-muted-foreground">
-            After wiring up the triggers, a kit also{" "}
+            After wiring up the label rules, applying from the website also{" "}
             <strong className="text-foreground">
               retroactively applies them to your existing labelled tasks
             </strong>
             . So a task that is already labelled{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">bug</code>{" "}
             gets the Bug Fix workflow attached automatically — without you
-            having to re-label anything.
+            having to re-label anything. (The Claude Code and Codex tool does
+            not do this step.)
           </p>
         </section>
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            Via MCP / Claude Code
+            Via Claude Code or Codex
           </h2>
           <p className="mb-4 text-muted-foreground">
             Kits are also available programmatically. Using the{" "}
@@ -221,8 +235,9 @@ export default function ProjectKitsPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               apply_kit
             </code>{" "}
-            MCP tools, you — or an agent — can browse and apply a Project Kit at
-            any time directly from Claude Code, without opening the dialog.
+            MCP tools, you — or an agent — can browse and apply a project type at
+            any time directly from Claude Code or Codex, without opening the
+            dialog.
           </p>
           <p className="text-muted-foreground">
             See the{" "}
@@ -239,7 +254,7 @@ export default function ProjectKitsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Where to Go Next</h2>
           <p className="mb-4 text-muted-foreground">
-            A Project Kit is really a head start on two of the most powerful
+            A project type is really a head start on two of the most powerful
             features in VibeCodes. Dig deeper here:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
@@ -259,7 +274,7 @@ export default function ProjectKitsPage() {
               >
                 AI Agent Teams guide &rarr;
               </Link>{" "}
-              — the agents a kit creates for your board.
+              — the agents a project type creates for your board.
             </li>
           </ul>
         </section>

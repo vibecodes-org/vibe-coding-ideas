@@ -2,36 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Rocket,
-  Lightbulb,
-  Users,
-  MessageCircle,
-  LayoutGrid,
-  Package,
-  Cable,
-  SquareTerminal,
-  Zap,
-  Bot,
-  Shield,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const GUIDE_SECTIONS = [
-  { slug: "getting-started", title: "Getting Started", icon: Rocket },
-  { slug: "ideas-and-voting", title: "Ideas & Voting", icon: Lightbulb },
-  { slug: "collaboration", title: "Collaboration", icon: Users },
-  { slug: "discussions", title: "Discussions", icon: MessageCircle },
-  { slug: "kanban-boards", title: "Kanban Boards", icon: LayoutGrid },
-  { slug: "project-kits", title: "Project Kits", icon: Package },
-  { slug: "workflows", title: "Workflows", icon: Zap },
-  { slug: "mcp-integration", title: "MCP Integration", icon: Cable },
-  { slug: "launching-claude-code", title: "Launching Claude Code", icon: SquareTerminal },
-  { slug: "ai-agent-teams", title: "AI Agent Teams", icon: Bot },
-  { slug: "admin", title: "Admin", icon: Shield },
-] as const;
+import { GUIDE_SECTIONS } from "./guide-sections";
 
 function getCurrentSection(pathname: string) {
   const slug = pathname.replace("/guide/", "").replace("/guide", "");

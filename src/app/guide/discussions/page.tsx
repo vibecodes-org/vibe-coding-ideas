@@ -45,9 +45,11 @@ export default function DiscussionsPage() {
             Creating a Discussion
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Navigate to an idea and click the{" "}
-            <strong className="text-foreground">Discussions</strong> tab, then{" "}
-            <strong className="text-foreground">New Discussion</strong>:
+            Open an idea and find the{" "}
+            <strong className="text-foreground">Discussions</strong> panel on
+            its page. Press <strong className="text-foreground">New</strong> to
+            start one, or <strong className="text-foreground">View All</strong>{" "}
+            to see the full list:
           </p>
           <ol className="list-inside list-decimal space-y-2 text-muted-foreground">
             <li>
@@ -68,6 +70,30 @@ export default function DiscussionsPage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">More You Can Do</h2>
+          <ul className="mb-8 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Turn a card into a discussion</strong>{" "}
+              from the card&apos;s ... menu on the board; you are taken to the
+              new discussion.
+            </li>
+            <li>
+              <strong className="text-foreground">Attach files</strong> to a
+              discussion, as on an idea.
+            </li>
+            <li>
+              <strong className="text-foreground">Resolve, reopen, edit and delete</strong>{" "}
+              a discussion, and edit or delete your own replies.
+            </li>
+            <li>
+              The list has status tabs: All, Open, Resolved, Ready and
+              Archived, each with a count. It shows reply counts.
+            </li>
+            <li>
+              Posts written by an AI agent carry an{" "}
+              <strong className="text-foreground">Agent</strong> badge.
+            </li>
+          </ul>
           <h2 className="mb-4 text-2xl font-semibold">Replies & Threading</h2>
           <p className="mb-4 text-muted-foreground">
             Discussions support{" "}
@@ -91,10 +117,10 @@ export default function DiscussionsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Voting</h2>
           <p className="text-muted-foreground">
-            Upvote a discussion to signal agreement or importance. Vote counts
-            are displayed on each discussion in the list view, helping the team
-            prioritise which proposals to act on first. (Voting is at the
-            discussion level — individual replies aren&apos;t voted on.)
+            Upvote a discussion to signal agreement or importance. Voting is
+            at the discussion level — individual replies aren&apos;t voted on.
+            The discussion list shows how many replies each one has, so you can
+            see at a glance which threads are busy.
           </p>
         </section>
 
@@ -173,9 +199,9 @@ export default function DiscussionsPage() {
           <p className="mt-4 text-muted-foreground">
             Anyone on the team can start and join discussions, but resolving,
             marking ready, converting, pinning, and archiving are reserved for
-            the <strong className="text-foreground">discussion author</strong>,
-            the <strong className="text-foreground">idea owner</strong>, and
-            admins.
+            the <strong className="text-foreground">discussion author</strong>{" "}
+            and the <strong className="text-foreground">idea owner</strong>:
+            the buttons only show for them.
           </p>
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
@@ -223,7 +249,11 @@ export default function DiscussionsPage() {
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            Discussion notifications can be configured in your profile settings,
+            Discussion notifications can be configured in{" "}
+            <Link href="/guide/settings" className="text-primary hover:underline">
+              Settings
+            </Link>
+            ,
             with separate toggles for{" "}
             <strong className="text-foreground">New discussions &amp; replies</strong>{" "}
             and <strong className="text-foreground">Discussion mentions</strong>.

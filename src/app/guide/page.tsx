@@ -1,126 +1,7 @@
 import Link from "next/link";
-import {
-  Rocket,
-  Lightbulb,
-  Users,
-  MessageSquare,
-  LayoutDashboard,
-  Package,
-  Workflow,
-  Terminal,
-  SquareTerminal,
-  Bot,
-  Shield,
-} from "lucide-react";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PipelineFlow } from "@/components/landing/pipeline-flow";
-
-const sections = [
-  {
-    title: "Getting Started",
-    description:
-      "Set up your account, walk through guided onboarding, and get your AI-powered board running in minutes.",
-    icon: Rocket,
-    href: "/guide/getting-started",
-    iconClass: "text-primary",
-    bgClass: "bg-primary/10",
-  },
-  {
-    title: "Ideas & Voting",
-    description:
-      "How ideas work, status lifecycle, voting, comments, and visibility settings.",
-    icon: Lightbulb,
-    href: "/guide/ideas-and-voting",
-    iconClass: "text-amber-400",
-    bgClass: "bg-amber-500/10",
-  },
-  {
-    title: "Collaboration",
-    description:
-      "Join projects, add collaborators, and stay updated with notifications.",
-    icon: Users,
-    href: "/guide/collaboration",
-    iconClass: "text-blue-400",
-    bgClass: "bg-blue-500/10",
-  },
-  {
-    title: "Discussions",
-    description:
-      "Plan features with threaded discussions, vote on proposals, and convert threads into board tasks.",
-    icon: MessageSquare,
-    href: "/guide/discussions",
-    iconClass: "text-violet-400",
-    bgClass: "bg-violet-500/10",
-  },
-  {
-    title: "Kanban Boards",
-    description:
-      "Manage tasks with drag-and-drop boards, labels, due dates, file attachments, and AI task generation.",
-    icon: LayoutDashboard,
-    href: "/guide/kanban-boards",
-    iconClass: "text-blue-400",
-    bgClass: "bg-blue-500/10",
-  },
-  {
-    title: "Project Kits",
-    description:
-      "One-click bundles of agents, workflows, labels, and triggers tailored to your project type — without touching your tasks.",
-    icon: Package,
-    href: "/guide/project-kits",
-    iconClass: "text-violet-400",
-    bgClass: "bg-violet-500/10",
-  },
-  {
-    title: "Workflows",
-    description:
-      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
-    icon: Workflow,
-    href: "/guide/workflows",
-    iconClass: "text-amber-400",
-    bgClass: "bg-amber-500/10",
-  },
-  {
-    title: "MCP Integration",
-    description:
-      "Connect Claude Code to VibeCodes via MCP and let your AI agents manage tasks, workflows, and boards from the terminal.",
-    icon: Terminal,
-    href: "/guide/mcp-integration",
-    iconClass: "text-cyan-400",
-    bgClass: "bg-cyan-500/10",
-  },
-  {
-    title: "Launching Claude Code",
-    description:
-      "Start Claude Code from any board or task with one click — auto-connected via MCP and ready to pick up work.",
-    icon: SquareTerminal,
-    href: "/guide/launching-claude-code",
-    iconClass: "text-emerald-400",
-    bgClass: "bg-emerald-500/10",
-  },
-  {
-    title: "AI Agent Teams",
-    description:
-      "Create agent personas, enhance ideas with AI, generate board tasks, manage usage credits, and bring your own API key.",
-    icon: Bot,
-    href: "/guide/ai-agent-teams",
-    iconClass: "text-emerald-400",
-    bgClass: "bg-emerald-500/10",
-  },
-  {
-    title: "Admin",
-    description:
-      "AI usage analytics, per-user rate limits, user management, and content moderation.",
-    icon: Shield,
-    href: "/guide/admin",
-    iconClass: "text-violet-400",
-    bgClass: "bg-violet-500/10",
-  },
-];
+import { GUIDE_SECTIONS } from "@/components/guide/guide-sections";
 
 export default function GuidePage() {
   return (
@@ -128,27 +9,35 @@ export default function GuidePage() {
       <div className="mb-12 text-center">
         <h1 className="text-4xl font-bold tracking-tight">VibeCodes Guide</h1>
         <p className="mt-4 text-lg text-muted-foreground">
-          Everything you need to know about sharing ideas, collaborating with
-          developers, and building projects together.
+          Type one line about an idea and get a whole project: a board full of
+          cards, a team of AI agents, and workflows that move the cards for you.
+          This guide explains every part, in plain English.
         </p>
       </div>
 
       <div className="mb-12 rounded-xl border border-border bg-muted/30 p-8">
         <p className="mb-6 text-center text-sm font-medium text-muted-foreground">
-          The VibeCodes pipeline
+          How it fits together
         </p>
         <PipelineFlow />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {sections.map((section) => (
-          <Link key={section.href} href={section.href}>
+        {GUIDE_SECTIONS.map((section) => (
+          <Link key={section.slug} href={`/guide/${section.slug}`}>
             <Card className="h-full transition-colors hover:border-primary/50">
               <CardHeader>
                 <div className={`mb-2 flex h-10 w-10 items-center justify-center rounded-lg ${section.bgClass}`}>
                   <section.icon className={`h-5 w-5 ${section.iconClass}`} />
                 </div>
-                <CardTitle className="text-lg">{section.title}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  {section.title}
+                  {section.isNew && (
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+                      New page
+                    </span>
+                  )}
+                </CardTitle>
                 <CardDescription>{section.description}</CardDescription>
               </CardHeader>
             </Card>

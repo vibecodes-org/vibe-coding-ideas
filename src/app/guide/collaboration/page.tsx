@@ -61,8 +61,8 @@ export default function CollaborationPage() {
           </h2>
           <p className="mb-4 text-muted-foreground">
             As the idea author, you can directly add collaborators to your
-            project — especially useful for private ideas where self-joining
-            isn&apos;t possible.
+            project. Nobody joins on their own: every idea needs a request that
+            you accept, or you add the person yourself.
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -74,7 +74,13 @@ export default function CollaborationPage() {
             <li>Search for users by name or email</li>
             <li>The added user receives a notification letting them know</li>
             <li>
-              You can remove collaborators from the collaborator list at any time
+              There is no remove button on the website. To take someone off a
+              project, ask Claude Code or Codex (the{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
+                remove_collaborator
+              </code>{" "}
+              tool). Collaborators can leave on their own with{" "}
+              <strong className="text-foreground">Leave Project</strong>
             </li>
           </ul>
         </section>
@@ -131,10 +137,12 @@ export default function CollaborationPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> Customize your
               notifications in your{" "}
-              <strong className="text-foreground">profile settings</strong>.
-              Each in-app notification type can be toggled individually, and
-              email notifications have a separate master switch so you can
-              choose exactly how you want to stay informed.
+              <Link href="/guide/settings" className="text-primary hover:underline">
+                Settings
+              </Link>
+              . Each in-app notification type can be toggled individually, and
+              email notifications have a separate switch so you can choose
+              exactly how you want to stay informed.
             </p>
           </div>
         </section>
@@ -142,8 +150,8 @@ export default function CollaborationPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Team Profiles</h2>
           <p className="text-muted-foreground">
-            Every user has a public profile showing their ideas, collaborations,
-            and activity. Visit a collaborator&apos;s profile to see what else
+            Every user has a profile with three tabs: Ideas, Collaborations and
+            Comments. You need to be signed in to view one. Visit a collaborator&apos;s profile to see what else
             they&apos;re working on and find more projects to join.
           </p>
         </section>

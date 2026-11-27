@@ -4,7 +4,7 @@ import { Bot, ArrowLeft } from "lucide-react";
 export const metadata = {
   title: "AI Agent Teams Guide",
   description:
-    "Create distinct AI agent personas for parallel Claude Code sessions. Assign different roles, track who did what, and scale your AI workforce.",
+    "Build your AI team: add ready-made agents from the library, write your own, give them skills, and see who did what on your board.",
 };
 
 export default function AiAgentTeamsPage() {
@@ -29,32 +29,35 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Why Agent Teams?</h2>
           <p className="text-muted-foreground">
-            When you use Claude Code with VibeCodes, all actions show up as
-            &quot;Claude Code&quot; in your activity log, comments, and task
-            assignments. That works fine for a single session — but what if you
-            want to run <strong className="text-foreground">multiple Claude Code
-            sessions in parallel</strong>, each working on different tasks?
+            An agent is a named AI teammate with a role and instructions, such as
+            a Planner, a Full Stack Engineer or a Code Reviewer. Each step of a
+            workflow is given to one agent, so the right kind of AI does each
+            job and you can see exactly which agent did what.
           </p>
           <p className="mt-3 text-muted-foreground">
-            Agent teams solve this. You create distinct agent personas — like
-            &quot;Dev Alpha&quot;, &quot;QA Tester&quot;, or &quot;UX Scout&quot;
-            — each with its own name, role, and system prompt. When a Claude Code
-            session operates as an agent, all its actions are attributed to that
-            specific agent. You can see exactly which AI agent did what.
+            You can add ready-made agents from the library, write your own, or
+            import one from a skill file. Claude Code or Codex then does the
+            work as that agent, and its comments and activity show the
+            agent&apos;s own name and icon.
           </p>
         </section>
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Creating Agents</h2>
           <p className="mb-4 text-muted-foreground">
-            Agents are managed on the{" "}
+            The quickest start is the{" "}
             <Link href="/agents" className="text-primary hover:underline">
               Agents
             </Link>{" "}
-            page:
+            page&apos;s <strong className="text-foreground">Community</strong>{" "}
+            tab: the library of ready-made agents. Click{" "}
+            <strong className="text-foreground">+ Add</strong> on one and it
+            becomes yours (the button then reads{" "}
+            <strong className="text-foreground">Added</strong>). To write your
+            own instead:
           </p>
           <ol className="list-inside list-decimal space-y-2 text-muted-foreground">
-            <li>Click <strong className="text-foreground">Create Agent</strong></li>
+            <li>On the My Agents tab, click <strong className="text-foreground">Create Agent</strong></li>
             <li>Enter a name (e.g., &quot;Dev Alpha&quot;)</li>
             <li>
               Pick a <strong className="text-foreground">role template</strong>{" "}
@@ -216,16 +219,21 @@ export default function AiAgentTeamsPage() {
             Publishing is opt-in. When you publish an agent, it appears in the
             Community tab for all users to see. Published agents always display
             their system prompt, so others can understand how they work before
-            cloning.
+            adding them.
           </p>
 
-          <h3 className="mb-3 mt-6 text-lg font-medium">Cloning Agents</h3>
+          <h3 className="mb-3 mt-6 text-lg font-medium">Adding Agents from the Library</h3>
           <p className="mb-4 text-muted-foreground">
             See an agent you like in the Community tab? Click{" "}
-            <strong className="text-foreground">Clone</strong> to create an
-            independent copy in your account. Cloned agents track their origin
-            for provenance, but there&apos;s no live sync — you&apos;re free to
-            customise your copy however you want.
+            <strong className="text-foreground">+ Add</strong> to put an
+            independent copy in your account (it then shows{" "}
+            <strong className="text-foreground">Added</strong>). The copy
+            remembers where it came from, but there&apos;s no live sync, so
+            you&apos;re free to change it however you want. The community
+            list has a search box, a role filter and a sort:{" "}
+            <strong className="text-foreground">Most Popular</strong>,{" "}
+            <strong className="text-foreground">Newest</strong> or{" "}
+            <strong className="text-foreground">Most Added</strong>.
           </p>
 
           <h3 className="mb-3 mt-6 text-lg font-medium">
@@ -243,9 +251,9 @@ export default function AiAgentTeamsPage() {
 
           <h3 className="mb-3 mt-6 text-lg font-medium">Agent Profiles</h3>
           <p className="text-muted-foreground">
-            Each agent has a public profile page showing its bio, its skills
+            Each agent has its own page (you need to be signed in to see it) showing its bio, its skills
             (each listed in full, with the text you can open and read), its
-            system prompt, stats (times cloned, upvotes), and the ideas
+            system prompt, stats (times added, upvotes), and the ideas
             it&apos;s contributing to. Unpublished agents are only visible to
             their owner.
           </p>
@@ -261,20 +269,21 @@ export default function AiAgentTeamsPage() {
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              On the idea detail page, find the{" "}
-              <strong className="text-foreground">Agents</strong> section
-              (between Collaborators and Description)
+              On the board, open the{" "}
+              <strong className="text-foreground">AI Team</strong> tab (next to
+              Board and Workflows). The idea page has an Agents panel too
             </li>
             <li>
-              Click <strong className="text-foreground">Add Agent</strong> to
-              allocate one of your active agents to the pool
+              Tick the agents you want and click{" "}
+              <strong className="text-foreground">Add N Agents</strong> to put
+              them in the team
             </li>
             <li>
-              Pooled agents appear in the board&apos;s assignee dropdown,
-              grouped by their owner&apos;s name
+              Team agents appear in the board&apos;s assignee dropdown, under{" "}
+              <strong className="text-foreground">Agents</strong>
             </li>
             <li>
-              Any team member can assign pooled agents to tasks — not just the
+              Any team member can assign team agents to tasks — not just the
               agent&apos;s owner
             </li>
             <li>
@@ -291,8 +300,11 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             On any kanban board, open a task and look for the{" "}
             <strong className="text-foreground">assignee dropdown</strong>.
-            Agents from the idea&apos;s agent team appear grouped by their
-            owner&apos;s name, marked with an agent icon.
+            The dropdown has three groups:{" "}
+            <strong className="text-foreground">Unassigned</strong>,{" "}
+            <strong className="text-foreground">Collaborators</strong> and{" "}
+            <strong className="text-foreground">Agents</strong> (the idea&apos;s
+            agent team, marked with an agent icon).
           </p>
           <p className="text-muted-foreground">
             When you assign an agent to a task, VibeCodes automatically adds it
@@ -308,7 +320,15 @@ export default function AiAgentTeamsPage() {
           </h2>
           <p className="mb-4 text-muted-foreground">
             Agents don&apos;t need to be manually activated. Assign one to a
-            workflow step (or a task), then ask Claude Code to work the board:
+            workflow step (or a task), then ask Claude Code or Codex to work the
+            board. The easiest way is the Launch button on the board; see{" "}
+            <Link href="/guide/launching-claude-code" className="text-primary hover:underline">
+              Launching Claude Code or Codex
+            </Link>
+            . A card&apos;s menu has{" "}
+            <strong className="text-foreground">Launch in Codex</strong> next
+            to the Claude Code choices. You can also type to a session you
+            started yourself:
           </p>
           <div className="space-y-3">
             <div className="rounded-lg bg-muted p-4">
@@ -446,8 +466,8 @@ export default function AiAgentTeamsPage() {
             <li>
               <strong className="text-foreground">Create two agents</strong> on
               the <Link href="/agents" className="text-primary hover:underline">Agents</Link>{" "}
-              page: &quot;Dev Alpha&quot; (Developer role) and &quot;QA
-              Scout&quot; (QA Tester role)
+              page: &quot;Dev Alpha&quot; (Full Stack Engineer role) and &quot;QA
+              Scout&quot; (QA Engineer role)
             </li>
             <li>
               <strong className="text-foreground">Attach a workflow</strong> to
@@ -506,8 +526,8 @@ export default function AiAgentTeamsPage() {
                     set_agent_identity
                   </td>
                   <td className="py-2">
-                    Switch to a specific agent (by name or ID). Identity is
-                    persisted across sessions. Call with no args to reset.
+                    Retired: does nothing now. Agents are chosen per workflow
+                    step.
                   </td>
                 </tr>
                 <tr className="border-b border-border/50">
@@ -515,7 +535,7 @@ export default function AiAgentTeamsPage() {
                     get_agent_prompt
                   </td>
                   <td className="py-2">
-                    Retrieve the system prompt for the active agent
+                    Retrieve an agent&apos;s system prompt
                   </td>
                 </tr>
                 <tr className="border-b border-border/50">
@@ -531,7 +551,7 @@ export default function AiAgentTeamsPage() {
                     get_agent_mentions
                   </td>
                   <td className="py-2">
-                    Get recent @mentions of the active agent across discussions
+                    Get recent @mentions of an agent across discussions
                     and comments
                   </td>
                 </tr>
@@ -548,7 +568,7 @@ export default function AiAgentTeamsPage() {
                     clone_agent
                   </td>
                   <td className="py-2">
-                    Clone a published community agent into your account
+                    Add a published community agent to your account (the + Add button)
                   </td>
                 </tr>
                 <tr className="border-b border-border/50">
@@ -634,7 +654,7 @@ export default function AiAgentTeamsPage() {
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">Import a skill</strong> —
+              <strong className="text-foreground">Import Agent</strong> —
               create or update an agent from a{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 SKILL.md
@@ -642,8 +662,9 @@ export default function AiAgentTeamsPage() {
               file or a URL
             </li>
             <li>
-              <strong className="text-foreground">Add from the directory</strong>{" "}
-              — browse and attach skills to an existing agent
+              <strong className="text-foreground">Add Skill</strong>{" "}
+              — on an agent&apos;s own page, browse the directory and attach
+              skills to that agent
             </li>
             <li>
               <strong className="text-foreground">Use via Claude Code</strong>{" "}
@@ -684,7 +705,7 @@ export default function AiAgentTeamsPage() {
             </li>
             <li>
               <strong className="text-foreground">Assignee dropdown</strong>{" "}
-              — agents appear in a separate &quot;My Agents&quot; section with
+              — agents appear in their own &quot;Agents&quot; group with
               agent icons
             </li>
             <li>
@@ -706,14 +727,15 @@ export default function AiAgentTeamsPage() {
             Your agent profiles double as{" "}
             <strong className="text-foreground">AI personas</strong> for the
             built-in AI features. When using{" "}
-            <strong className="text-foreground">Enhance with AI</strong>{" "}
+            <strong className="text-foreground">Draft with AI</strong> or{" "}
+            <strong className="text-foreground">Expand with AI</strong>{" "}
             (on ideas), you can select any active agent as a persona. The
             agent&apos;s system prompt is injected into the AI call, guiding
             Claude&apos;s style and focus.
           </p>
           <p className="text-muted-foreground">
             For example, selecting a &quot;Planner&quot; agent persona
-            when enhancing an idea will produce a more requirements-focused
+            when drafting an idea will produce a more requirements-focused
             description, while a &quot;Full Stack Engineer&quot; persona will emphasise
             technical implementation details.
           </p>
@@ -725,9 +747,10 @@ export default function AiAgentTeamsPage() {
           </h2>
           <p className="mb-4 text-muted-foreground">
             Every new user gets{" "}
-            <strong className="text-foreground">10 free AI credits</strong>{" "}
-            when they sign up. These are lifetime credits (not daily) and
-            apply to both idea enhancement and board task generation.
+            <strong className="text-foreground">10 starter AI credits</strong>{" "}
+            when they sign up. These are lifetime credits (not daily). Every
+            AI button uses one credit: Draft with AI, Expand with AI, AI
+            Generate Tasks and the rest.
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -739,15 +762,19 @@ export default function AiAgentTeamsPage() {
               prompting you to add your own API key
             </li>
             <li>
-              The onboarding &quot;Enhance with AI&quot; step is a separate
-              freebie — it doesn&apos;t count against your 10 credits
+              In the welcome steps, drafting your idea with AI uses one
+              credit; building your first board&apos;s cards is free
+            </li>
+            <li>
+              As a safety limit, platform credits cover at most 50 AI calls a
+              day. Your own key has no such limit
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> Add your own{" "}
               <strong className="text-foreground">Anthropic API key</strong>{" "}
-              in your profile settings for{" "}
+              in your Settings for{" "}
               <strong className="text-foreground">unlimited AI use</strong>.
               BYOK users bypass the credit system entirely.
             </p>
@@ -759,16 +786,16 @@ export default function AiAgentTeamsPage() {
             Bring Your Own Key (BYOK)
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Once you&apos;ve used your free starter credits, add your own{" "}
+            Once you&apos;ve used your starter credits, add your own{" "}
             <strong className="text-foreground">Anthropic API key</strong>{" "}
             for unlimited AI use. This is also useful if you want to control
             your own usage and costs.
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              Go to your <strong className="text-foreground">profile
-              page</strong> and click{" "}
-              <strong className="text-foreground">AI API Key</strong>
+              Open <strong className="text-foreground">Settings</strong>{" "}
+              (see the <Link href="/guide/settings" className="text-primary hover:underline">Settings guide</Link>)
+              and find <strong className="text-foreground">AI API Key</strong>
             </li>
             <li>
               Enter your Anthropic API key — it&apos;s{" "}
@@ -776,10 +803,27 @@ export default function AiAgentTeamsPage() {
               and never exposed in the UI after saving
             </li>
             <li>
-              When your key is set, all AI features (enhance, generate) use
+              When your key is set, all AI features (draft, expand, generate) use
               your key. Remove it to revert to the platform key.
             </li>
           </ul>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Models and Effort</h2>
+          <p className="text-muted-foreground">
+            Which AI model a step runs on, and how hard it thinks, is set per
+            kind of step in{" "}
+            <Link href="/settings" className="text-primary hover:underline">
+              Settings
+            </Link>
+            {" "}under <strong className="text-foreground">Model Tiers</strong>,
+            separately for Claude and for Codex. See the{" "}
+            <Link href="/guide/settings" className="text-primary hover:underline">
+              Settings guide
+            </Link>
+            .
+          </p>
         </section>
 
         <section>
@@ -789,7 +833,7 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             Instead of rewriting prompts every time, you can{" "}
             <strong className="text-foreground">save prompt templates</strong>{" "}
-            that appear in the AI enhancement and generation dialogs.
+            that appear in the AI draft, expand and generation dialogs.
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -809,7 +853,10 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Managing Agents</h2>
           <p className="text-muted-foreground">
-            On the <Link href="/agents" className="text-primary hover:underline">Agents</Link> page, you can:
+            On the <Link href="/agents" className="text-primary hover:underline">Agents</Link> page you can{" "}
+            <strong className="text-foreground">Create Agent</strong> or{" "}
+            <strong className="text-foreground">Import Agent</strong> (from a
+            skill file or URL). For each agent you can:
           </p>
           <ul className="mt-3 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -828,8 +875,7 @@ export default function AiAgentTeamsPage() {
             </li>
             <li>
               <strong className="text-foreground">Delete</strong> an agent — this
-              removes it permanently. The default &quot;Claude Code&quot; agent
-              cannot be deleted.
+              removes it permanently
             </li>
           </ul>
         </section>

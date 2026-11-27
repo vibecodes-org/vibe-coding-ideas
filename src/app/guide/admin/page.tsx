@@ -4,7 +4,7 @@ import { Shield, ArrowLeft } from "lucide-react";
 export const metadata = {
   title: "Admin Guide",
   description:
-    "Admin features on VibeCodes — AI usage analytics, per-user rate limits, user management, and content moderation.",
+    "Admin features on VibeCodes: AI usage and costs, feedback, the agent and workflow libraries, featured teams, and the cost report.",
 };
 
 export default function AdminPage() {
@@ -35,20 +35,21 @@ export default function AdminPage() {
             user record. Admins can:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
-            <li>View the AI usage analytics dashboard</li>
-            <li>Grant AI starter credits to any user</li>
+            <li>Open the Admin page and its tabs (listed below)</li>
             <li>View per-user credit balances and platform AI costs</li>
-            <li>Manage Featured Agent Teams and Project Kits</li>
+            <li>Manage the library of ready-made agents, workflows and Featured Teams</li>
+            <li>Read user feedback and the MCP tool usage figures</li>
+            <li>Delete any idea</li>
             <li>View private ideas (even without being a collaborator)</li>
           </ul>
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Super admins:</strong>{" "}
-              destructive operations — such as deleting other users&apos;
-              ideas or non-admin accounts — are gated behind a separate{" "}
+              a few operations are gated behind a separate{" "}
               <strong className="text-foreground">is_super_admin</strong>{" "}
-              flag. A regular admin can monitor and grant credits but cannot
-              perform these destructive actions.
+              flag: granting AI credits, deleting users, and the Platform tab.
+              A regular admin can monitor everything else, including deleting
+              an idea, but cannot do these.
             </p>
           </div>
         </section>
@@ -57,8 +58,17 @@ export default function AdminPage() {
           <h2 className="mb-4 text-2xl font-semibold">In-app AI Dashboard</h2>
           <p className="mb-4 text-muted-foreground">
             The admin page at{" "}
-            <strong className="text-foreground">/admin</strong> provides a
-            comprehensive view of AI usage across the platform. The dashboard
+            <strong className="text-foreground">/admin</strong> has these
+            tabs:{" "}
+            <strong className="text-foreground">In-app AI</strong>,{" "}
+            <strong className="text-foreground">Feedback</strong>,{" "}
+            <strong className="text-foreground">Agents</strong>,{" "}
+            <strong className="text-foreground">Teams</strong>,{" "}
+            <strong className="text-foreground">Workflows</strong>,{" "}
+            <strong className="text-foreground">MCP Tools</strong>,{" "}
+            <strong className="text-foreground">Token usage</strong> and{" "}
+            <strong className="text-foreground">Platform</strong> (super admins
+            only). The In-app AI tab shows AI usage across the platform and
             includes:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
@@ -69,12 +79,12 @@ export default function AdminPage() {
             </li>
             <li>
               <strong className="text-foreground">Filter bar</strong> — filter
-              by date range and action type (enhance idea, generate tasks, etc.)
+              by date range and action type (draft or expand an idea, generate tasks, etc.)
             </li>
             <li>
               <strong className="text-foreground">Recent activity log</strong>{" "}
-              — a chronological list of all AI calls showing user, action,
-              token counts, and model used
+              — a chronological list of the latest 1,000 AI calls showing
+              user, action, source, token counts and time
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -93,14 +103,14 @@ export default function AdminPage() {
             <strong className="text-foreground">
               User Credits &amp; Platform Costs
             </strong>{" "}
-            table for managing each user&apos;s free AI allowance:
+            table showing each user&apos;s AI allowance:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">Grant credits</strong>{" "}
-              — add AI starter credits to any user (1–100 at a time). New users
-              start with 10 free credits; these are a lifetime allowance, not a
-              daily reset.
+              (super admins only) — add AI starter credits to any user (1–100
+              at a time). New users start with 10 starter credits; these are a
+              lifetime allowance, not a daily reset.
             </li>
             <li>
               <strong className="text-foreground">View balances</strong>{" "}
@@ -116,13 +126,13 @@ export default function AdminPage() {
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Daily safety cap:</strong>{" "}
-              separately from per-user credits, the platform enforces a global
-              daily limit on platform-key AI calls (the{" "}
+              separately from credits, the platform limits how many
+              platform-key AI calls each person can make per day (the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                 PLATFORM_AI_DAILY_LIMIT
               </code>{" "}
               environment variable, default 50). This is an abuse backstop, not
-              a per-user allocation.
+              an allowance.
             </p>
           </div>
         </section>
@@ -221,16 +231,19 @@ export default function AdminPage() {
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            Featured Teams & Project Kits
+            Agents, Teams and Workflows
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Admins can also manage{" "}
+            The <strong className="text-foreground">Agents</strong> tab manages
+            the VibeCodes agents that appear in the library of ready-made
+            agents. The <strong className="text-foreground">Teams</strong> tab
+            manages{" "}
             <strong className="text-foreground">Featured Agent Teams</strong>{" "}
             — curated collections of agents that appear in the Agents Hub for
-            all users to clone.{" "}
-            <strong className="text-foreground">Project Kits</strong>, which
-            bundle agents, workflows, labels, and triggers for specific project
-            types, are also managed by admins.
+            all users to add in one go. The{" "}
+            <strong className="text-foreground">Workflows</strong> tab manages
+            the library of ready-made workflows users can import. Project types
+            have no admin screen; they are set up by the VibeCodes team.
           </p>
         </section>
 
@@ -247,16 +260,14 @@ export default function AdminPage() {
             </li>
             <li>
               <strong className="text-foreground">Delete users</strong>{" "}
-              — remove non-admin user accounts. This permanently deletes the
-              user and cascades to all their data. Admin accounts cannot be
-              deleted by other admins.
+              (super admins only) — remove non-admin user accounts. This permanently deletes the
+              user and cascades to all their data. Admin accounts are protected from deletion by other admins.
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Note:</strong> Deletion is
-              permanent and cannot be undone. Notifications that referenced
-              deleted ideas will persist but show the idea as removed.
+              permanent and cannot be undone.
             </p>
           </div>
         </section>

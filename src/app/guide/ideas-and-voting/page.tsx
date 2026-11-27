@@ -93,13 +93,19 @@ export default function IdeasAndVotingPage() {
             <strong className="text-foreground">incorporated</strong> to show
             the feedback was acted on.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            You can reply to a comment, and replies can go three levels deep.
+            Type <strong className="text-foreground">@</strong> to mention
+            someone in a comment. You can edit or delete your own comments.
+          </p>
         </section>
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Visibility</h2>
           <p className="mb-4 text-muted-foreground">
             Ideas can be <strong className="text-foreground">public</strong> or{" "}
-            <strong className="text-foreground">private</strong>:
+            <strong className="text-foreground">private</strong>. New ideas
+            start public; private is optional:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -123,11 +129,26 @@ export default function IdeasAndVotingPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">AI Enhancement</h2>
           <p className="mb-4 text-muted-foreground">
-            If your account has <strong className="text-foreground">AI
-            enabled</strong>, you can use AI to improve your idea descriptions.
-            On the idea detail page, click the{" "}
-            <strong className="text-foreground">&quot;Enhance with AI&quot;</strong>{" "}
-            button to open the enhancement dialog.
+            AI can write up or improve your idea description. It works with your
+            own Anthropic key (set in{" "}
+            <Link href="/guide/settings" className="text-primary hover:underline">
+              Settings
+            </Link>
+            ) or with your starter credits; each use takes one credit unless
+            you use your own key.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            On the New Idea form, the button reads{" "}
+            <strong className="text-foreground">Draft with AI</strong> while the
+            box holds just a line or two, and{" "}
+            <strong className="text-foreground">Expand with AI</strong> once
+            there is real text. <strong className="text-foreground">Undo</strong>{" "}
+            brings back what you had before.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            On an existing idea, the author can click{" "}
+            <strong className="text-foreground">Enhance with AI</strong> to open
+            the enhancement dialog:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -165,7 +186,18 @@ export default function IdeasAndVotingPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Inline Editing</h2>
+          <h2 className="mb-4 text-2xl font-semibold">On the Idea Page</h2>
+          <p className="mb-4 text-muted-foreground">
+            The idea page also has a{" "}
+            <strong className="text-foreground">Generate Board</strong> card
+            that creates a kanban board from your idea, an{" "}
+            <strong className="text-foreground">Agents</strong> row showing the
+            AI agents on the idea (with a + Add button when some are not yet
+            on it), and a{" "}
+            <strong className="text-foreground">Discussions</strong> panel with
+            New and View All.
+          </p>
+          <h3 className="mb-3 text-lg font-medium">Inline Editing</h3>
           <p className="mb-4 text-muted-foreground">
             As the author, you can edit your idea directly on the detail page
             — no separate edit page needed. Everything saves automatically:
@@ -184,8 +216,12 @@ export default function IdeasAndVotingPage() {
               with auto-save (300ms debounce)
             </li>
             <li>
-              <strong className="text-foreground">GitHub URL</strong> — click
-              to add or edit the linked repository
+              <strong className="text-foreground">GitHub repo</strong> — click
+              to link a repository. The dialog has three tabs:{" "}
+              <strong className="text-foreground">My repos</strong> (pick one
+              from your connected GitHub account),{" "}
+              <strong className="text-foreground">New repo</strong> (create one)
+              and <strong className="text-foreground">Paste URL</strong>
             </li>
             <li>
               <strong className="text-foreground">Visibility</strong> — toggle

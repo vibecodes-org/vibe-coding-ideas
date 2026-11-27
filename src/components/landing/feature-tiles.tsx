@@ -1,9 +1,8 @@
-import { INSTALL_COMMAND } from "./aurora-hero";
+import { INSTALL_COMMAND, MCP_TOOL_COUNT } from "@/lib/site-facts";
 import { CopyCommand } from "./copy-command";
 import styles from "./aurora.module.css";
 
-/** Must equal the number of tools the MCP server registers (a unit test checks it). */
-export const MCP_TOOL_COUNT = 90;
+export { MCP_TOOL_COUNT };
 
 /** Feed lines come from VibeCodes' own public board. No private board text here. */
 const FEED = [

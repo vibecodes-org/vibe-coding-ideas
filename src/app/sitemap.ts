@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { MetadataRoute } from "next";
 import { logger } from "@/lib/logger";
+import { GUIDE_SECTIONS } from "@/components/guide/guide-sections";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600; // regenerate at most once per hour
@@ -19,41 +20,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.8,
     },
-    {
-      url: `${BASE_URL}/guide/getting-started`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/ideas-and-voting`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/collaboration`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/kanban-boards`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/ai-agent-teams`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/mcp-integration`,
-      changeFrequency: "monthly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/guide/admin`,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
+    ...GUIDE_SECTIONS.map((section) => ({
+      url: `${BASE_URL}/guide/${section.slug}`,
+      changeFrequency: "monthly" as const,
+      priority: section.slug === "admin" || section.slug === "settings" ? 0.6 : 0.7,
+    })),
     {
       url: `${BASE_URL}/changelog`,
       changeFrequency: "monthly",
