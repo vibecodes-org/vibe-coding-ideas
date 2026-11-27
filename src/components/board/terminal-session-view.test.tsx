@@ -1120,6 +1120,20 @@ describe("TerminalSessionView — idle + paired shows the Ready screen, not the 
     expect(screen.queryByText(/one-time setup/i)).not.toBeInTheDocument();
   });
 
+  // Card cbc28975: the overlay centres its content in a scrolling box. Plain
+  // `justify-center` pushes content that is taller than the box off the TOP
+  // where scrolling can't reach it; `justify-center-safe` centres only when
+  // it fits and otherwise starts at the top and scrolls.
+  it("the first-run overlay scrolls and only centres when the content fits", () => {
+    installMockIdlePairedSession();
+    renderIdleView();
+    const overlay = screen.getByTestId("ready-panel").closest(".absolute.inset-0") as HTMLElement;
+    expect(overlay).not.toBeNull();
+    expect(overlay.className).toContain("overflow-y-auto");
+    expect(overlay.className).toContain("justify-center-safe");
+    expect(overlay.className.split(/\s+/)).not.toContain("justify-center");
+  });
+
   it("'Start new session' fires the same connect the wizard's Connect does; the browse link opens the chooser", () => {
     const actions = installMockIdlePairedSession();
     const onBrowseSessions = vi.fn();

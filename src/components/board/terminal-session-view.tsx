@@ -1412,7 +1412,7 @@ function StateOverlay({
   const copy = firstRunCopyFor(platform.os);
   const e2ee = e2eeCopyFor(platform.os);
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
+    <div className="absolute inset-0 flex flex-col items-center justify-center-safe gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       {view === "coming-soon" && <ComingSoonPanel />}
 
       {view === "setup" && <SetupPanel platform={platform} onConnect={onConnectSetup} onDownload={onDownloadHelper} />}
