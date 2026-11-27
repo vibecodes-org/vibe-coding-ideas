@@ -51,7 +51,7 @@ import { isWake, reconnectDelay, endCourtesyMs, WAKE_TICK_MS } from "./link-poli
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
 import { parseStepUsageScript, saveStepUsageScript, stepUsageScriptDir } from "./step-usage-script.js";
-import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, planClaudeAgents, tomlEscapedString, wantsSessionAgents } from "./session-agents.js";
+import { agentsForClaudeVersion, buildSpawnArgs, promptOffCommandLine, codexAgentConfigArgs, codexAgentFiles, planClaudeAgents, tomlEscapedString, wantsSessionAgents } from "./session-agents.js";
 import { createPrivateFiles } from "./private-files.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
@@ -782,7 +782,32 @@ process.on("exit", closeMailbox);
 // Tells the Mac app who this session is (again once the folder is known).
 let sayPeerHello = () => {};
 const launchFlags = () => [...autoCompactFlags, ...sessionAgentFlags, ...peerHookFlags];
-let spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+/**
+ * argv for the agent. The starting prompt goes into a private file and only a
+ * short pointer rides on the command line, so another session's `pkill -f
+ * "<phrase from the card>"` can't match it (card e19e0788). If the file can't
+ * be written, the prompt stays inline exactly as before.
+ */
+function buildLaunchArgs() {
+  let off = { prompt: PROMPT, flags: /** @type {string[]} */ ([]), fileText: /** @type {string | null} */ (null) };
+  if (PROMPT) {
+    try {
+      off = promptOffCommandLine({
+        agent: AGENT,
+        platform: process.platform,
+        explicitCmd,
+        prompt: PROMPT,
+        filePath: privateFiles.pathFor("start-prompt.md"),
+      });
+      if (off.fileText !== null) privateFiles.write("start-prompt.md", off.fileText);
+    } catch (e) {
+      log("warn", "couldn't write the starting prompt file — keeping it on the command line", { err: String(e?.message || e) });
+      off = { prompt: PROMPT, flags: [], fileText: null };
+    }
+  }
+  return buildSpawnArgs(cmdArgs, [...launchFlags(), ...off.flags], off.prompt);
+}
+let spawnArgs = buildLaunchArgs();
 
 /**
  * Build the final launch for a FRESH session once its folder is known:
@@ -806,7 +831,7 @@ function prepareLaunch(folder, { isolateHere }) {
   }
   ({ cmd: CMD } = computeLaunch(wantWorktree && eligibility.eligible));
   [file, ...cmdArgs] = shellSplit(CMD);
-  spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+  spawnArgs = buildLaunchArgs();
 }
 
 /** The real path of the page's hint, or null (for "did the bridge pick another folder?"). */
@@ -1455,7 +1480,7 @@ async function main() {
     });
     autoCompactFlags = flags;
     if (flags.length > 0) {
-      spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+      spawnArgs = buildLaunchArgs();
       log("info", "auto-compact applied", { agent: AGENT, window });
     } else if (window !== null || skipped === "claude-too-old-or-unknown") {
       log("info", "auto-compact skipped", { agent: AGENT, reason: skipped });
@@ -1469,7 +1494,7 @@ async function main() {
     const agentArgs = sessionAgentArgs(agentsBody);
     if (agentArgs.length > 0) {
       sessionAgentFlags = agentArgs;
-      spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+      spawnArgs = buildLaunchArgs();
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
       if (agentNotice) writeLines(agentNotice);
     }
@@ -1533,7 +1558,7 @@ async function main() {
           const notePath = note ? privateFiles.write("peer-note.txt", note) : null;
           peerHookFlags = [...hookSettingsArgs(settingsPath), ...(notePath ? ["--append-system-prompt-file", notePath] : [])];
         }
-        spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
+        spawnArgs = buildLaunchArgs();
         log("info", "peer message hooks listening", { port: hooks.port, mailbox: Boolean(mailbox) });
       } catch (e) {
         log("warn", "peer message hooks unavailable — this session cannot receive messages", { err: String(e?.message || e) });

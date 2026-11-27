@@ -327,3 +327,24 @@ export function buildSpawnArgs(cmdArgs, agentArgs, prompt) {
 export function wantsSessionAgents({ agent, explicitCmd }) {
   return (agent === "claude" || agent === "codex") && !explicitCmd;
 }
+
+/**
+ * Keep a fresh session's starting prompt off the command line (card e19e0788).
+ * `ps` shows every account the full command line, and `pkill -f "<phrase>"`
+ * matches it, so a prompt carrying the card's title and text could be killed
+ * by another agent's pattern-kill. On Mac and Linux the full prompt goes into
+ * a private file and the command line carries only a short pointer to it (plus
+ * `--add-dir` for Claude so the read is not a permission prompt). Unchanged:
+ * an empty prompt, an explicit command override, and Windows (no `pkill -f`
+ * there, and its command line is already budgeted).
+ * @param {{ agent: string, platform: string, explicitCmd: string | null, prompt: string, filePath: string }} p
+ * @returns {{ prompt: string, flags: string[], fileText: string | null }}
+ */
+export function promptOffCommandLine({ agent, platform, explicitCmd, prompt, filePath }) {
+  if (!prompt || explicitCmd || platform === "win32" || (agent !== "claude" && agent !== "codex")) {
+    return { prompt, flags: [], fileText: null };
+  }
+  const pointer = `Your starting task is in the file ${filePath}. Read that file in full now, then do exactly what it says.`;
+  const dir = filePath.slice(0, Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")));
+  return { prompt: pointer, flags: agent === "claude" ? [`--add-dir=${dir}`] : [], fileText: prompt };
+}
