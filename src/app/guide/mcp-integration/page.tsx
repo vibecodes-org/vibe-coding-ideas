@@ -3,12 +3,11 @@ import type { Metadata } from "next";
 import { Terminal, ArrowLeft } from "lucide-react";
 import { CodeBlock } from "@/components/guide/code-block";
 import { CollapsibleTools } from "@/components/guide/collapsible-tools";
-import { MCP_COMMAND } from "@/lib/constants";
-import { MCP_TOOL_COUNT } from "@/lib/site-facts";
+import { MCP_TOOL_COUNT, INSTALL_COMMAND } from "@/lib/site-facts";
 
 export const metadata: Metadata = {
-  title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
-  description: `Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with ${MCP_TOOL_COUNT} tools.`,
+  title: "MCP Integration Guide — Connect Claude Code or Codex to VibeCodes",
+  description: `Step-by-step guide to connecting Claude Code or Codex to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with ${MCP_TOOL_COUNT} tools.`,
 };
 
 function ToolTable({
@@ -72,11 +71,11 @@ export default function McpIntegrationPage() {
             <strong className="text-foreground">
               Model Context Protocol (MCP)
             </strong>{" "}
-            is an open standard that lets AI assistants like Claude Code interact
-            with external tools and services. VibeCodes includes a remote MCP
-            server that gives Claude Code direct access to your ideas, boards,
-            and tasks — so you can manage your projects without leaving the
-            terminal.
+            is an open standard that lets AI assistants like Claude Code and Codex
+            interact with external tools and services. VibeCodes includes a
+            remote MCP server that gives them direct access to your ideas,
+            boards, and tasks — so you can manage your projects without leaving
+            the terminal.
           </p>
         </section>
 
@@ -86,17 +85,28 @@ export default function McpIntegrationPage() {
           <p className="mb-4 text-muted-foreground">
             You&apos;ll need{" "}
             <a
-              href="https://docs.claude.com/en/docs/claude-code/overview"
+              href="https://code.claude.com/docs/en/setup"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline"
             >
               Claude Code
             </a>
-            , Anthropic&apos;s command-line tool for Claude. Install it first,
-            then come back here to connect it to VibeCodes.
+            , Anthropic&apos;s command-line tool for Claude. Install it first
+            (the{" "}
+            <a
+              href="https://code.claude.com/docs/en/setup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              setup page
+            </a>{" "}
+            has every option; on Mac and Linux this is the quickest), then come
+            back here to connect it to VibeCodes. Using Codex instead? Its
+            commands are in the Codex section below.
           </p>
-          <CodeBlock code="npm install -g @anthropic-ai/claude-code" />
+          <CodeBlock code="curl -fsSL https://claude.ai/install.sh | bash" />
         </section>
 
         {/* ── Quick Start ─────────────────────────────────────────── */}
@@ -108,7 +118,7 @@ export default function McpIntegrationPage() {
             Add the VibeCodes remote MCP server to Claude Code with this
             command:
           </p>
-          <CodeBlock code={MCP_COMMAND} />
+          <CodeBlock code={INSTALL_COMMAND} />
           <div className="mt-4 space-y-3">
             <p className="text-muted-foreground">
               This connects to the{" "}
@@ -127,9 +137,12 @@ export default function McpIntegrationPage() {
               </p>
             </div>
             <p className="text-muted-foreground">
-              The first time you use it, Claude Code will open your browser for
-              OAuth authentication. Log in with your VibeCodes account and
-              authorize the connection. After that, Claude Code can use all {MCP_TOOL_COUNT}
+              Then start Claude Code (<code className="rounded bg-muted px-1.5 py-0.5 text-xs">claude</code>),
+              type{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/mcp</code>{" "}
+              and choose <strong className="text-foreground">Authenticate</strong>.
+              Your browser opens for sign-in: log in with your VibeCodes
+              account and authorize the connection. After that, Claude Code can use all {MCP_TOOL_COUNT}
               VibeCodes tools on your behalf.
             </p>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -137,29 +150,55 @@ export default function McpIntegrationPage() {
                 <strong className="text-foreground">How auth works:</strong>{" "}
                 VibeCodes uses OAuth 2.1 with PKCE. Your Supabase session token
                 is used as the OAuth access token, so all actions respect the
-                same permissions (RLS) as the web app. No API keys to manage.
-                For headless or automated setups, the server also accepts a{" "}
+                same permissions (RLS) as the web app. For tools that can&apos;t open
+                the sign-in pop-up (headless or automated setups), create an{" "}
+                <strong className="text-foreground">MCP API key</strong> in{" "}
+                <Link href="/settings" className="text-primary hover:underline">
+                  Settings
+                </Link>
+                . The server accepts a{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                   vbc_
                 </code>{" "}
-                API key in place of the OAuth flow.
+                key in place of the sign-in flow.
               </p>
             </div>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
               <p className="text-sm text-muted-foreground">
                 <strong className="text-foreground">Prefer one click?</strong>{" "}
-                You can launch Claude Code straight from a board or task — it
-                connects this MCP server for you and starts working. See the{" "}
+                You can launch Claude Code or Codex straight from a board or
+                task — it connects this MCP server for you and starts working.
+                See the{" "}
                 <Link
                   href="/guide/launching-claude-code"
                   className="text-primary hover:underline"
                 >
-                  Launching Claude Code
+                  Launching Claude Code or Codex
                 </Link>{" "}
                 guide.
               </p>
             </div>
           </div>
+        </section>
+
+        {/* ── Codex ───────────────────────────────────────────────── */}
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Connecting Codex</h2>
+          <p className="mb-4 text-muted-foreground">
+            Codex connects to the same server. Add it, then sign in:
+          </p>
+          <CodeBlock code="codex mcp add vibecodes --url https://vibecodes.co.uk/api/mcp" />
+          <div className="mt-3">
+            <CodeBlock code="codex mcp login vibecodes" />
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            If your Codex setup can&apos;t open the sign-in pop-up, use an MCP
+            API key from{" "}
+            <Link href="/settings" className="text-primary hover:underline">
+              Settings
+            </Link>{" "}
+            instead.
+          </p>
         </section>
 
         {/* ── Verify Your Connection ──────────────────────────────── */}
@@ -211,11 +250,13 @@ export default function McpIntegrationPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               .vibecodes/config.json
             </code>{" "}
-            file in your project root. This auto-injects the{" "}
+            file in your project root. It tells the agent which VibeCodes board
+            this folder belongs to, using the{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              idea_id
+              ideaId
             </code>{" "}
-            into MCP tool calls so you don&apos;t have to specify it every time:
+            below, so you don&apos;t have to say which board you mean every
+            time.
           </p>
           <CodeBlock
             code={`{
@@ -224,9 +265,9 @@ export default function McpIntegrationPage() {
 }`}
           />
           <p className="mt-4 text-sm text-muted-foreground">
-            With this in place, commands like &quot;show me the board&quot; or
-            &quot;create a task&quot; will automatically target the configured
-            idea. You can also set{" "}
+            With this in place, the agent knows which board to use when you
+            say &quot;show me the board&quot; or &quot;create a task&quot;. The
+            file can also hold{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               taskId
             </code>
@@ -238,7 +279,7 @@ export default function McpIntegrationPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               defaultColumn
             </code>{" "}
-            for even more context.
+            for more context.
           </p>
         </section>
 
@@ -410,7 +451,7 @@ export default function McpIntegrationPage() {
                 tools={[
                   { name: "list_agents", description: "List your agent personas with name, role, and active status" },
                   { name: "get_agent_prompt", description: "Get the system prompt for a specific agent (pass agent_id)" },
-                  { name: "set_agent_identity", description: "Retired: does nothing now. Agents speak through claim_next_step and its work token instead" },
+                  { name: "set_agent_identity", description: "Retired: does nothing now. Agents are chosen per workflow step" },
                   { name: "create_agent", description: "Create a new agent with name, role, and system prompt" },
                   { name: "toggle_agent_vote", description: "Upvote or remove vote on a community agent" },
                   { name: "clone_agent", description: "Clone a published agent into your account" },
@@ -452,11 +493,11 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Project Kits" toolCount={2}>
+            <CollapsibleTools title="Project Types" toolCount={2}>
               <ToolTable
                 tools={[
-                  { name: "list_kits", description: "List available project kits" },
-                  { name: "apply_kit", description: "Apply a project kit to an idea (agents, workflows, labels, triggers)" },
+                  { name: "list_kits", description: "List available project types" },
+                  { name: "apply_kit", description: "Apply a project type to an idea (agents, workflows, labels, triggers)" },
                 ]}
               />
             </CollapsibleTools>
@@ -591,8 +632,9 @@ export default function McpIntegrationPage() {
               <p className="text-sm text-muted-foreground">
                 VibeCodes enforces the same permissions as the web app. Make sure
                 you&apos;re a team member or collaborator on the idea
-                you&apos;re trying to modify. Public ideas allow read access but
-                not writes.
+                you&apos;re trying to modify. Anyone signed in can vote, comment or
+                ask to join a public idea, but changing its board needs you to
+                be on its team.
               </p>
             </div>
 
@@ -650,6 +692,11 @@ export default function McpIntegrationPage() {
             This section is only for developers who have cloned the VibeCodes
             repo and are contributing to the codebase. Most users should use the{" "}
             <strong className="text-foreground">remote server</strong> above.
+            The repo doesn&apos;t include a ready-made{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              .mcp.json
+            </code>
+            : you create it yourself.
           </p>
           <p className="mb-4 text-muted-foreground">
             The local MCP server runs over stdio and is configured via a{" "}
@@ -674,7 +721,8 @@ export default function McpIntegrationPage() {
       "args": ["tsx", "mcp-server/src/index.ts"],
       "env": {
         "SUPABASE_URL": "http://127.0.0.1:54321",
-        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key"
+        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
+        "VIBECODES_OWNER_ID": "your-user-id"
       }
     }
   }
@@ -685,9 +733,14 @@ export default function McpIntegrationPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               npm run supabase:start
             </code>
-            ). The service-role key can be found in{" "}
+            ). The service-role key is printed when it starts.{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              mcp-server/.env
+              VIBECODES_OWNER_ID
+            </code>{" "}
+            is your own user id, so the local server can find agents you made
+            on the website. The values are listed in{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              mcp-server/.env.example
             </code>
             .
           </p>

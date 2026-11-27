@@ -687,6 +687,21 @@ export default function WorkflowsPage() {
               <strong className="text-foreground">Remove Workflow</strong>{" "}
               — delete the workflow, including any earlier runs, and all their steps entirely
             </li>
+            <li>
+              <strong className="text-foreground">Complete or Submit for Approval</strong>{" "}
+              — in a step&apos;s window, finishes the step; on a step that needs
+              your OK the button reads Submit for Approval. A step can also be
+              marked <strong className="text-foreground">Fail</strong> (you are
+              asked to confirm), and a step waiting for you has{" "}
+              <strong className="text-foreground">Approve</strong>
+            </li>
+            <li>
+              <strong className="text-foreground">Removing a label</strong>{" "}
+              that started a workflow — the app asks &quot;Remove label with
+              active workflow?&quot; and lets you{" "}
+              <strong className="text-foreground">Keep workflow</strong> or{" "}
+              <strong className="text-foreground">Remove workflow</strong>
+            </li>
           </ul>
         </section>
 

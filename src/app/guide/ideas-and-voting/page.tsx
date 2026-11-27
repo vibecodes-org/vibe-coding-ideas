@@ -93,6 +93,11 @@ export default function IdeasAndVotingPage() {
             <strong className="text-foreground">incorporated</strong> to show
             the feedback was acted on.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            You can reply to a comment, and replies can go three levels deep.
+            Type <strong className="text-foreground">@</strong> to mention
+            someone in a comment. You can edit or delete your own comments.
+          </p>
         </section>
 
         <section>
@@ -181,7 +186,18 @@ export default function IdeasAndVotingPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Inline Editing</h2>
+          <h2 className="mb-4 text-2xl font-semibold">On the Idea Page</h2>
+          <p className="mb-4 text-muted-foreground">
+            The idea page also has a{" "}
+            <strong className="text-foreground">Generate Board</strong> card
+            that creates a kanban board from your idea, an{" "}
+            <strong className="text-foreground">Agents</strong> row showing the
+            AI agents on the idea (with a + Add button when some are not yet
+            on it), and a{" "}
+            <strong className="text-foreground">Discussions</strong> panel with
+            New and View All.
+          </p>
+          <h3 className="mb-3 text-lg font-medium">Inline Editing</h3>
           <p className="mb-4 text-muted-foreground">
             As the author, you can edit your idea directly on the detail page
             — no separate edit page needed. Everything saves automatically:
@@ -200,8 +216,12 @@ export default function IdeasAndVotingPage() {
               with auto-save (300ms debounce)
             </li>
             <li>
-              <strong className="text-foreground">GitHub URL</strong> — click
-              to add or edit the linked repository
+              <strong className="text-foreground">GitHub repo</strong> — click
+              to link a repository. The dialog has three tabs:{" "}
+              <strong className="text-foreground">My repos</strong> (pick one
+              from your connected GitHub account),{" "}
+              <strong className="text-foreground">New repo</strong> (create one)
+              and <strong className="text-foreground">Paste URL</strong>
             </li>
             <li>
               <strong className="text-foreground">Visibility</strong> — toggle

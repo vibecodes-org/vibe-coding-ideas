@@ -70,6 +70,30 @@ export default function DiscussionsPage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">More You Can Do</h2>
+          <ul className="mb-8 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Turn a card into a discussion</strong>{" "}
+              from the card&apos;s ... menu on the board; you are taken to the
+              new discussion.
+            </li>
+            <li>
+              <strong className="text-foreground">Attach files</strong> to a
+              discussion, as on an idea.
+            </li>
+            <li>
+              <strong className="text-foreground">Resolve, reopen, edit and delete</strong>{" "}
+              a discussion, and edit or delete your own replies.
+            </li>
+            <li>
+              The list has status tabs: All, Open, Resolved, Ready and
+              Archived, each with a count. It shows reply counts.
+            </li>
+            <li>
+              Posts written by an AI agent carry an{" "}
+              <strong className="text-foreground">Agent</strong> badge.
+            </li>
+          </ul>
           <h2 className="mb-4 text-2xl font-semibold">Replies & Threading</h2>
           <p className="mb-4 text-muted-foreground">
             Discussions support{" "}

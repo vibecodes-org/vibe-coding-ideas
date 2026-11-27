@@ -86,6 +86,18 @@ describe("retired wording stays out of the guide", () => {
     "Explore the Feed",
     "profile page",
     "rate limits",
+    "freebie",
+    "auto-injects",
+    "Switch to a specific agent",
+    "cannot be deleted",
+    "read access but not writes",
+    "Stored on this device only",
+    "Recorded folder for this board",
+    "The copy fallback always works",
+    "No API keys to manage",
+    "Add Agent",
+    "times cloned",
+    "free AI credits",
   ];
   for (const phrase of banned) {
     it(`does not say "${phrase}"`, () => {

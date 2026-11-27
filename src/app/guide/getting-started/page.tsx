@@ -47,7 +47,7 @@ export default function GettingStartedPage() {
           </ul>
           <p className="mb-4 text-muted-foreground">
             Every new account gets{" "}
-            <strong className="text-foreground">10 free AI credits</strong> to
+            <strong className="text-foreground">10 starter AI credits</strong> to
             try the AI features. After that you add your own Anthropic key in{" "}
             <Link href="/guide/settings" className="text-primary hover:underline">
               Settings
