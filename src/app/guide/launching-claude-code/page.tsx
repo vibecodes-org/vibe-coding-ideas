@@ -522,6 +522,18 @@ export default function LaunchingClaudeCodePage() {
             <strong className="text-foreground">&quot;This machine&quot;</strong>{" "}
             line in the dropdown shows the folder for the computer you are on.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            If you choose{" "}
+            <strong className="text-foreground">Create new project</strong>{" "}
+            instead, the folder doesn&apos;t exist yet, so the app keeps that
+            choice on this computer only and says{" "}
+            <strong className="text-foreground">
+              &quot;Stored on this device only&quot;
+            </strong>
+            . Once the folder exists and you pick it with{" "}
+            <strong className="text-foreground">Use existing folder</strong>,
+            it&apos;s saved to your account like any other.
+          </p>
         </section>
 
         <section>
