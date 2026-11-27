@@ -20,14 +20,20 @@ export function modelFamily(name: string | null | undefined): ModelFamily | null
  * tokens (so a few background haiku calls don't outweigh the helper). Ties
  * go to the first listed. Null when nothing is measured or no model is
  * recognised.
+ *
+ * Card 80284573: when the rows say how much of their output the helpers wrote
+ * (helper_output_tokens), only that decides, so the session's own calls (often
+ * Opus) can't outvote a cheaper helper. No helper output (the session did the
+ * step itself) or an older line without the field: every row counts.
  */
 export function mainMeasuredModel(usage: Pick<StepUsage, "models"> | null | undefined): ModelFamily | null {
   if (!usage?.models?.length) return null;
+  const helperOnly = usage.models.some((m) => (m.helper_output_tokens ?? 0) > 0);
   const totals = new Map<ModelFamily, number>();
   for (const m of usage.models) {
     const fam = modelFamily(m.model);
     if (!fam) continue;
-    totals.set(fam, (totals.get(fam) ?? 0) + m.output_tokens);
+    totals.set(fam, (totals.get(fam) ?? 0) + (helperOnly ? (m.helper_output_tokens ?? 0) : m.output_tokens));
   }
   let best: ModelFamily | null = null;
   let bestTokens = -1;

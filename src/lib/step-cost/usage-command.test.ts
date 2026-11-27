@@ -157,6 +157,23 @@ describe("stepUsageCommand", () => {
     }
   });
 
+  it("tags each row with the output the subagents wrote, so the session's own calls can be told apart (card 80284573)", () => {
+    const root = sandbox(
+      { a1: [line({ id: "msg_1", model: "claude-sonnet-5-5", block: text("x".repeat(35)), read: 500 })] },
+      [mainBefore, claimLine, ...mainAfter]
+    );
+    try {
+      const models = JSON.parse(run(root, "a1")).models as { model: string; output_tokens: number; helper_output_tokens: number }[];
+      const opus = models.find((m) => m.model === "claude-opus-5-5")!;
+      const sonnet = models.find((m) => m.model === "claude-sonnet-5-5")!;
+      expect(opus.output_tokens).toBeGreaterThan(0);
+      expect(opus.helper_output_tokens).toBe(0);
+      expect(sonnet.helper_output_tokens).toBe(sonnet.output_tokens);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("adds the subagents' calls to the session's, even when every AGENT_ID in the command is replaced", () => {
     const root = sandbox(
       { a1: [line({ id: "msg_1", model: "claude-sonnet-5-5", block: text("hi"), read: 500 })] },

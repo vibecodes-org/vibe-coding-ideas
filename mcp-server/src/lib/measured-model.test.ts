@@ -6,8 +6,9 @@ import {
   modelMismatchComment,
   modelMismatchNotice,
 } from "./measured-model";
+import type { StepUsage } from "../../../src/lib/step-cost/usage-schema";
 
-const row = (model: string, out: number) => ({
+const row = (model: string, out: number): StepUsage["models"][number] => ({
   model,
   calls: 1,
   input_tokens: 1,
@@ -32,6 +33,26 @@ describe("modelFamily", () => {
 });
 
 describe("mainMeasuredModel", () => {
+  // Card 80284573: the session's own calls (often Opus) must not outvote the helper.
+  const tagged = (model: string, out: number, helperOut: number) => ({ ...row(model, out), helper_output_tokens: helperOut });
+  it("only the helper's output decides when rows carry it", () => {
+    expect(
+      mainMeasuredModel({ models: [tagged("claude-opus-4-7", 9000, 0), tagged("claude-sonnet-4-6", 1000, 1000)] })
+    ).toBe("sonnet");
+  });
+  it("still flags a helper that really ran on the wrong model", () => {
+    expect(
+      mainMeasuredModel({ models: [tagged("claude-opus-4-7", 1000, 1000), tagged("claude-sonnet-4-6", 9000, 0)] })
+    ).toBe("opus");
+  });
+  it("with no helper output (the session did the step) the session's own model decides", () => {
+    expect(
+      mainMeasuredModel({ models: [tagged("claude-opus-4-7", 9000, 0), tagged("claude-haiku-4-5", 100, 0)] })
+    ).toBe("opus");
+  });
+  it("old lines without the tag keep the all-rows rule", () => {
+    expect(mainMeasuredModel({ models: [row("claude-opus-4-7", 9000), row("claude-sonnet-4-6", 1000)] })).toBe("opus");
+  });
   it("picks the model with the most output tokens", () => {
     expect(mainMeasuredModel({ models: [row("claude-opus-4-7", 9000), row("claude-sonnet-4-6", 500)] })).toBe("opus");
   });

@@ -19,6 +19,8 @@ export const stepUsageSchema = z.object({
         cache_read_tokens: tokenCount,
         cache_write_5m_tokens: tokenCount,
         cache_write_1h_tokens: tokenCount,
+        // Card 80284573: output written by subagents only. Must be declared or zod drops it.
+        helper_output_tokens: tokenCount.optional(),
       })
     )
     .min(1)

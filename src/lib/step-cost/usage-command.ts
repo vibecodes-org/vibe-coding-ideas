@@ -47,6 +47,10 @@
 //
 // scripts/lib/step-usage-backfill.mjs applies the same rules to past runs;
 // keep the two in step.
+//
+// Card 80284573: each row also carries helper_output_tokens, the part of its
+// output the subagents wrote (the session's own calls excluded), so the
+// measured-model check can ignore the coordinator. Cost still counts all of it.
 
 import { createHash, randomBytes } from "crypto";
 
@@ -90,6 +94,7 @@ function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return su
   if (m ~ /haiku-5-5/ && i + r + w > 100000) m = m "+long"
   model[id] = m; inp[id] = i; rd[id] = r; w1h[id] = h; w5m[id] = (w > h) ? w - h : 0
   if (!(id in wt)) wt[id] = (FILENAME == main) ? lw : 1
+  if (FILENAME != main) hlp[id] = 1
   o = num(u, "output_tokens"); if (o > rep[id]) rep[id] = o
   s = index($0, "\"content\":["); e = index($0, ",\"stop_reason\":")
   if (s > 0 && e > s) { seg = substr($0, s + 11, e - s - 11); gsub(/"signature":"[^"]*"/, "", seg); gsub(/"(type|id|name|caller|container)":("[^"]*"|null|[{][^{}]*[}])/, "", seg); len[id] += length(seg) }
@@ -97,12 +102,12 @@ function num(s, key,   p) { p = "\"" key "\":[0-9]+"; if (match(s, p)) return su
 END {
   for (id in model) {
     m = model[id]; est = int(len[id] / 3.5 + 0.5); out = (rep[id] > est) ? rep[id] : est; f = wt[id]
-    C[m] += f; I[m] += inp[id] * f; O[m] += out * f; R[m] += rd[id] * f; W5[m] += w5m[id] * f; W1[m] += w1h[id] * f
+    C[m] += f; if (hlp[id]) HO[m] += out; I[m] += inp[id] * f; O[m] += out * f; R[m] += rd[id] * f; W5[m] += w5m[id] * f; W1[m] += w1h[id] * f
   }
   n = 0; body = ""
   for (m in C) {
     if (n++) body = body ","
-    body = body sprintf("{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d}", m, q(C[m]), q(I[m]), q(O[m]), q(R[m]), q(W5[m]), q(W1[m]))
+    body = body sprintf("{\"model\":\"%s\",\"calls\":%d,\"input_tokens\":%d,\"output_tokens\":%d,\"cache_read_tokens\":%d,\"cache_write_5m_tokens\":%d,\"cache_write_1h_tokens\":%d,\"helper_output_tokens\":%d}", m, q(C[m]), q(I[m]), q(O[m]), q(R[m]), q(W5[m]), q(W1[m]), q(HO[m]))
   }
   # A subagent that died on an API error has no real model calls to report.
   if (n == 0) { print "NO_TRANSCRIPT"; exit }
