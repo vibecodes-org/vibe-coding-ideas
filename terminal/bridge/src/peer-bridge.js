@@ -44,9 +44,18 @@ export function buildHookSettings(port, secret) {
   };
 }
 
-/** The extra launch arguments for Claude. */
-export function hookSettingsArgs(port, secret) {
-  return ["--settings", JSON.stringify(buildHookSettings(port, secret))];
+/**
+ * The settings text for Claude's `--settings` FILE. The URLs hold the secret,
+ * so the bridge writes this to an owner-only file instead of the command line,
+ * where any account could read it with `ps` (card 9b5336c1).
+ */
+export function hookSettingsText(port, secret) {
+  return JSON.stringify(buildHookSettings(port, secret));
+}
+
+/** The extra launch arguments for Claude: the settings file's path only. */
+export function hookSettingsArgs(settingsPath) {
+  return ["--settings", settingsPath];
 }
 
 // Codex: command hooks (Codex has no http hooks). The command is the same in

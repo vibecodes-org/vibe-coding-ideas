@@ -51,7 +51,8 @@ import { isWake, reconnectDelay, endCourtesyMs, WAKE_TICK_MS } from "./link-poli
 import { resolveAgentLaunch } from "./resume-cmd.js";
 import { autoCompactArgs, parseAutoCompactWindow } from "./auto-compact.js";
 import { parseStepUsageScript, saveStepUsageScript, stepUsageScriptDir } from "./step-usage-script.js";
-import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, serializeSessionAgents, wantsSessionAgents } from "./session-agents.js";
+import { agentsForClaudeVersion, buildSpawnArgs, codexAgentConfigArgs, codexAgentFiles, planClaudeAgents, tomlEscapedString, wantsSessionAgents } from "./session-agents.js";
+import { createPrivateFiles } from "./private-files.js";
 import { resolveSpawnDims } from "./spawn-dims.js";
 import { checkWorktreeEligibility, worktreeFallbackBanner } from "./worktree-eligibility.js";
 import { agentNotInstalledBanner } from "./agent-copy.js";
@@ -97,6 +98,7 @@ import {
   codexHookUrl,
   createPeerBridge,
   hookSettingsArgs,
+  hookSettingsText,
   newHookSecret,
   startHookServer,
 } from "./peer-bridge.js";
@@ -628,12 +630,18 @@ let usageFinal = Promise.resolve();
 // a Codex launch writes them to a private temp folder — outside the project
 // and ~/.codex — that is removed when this bridge exits, on every exit path
 // that runs code. (A SIGKILLed bridge leaves it to the OS temp cleaner.)
-let agentFilesDir = null;
+// Stage 2 of card 9b5336c1 uses the same folder for everything else that must
+// stay off the command line: the peer-hook settings (they hold a secret), the
+// messaging note, and a big Windows board's agent prompts (private-files.js).
+const privateFiles = createPrivateFiles();
 function removeAgentFiles() {
-  if (!agentFilesDir) return;
-  try { fs.rmSync(agentFilesDir, { recursive: true, force: true }); } catch { /* ignore */ }
-  agentFilesDir = null;
+  privateFiles.remove();
 }
+// Set when some agents had to be left out (Windows only); printed in the
+// terminal once, never silent.
+let agentNotice = "";
+// Windows allows a command line of 32,767 characters; leave room for the rest.
+const WINDOWS_COMMAND_LINE_MAX = 30_000;
 process.on("exit", removeAgentFiles);
 
 /**
@@ -648,12 +656,7 @@ function sessionAgentArgs(body) {
     const files = codexAgentFiles(body);
     if (!files) return [];
     try {
-      agentFilesDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibecodes-agents-"));
-      const written = files.map(({ name, fileName, toml }) => {
-        const filePath = path.join(agentFilesDir, fileName);
-        fs.writeFileSync(filePath, toml, { mode: 0o600 });
-        return { name, path: filePath };
-      });
+      const written = files.map(({ name, fileName, toml }) => ({ name, path: privateFiles.write(fileName, toml) }));
       return codexAgentConfigArgs(written);
     } catch (e) {
       log("warn", "couldn't write codex agent files — launching without them", { err: String(e?.message || e) });
@@ -661,8 +664,26 @@ function sessionAgentArgs(body) {
       return [];
     }
   }
-  const json = serializeSessionAgents(body, APP_URL.replace(/\/+$/, ""));
-  return json ? ["--agents", json] : [];
+  try {
+    const used = [...cmdArgs, ...(PROMPT ? [PROMPT] : [])].reduce((n, a) => n + a.length + 3, 0);
+    const plan = planClaudeAgents(body, APP_URL.replace(/\/+$/, ""), {
+      budget: Math.max(4_000, WINDOWS_COMMAND_LINE_MAX - used),
+      pathFor: (fileName) => privateFiles.pathFor(fileName),
+    });
+    if (!plan) return [];
+    for (const f of plan.files) privateFiles.write(f.fileName, f.text);
+    if (plan.stubbed.length || plan.dropped.length) {
+      log("warn", "board agents don't fit one Windows command line", { inFiles: plan.stubbed.length, leftOut: plan.dropped.length });
+      if (plan.dropped.length > 0) {
+        agentNotice = `This board has more agents than Windows can start a session with: ${plan.dropped.length} left out (${plan.dropped.join(", ")}).\r\n`;
+      }
+    }
+    return ["--agents", plan.json];
+  } catch (e) {
+    log("warn", "couldn't prepare the board's agents — launching without them", { err: String(e?.message || e) });
+    removeAgentFiles();
+    return [];
+  }
 }
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 90000);
@@ -1447,6 +1468,7 @@ async function main() {
       sessionAgentFlags = agentArgs;
       spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
       log("info", "session agents collected", { agent: AGENT, flags: agentArgs.length });
+      if (agentNotice) writeLines(agentNotice);
     }
   }
   // The session proof (VIBECODES_SESSION=<sid>.<proof>) lets offer_next_card
@@ -1499,9 +1521,13 @@ async function main() {
         if (AGENT === "codex") {
           // Codex hooks are commands; the listener's address travels in the env.
           cachedSpawnEnv = { ...(cachedSpawnEnv || resolveSpawnEnv()), [CODEX_HOOK_ENV]: codexHookUrl(hooks.port, secret) };
-          peerHookFlags = [...codexHookArgs(), ...(note ? ["-c", `developer_instructions=${JSON.stringify(note)}`] : [])];
+          // The note is written as \uXXXX escapes: Codex reads the same text, the command line holds none of it.
+          peerHookFlags = [...codexHookArgs(), ...(note ? ["-c", `developer_instructions=${tomlEscapedString(note)}`] : [])];
         } else {
-          peerHookFlags = [...hookSettingsArgs(hooks.port, secret), ...(note ? ["--append-system-prompt", note] : [])];
+          // The settings hold the hook secret and the note is readable text: both go in owner-only files.
+          const settingsPath = privateFiles.write("peer-hooks.json", hookSettingsText(hooks.port, secret));
+          const notePath = note ? privateFiles.write("peer-note.txt", note) : null;
+          peerHookFlags = [...hookSettingsArgs(settingsPath), ...(notePath ? ["--append-system-prompt-file", notePath] : [])];
         }
         spawnArgs = buildSpawnArgs(cmdArgs, launchFlags(), PROMPT);
         log("info", "peer message hooks listening", { port: hooks.port, mailbox: Boolean(mailbox) });

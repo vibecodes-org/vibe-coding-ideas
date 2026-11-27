@@ -10,6 +10,7 @@ import {
   codexHookUrl,
   createPeerBridge,
   hookSettingsArgs,
+  hookSettingsText,
   startHookServer,
 } from "./peer-bridge.js";
 
@@ -227,9 +228,12 @@ test("hook settings use the secret path and cover every event", () => {
   const s = buildHookSettings(4321, "sec");
   assert.deepEqual(Object.keys(s.hooks).sort(), ["Notification", "PermissionRequest", "PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
   assert.equal(s.hooks.Stop[0].hooks[0].url, "http://127.0.0.1:4321/sec/Stop");
-  const args = hookSettingsArgs(1, "s");
-  assert.equal(args[0], "--settings");
-  assert.doesNotThrow(() => JSON.parse(args[1]));
+  // The secret never rides on the command line: only a file path does.
+  const args = hookSettingsArgs("/tmp/x/peer-hooks.json");
+  assert.deepEqual(args, ["--settings", "/tmp/x/peer-hooks.json"]);
+  assert.ok(!args.join(" ").includes("sec"));
+  const text = hookSettingsText(4321, "sec");
+  assert.equal(JSON.parse(text).hooks.Stop[0].hooks[0].url, "http://127.0.0.1:4321/sec/Stop");
 });
 
 test("the hook server answers only its own secret path", async () => {
