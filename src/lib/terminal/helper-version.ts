@@ -198,8 +198,13 @@
  *  is read from an owner-only file instead of the command line, and Windows
  *  sessions on big boards can start. An older helper still works but stays
  *  exposed to pattern kills and can't start big-board Windows sessions: same
- *  firm nudge. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.2";
+ *  firm nudge.
+ *  0.4.3 (card e19e0788, 28 Nov 2026): on Mac and Linux a fresh session's
+ *  starting prompt goes to a private file instead of the agent's command line,
+ *  and the helper hands the launch link (prompt and session key) to the bridge
+ *  privately instead of on its command line. An older helper still works but
+ *  its new sessions stay exposed to pattern kills: same firm nudge. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.4.3";
 
 /**
  * The first helper whose bridge can run a setup session (card 63a60792): the
