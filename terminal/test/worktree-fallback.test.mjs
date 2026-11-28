@@ -31,7 +31,7 @@ import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens } from "../shared/session-token.mjs";
 import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
-import { writeFakeAgent, winEnv, killBridge, rmDir } from "./fake-agent.mjs";
+import { writeFakeAgent, winEnv, killBridge, rmDir, withStartPromptRead } from "./fake-agent.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
 const ARGV_CMD = path.resolve(__dirname, "./argv-cmd.mjs");
@@ -138,7 +138,7 @@ async function launchIsolated(t, cwd) {
   await waitForText(leg.getBuf, "ARGV_END", HARD_TIMEOUT_MS, "argv marker");
   const m = leg.getBuf().match(/ARGV_BEGIN(.*?)ARGV_END/s);
   assert.ok(m, "argv markers present in the PTY stream");
-  return { argv: JSON.parse(m[1]), stream: leg.getBuf(), stderr: spawned.getStderr() };
+  return { argv: withStartPromptRead(JSON.parse(m[1])), stream: leg.getBuf(), stderr: spawned.getStderr() };
 }
 
 test("worktree=1 against a repo with NO commits: launches WITHOUT --worktree and prints the shared-folder note first", { timeout: 60000 }, async (t) => {

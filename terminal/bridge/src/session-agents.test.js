@@ -281,3 +281,27 @@ test("a payload at the size cap still fits the macOS argument limit once escaped
   assert.ok(!json.includes("pytest"));
   assert.equal(JSON.parse(json)["vc-a"].prompt, prompt);
 });
+
+import { promptOffCommandLine } from "./session-agents.js";
+const OFF = { platform: "darwin", explicitCmd: null, prompt: "Card: Rotate the zebra keys\nDo the thing", filePath: "/tmp/vibecodes-agents-x/start-prompt.md" };
+test("promptOffCommandLine (claude): pointer on the command line, full text in the file (card e19e0788)", () => {
+  const r = promptOffCommandLine({ ...OFF, agent: "claude" });
+  assert.equal(r.fileText, OFF.prompt);
+  assert.ok(r.prompt.includes(OFF.filePath));
+  assert.ok(!r.prompt.includes("zebra"));
+  assert.deepEqual(r.flags, ["--add-dir=/tmp/vibecodes-agents-x"]);
+});
+test("promptOffCommandLine (codex): pointer only, no add-dir", () => {
+  const r = promptOffCommandLine({ ...OFF, agent: "codex" });
+  assert.ok(!r.prompt.includes("zebra"));
+  assert.deepEqual(r.flags, []);
+  assert.equal(r.fileText, OFF.prompt);
+});
+test("promptOffCommandLine leaves windows, explicit commands and empty prompts alone", () => {
+  for (const o of [{ platform: "win32" }, { explicitCmd: "x" }, { prompt: "" }]) {
+    const r = promptOffCommandLine({ ...OFF, agent: "claude", ...o });
+    assert.equal(r.fileText, null);
+    assert.equal(r.prompt, o.prompt ?? OFF.prompt);
+    assert.deepEqual(r.flags, []);
+  }
+});

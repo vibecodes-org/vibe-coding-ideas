@@ -93,3 +93,21 @@ const EXIT_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export function exitCmd(code) {
   return IS_WIN ? `${process.execPath} ${EXIT_SCRIPT} ${code}` : `sh -c 'exit ${code}'`;
 }
+
+/**
+ * On Mac and Linux the bridge keeps a fresh session's starting prompt off the
+ * command line: the agent's last argument is a short pointer to a private file
+ * (card e19e0788). Tests that care about the prompt's TEXT call this: it swaps
+ * the pointer for the file's contents (read while the bridge is still alive,
+ * since the file goes when the session ends) and drops the `--add-dir=<folder>`
+ * flag that rides with it. Any argv without a pointer comes back unchanged.
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
+export function withStartPromptRead(argv) {
+  const last = argv[argv.length - 1] ?? "";
+  const m = /^Your starting task is in the file (.+)\. Read that file in full now, then do exactly what it says\.$/.exec(last);
+  if (!m) return argv;
+  const text = fs.readFileSync(m[1], "utf8");
+  return [...argv.slice(0, -1).filter((a) => !a.startsWith("--add-dir=")), text];
+}

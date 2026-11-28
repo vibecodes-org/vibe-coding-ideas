@@ -10,7 +10,7 @@
 //      from `protocols` — see electron-builder.yml; we also call
 //      app.setAsDefaultProtocolClient at runtime for dev/registration).
 //   2. On `vibecodes://launch?relay&session&token[&helperToken][&cwd]`, run the
-//      EXISTING bridge logic with that URL as `--launch-url`. We do NOT
+//      EXISTING bridge logic with that URL in `BRIDGE_LAUNCH_URL` (the env, never argv). We do NOT
 //      re-implement the PTY/relay plumbing — we `fork` terminal/bridge/src/
 //      index.js using Electron-as-Node (ELECTRON_RUN_AS_NODE=1). node-pty 1.x
 //      is N-API (ABI-stable across Node and Electron) so its prebuilt pty.node
@@ -556,8 +556,8 @@ function reapGrandchild(pid, why) {
 
 /**
  * Hand a `vibecodes://launch?…` URL to the existing bridge. Validates with the
- * SHARED parser first (so we never fork on garbage), then forks the bridge with
- * `--launch-url`. The bridge re-parses the same string (single source of truth)
+ * SHARED parser first (so we never fork on garbage), then forks the bridge with the
+ * link in its environment (`BRIDGE_LAUNCH_URL`), never on its command line. The bridge re-parses the same string (single source of truth)
  * and connects as the relay's bridge leg. Also (re)establishes the standing
  * control connection from the link's `helperToken`, when present — see
  * connectControl below; an already-connected helper treats a redundant one as
@@ -615,9 +615,12 @@ async function handleLaunchUrl(rawUrl) {
   // runtime), so the bridge runs exactly as it does from the CLI. We pass our env
   // through verbatim so test seams (e.g. BRIDGE_CMD) keep working; in production
   // the bridge defaults the spawned command to `claude`.
-  const child = fork(BRIDGE_ENTRY, ["--launch-url", rawUrl], {
+  // The link (starting prompt + session token) goes in the bridge's ENVIRONMENT, never on its command
+  // line: `ps` shows every account a command line and `pkill -f "<card words>"` matches it (card e19e0788).
+  const child = fork(BRIDGE_ENTRY, [], {
     env: {
       ...process.env,
+      BRIDGE_LAUNCH_URL: rawUrl,
       ELECTRON_RUN_AS_NODE: "1",
       // Signal the bridge's OWN allowlist gate whether we're packaged. Packaged
       // → loopback + any non-prod host rejected; dev → loopback allowed. Keeps
